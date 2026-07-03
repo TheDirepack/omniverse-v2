@@ -2,11 +2,10 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import DatabasePanel from "../frontend/src/components/DatabasePanel";
-
-const mockFetchResults = vi.fn();
+import * as api from "../frontend/src/api";
 
 vi.mock("../frontend/src/api", () => ({
-  fetchResults: mockFetchResults,
+  fetchResults: vi.fn(),
 }));
 
 describe("DatabasePanel", () => {
@@ -15,7 +14,7 @@ describe("DatabasePanel", () => {
   });
 
   it("loads data via fetchResults on mount", async () => {
-    mockFetchResults.mockResolvedValue({
+    vi.mocked(api.fetchResults).mockResolvedValue({
       tier_system: "A powerful entity is Tier 1, mundane is Tier 10.",
       worlds: [{ id: 1, name: "Warhammer 40k", tier: 1, summary: null, tier_justification: "Cosmic scale", is_explored: true, theory: null, theory_audit: null }],
       anomalies: [],
@@ -23,11 +22,11 @@ describe("DatabasePanel", () => {
     render(<DatabasePanel />);
     await screen.findByText("Tier 1");
     await screen.findByText("Warhammer 40k");
-    expect(mockFetchResults).toHaveBeenCalledOnce();
+    expect(api.fetchResults).toHaveBeenCalledOnce();
   });
 
   it("renders tier system definition when present", async () => {
-    mockFetchResults.mockResolvedValue({
+    vi.mocked(api.fetchResults).mockResolvedValue({
       tier_system: "A powerful entity is Tier 1, mundane is Tier 10.",
       worlds: [],
       anomalies: [],
@@ -38,7 +37,7 @@ describe("DatabasePanel", () => {
   });
 
   it("shows empty state when no tier system", async () => {
-    mockFetchResults.mockResolvedValue({
+    vi.mocked(api.fetchResults).mockResolvedValue({
       tier_system: null,
       worlds: [],
       anomalies: [],
@@ -48,7 +47,7 @@ describe("DatabasePanel", () => {
   });
 
   it("groups worlds by tier in ascending order", async () => {
-    mockFetchResults.mockResolvedValue({
+    vi.mocked(api.fetchResults).mockResolvedValue({
       tier_system: null,
       worlds: [
         { id: 1, name: "High Tier", tier: 1, summary: null, tier_justification: null, is_explored: true, theory: null, theory_audit: null },
@@ -67,7 +66,7 @@ describe("DatabasePanel", () => {
   });
 
   it("shows world detail when world chip is clicked", async () => {
-    mockFetchResults.mockResolvedValue({
+    vi.mocked(api.fetchResults).mockResolvedValue({
       tier_system: null,
       worlds: [
         { id: 1, name: "Warhammer 40k", tier: 1, summary: null, tier_justification: "Galactic-scale conflict", is_explored: true, theory: null, theory_audit: null },
@@ -84,7 +83,7 @@ describe("DatabasePanel", () => {
   });
 
   it("shows anomalies in world detail when present", async () => {
-    mockFetchResults.mockResolvedValue({
+    vi.mocked(api.fetchResults).mockResolvedValue({
       tier_system: null,
       worlds: [
         { id: 1, name: "Warhammer 40k", tier: 1, summary: null, tier_justification: "test", is_explored: true, theory: null, theory_audit: null },
@@ -102,7 +101,7 @@ describe("DatabasePanel", () => {
   });
 
   it("shows ontological theory and auditor feedback in detail", async () => {
-    mockFetchResults.mockResolvedValue({
+    vi.mocked(api.fetchResults).mockResolvedValue({
       tier_system: null,
       worlds: [
         { id: 1, name: "Warhammer 40k", tier: 1, summary: null, tier_justification: "test", is_explored: true, theory: "The Chaos Gods are multidimensional entities", theory_audit: "Plausible, needs more evidence" },
@@ -120,7 +119,7 @@ describe("DatabasePanel", () => {
   });
 
   it("shows global anomalies section", async () => {
-    mockFetchResults.mockResolvedValue({
+    vi.mocked(api.fetchResults).mockResolvedValue({
       tier_system: null,
       worlds: [],
       anomalies: [
@@ -133,7 +132,7 @@ describe("DatabasePanel", () => {
   });
 
   it("shows selected chip as active", async () => {
-    mockFetchResults.mockResolvedValue({
+    vi.mocked(api.fetchResults).mockResolvedValue({
       tier_system: null,
       worlds: [
         { id: 1, name: "Warhammer 40k", tier: 1, summary: null, tier_justification: null, is_explored: true, theory: null, theory_audit: null },

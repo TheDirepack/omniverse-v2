@@ -1,75 +1,64 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import SettingsPanel from "../frontend/src/components/settings/SettingsPanel";
-
-const mockFetchSettings = vi.fn();
-const mockFetchProviders = vi.fn();
-const mockFetchAgentRoutes = vi.fn();
-const mockFetchAgentNames = vi.fn();
-const mockSaveProvider = vi.fn();
-const mockSaveGeneralSetting = vi.fn();
-const mockSaveProviderKey = vi.fn();
-const mockDeleteProviderKey = vi.fn();
-const mockDeleteProvider = vi.fn();
-const mockSaveAgentRoute = vi.fn();
-const mockDeleteAgentRoute = vi.fn();
+import * as api from "../frontend/src/api";
 
 vi.mock("../frontend/src/api", () => ({
-  fetchSettings: mockFetchSettings,
-  fetchProviders: mockFetchProviders,
-  fetchAgentRoutes: mockFetchAgentRoutes,
-  fetchAgentNames: mockFetchAgentNames,
-  saveProvider: mockSaveProvider,
-  saveGeneralSetting: mockSaveGeneralSetting,
-  saveProviderKey: mockSaveProviderKey,
-  deleteProviderKey: mockDeleteProviderKey,
-  deleteProvider: mockDeleteProvider,
-  saveAgentRoute: mockSaveAgentRoute,
-  deleteAgentRoute: mockDeleteAgentRoute,
+  fetchSettings: vi.fn(),
+  fetchProviders: vi.fn(),
+  fetchAgentRoutes: vi.fn(),
+  fetchAgentNames: vi.fn(),
+  saveProvider: vi.fn(),
+  saveGeneralSetting: vi.fn(),
+  saveProviderKey: vi.fn(),
+  deleteProviderKey: vi.fn(),
+  deleteProvider: vi.fn(),
+  saveAgentRoute: vi.fn(),
+  deleteAgentRoute: vi.fn(),
 }));
 
 describe("SettingsPanel", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockFetchSettings.mockResolvedValue({ general_settings: {}, providers: [], agent_routes: [] });
-    mockFetchProviders.mockResolvedValue([]);
-    mockFetchAgentRoutes.mockResolvedValue([]);
-    mockFetchAgentNames.mockResolvedValue([]);
+    vi.mocked(api.fetchSettings).mockResolvedValue({ general_settings: {}, providers: [], agent_routes: [] });
+    vi.mocked(api.fetchProviders).mockResolvedValue([]);
+    vi.mocked(api.fetchAgentRoutes).mockResolvedValue([]);
+    vi.mocked(api.fetchAgentNames).mockResolvedValue([]);
   });
 
   it("loads data via 4 API calls on mount", async () => {
     render(<SettingsPanel />);
     await waitFor(() => {
-      expect(mockFetchSettings).toHaveBeenCalledOnce();
-      expect(mockFetchProviders).toHaveBeenCalledOnce();
-      expect(mockFetchAgentRoutes).toHaveBeenCalledOnce();
-      expect(mockFetchAgentNames).toHaveBeenCalledOnce();
+      expect(api.fetchSettings).toHaveBeenCalledOnce();
+      expect(api.fetchProviders).toHaveBeenCalledOnce();
+      expect(api.fetchAgentRoutes).toHaveBeenCalledOnce();
+      expect(api.fetchAgentNames).toHaveBeenCalledOnce();
     });
   });
 
   it("renders 3 settings tab buttons", async () => {
     render(<SettingsPanel />);
     await screen.findByText("Providers & Keys");
-    expect(screen.getByText("Providers & Keys")).toBeInTheDocument();
-    expect(screen.getByText("Agent Routing")).toBeInTheDocument();
-    expect(screen.getByText("General")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Providers & Keys" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Agent Routing" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "General" })).toBeInTheDocument();
   });
 
   it("defaults to providers tab", async () => {
     render(<SettingsPanel />);
     await screen.findByText("Providers & Keys");
-    const providersTab = screen.getByText("Providers & Keys");
-    expect(providersTab.closest("button")).toHaveClass("active");
+    const providersTab = screen.getByRole("button", { name: "Providers & Keys" });
+    expect(providersTab).toHaveClass("active");
   });
 
   it("switches to General tab and shows settings", async () => {
-    mockFetchSettings.mockResolvedValue({ general_settings: { test_key: "test_val" }, providers: [], agent_routes: [] });
+    vi.mocked(api.fetchSettings).mockResolvedValue({ general_settings: { test_key: "test_val" }, providers: [], agent_routes: [] });
     const user = userEvent.setup();
     render(<SettingsPanel />);
     await screen.findByText("General");
-    await user.click(screen.getByText("General"));
-    expect(screen.getByText("General").closest("button")).toHaveClass("active");
+    await user.click(screen.getByRole("button", { name: "General" }));
+    expect(screen.getByRole("button", { name: "General" })).toHaveClass("active");
     await screen.findByText("test_key");
     expect(screen.getByDisplayValue("test_val")).toBeInTheDocument();
   });
@@ -78,51 +67,54 @@ describe("SettingsPanel", () => {
     const user = userEvent.setup();
     render(<SettingsPanel />);
     await screen.findByText("Agent Routing");
-    await user.click(screen.getByText("Agent Routing"));
-    expect(screen.getByText("Agent Routing").closest("button")).toHaveClass("active");
+    await user.click(screen.getByRole("button", { name: "Agent Routing" }));
+    expect(screen.getByRole("button", { name: "Agent Routing" })).toHaveClass("active");
   });
 
   it("calls saveProvider on Add Provider click", async () => {
-    mockSaveProvider.mockResolvedValue({});
+    vi.mocked(api.saveProvider).mockResolvedValue({});
     const user = userEvent.setup();
     render(<SettingsPanel />);
     await screen.findByText("+ Add Provider");
-    await user.click(screen.getByText("+ Add Provider"));
-    expect(mockSaveProvider).toHaveBeenCalledOnce();
-    expect(mockSaveProvider.mock.calls[0][0].name).toMatch(/^New Provider/);
-    await waitFor(() => expect(mockFetchProviders).toHaveBeenCalledTimes(2));
+    await user.click(screen.getByRole("button", { name: "+ Add Provider" }));
+    expect(api.saveProvider).toHaveBeenCalledOnce();
+    expect(api.saveProvider.mock.calls[0][0].name).toMatch(/^New Provider/);
+    await waitFor(() => expect(api.fetchProviders).toHaveBeenCalledTimes(2));
   });
 
   it("adds a new general setting via input + button", async () => {
-    mockSaveGeneralSetting.mockResolvedValue({});
+    vi.mocked(api.saveGeneralSetting).mockResolvedValue({});
     const user = userEvent.setup();
     render(<SettingsPanel />);
     await screen.findByText("General");
-    await user.click(screen.getByText("General"));
+    await user.click(screen.getByRole("button", { name: "General" }));
 
     const addInput = screen.getByPlaceholderText("Setting Key (e.g. API_KEY)");
     await user.type(addInput, "MY_CUSTOM_KEY");
     await user.click(screen.getByRole("button", { name: /add key/i }));
-    expect(mockSaveGeneralSetting).toHaveBeenCalledWith("MY_CUSTOM_KEY", null);
+    expect(api.saveGeneralSetting).toHaveBeenCalledWith("MY_CUSTOM_KEY", null);
     await screen.findByText("MY_CUSTOM_KEY");
   });
 
   it("renders provider cards when providers exist", async () => {
-    mockFetchProviders.mockResolvedValue([
+    vi.mocked(api.fetchProviders).mockResolvedValue([
       { id: 1, name: "OpenAI", provider_type: "openai", base_url: null, models: "gpt-4", keys: [] },
     ]);
     render(<SettingsPanel />);
-    await screen.findByText("OpenAI");
-    expect(screen.getByText("OpenAI")).toBeInTheDocument();
+    // Search for OpenAI in a way that doesn't match the option in the select dropdown
+    await screen.findByRole("textbox", { value: "OpenAI" });
+    expect(screen.getByRole("textbox", { value: "OpenAI" })).toBeInTheDocument();
   });
 
   it("renders routing section with DEFAULT and agent cards", async () => {
-    mockFetchAgentNames.mockResolvedValue(["Researcher", "Chronicler"]);
-    mockFetchAgentRoutes.mockResolvedValue([
+    vi.mocked(api.fetchAgentNames).mockResolvedValue(["Researcher", "Chronicler"]);
+    vi.mocked(api.fetchAgentRoutes).mockResolvedValue([
       { id: 1, task_type: "DEFAULT", provider_id: null, models: null, priority: 0 },
     ]);
+    const user = userEvent.setup();
     render(<SettingsPanel />);
-    await userEvent.setup().click(await screen.findByText("Agent Routing"));
+    await screen.findByText("Agent Routing");
+    await user.click(screen.getByRole("button", { name: "Agent Routing" }));
     await screen.findByText("DEFAULT");
     expect(screen.getByText("DEFAULT")).toBeInTheDocument();
     expect(screen.getByText("Researcher")).toBeInTheDocument();

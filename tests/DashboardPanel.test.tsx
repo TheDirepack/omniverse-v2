@@ -2,29 +2,19 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, waitFor, act } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import DashboardPanel from "../frontend/src/components/DashboardPanel";
-
-const mockFetchWorlds = vi.fn();
-const mockStartOrchestrate = vi.fn();
-const mockResearchUnexplored = vi.fn();
-const mockAddWorld = vi.fn();
-const mockResetAllExplored = vi.fn();
-const mockResetWorldExplored = vi.fn();
-const mockRunFocusedSearch = vi.fn();
-const mockResetDatabase = vi.fn();
-const mockClearLogsApi = vi.fn();
-const mockCreateEventSource = vi.fn();
+import * as api from "../frontend/src/api";
 
 vi.mock("../frontend/src/api", () => ({
-  fetchWorlds: mockFetchWorlds,
-  startOrchestrate: mockStartOrchestrate,
-  researchUnexplored: mockResearchUnexplored,
-  addWorld: mockAddWorld,
-  resetAllExplored: mockResetAllExplored,
-  resetWorldExplored: mockResetWorldExplored,
-  runFocusedSearch: mockRunFocusedSearch,
-  resetDatabase: mockResetDatabase,
-  clearLogsApi: mockClearLogsApi,
-  createEventSource: mockCreateEventSource,
+  fetchWorlds: vi.fn(),
+  startOrchestrate: vi.fn(),
+  researchUnexplored: vi.fn(),
+  addWorld: vi.fn(),
+  resetAllExplored: vi.fn(),
+  resetWorldExplored: vi.fn(),
+  runFocusedSearch: vi.fn(),
+  resetDatabase: vi.fn(),
+  clearLogsApi: vi.fn(),
+  createEventSource: vi.fn(),
 }));
 
 function sourceMock() {
@@ -34,8 +24,8 @@ function sourceMock() {
 describe("DashboardPanel", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockFetchWorlds.mockResolvedValue([]);
-    mockCreateEventSource.mockReturnValue(sourceMock());
+    vi.mocked(api.fetchWorlds).mockResolvedValue([]);
+    vi.mocked(api.createEventSource).mockReturnValue(sourceMock());
   });
 
   afterEach(() => {
@@ -43,7 +33,7 @@ describe("DashboardPanel", () => {
   });
 
   it("loads world registry on mount", async () => {
-    mockFetchWorlds.mockResolvedValue([
+    vi.mocked(api.fetchWorlds).mockResolvedValue([
       { id: 1, name: "Warhammer 40k", is_explored: true, summary: null },
       { id: 2, name: "Star Wars", is_explored: false, summary: null },
     ]);
@@ -51,11 +41,11 @@ describe("DashboardPanel", () => {
     await screen.findByText("Warhammer 40k");
     expect(screen.getByText("Warhammer 40k")).toBeInTheDocument();
     expect(screen.getByText("Star Wars")).toBeInTheDocument();
-    expect(mockFetchWorlds).toHaveBeenCalledOnce();
+    expect(api.fetchWorlds).toHaveBeenCalledOnce();
   });
 
   it("marks explored worlds with checkmark", async () => {
-    mockFetchWorlds.mockResolvedValue([
+    vi.mocked(api.fetchWorlds).mockResolvedValue([
       { id: 1, name: "Warhammer 40k", is_explored: true, summary: null },
       { id: 2, name: "Star Wars", is_explored: false, summary: null },
     ]);
@@ -67,48 +57,48 @@ describe("DashboardPanel", () => {
   });
 
   it("calls startOrchestrate with comma-separated worlds on Run click", async () => {
-    mockStartOrchestrate.mockResolvedValue({ run_id: "run-1" });
+    vi.mocked(api.startOrchestrate).mockResolvedValue({ run_id: "run-1" });
     const user = userEvent.setup();
     render(<DashboardPanel />);
     const textarea = screen.getByPlaceholderText("Warhammer 40k, Star Wars, Harry Potter");
     await user.type(textarea, "Warhammer 40k, Star Wars");
     await user.click(screen.getByRole("button", { name: /run/i }));
-    expect(mockStartOrchestrate).toHaveBeenCalledWith(["Warhammer 40k", "Star Wars"]);
+    expect(api.startOrchestrate).toHaveBeenCalledWith(["Warhammer 40k", "Star Wars"]);
   });
 
   it("calls researchUnexplored on Research button click", async () => {
-    mockResearchUnexplored.mockResolvedValue({ run_id: null, worlds: [], status: "ok" });
+    vi.mocked(api.researchUnexplored).mockResolvedValue({ run_id: null, worlds: [], status: "ok" });
     const user = userEvent.setup();
     render(<DashboardPanel />);
     await user.click(screen.getByRole("button", { name: /research all unexplored/i }));
-    expect(mockResearchUnexplored).toHaveBeenCalledOnce();
+    expect(api.researchUnexplored).toHaveBeenCalledOnce();
   });
 
   it("calls addWorld on Add + Research click and refreshes", async () => {
-    mockAddWorld.mockResolvedValue({ id: 3, name: "Dune" });
+    vi.mocked(api.addWorld).mockResolvedValue({ id: 3, name: "Dune" });
     const user = userEvent.setup();
     render(<DashboardPanel />);
     const input = screen.getByPlaceholderText("Add world to DB");
     await user.type(input, "Dune");
     await user.click(screen.getByRole("button", { name: /add \+ research/i }));
-    expect(mockAddWorld).toHaveBeenCalledWith("Dune");
-    await waitFor(() => expect(mockFetchWorlds).toHaveBeenCalledTimes(2));
+    expect(api.addWorld).toHaveBeenCalledWith("Dune");
+    await waitFor(() => expect(api.fetchWorlds).toHaveBeenCalledTimes(2));
   });
 
   it("calls resetWorldExplored when world chip clicked", async () => {
-    mockFetchWorlds.mockResolvedValue([
+    vi.mocked(api.fetchWorlds).mockResolvedValue([
       { id: 1, name: "Warhammer 40k", is_explored: true, summary: null },
     ]);
     const user = userEvent.setup();
     render(<DashboardPanel />);
     await screen.findByText(/Warhammer 40k/);
     await user.click(screen.getByText(/Warhammer 40k/));
-    expect(mockResetWorldExplored).toHaveBeenCalledWith(1);
-    expect(mockFetchWorlds).toHaveBeenCalledTimes(2);
+    expect(api.resetWorldExplored).toHaveBeenCalledWith(1);
+    expect(api.fetchWorlds).toHaveBeenCalledTimes(2);
   });
 
   it("calls runFocusedSearch with world name and feature", async () => {
-    mockRunFocusedSearch.mockResolvedValue({ run_id: "fs-1" });
+    vi.mocked(api.runFocusedSearch).mockResolvedValue({ run_id: "fs-1" });
     const user = userEvent.setup();
     render(<DashboardPanel />);
     const worldInput = screen.getByPlaceholderText("World name");
@@ -116,7 +106,7 @@ describe("DashboardPanel", () => {
     await user.type(worldInput, "Star Wars");
     await user.type(featureInput, "The Force is real");
     await user.click(screen.getByRole("button", { name: /focused search/i }));
-    expect(mockRunFocusedSearch).toHaveBeenCalledWith("Star Wars", "The Force is real");
+    expect(api.runFocusedSearch).toHaveBeenCalledWith("Star Wars", "The Force is real");
   });
 
   it("calls resetDatabase on Reset DB click", async () => {
@@ -124,20 +114,20 @@ describe("DashboardPanel", () => {
     render(<DashboardPanel />);
     await screen.findByText("Reset DB");
     await user.click(screen.getByRole("button", { name: /reset db/i }));
-    expect(mockResetDatabase).toHaveBeenCalledOnce();
+    expect(api.resetDatabase).toHaveBeenCalledOnce();
   });
 
   it("calls clearLogsApi and clears local logs on Clear Logs click", async () => {
     const user = userEvent.setup();
     render(<DashboardPanel />);
     await user.click(screen.getByRole("button", { name: /clear logs/i }));
-    expect(mockClearLogsApi).toHaveBeenCalledOnce();
+    expect(api.clearLogsApi).toHaveBeenCalledOnce();
   });
 
   it("displays SSE logs in Live Logs panel", async () => {
     const src = sourceMock();
-    mockCreateEventSource.mockReturnValue(src);
-    mockStartOrchestrate.mockResolvedValue({ run_id: "run-1" });
+    vi.mocked(api.createEventSource).mockReturnValue(src);
+    vi.mocked(api.startOrchestrate).mockResolvedValue({ run_id: "run-1" });
 
     const user = userEvent.setup();
     render(<DashboardPanel />);
@@ -146,7 +136,7 @@ describe("DashboardPanel", () => {
     await user.type(textarea, "TestWorld");
     await user.click(screen.getByRole("button", { name: /run/i }));
 
-    await waitFor(() => expect(mockCreateEventSource).toHaveBeenCalledWith("run-1"));
+    await waitFor(() => expect(api.createEventSource).toHaveBeenCalledWith("run-1"));
 
     act(() => {
       src.onmessage({ data: JSON.stringify({ node_name: "Researcher", thought: "Analyzing...", status: "running", created_at: "12:00" }) });
@@ -159,8 +149,8 @@ describe("DashboardPanel", () => {
 
   it("shows Running status pill while SSE is active", async () => {
     const src = sourceMock();
-    mockCreateEventSource.mockReturnValue(src);
-    mockStartOrchestrate.mockResolvedValue({ run_id: "run-1" });
+    vi.mocked(api.createEventSource).mockReturnValue(src);
+    vi.mocked(api.startOrchestrate).mockResolvedValue({ run_id: "run-1" });
 
     const user = userEvent.setup();
     render(<DashboardPanel />);
@@ -169,14 +159,14 @@ describe("DashboardPanel", () => {
     await user.type(textarea, "TestWorld");
     await user.click(screen.getByRole("button", { name: /run/i }));
 
-    await waitFor(() => expect(mockCreateEventSource).toHaveBeenCalled());
+    await waitFor(() => expect(api.createEventSource).toHaveBeenCalled());
     expect(screen.getByText("Running")).toBeInTheDocument();
   });
 
   it("handles finished SSE message by stopping run", async () => {
     const src = sourceMock();
-    mockCreateEventSource.mockReturnValue(src);
-    mockStartOrchestrate.mockResolvedValue({ run_id: "run-1" });
+    vi.mocked(api.createEventSource).mockReturnValue(src);
+    vi.mocked(api.startOrchestrate).mockResolvedValue({ run_id: "run-1" });
 
     const user = userEvent.setup();
     render(<DashboardPanel />);
@@ -185,7 +175,7 @@ describe("DashboardPanel", () => {
     await user.type(textarea, "TestWorld");
     await user.click(screen.getByRole("button", { name: /run/i }));
 
-    await waitFor(() => expect(mockCreateEventSource).toHaveBeenCalled());
+    await waitFor(() => expect(api.createEventSource).toHaveBeenCalled());
 
     act(() => {
       src.onmessage({ data: JSON.stringify({ finished: true }) });
@@ -196,7 +186,7 @@ describe("DashboardPanel", () => {
   });
 
   it("shows unexplored count in Research button label", async () => {
-    mockFetchWorlds.mockResolvedValue([
+    vi.mocked(api.fetchWorlds).mockResolvedValue([
       { id: 1, name: "W1", is_explored: false, summary: null },
       { id: 2, name: "W2", is_explored: true, summary: null },
       { id: 3, name: "W3", is_explored: false, summary: null },
@@ -207,7 +197,7 @@ describe("DashboardPanel", () => {
   });
 
   it("filters worlds by search term", async () => {
-    mockFetchWorlds.mockResolvedValue([
+    vi.mocked(api.fetchWorlds).mockResolvedValue([
       { id: 1, name: "Warhammer 40k", is_explored: false, summary: null },
       { id: 2, name: "Star Wars", is_explored: false, summary: null },
       { id: 3, name: "Warframe", is_explored: false, summary: null },

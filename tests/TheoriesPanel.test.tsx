@@ -1,11 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import TheoriesPanel from "../frontend/src/components/TheoriesPanel";
-
-const mockFetchResults = vi.fn();
+import * as api from "../frontend/src/api";
 
 vi.mock("../frontend/src/api", () => ({
-  fetchResults: mockFetchResults,
+  fetchResults: vi.fn(),
 }));
 
 describe("TheoriesPanel", () => {
@@ -14,7 +13,7 @@ describe("TheoriesPanel", () => {
   });
 
   it("loads worlds via fetchResults on mount", async () => {
-    mockFetchResults.mockResolvedValue({
+    vi.mocked(api.fetchResults).mockResolvedValue({
       tier_system: null,
       worlds: [
         { id: 1, name: "Warhammer 40k", tier: 1, theory: "Chaos Gods are real", theory_audit: "Accepted", summary: null, tier_justification: null, is_explored: true },
@@ -25,11 +24,11 @@ describe("TheoriesPanel", () => {
     render(<TheoriesPanel />);
     await screen.findByText("Warhammer 40k");
     await screen.findByText("Star Wars");
-    expect(mockFetchResults).toHaveBeenCalledOnce();
+    expect(api.fetchResults).toHaveBeenCalledOnce();
   });
 
   it("renders theory card with name, tier, theory, and auditor verdict", async () => {
-    mockFetchResults.mockResolvedValue({
+    vi.mocked(api.fetchResults).mockResolvedValue({
       tier_system: null,
       worlds: [
         { id: 1, name: "Warhammer 40k", tier: 2, theory: "Chaos Gods are real", theory_audit: "Accepted", summary: null, tier_justification: null, is_explored: true },
@@ -45,7 +44,7 @@ describe("TheoriesPanel", () => {
   });
 
   it("shows empty state when no theories generated", async () => {
-    mockFetchResults.mockResolvedValue({
+    vi.mocked(api.fetchResults).mockResolvedValue({
       tier_system: null,
       worlds: [
         { id: 1, name: "Warhammer 40k", tier: 1, theory: null, theory_audit: null, summary: null, tier_justification: null, is_explored: true },
@@ -57,7 +56,7 @@ describe("TheoriesPanel", () => {
   });
 
   it("filters out worlds without theory", async () => {
-    mockFetchResults.mockResolvedValue({
+    vi.mocked(api.fetchResults).mockResolvedValue({
       tier_system: null,
       worlds: [
         { id: 1, name: "Has Theory", tier: 1, theory: "Something", theory_audit: null, summary: null, tier_justification: null, is_explored: true },

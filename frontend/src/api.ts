@@ -53,12 +53,12 @@ export async function addWorld(world_name: string, auto_research = true): Promis
   });
 }
 
-export async function clearAllExplored(): Promise<any> {
-  return apiFetch("/api/worlds/clear-explored", { method: "POST" });
+export async function resetAllExplored(): Promise<any> {
+  return apiFetch("/api/worlds/reset-all-explored", { method: "POST" });
 }
 
-export async function clearWorldExplored(worldId: number): Promise<any> {
-  return apiFetch(`/api/worlds/${worldId}/clear-explored`, { method: "POST" });
+export async function resetWorldExplored(worldId: number): Promise<any> {
+  return apiFetch(`/api/worlds/${worldId}/reset-explored`, { method: "POST" });
 }
 
 export async function runFocusedSearch(world_name: string, feature: string): Promise<{ run_id: string }> {
@@ -91,6 +91,10 @@ export async function saveProviderKey(key: { id?: number; provider_id: number; a
 
 export async function deleteProviderKey(keyId: number): Promise<any> {
   return apiFetch(`/api/providers/keys/${keyId}`, { method: "DELETE" });
+}
+
+export async function deleteProvider(providerId: number): Promise<any> {
+  return apiFetch(`/api/providers/${providerId}`, { method: "DELETE" });
 }
 
 export async function saveAgentRoute(route: any): Promise<any> {

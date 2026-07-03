@@ -122,10 +122,14 @@ def upsert_provider(payload: ProviderPayload):
         provider = session.get(ProviderConfig, payload.id) if payload.id else session.exec(select(ProviderConfig).where(ProviderConfig.name == payload.name)).first()
         if not provider:
             provider = ProviderConfig(name=payload.name)
-        provider.name = payload.name
-        provider.provider_type = payload.provider_type
-        provider.base_url = payload.base_url
-        provider.models = payload.models
+            session.add(provider)
+            session.flush()
+
+        update_data = payload.model_dump(exclude_unset=True)
+        update_data.pop("id", None)
+        for key, value in update_data.items():
+            setattr(provider, key, value)
+
         session.add(provider)
         session.commit()
         session.refresh(provider)
@@ -151,6 +155,16 @@ def delete_provider_key(key_id: int):
         if not key:
             raise HTTPException(status_code=404, detail="Key not found")
         session.delete(key)
+        session.commit()
+        return {"status": "success"}
+
+@router.delete("/providers/{provider_id}")
+def delete_provider(provider_id: int):
+    with Session(engine) as session:
+        provider = session.get(ProviderConfig, provider_id)
+        if not provider:
+            raise HTTPException(status_code=404, detail="Provider not found")
+        session.delete(provider)
         session.commit()
         return {"status": "success"}
 
@@ -256,8 +270,8 @@ def get_worlds():
         return [{"id": w.id, "name": w.name, "summary": w.summary, "is_explored": w.is_explored} for w in worlds]
 
 
-@router.post("/worlds/{world_id}/clear-explored")
-def clear_world_explored(world_id: int):
+@router.post("/worlds/{world_id}/reset-explored")
+def reset_world_explored(world_id: int):
     with Session(engine) as session:
         world = session.get(Universe, world_id)
         if not world:
@@ -268,10 +282,10 @@ def clear_world_explored(world_id: int):
     return {"status": "success"}
 
 
-@router.post("/worlds/clear-explored")
-def clear_all_explored():
+@router.post("/worlds/reset-all-explored")
+def reset_all_explored():
     with Session(engine) as session:
-        worlds = session.exec(select(Universe)).all()
+        worlds = session.exec(select(Universe).where(Universe.is_explored == True)).all()  # noqa: E712
         for world in worlds:
             world.is_explored = False
             session.add(world)

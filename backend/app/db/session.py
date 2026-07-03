@@ -3,7 +3,7 @@ import json
 from pathlib import Path
 from sqlmodel import SQLModel, create_engine, Session, select
 from sqlalchemy import event
-from app.db.schema import Universe
+from app.db.schema import Universe, ProviderConfig, AgentRouteFallback
 
 sqlite_url = os.getenv("DATABASE_URL", "sqlite:///omniverse_v2.db")
 connect_args = {"check_same_thread": False} if sqlite_url.startswith("sqlite") else {}
@@ -28,10 +28,24 @@ def init_db():
         # Migrate AgentRouteFallback: model_name -> models
         route_columns = [row[1] for row in conn.exec_driver_sql("PRAGMA table_info(agentroutefallback)").fetchall()]
         if "model_name" in route_columns and "models" not in route_columns:
-            # SQLite doesn't support renaming columns easily in old versions, 
-            # but we can add the new column and copy data.
             conn.exec_driver_sql("ALTER TABLE agentroutefallback ADD COLUMN models TEXT")
             conn.exec_driver_sql("UPDATE agentroutefallback SET models = model_name")
+        # Drop stale model_name column if both exist
+        if "model_name" in route_columns and "models" in route_columns:
+            conn.exec_driver_sql("ALTER TABLE agentroutefallback DROP COLUMN model_name")
+
+        # Migrate provider_type 'custom' -> 'openai' (old UI mapped custom dropdown to wrong value)
+        prov_columns = [row[1] for row in conn.exec_driver_sql("PRAGMA table_info(providerconfig)").fetchall()]
+        if "provider_type" in prov_columns:
+            conn.exec_driver_sql("UPDATE providerconfig SET provider_type = 'openai' WHERE provider_type = 'custom'")
+    
+    # Seed default route if no routes exist
+    with Session(engine) as session:
+        existing = session.exec(select(AgentRouteFallback)).first()
+        if not existing:
+            print("[init_db] No agent routes found — seeding DEFAULT fallback route.")
+            session.add(AgentRouteFallback(task_type="DEFAULT", priority=0, provider_id=None, models=None))
+            session.commit()
     
     # Initial world seeding from JSON
     try:

@@ -138,17 +138,19 @@ class TestProviderConfig:
 
 class TestAgentRouteFallback:
     def test_empty_task_type(self, ephemeral_db):
+        from sqlmodel import select
         r = AgentRouteFallback(task_type="")
         ephemeral_db.add(r)
         ephemeral_db.commit()
-        row = ephemeral_db.get(AgentRouteFallback, "")
+        row = ephemeral_db.exec(select(AgentRouteFallback).where(AgentRouteFallback.task_type == "")).first()
         assert row is not None
 
     def test_provider_id_none(self, ephemeral_db):
+        from sqlmodel import select
         r = AgentRouteFallback(task_type="TEST", provider_id=None)
         ephemeral_db.add(r)
         ephemeral_db.commit()
-        row = ephemeral_db.get(AgentRouteFallback, "TEST")
+        row = ephemeral_db.exec(select(AgentRouteFallback).where(AgentRouteFallback.task_type == "TEST")).first()
         assert row.provider_id is None
 
     def test_provider_id_nonexistent_fk(self, ephemeral_db):
@@ -158,12 +160,16 @@ class TestAgentRouteFallback:
             ephemeral_db.commit()
 
     def test_duplicate_task_type_upsert(self, ephemeral_db):
-        ephemeral_db.add(AgentRouteFallback(task_type="UPSERT", model_name="v1"))
+        from sqlmodel import select
+        a = AgentRouteFallback(task_type="UPSERT", models="v1")
+        ephemeral_db.add(a)
         ephemeral_db.commit()
-        ephemeral_db.merge(AgentRouteFallback(task_type="UPSERT", model_name="v2"))
+        ephemeral_db.refresh(a)
+        a.models = "v2"
+        ephemeral_db.merge(a)
         ephemeral_db.commit()
-        row = ephemeral_db.get(AgentRouteFallback, "UPSERT")
-        assert row.model_name == "v2"
+        row = ephemeral_db.exec(select(AgentRouteFallback).where(AgentRouteFallback.id == a.id)).first()
+        assert row.models == "v2"
 
 
 class TestTrait:

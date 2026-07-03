@@ -4,14 +4,33 @@ import type { ProviderRecord, ProviderKey } from "../types";
 const API_KEY_MASK = "●●●●●●●●●●●●";
 
 const PROVIDER_TYPES = [
-  { value: "openai", label: "OpenAI" },
-  { value: "anthropic", label: "Anthropic" },
-  { value: "gemini", label: "Gemini" },
-  { value: "ollama", label: "Ollama" },
-  { value: "groq", label: "Groq" },
-  { value: "openrouter", label: "OpenRouter" },
-  { value: "custom", label: "Custom" },
+  { value: "openai", label: "OpenAI", baseUrlConfigurable: false },
+  { value: "anthropic", label: "Anthropic", baseUrlConfigurable: false },
+  { value: "gemini", label: "Gemini", baseUrlConfigurable: false },
+  { value: "ollama", label: "Ollama", baseUrlConfigurable: true },
+  { value: "groq", label: "Groq", baseUrlConfigurable: false },
+  { value: "openrouter", label: "OpenRouter", baseUrlConfigurable: false },
+  { value: "custom", label: "Custom (OpenAI-compatible)", baseUrlConfigurable: true },
 ];
+
+function resolveTypeInfo(provider: ProviderRecord) {
+  const effectiveType = provider.provider_type === "openai" && provider.base_url
+    ? "custom"
+    : provider.provider_type;
+  return PROVIDER_TYPES.find(t => t.value === effectiveType) ?? null;
+}
+
+function resolveLabel(provider: ProviderRecord) {
+  const info = resolveTypeInfo(provider);
+  if (info) return info.label;
+  if (provider.provider_type === "openai") return "OpenAI";
+  return provider.provider_type ?? "No type";
+}
+
+function isBaseUrlConfigurable(provider: ProviderRecord) {
+  const info = resolveTypeInfo(provider);
+  return info?.baseUrlConfigurable ?? false;
+}
 
 function ProviderCard({ provider, onSave, onSaveKey, onDeleteKey, onDeleteProvider }: {
   provider: ProviderRecord;
@@ -20,44 +39,61 @@ function ProviderCard({ provider, onSave, onSaveKey, onDeleteKey, onDeleteProvid
   onDeleteKey: (id: number) => Promise<void>;
   onDeleteProvider?: (id: number) => Promise<void>;
 }) {
-  // Identity draft (saved independently)
+  const typeInfo = resolveTypeInfo(provider);
+  const baseUrlConfigurable = isBaseUrlConfigurable(provider);
+
   const [nameDraft, setNameDraft] = useState(provider.name);
   const [savingName, setSavingName] = useState(false);
 
-  // Connection draft
+  const [typeDraft, setTypeDraft] = useState(typeInfo?.value ?? provider.provider_type ?? "");
+  const [savingType, setSavingType] = useState(false);
+
   const [baseUrlDraft, setBaseUrlDraft] = useState(provider.base_url ?? "");
   const [savingBaseUrl, setSavingBaseUrl] = useState(false);
 
-  // Models draft
   const [modelsTags, setModelsTags] = useState<string[]>(
     (provider.models ?? "").split(",").map(m => m.trim()).filter(Boolean)
   );
   const [newModelTag, setNewModelTag] = useState("");
   const [savingModels, setSavingModels] = useState(false);
 
-  // Keys draft
   const [keysDraft, setKeysDraft] = useState<ProviderKey[]>(provider.keys);
   const [editingKeyId, setEditingKeyId] = useState<number | null>(null);
   const [savingKeyIds, setSavingKeyIds] = useState<Set<number>>(new Set());
   const [confirmDeleteKeyId, setConfirmDeleteKeyId] = useState<number | null>(null);
 
-  // Provider-level delete
   const [confirmDeleteProvider, setConfirmDeleteProvider] = useState(false);
 
   const handleSaveName = async () => {
     if (!nameDraft.trim()) return;
     setSavingName(true);
     try {
-      await onSave({ id: provider.id, name: nameDraft, provider_type: provider.provider_type, base_url: provider.base_url, models: provider.models });
+      await onSave({ id: provider.id, name: nameDraft });
     } finally {
       setSavingName(false);
+    }
+  };
+
+  const handleSaveType = async (newType: string) => {
+    setSavingType(true);
+    try {
+      const providerType = newType === "custom" ? "openai" : newType;
+      const newTypeInfo = PROVIDER_TYPES.find(t => t.value === newType);
+      const payload: any = { id: provider.id, provider_type: providerType };
+      if (newTypeInfo && !newTypeInfo.baseUrlConfigurable && baseUrlDraft) {
+        payload.base_url = null;
+      }
+      await onSave(payload);
+      setTypeDraft(newType);
+    } finally {
+      setSavingType(false);
     }
   };
 
   const handleSaveBaseUrl = async () => {
     setSavingBaseUrl(true);
     try {
-      await onSave({ id: provider.id, name: provider.name, provider_type: provider.provider_type, base_url: baseUrlDraft || null, models: provider.models });
+      await onSave({ id: provider.id, base_url: baseUrlDraft || null });
     } finally {
       setSavingBaseUrl(false);
     }
@@ -66,7 +102,7 @@ function ProviderCard({ provider, onSave, onSaveKey, onDeleteKey, onDeleteProvid
   const handleSaveModels = async () => {
     setSavingModels(true);
     try {
-      await onSave({ id: provider.id, name: provider.name, provider_type: provider.provider_type, base_url: provider.base_url, models: modelsTags.join(",") || null });
+      await onSave({ id: provider.id, models: modelsTags.join(",") || null });
     } finally {
       setSavingModels(false);
     }
@@ -140,9 +176,23 @@ function ProviderCard({ provider, onSave, onSaveKey, onDeleteKey, onDeleteProvid
             onChange={e => setNameDraft(e.target.value)}
             placeholder="Provider name"
           />
-          <span className="provider-type-badge">
-            {PROVIDER_TYPES.find(t => t.value === provider.provider_type)?.label ?? provider.provider_type ?? "No type"}
-          </span>
+          <select
+            className="provider-type-select"
+            value={typeDraft}
+            onChange={e => {
+              const newVal = e.target.value;
+              setTypeDraft(newVal);
+              void handleSaveType(newVal);
+            }}
+            disabled={savingType}
+          >
+            <option value="" disabled>Select type</option>
+            {PROVIDER_TYPES.map(t => (
+              <option key={t.value} value={t.value}>{t.label}</option>
+            ))}
+          </select>
+          <span className="provider-type-badge">{resolveLabel(provider)}</span>
+          {savingType && <span className="saving-indicator">...</span>}
           <button className="chip" onClick={handleSaveName} disabled={savingName || !nameDraft.trim()}>
             {savingName ? "..." : "Save Name"}
           </button>
@@ -160,16 +210,16 @@ function ProviderCard({ provider, onSave, onSaveKey, onDeleteKey, onDeleteProvid
       </div>
 
       <div className="provider-card-body">
-        {/* Connection */}
-        <div className="provider-section">
-          <h4>Connection</h4>
-          <label className="field">
-            <span>Base URL</span>
-            <input value={baseUrlDraft} onChange={e => setBaseUrlDraft(e.target.value)} placeholder="https://api.openai.com/v1" />
-            <p className="help-text">Leave blank to use provider's default endpoint. Only needed for Ollama, OpenRouter, or self-hosted setups.</p>
-          </label>
-          <button className="chip" onClick={handleSaveBaseUrl} disabled={savingBaseUrl}>{savingBaseUrl ? "..." : "Save"}</button>
-        </div>
+        {baseUrlConfigurable && (
+          <div className="provider-section">
+            <h4>Base URL</h4>
+            <label className="field">
+              <span>Base URL</span>
+              <input value={baseUrlDraft} onChange={e => setBaseUrlDraft(e.target.value)} placeholder={provider.provider_type === "ollama" ? "http://localhost:11434" : "https://api.openai.com/v1"} />
+            </label>
+            <button className="chip" onClick={handleSaveBaseUrl} disabled={savingBaseUrl}>{savingBaseUrl ? "..." : "Save"}</button>
+          </div>
+        )}
 
         {/* Models */}
         <div className="provider-section">

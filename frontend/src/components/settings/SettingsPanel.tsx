@@ -38,6 +38,7 @@ function SettingsPanel() {
   const handleSaveProvider = async (provider: any) => {
     try {
       await api.saveProvider(provider);
+      await refreshAll();
     } catch (e) {
       console.error("Failed to save provider:", e);
     }
@@ -45,7 +46,9 @@ function SettingsPanel() {
 
   const handleSaveKey = async (key: any): Promise<any> => {
     try {
-      return await api.saveProviderKey(key);
+      const result = await api.saveProviderKey(key);
+      await refreshAll();
+      return result;
     } catch (e) {
       console.error("Failed to save key:", e);
     }
@@ -54,8 +57,18 @@ function SettingsPanel() {
   const handleDeleteKey = async (keyId: number) => {
     try {
       await api.deleteProviderKey(keyId);
+      await refreshAll();
     } catch (e) {
       console.error("Failed to delete key:", e);
+    }
+  };
+
+  const handleDeleteProvider = async (providerId: number) => {
+    try {
+      await api.deleteProvider(providerId);
+      await refreshAll();
+    } catch (e) {
+      console.error("Failed to delete provider:", e);
     }
   };
 
@@ -147,6 +160,7 @@ function SettingsPanel() {
                 onSave={handleSaveProvider}
                 onSaveKey={handleSaveKey}
                 onDeleteKey={handleDeleteKey}
+                onDeleteProvider={handleDeleteProvider}
               />
             ))}
           </div>

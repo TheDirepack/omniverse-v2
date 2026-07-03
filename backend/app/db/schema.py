@@ -1,4 +1,4 @@
-from sqlmodel import SQLModel, Field
+from sqlmodel import SQLModel, Field, Column, ForeignKey
 from typing import Optional, List
 from datetime import datetime
 
@@ -15,15 +15,15 @@ class ProviderConfig(SQLModel, table=True):
 
 class ProviderKey(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
-    provider_id: int = Field(foreign_key="providerconfig.id")
+    provider_id: int = Field(sa_column=Column(ForeignKey("providerconfig.id", ondelete="CASCADE")))
     api_key: str
     priority: int = Field(default=0)
 
 class AgentRouteFallback(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     task_type: str
-    priority: int
-    provider_id: Optional[int] = Field(default=None, foreign_key="providerconfig.id")
+    priority: int = Field(default=0)
+    provider_id: Optional[int] = Field(default=None, sa_column=Column(ForeignKey("providerconfig.id", ondelete="SET NULL")))
     models: Optional[str] = None
 
 

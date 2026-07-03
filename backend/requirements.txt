@@ -8,6 +8,6 @@ litellm
 cloakbrowser
 beautifulsoup4
 pydantic-settings
-httpx
+httpx2>=2.0.0
 pytest
 pytest-asyncio

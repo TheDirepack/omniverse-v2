@@ -77,12 +77,12 @@ function DashboardPanel() {
     finally { setSaving(false); }
   };
 
-  const handleClearAllExplored = async () => {
-    try { await api.clearAllExplored(); await refreshWorlds(); } catch (e) { console.error(e); }
+  const handleResetAllExplored = async () => {
+    try { await api.resetAllExplored(); await refreshWorlds(); } catch (e) { console.error(e); }
   };
 
-  const handleClearWorldExplored = async (worldId: number) => {
-    await api.clearWorldExplored(worldId); await refreshWorlds();
+  const handleResetWorldExplored = async (worldId: number) => {
+    await api.resetWorldExplored(worldId); await refreshWorlds();
   };
 
   const handleFocusedSearch = async () => {
@@ -146,10 +146,10 @@ function DashboardPanel() {
             onChange={e => setWorldSearch(e.target.value)}
             placeholder="Search worlds..."
           />
-          <button className="chip" onClick={handleClearAllExplored}>Clear All Explored Flags</button>
+          <button className="chip" onClick={handleResetAllExplored}>Reset All Explored Flags</button>
           <div className="chips">
             {displayWorlds.map(world => (
-              <button key={world.id} className={world.is_explored ? "chip active" : "chip"} onClick={() => void handleClearWorldExplored(world.id)}>
+              <button key={world.id} className={world.is_explored ? "chip active" : "chip"} onClick={() => void handleResetWorldExplored(world.id)}>
                 {world.name} {world.is_explored ? "✓" : ""}
               </button>
             ))}

@@ -1,5 +1,19 @@
 import os
 import atexit
+import warnings
+
+# langchain-core eagerly imports pydantic.v1 which warns on Python 3.14+.
+# No code uses pydantic v1 models — safe to suppress.
+warnings.filterwarnings(
+    "ignore",
+    message="Core Pydantic V1 functionality isn't compatible with.*",
+)
+warnings.filterwarnings(
+    "ignore",
+    category=DeprecationWarning,
+    message="datetime.datetime.utcnow.*deprecated.*",
+)
+
 import pytest
 from sqlmodel import SQLModel, Session, create_engine
 from fastapi.testclient import TestClient
@@ -55,7 +69,7 @@ def seeded_db(ephemeral_db):
     ephemeral_db.commit()
     ephemeral_db.refresh(p)
 
-    r = AgentRouteFallback(task_type="RESEARCH", provider_id=p.id, model_name="gpt-4")
+    r = AgentRouteFallback(task_type="RESEARCH", provider_id=p.id, models="gpt-4")
     ephemeral_db.add(r)
     ephemeral_db.commit()
     ephemeral_db.refresh(r)

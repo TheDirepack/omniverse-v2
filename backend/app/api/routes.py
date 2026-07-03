@@ -9,11 +9,15 @@ from typing import List, Optional
 from pydantic import BaseModel, Field, field_validator
 
 from app.db.session import engine
+from app.db.unconfirmed_session import engine as unconfirmed_engine
+from app.db.unconfirmed_schema import UnconfirmedUniverse, UnconfirmedTrait
 from app.db.schema import Universe, TierSystem, WorldTier, Anomaly, Theory, ExecutionState, Setting, ProviderConfig, ProviderKey, AgentRouteFallback, Trait, ModelConfig
 from app.agents.workflow import app_graph
 from app.agents.nodes import research_single_world
 from app.agents.agent_names import AGENT_NAMES
-from app.core.state import ACTIVE_RUNS, ABORTED_RUNS
+from app.core.state import (
+    ACTIVE_RUNS, ABORTED_RUNS, add_active_run, remove_run, abort_run, is_aborted, get_active_runs
+)
 
 router = APIRouter()
 
@@ -327,6 +331,7 @@ def reset_database():
         for world in worlds:
             world.summary = None
             world.is_explored = False
+            world.raw_data = None
             session.add(world)
         json_path = Path(__file__).parent.parent / "db" / "default_worlds.json"
         if json_path.exists():
@@ -336,6 +341,13 @@ def reset_database():
                     if not exists:
                         session.add(Universe(name=name, summary=None, is_explored=False))
         session.commit()
+    
+    # Clear unconfirmed staging database
+    with Session(unconfirmed_engine) as session:
+        for table in [UnconfirmedUniverse, UnconfirmedTrait]:
+            session.exec(table.__table__.delete())
+        session.commit()
+
     return {"status": "success"}
 
 
@@ -349,7 +361,7 @@ def clear_logs():
 
 async def run_pipeline_in_background(run_id: str, target_worlds: List[str]):
     from app.core.agent_engine import run_fetch_cache
-    if run_id in ABORTED_RUNS:
+    if await is_aborted(run_id):
         with Session(engine) as session:
             session.add(ExecutionState(
                 run_id=run_id,
@@ -361,7 +373,7 @@ async def run_pipeline_in_background(run_id: str, target_worlds: List[str]):
             session.commit()
         return
     run_fetch_cache.clear()
-    ACTIVE_RUNS.add(run_id)
+    await add_active_run(run_id)
     # Initialize the workflow state
     inputs = {
         "target_worlds": target_worlds,
@@ -393,14 +405,13 @@ async def run_pipeline_in_background(run_id: str, target_worlds: List[str]):
             session.add(err_log)
             session.commit()
     finally:
-        ACTIVE_RUNS.discard(run_id)
-        ABORTED_RUNS.discard(run_id)
+        await remove_run(run_id)
 
 
 async def run_focused_search_in_background(run_id: str, world_name: str, feature: str):
-    ACTIVE_RUNS.add(run_id)
+    await add_active_run(run_id)
     try:
-        if run_id in ABORTED_RUNS:
+        if await is_aborted(run_id):
             raise RuntimeError("Run aborted before start")
         await research_single_world(world_name, run_id, focus=feature)
         with Session(engine) as session:
@@ -411,8 +422,7 @@ async def run_focused_search_in_background(run_id: str, world_name: str, feature
             session.add(ExecutionState(run_id=run_id, node_name="Focused Search", thought=f"Focused search failed: {e}", status="FAILED", state_snapshot=json.dumps({"error": str(e)})))
             session.commit()
     finally:
-        ACTIVE_RUNS.discard(run_id)
-        ABORTED_RUNS.discard(run_id)
+        await remove_run(run_id)
 
 
 @router.post("/orchestrate")
@@ -501,10 +511,11 @@ def model_status():
 
 
 @router.get("/agent-activity")
-def agent_activity():
+async def agent_activity():
     with Session(engine) as session:
         logs = session.exec(select(ExecutionState).order_by(ExecutionState.created_at.desc()).limit(50)).all()
-        return {"active_runs": list(ACTIVE_RUNS), "logs": [{"run_id": l.run_id, "node_name": l.node_name, "thought": l.thought, "status": l.status, "created_at": str(l.created_at)} for l in logs]}
+        active_runs = await get_active_runs()
+        return {"active_runs": active_runs, "logs": [{"run_id": l.run_id, "node_name": l.node_name, "thought": l.thought, "status": l.status, "created_at": str(l.created_at)} for l in logs]}
 
 
 @router.post("/reset-activity")
@@ -513,11 +524,11 @@ def reset_activity():
 
 
 @router.post("/abort")
-def abort_run(payload: dict):
+async def abort_run_endpoint(payload: dict):
     run_id = payload.get("runId") or payload.get("run_id")
     if not run_id:
         raise HTTPException(status_code=400, detail="runId required")
-    ABORTED_RUNS.add(run_id)
+    await abort_run(run_id)
     with Session(engine) as session:
         session.add(ExecutionState(run_id=run_id, node_name="Manager", thought="Abort requested", status="ABORT_REQUESTED", state_snapshot="{}"))
         session.commit()
@@ -539,8 +550,8 @@ async def get_realtime_logs(run_id: str):
                 for log in new_logs:
                     yield f"data: {json.dumps({'node_name': log.node_name, 'thought': log.thought, 'status': log.status, 'created_at': str(log.created_at)})}\n\n"
                     last_id = log.id
-                    if log.status == "FAILED":
-                        yield "data: {\"finished\": true, \"failed\": true}\n\n"
+                    if log.status in {"FAILED", "ABORTED", "ABORT_REQUESTED"}:
+                        yield f"data: {json.dumps({'finished': True, 'failed': True if log.status == 'FAILED' else False, 'aborted': True if log.status != 'FAILED' else False})}\n\n"
                         return
                     if log.status == "COMPLETED" and log.node_name in {"Ontological Theorist", "Focused Search"}:
                         yield "data: {\"finished\": true}\n\n"

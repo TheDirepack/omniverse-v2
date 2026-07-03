@@ -39,15 +39,16 @@ describe("SettingsPanel", () => {
 
   it("renders 3 settings tab buttons", async () => {
     render(<SettingsPanel />);
-    await screen.findByText("Providers & Keys");
+    await screen.findByRole("button", { name: "Providers & Keys" });
     expect(screen.getByRole("button", { name: "Providers & Keys" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Agent Routing" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "General" })).toBeInTheDocument();
   });
 
+
   it("defaults to providers tab", async () => {
     render(<SettingsPanel />);
-    await screen.findByText("Providers & Keys");
+    await screen.findByRole("button", { name: "Providers & Keys" });
     const providersTab = screen.getByRole("button", { name: "Providers & Keys" });
     expect(providersTab).toHaveClass("active");
   });
@@ -102,8 +103,9 @@ describe("SettingsPanel", () => {
     ]);
     render(<SettingsPanel />);
     // Search for OpenAI in a way that doesn't match the option in the select dropdown
-    await screen.findByRole("textbox", { value: "OpenAI" });
-    expect(screen.getByRole("textbox", { value: "OpenAI" })).toBeInTheDocument();
+    const nameInput = await screen.findByPlaceholderText("Provider name");
+    await waitFor(() => expect(nameInput.value).toBe("OpenAI"));
+    expect(nameInput).toBeInTheDocument();
   });
 
   it("renders routing section with DEFAULT and agent cards", async () => {

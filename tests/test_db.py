@@ -5,9 +5,9 @@ from app.db.schema import Universe, ProviderConfig, ProviderKey, AgentRouteFallb
 from tests.provider_config import PROVIDER_CREDENTIALS
 
 
-def create_test_db(db_dir: str | Path):
+def create_test_db(db_dir: str | Path, db_filename: str = "omniverse_v2.db"):
     db_dir = Path(db_dir)
-    db_path = db_dir / "omniverse_v2.db"
+    db_path = db_dir / db_filename
     db_url = f"sqlite:///{db_path}"
 
     engine = create_engine(db_url, connect_args={"check_same_thread": False})

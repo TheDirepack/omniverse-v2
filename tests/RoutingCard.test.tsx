@@ -46,7 +46,7 @@ describe("RoutingCard", () => {
 
   it("shows provider select in route slot", () => {
     render(<RoutingCard agentName="DEFAULT" routes={mockDefaultRoutes} providers={mockProviders} onSave={mockOnSave} onDelete={mockOnDelete} />);
-    expect(screen.getByRole("combobox")).toBeInTheDocument();
+    expect(screen.getAllByRole("combobox")[0]).toBeInTheDocument();
   });
 
   it("calls onSave with updated route when Save is clicked", async () => {

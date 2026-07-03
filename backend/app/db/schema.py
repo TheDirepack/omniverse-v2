@@ -1,4 +1,5 @@
 from sqlmodel import SQLModel, Field, Column, ForeignKey
+from sqlalchemy import UniqueConstraint
 from typing import Optional, List
 from datetime import datetime
 
@@ -35,6 +36,7 @@ class Universe(SQLModel, table=True):
     is_explored: bool = Field(default=False)
 
 class Trait(SQLModel, table=True):
+    __table_args__ = (UniqueConstraint("universe_id", "name"),)
     id: Optional[int] = Field(default=None, primary_key=True)
     universe_id: int = Field(foreign_key="universe.id")
     name: str
@@ -46,6 +48,7 @@ class TierSystem(SQLModel, table=True):
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 class WorldTier(SQLModel, table=True):
+    __table_args__ = (UniqueConstraint("universe_id"),)
     id: Optional[int] = Field(default=None, primary_key=True)
     universe_id: int = Field(foreign_key="universe.id")
     system_id: int = Field(foreign_key="tiersystem.id")

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import type { AgentRouteRecord, ProviderRecord } from "../../types";
 
 function RoutingCard({ agentName, routes, providers, onSave, onDelete, defaultRoutes }: {
@@ -11,6 +11,11 @@ function RoutingCard({ agentName, routes, providers, onSave, onDelete, defaultRo
 }) {
   const [expanded, setExpanded] = useState(agentName === "DEFAULT");
   const [localRoutes, setLocalRoutes] = useState(routes);
+
+  useEffect(() => {
+    setLocalRoutes(routes);
+  }, [routes]);
+
 
   const isDefault = agentName === "DEFAULT";
   const hasCustom = routes.length > 0;

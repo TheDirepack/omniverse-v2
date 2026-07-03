@@ -79,7 +79,7 @@ describe("DatabasePanel", () => {
 
     await user.click(screen.getByText("Warhammer 40k"));
     expect(screen.getByText(/Galactic-scale conflict/)).toBeInTheDocument();
-    expect(screen.getByText("Tier 1")).toBeInTheDocument();
+    expect(screen.getByText((content, element) => element?.classList?.contains('badge') && content === 'Tier 1')).toBeInTheDocument();
   });
 
   it("shows anomalies in world detail when present", async () => {
@@ -145,6 +145,6 @@ describe("DatabasePanel", () => {
     await screen.findByText("Warhammer 40k");
 
     await user.click(screen.getByText("Warhammer 40k"));
-    expect(screen.getByText("Warhammer 40k").closest("button")).toHaveClass("active");
+    expect(screen.getByRole("button", { name: "Warhammer 40k" })).toHaveClass("active");
   });
 });

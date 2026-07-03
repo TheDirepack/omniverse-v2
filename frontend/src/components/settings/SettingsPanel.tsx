@@ -74,7 +74,9 @@ function SettingsPanel() {
 
   const handleSaveRoute = async (route: any): Promise<any> => {
     try {
-      return await api.saveAgentRoute(route);
+      const result = await api.saveAgentRoute(route);
+      await refreshAll();
+      return result;
     } catch (e) {
       console.error("Failed to save route:", e);
     }
@@ -83,6 +85,7 @@ function SettingsPanel() {
   const handleDeleteRoute = async (routeId: number) => {
     try {
       await api.deleteAgentRoute(routeId);
+      await refreshAll();
     } catch (e) {
       console.error("Failed to delete route:", e);
     }

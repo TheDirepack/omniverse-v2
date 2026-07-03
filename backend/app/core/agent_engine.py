@@ -37,7 +37,8 @@ async def run_agent(
     submit_tool_name: str,
     max_turns: int = 6,
     max_fetches: int = 5,
-    provider_id: Optional[int] = None
+    provider_id: Optional[int] = None,
+    fetch_cache: Optional[FetchCache] = None
 ) -> Tuple[str, None]:
     """
     Runs a tool-using agent loop.
@@ -47,6 +48,10 @@ async def run_agent(
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": user_prompt}
     ]
+    
+    # Use provided cache or fallback to global (legacy)
+    cache = fetch_cache or run_fetch_cache
+
     
     # Filter tools and prepare litellm-compatible tool definitions
     available_tools = {k: v for k, v in AGENT_TOOLS.items() if k in tools_names}
@@ -74,6 +79,10 @@ async def run_agent(
     fetched_count = 0
     
     for turn in range(max_turns):
+        from app.core.state import is_aborted
+        if await is_aborted(run_id):
+            raise RuntimeError(f"Run {run_id} was aborted by user.")
+
         response = await router.run_model(
             task=agent_name,
             messages=messages,
@@ -88,6 +97,21 @@ async def run_agent(
         tool_calls = getattr(message, "tool_calls", None)
 
         if tool_calls:
+            # Append assistant message with tool calls to history
+            messages.append({
+                "role": "assistant",
+                "content": content,
+                "tool_calls": [
+                    {
+                        "id": tc.id,
+                        "type": tc.type,
+                        "function": {
+                            "name": tc.function.name,
+                            "arguments": tc.function.arguments
+                        }
+                    } for tc in tool_calls
+                ]
+            })
             for tool_call in tool_calls:
                 name = tool_call.function.name
                 args = json.loads(tool_call.function.arguments)
@@ -103,15 +127,15 @@ async def run_agent(
                         
                         results = []
                         for url in urls:
-                            cached = run_fetch_cache.get(url)
+                            cached = cache.get(url)
                             if cached:
                                 results.append(f"Cached content for {url}:\n{cached}")
                             elif fetched_count < max_fetches:
                                 try:
                                     from app.core.web_fetch import web_fetcher
-                                    content = await web_fetcher.fetch_page(url)
-                                    run_fetch_cache.set(url, content)
-                                    results.append(f"Fetched content for {url}:\n{content}")
+                                    page_content = await web_fetcher.fetch_page(url)
+                                    cache.set(url, page_content)
+                                    results.append(f"Fetched content for {url}:\n{page_content}")
                                     fetched_count += 1
                                 except Exception as e:
                                     results.append(f"Error fetching {url}: {str(e)}")

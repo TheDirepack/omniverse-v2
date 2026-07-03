@@ -69,6 +69,8 @@ async def fetch_live_models(provider: ProviderConfig) -> list[str]:
     elif ptype == "anthropic":
         headers["x-api-key"] = api_key
         headers["anthropic-version"] = "2023-06-01"
+    elif ptype == "gemini":
+        headers["x-goog-api-key"] = api_key
     else:
         headers["Authorization"] = f"Bearer {api_key}"
 

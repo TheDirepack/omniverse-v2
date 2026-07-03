@@ -88,6 +88,7 @@ def seeded_db(ephemeral_db):
 # ── Real server fixtures for test_routes.py ─────────────────────────
 
 BACKEND_DIR = Path(__file__).parent.parent / "backend"
+import uuid as _uuid
 
 
 def _find_free_port() -> int:
@@ -100,57 +101,67 @@ def _find_free_port() -> int:
 
 @pytest.fixture(scope="module")
 def real_server():
-    db_path = BACKEND_DIR / "omniverse_v2.db"
-    unconfirmed_path = BACKEND_DIR / "unconfirmed.db"
-    json_path = BACKEND_DIR / "app" / "db" / "default_worlds.json"
+    """
+    Spawns a real uvicorn server for integration tests.
+    Each module gets its OWN seed DB path (uuid-suffixed) so modules
+    cannot leak DB state into one another even when run concurrently.
+    """
+    run_id = _uuid.uuid4().hex[:8]
 
-    # Backup real DBs + default_worlds.json
-    backups = {}
-    for p in [db_path, unconfirmed_path, json_path]:
-        if p.exists():
-            bak = p.with_suffix(p.suffix + ".bak")
-            shutil.copy2(p, bak)
-            backups[p] = bak
-            p.unlink()
+    # Module-local DB paths inside /tmp — no collision between modules
+    module_db_path = BACKEND_DIR / f"omniverse_v2_{run_id}.db"
+    module_unconfirmed_path = Path(f"/tmp/omniverse_test_unconfirmed_{run_id}.db")
 
-    # Create seed DB
+    # Backup real production DB if it accidentally lives in BACKEND_DIR
+    real_db_path = BACKEND_DIR / "omniverse_v2.db"
+    real_db_bak = None
+    if real_db_path.exists():
+        real_db_bak = real_db_path.with_suffix(".db.bak")
+        shutil.copy2(real_db_path, real_db_bak)
+
+    # Create seed DB at the module-local path
     from tests.test_db import create_test_db
-    create_test_db(str(BACKEND_DIR))
+    create_test_db(str(BACKEND_DIR), db_filename=f"omniverse_v2_{run_id}.db")
 
-    # Start uvicorn
+    # Start uvicorn pointing at the module-local DB
     port = _find_free_port()
     base_url = f"http://127.0.0.1:{port}"
-    # Strip DATABASE_URL so subprocess uses default (seed DB at cwd)
-    subprocess_env = {
-        k: v for k, v in os.environ.items() if k != "DATABASE_URL"
-    }
-    subprocess_env["UNCONFIRMED_DB_URL"] = "sqlite:////tmp/omniverse_test_unconfirmed.db"
+    subprocess_env = {k: v for k, v in os.environ.items() if k != "DATABASE_URL"}
+    subprocess_env["DATABASE_URL"] = f"sqlite:///{module_db_path}"
+    subprocess_env["UNCONFIRMED_DB_URL"] = f"sqlite:///{module_unconfirmed_path}"
+
     proc = subprocess.Popen(
         [sys.executable, "-m", "uvicorn", "app.main:app",
          "--host", "127.0.0.1", "--port", str(port),
-         "--log-level", "error"],
+         "--log-level", "debug"],
         cwd=str(BACKEND_DIR),
         env=subprocess_env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
     )
 
-    # Health wait loop
+    # Health wait loop (allow up to 45 seconds for slow Playwright browser startup)
     import httpx
-    for _ in range(30):
+    for _ in range(90):
         try:
             with httpx.Client() as c:
                 r = c.get(f"{base_url}/api/health", timeout=1)
                 if r.status_code == 200:
                     break
         except Exception:
-            time.sleep(0.3)
+            time.sleep(0.5)
     else:
+        # Read whatever was printed to stdout/stderr
         proc.kill()
-        proc.wait(timeout=5)
-        raise RuntimeError("Real server did not start")
+        stdout_data, stderr_data = proc.communicate(timeout=5)
+        raise RuntimeError(
+            f"Real server did not start. Returncode: {proc.returncode}\n--- stdout ---\n{stdout_data}\n--- stderr ---\n{stderr_data}"
+        )
 
     yield base_url
 
-    # Cleanup
+    # Teardown
     proc.terminate()
     try:
         proc.wait(timeout=5)
@@ -158,15 +169,14 @@ def real_server():
         proc.kill()
         proc.wait(timeout=2)
 
-    # Remove seed DB
-    for p in [db_path, unconfirmed_path]:
+    # Remove module-local DBs
+    for p in [module_db_path, module_unconfirmed_path]:
         if p.exists():
             p.unlink()
 
-    # Restore backups
-    for orig, bak in backups.items():
-        if bak.exists():
-            shutil.move(str(bak), str(orig))
+    # Restore production DB backup if we made one
+    if real_db_bak and real_db_bak.exists():
+        shutil.move(str(real_db_bak), str(real_db_path))
 
 
 @pytest.fixture

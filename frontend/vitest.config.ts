@@ -25,6 +25,18 @@ export default defineConfig({
     include: ["tests/**/*.test.ts", "tests/**/*.test.tsx"],
     root: projectRoot,
     setupFiles: [resolve(projectRoot, "tests/setup.ts")],
+    coverage: {
+      provider: "v8",
+      reporter: ["text", "json", "html"],
+      include: ["frontend/src/**/*.{ts,tsx}"],
+      exclude: ["frontend/src/main.tsx", "frontend/src/**/*.d.ts"],
+      thresholds: {
+        lines: 60,
+        branches: 55,
+        functions: 60,
+        statements: 60,
+      },
+    },
   },
   server: {
     fs: {

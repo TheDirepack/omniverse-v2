@@ -95,12 +95,34 @@ function RoutingCard({ agentName, routes, providers, onSave, onDelete, defaultRo
                     <option value="">Select Provider</option>
                     {providers.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                   </select>
-                  <input
-                    value={route.models ?? ""}
-                    onChange={e => updateRoute(idx, "models", e.target.value || null)}
-                    placeholder={`Models CSV (default: ${providerModels || "none"})`}
-                    className="route-models-input"
-                  />
+                  
+                   {route.provider_id && (
+                     <div className="route-models-selector">
+                       {(() => {
+                         const providerModels = providers.find(p => p.id === route.provider_id)?.models ?? null;
+                         const modelList = providerModels ? providerModels.split(",").map(m => m.trim()).filter(Boolean) : [];
+                         return (
+                           <>
+                             <select
+                               value={route.models ?? ""}
+                               onChange={e => updateRoute(idx, "models", e.target.value || null)}
+                             >
+                               <option value="">Select Model</option>
+                               {modelList.length > 0 ? modelList.map(m => (
+                                 <option key={m} value={m}>{m}</option>
+                               )) : (
+                                 <option value="" disabled>— No models configured —</option>
+                               )}
+                             </select>
+                             {modelList.length === 0 && (
+                               <span className="help-text">Add models in Provider settings</span>
+                             )}
+                           </>
+                         );
+                       })()}
+                     </div>
+                   )}
+                  
                   <div className="slot-actions">
                     <button className="chip" onClick={() => void handleSave(idx)}>Save</button>
                     <button className="chip delete" onClick={async () => {

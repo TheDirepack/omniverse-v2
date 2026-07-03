@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { ProviderRecord, ProviderKey } from "../types";
+import * as api from "../../api";
 
 const API_KEY_MASK = "●●●●●●●●●●●●";
 
@@ -13,22 +14,17 @@ const PROVIDER_TYPES = [
   { value: "custom", label: "Custom (OpenAI-compatible)", baseUrlConfigurable: true },
 ];
 
-function resolveTypeInfo(provider: ProviderRecord) {
-  const effectiveType = provider.provider_type === "openai" && provider.base_url
-    ? "custom"
-    : provider.provider_type;
-  return PROVIDER_TYPES.find(t => t.value === effectiveType) ?? null;
+function resolveTypeInfo(type: string) {
+  return PROVIDER_TYPES.find(t => t.value === type) ?? null;
 }
 
-function resolveLabel(provider: ProviderRecord) {
-  const info = resolveTypeInfo(provider);
-  if (info) return info.label;
-  if (provider.provider_type === "openai") return "OpenAI";
-  return provider.provider_type ?? "No type";
+function resolveLabel(type: string) {
+  const info = resolveTypeInfo(type);
+  return info?.label ?? type ?? "No type";
 }
 
-function isBaseUrlConfigurable(provider: ProviderRecord) {
-  const info = resolveTypeInfo(provider);
+function isBaseUrlConfigurable(type: string) {
+  const info = resolveTypeInfo(type);
   return info?.baseUrlConfigurable ?? false;
 }
 
@@ -39,13 +35,17 @@ function ProviderCard({ provider, onSave, onSaveKey, onDeleteKey, onDeleteProvid
   onDeleteKey: (id: number) => Promise<void>;
   onDeleteProvider?: (id: number) => Promise<void>;
 }) {
-  const typeInfo = resolveTypeInfo(provider);
-  const baseUrlConfigurable = isBaseUrlConfigurable(provider);
+  // Backward-compat: old DB stored 'openai' for custom providers that have a base_url
+  const effectiveType = provider.provider_type === "openai" && provider.base_url
+    ? "custom"
+    : provider.provider_type;
+  const [typeDraft, setTypeDraft] = useState(effectiveType ?? "");
+  const typeInfo = resolveTypeInfo(typeDraft);
+  const baseUrlConfigurable = isBaseUrlConfigurable(typeDraft);
 
   const [nameDraft, setNameDraft] = useState(provider.name);
   const [savingName, setSavingName] = useState(false);
 
-  const [typeDraft, setTypeDraft] = useState(typeInfo?.value ?? provider.provider_type ?? "");
   const [savingType, setSavingType] = useState(false);
 
   const [baseUrlDraft, setBaseUrlDraft] = useState(provider.base_url ?? "");
@@ -56,6 +56,7 @@ function ProviderCard({ provider, onSave, onSaveKey, onDeleteKey, onDeleteProvid
   );
   const [newModelTag, setNewModelTag] = useState("");
   const [savingModels, setSavingModels] = useState(false);
+  const [fetchingModels, setFetchingModels] = useState(false);
 
   const [keysDraft, setKeysDraft] = useState<ProviderKey[]>(provider.keys);
   const [editingKeyId, setEditingKeyId] = useState<number | null>(null);
@@ -77,10 +78,16 @@ function ProviderCard({ provider, onSave, onSaveKey, onDeleteKey, onDeleteProvid
   const handleSaveType = async (newType: string) => {
     setSavingType(true);
     try {
-      const providerType = newType === "custom" ? "openai" : newType;
+      const providerType = newType;
       const newTypeInfo = PROVIDER_TYPES.find(t => t.value === newType);
       const payload: any = { id: provider.id, provider_type: providerType };
-      if (newTypeInfo && !newTypeInfo.baseUrlConfigurable && baseUrlDraft) {
+      if (newTypeInfo?.baseUrlConfigurable) {
+        if (!provider.base_url) {
+          const defaultUrl = newType === "custom" ? "https://api.openai.com/v1" : "http://localhost:11434";
+          payload.base_url = defaultUrl;
+          setBaseUrlDraft(defaultUrl);
+        }
+      } else if (baseUrlDraft) {
         payload.base_url = null;
       }
       await onSave(payload);
@@ -93,7 +100,12 @@ function ProviderCard({ provider, onSave, onSaveKey, onDeleteKey, onDeleteProvid
   const handleSaveBaseUrl = async () => {
     setSavingBaseUrl(true);
     try {
-      await onSave({ id: provider.id, base_url: baseUrlDraft || null });
+      const payload: any = { id: provider.id, base_url: baseUrlDraft || null };
+      // Backward-compat: correct provider_type for old records stored as 'openai' with custom base_url
+      if (provider.provider_type === "openai" && baseUrlDraft) {
+        payload.provider_type = "custom";
+      }
+      await onSave(payload);
     } finally {
       setSavingBaseUrl(false);
     }
@@ -102,9 +114,27 @@ function ProviderCard({ provider, onSave, onSaveKey, onDeleteKey, onDeleteProvid
   const handleSaveModels = async () => {
     setSavingModels(true);
     try {
-      await onSave({ id: provider.id, models: modelsTags.join(",") || null });
+      const payload: any = { id: provider.id, models: modelsTags.join(",") || null };
+      // Backward-compat: correct provider_type for old records stored as 'openai' with custom base_url
+      if (provider.provider_type === "openai" && provider.base_url) {
+        payload.provider_type = "custom";
+      }
+      await onSave(payload);
     } finally {
       setSavingModels(false);
+    }
+  };
+
+  const fetchModels = async () => {
+    setFetchingModels(true);
+    try {
+      const { models } = await api.fetchProviderModels(provider.id);
+      const combined = Array.from(new Set([...modelsTags, ...models]));
+      setModelsTags(combined);
+    } catch (e) {
+      console.error("Failed to fetch models:", e);
+    } finally {
+      setFetchingModels(false);
     }
   };
 
@@ -191,7 +221,7 @@ function ProviderCard({ provider, onSave, onSaveKey, onDeleteKey, onDeleteProvid
               <option key={t.value} value={t.value}>{t.label}</option>
             ))}
           </select>
-          <span className="provider-type-badge">{resolveLabel(provider)}</span>
+          <span className="provider-type-badge">{resolveLabel(typeDraft)}</span>
           {savingType && <span className="saving-indicator">...</span>}
           <button className="chip" onClick={handleSaveName} disabled={savingName || !nameDraft.trim()}>
             {savingName ? "..." : "Save Name"}
@@ -241,9 +271,12 @@ function ProviderCard({ provider, onSave, onSaveKey, onDeleteKey, onDeleteProvid
               />
             </span>
           </div>
-          <p className="help-text">These become the model choices when you build routing rules for this provider. Enter model names and press Enter to add.</p>
-          <button className="chip" onClick={handleSaveModels} disabled={savingModels}>{savingModels ? "..." : "Save"}</button>
-        </div>
+           <p className="help-text">These become the model choices when you build routing rules for this provider. Enter model names and press Enter to add.</p>
+           <div className="provider-actions">
+             <button className="chip" onClick={handleSaveModels} disabled={savingModels}>{savingModels ? "..." : "Save"}</button>
+             <button className="chip" onClick={fetchModels} disabled={fetchingModels}>{fetchingModels ? "..." : "Sync Saved Models"}</button>
+           </div>
+         </div>
 
         {/* API Keys */}
         <div className="provider-section">

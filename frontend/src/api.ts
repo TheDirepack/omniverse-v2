@@ -68,6 +68,10 @@ export async function runFocusedSearch(world_name: string, feature: string): Pro
   });
 }
 
+export async function fetchProviderModels(providerId: number): Promise<{ models: string[] }> {
+  return apiFetch(`/api/providers/${providerId}/models`);
+}
+
 export async function saveGeneralSetting(key: string, value: string | null): Promise<any> {
   return apiFetch("/api/settings/general", {
     method: "POST",

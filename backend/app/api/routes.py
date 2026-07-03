@@ -190,9 +190,15 @@ def get_providers():
 
 
 @router.get("/providers/{provider_id}/models")
-def get_provider_models(provider_id: int):
-    from app.core.router import router as model_router
-    return {"models": model_router.list_provider_models(provider_id)}
+async def get_provider_models(provider_id: int):
+    from app.core.provider_models import fetch_live_models
+    from app.db.schema import ProviderConfig
+    with Session(engine) as session:
+        provider = session.get(ProviderConfig, provider_id)
+        if not provider:
+            return {"models": []}
+    models = await fetch_live_models(provider)
+    return {"models": models}
 
 
 @router.get("/agent-names")

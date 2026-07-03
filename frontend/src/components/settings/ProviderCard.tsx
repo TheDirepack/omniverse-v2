@@ -80,7 +80,7 @@ function ProviderCard({ provider, onSave, onSaveKey, onDeleteKey, onDeleteProvid
     try {
       const providerType = newType;
       const newTypeInfo = PROVIDER_TYPES.find(t => t.value === newType);
-      const payload: any = { id: provider.id, provider_type: providerType };
+      const payload: any = { id: provider.id, name: nameDraft, provider_type: providerType };
       if (newTypeInfo?.baseUrlConfigurable) {
         if (!provider.base_url) {
           const defaultUrl = newType === "custom" ? "https://api.openai.com/v1" : "http://localhost:11434";
@@ -100,7 +100,7 @@ function ProviderCard({ provider, onSave, onSaveKey, onDeleteKey, onDeleteProvid
   const handleSaveBaseUrl = async () => {
     setSavingBaseUrl(true);
     try {
-      const payload: any = { id: provider.id, base_url: baseUrlDraft || null };
+      const payload: any = { id: provider.id, name: nameDraft, base_url: baseUrlDraft || null };
       // Backward-compat: correct provider_type for old records stored as 'openai' with custom base_url
       if (provider.provider_type === "openai" && baseUrlDraft) {
         payload.provider_type = "custom";
@@ -114,7 +114,7 @@ function ProviderCard({ provider, onSave, onSaveKey, onDeleteKey, onDeleteProvid
   const handleSaveModels = async () => {
     setSavingModels(true);
     try {
-      const payload: any = { id: provider.id, models: modelsTags.join(",") || null };
+      const payload: any = { id: provider.id, name: nameDraft, models: modelsTags.join(",") || null };
       // Backward-compat: correct provider_type for old records stored as 'openai' with custom base_url
       if (provider.provider_type === "openai" && provider.base_url) {
         payload.provider_type = "custom";

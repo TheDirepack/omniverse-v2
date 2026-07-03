@@ -1,0 +1,258 @@
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+  background: #0a0a0a;
+  color: #eee;
+}
+
+.app-shell {
+  display: grid;
+  grid-template-columns: 260px 1fr;
+  height: 100vh;
+}
+
+.sidebar {
+  background: #111;
+  border-right: 1px solid #222;
+  display: flex;
+  flex-direction: column;
+  padding: 20px;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 32px;
+}
+
+.brand-title {
+  font-weight: 800;
+  font-size: 1.1rem;
+  letter-spacing: 0.05em;
+}
+
+.brand-sub {
+  font-size: 0.75rem;
+  color: #666;
+}
+
+.nav {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: #888;
+  cursor: pointer;
+  text-align: left;
+  font-size: 0.9rem;
+  transition: all 0.2s;
+}
+
+.nav-item:hover {
+  color: #fff;
+  background: #1a1a1a;
+}
+
+.nav-item.active {
+  color: #fff;
+  background: #222;
+  font-weight: 600;
+}
+
+.main {
+  padding: 32px;
+  overflow-y: auto;
+}
+
+.panel-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+  gap: 24px;
+}
+
+.panel {
+  background: #151515;
+  border: 1px solid #222;
+  border-radius: 12px;
+  padding: 24px;
+}
+
+.panel h1, .panel h2 {
+  margin-top: 0;
+  margin-bottom: 16px;
+}
+
+.panel h1 { font-size: 1.5rem; }
+.panel h2 { font-size: 1.2rem; }
+
+textarea, input {
+  width: 100%;
+  background: #0a0a0a;
+  border: 1px solid #333;
+  border-radius: 6px;
+  padding: 10px;
+  color: #fff;
+  margin-bottom: 12px;
+  font-family: inherit;
+}
+
+textarea { height: 100px; resize: vertical; }
+
+button {
+  padding: 8px 16px;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
+  font-weight: 500;
+  transition: all 0.2s;
+}
+
+button.primary {
+  background: #fff;
+  color: #000;
+}
+
+button.primary:hover { background: #ddd; }
+button.primary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.chip {
+  background: #222;
+  color: #aaa;
+  font-size: 0.75rem;
+  padding: 4px 8px;
+}
+
+.chip:hover { background: #333; color: #fff; }
+.chip.active { background: #444; color: #fff; border: 1px solid #666; }
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.terminal {
+  background: #000;
+  font-family: 'Fira Code', monospace;
+  font-size: 0.8rem;
+  color: #0f0;
+}
+
+.muted { color: #666; font-size: 0.85rem; }
+
+.tier-row {
+  display: grid;
+  grid-template-columns: 120px 1fr;
+  gap: 16px;
+  margin-bottom: 12px;
+  align-items: center;
+}
+
+.tier-label {
+  font-weight: 700;
+  color: #aaa;
+}
+
+.detail-box {
+  background: #0a0a0a;
+  border: 1px solid #222;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.detail-label {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  color: #666;
+  margin-bottom: 8px;
+}
+
+.detail-content {
+  white-space: pre-wrap;
+  font-family: monospace;
+  font-size: 0.9rem;
+  margin: 0;
+}
+
+.theory-card {
+  background: #1a1a1a;
+  border: 1px solid #333;
+  border-radius: 12px;
+  padding: 20px;
+  margin-bottom: 20px;
+}
+
+.badge {
+  background: #333;
+  color: #fff;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 0.8rem;
+}
+
+.theory-body {
+  background: #000;
+  padding: 12px;
+  border-radius: 6px;
+  margin: 12px 0;
+}
+
+.theory-audit {
+  border-top: 1px solid #333;
+  padding-top: 12px;
+  margin-top: 12px;
+}
+
+.audit-label {
+  font-size: 0.75rem;
+  color: #888;
+  margin-bottom: 4px;
+}
+
+.audit-text {
+  font-size: 0.9rem;
+  color: #ccc;
+}
+
+.settings-grid {
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+}
+
+.model-row {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 12px;
+  align-items: center;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 12px;
+}
+
+.field span {
+  font-size: 0.8rem;
+  color: #888;
+}
+
+.spin {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}

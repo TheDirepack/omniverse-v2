@@ -1,0 +1,13 @@
+fastapi
+uvicorn
+sqlmodel
+pydantic
+langchain
+langgraph
+litellm
+cloakbrowser
+beautifulsoup4
+pydantic-settings
+httpx
+pytest
+pytest-asyncio

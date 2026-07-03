@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { groupWorldsByTier } from "../lib/tiers";
+import { groupWorldsByTier } from "../frontend/src/lib/tiers";
 
 describe("groupWorldsByTier", () => {
   it("returns empty array for empty input", () => {

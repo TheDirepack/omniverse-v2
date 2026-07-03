@@ -4,12 +4,14 @@ set -e
 BASE_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 echo "=== Backend Tests ==="
-cd "$BASE_DIR/backend"
-if [ -d ".venv" ]; then
-    source .venv/bin/activate
+cd "$BASE_DIR"
+if [ -f "backend/.venv/bin/activate" ]; then
+    source backend/.venv/bin/activate
 fi
 
 python -m pytest tests/ -v --tb=short -m "not slow" "$@"
+
+sleep 2  # let real_server fixture release port
 
 echo ""
 echo "=== Backend Tests (slow) ==="

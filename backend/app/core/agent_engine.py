@@ -38,10 +38,10 @@ async def run_agent(
     max_turns: int = 6,
     max_fetches: int = 5,
     provider_id: Optional[int] = None
-) -> Tuple[str, Optional[str]]:
+) -> Tuple[str, None]:
     """
     Runs a tool-using agent loop.
-    Returns (final_answer, discovered_domain).
+    Returns (final_answer, None).
     """
     messages = [
         {"role": "system", "content": system_prompt},
@@ -57,17 +57,7 @@ async def run_agent(
             "function": {
                 "name": name,
                 "description": info["description"],
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "search_query": {"type": "string"},
-                        "urls": {"type": "array", "items": {"type": "string"}},
-                        "url": {"type": "string"},
-                        "entity": {"type": "string"},
-                        "query": {"type": "string"}
-                    },
-                    "required": [] # Dynamic based on tool
-                }
+                "parameters": info["parameters"]
             }
         })
     
@@ -82,8 +72,7 @@ async def run_agent(
     })
 
     fetched_count = 0
-    discovered_domain = None
-
+    
     for turn in range(max_turns):
         response = await router.call_llm_with_tools(
             task=agent_name,
@@ -103,7 +92,7 @@ async def run_agent(
                 args = json.loads(tool_call.function.arguments)
 
                 if name == submit_tool_name:
-                    return content or "Findings submitted.", discovered_domain
+                    return content or "Findings submitted.", None
 
                 if name in available_tools:
                     # Handle fetch budget and cache
@@ -113,9 +102,6 @@ async def run_agent(
                         
                         results = []
                         for url in urls:
-                            if discovered_domain is None:
-                                discovered_domain = urlparse(url).netloc
-                            
                             cached = run_fetch_cache.get(url)
                             if cached:
                                 results.append(f"Cached content for {url}:\n{cached}")
@@ -163,6 +149,6 @@ async def run_agent(
             messages.append({"role": "user", "content": "Please use the available tools to research and eventually call the submit tool."})
             continue
         
-        return content, discovered_domain
+        return content, None
 
-    return "Error: Max turns reached without submission.", discovered_domain
+    return "Error: Max turns reached without submission.", None

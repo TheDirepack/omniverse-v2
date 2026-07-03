@@ -42,7 +42,7 @@ type AgentRouteRecord = {
   id: number;
   task_type: string;
   provider_id: number | null;
-  model_name: string | null;
+  models: string | null;
   priority: number;
 };
 
@@ -67,6 +67,7 @@ export default function App() {
   const [settings, setSettings] = useState<Record<string, string | null>>({});
   const [providers, setProviders] = useState<ProviderRecord[]>([]);
   const [agentRoutes, setAgentRoutes] = useState<AgentRouteRecord[]>([]);
+  const [agentNames, setAgentNames] = useState<string[]>([]);
   const [worldRegistry, setWorldRegistry] = useState<WorldRecord[]>([]);
   const [newWorldName, setNewWorldName] = useState("");
   const [focusedWorld, setFocusedWorld] = useState("");
@@ -80,6 +81,7 @@ export default function App() {
     void refreshSettings();
     void refreshProviders();
     void refreshAgentRoutes();
+    void refreshAgentNames();
     void refreshWorldRegistry();
   }, []);
 
@@ -146,7 +148,14 @@ export default function App() {
     const data = await res.json();
     setAgentRoutes(data ?? []);
   }
-
+  
+  async function refreshAgentNames() {
+    const res = await fetch(`${apiBase}/api/agent-names`);
+    if (!res.ok) return;
+    const data = await res.json();
+    setAgentNames(data ?? []);
+  }
+  
   async function refreshWorldRegistry() {
     const res = await fetch(`${apiBase}/api/worlds`);
     if (!res.ok) return;
@@ -167,6 +176,18 @@ export default function App() {
     setRunId(data.run_id);
   }
 
+  async function addGeneralSetting(key: string) {
+    if (!key.trim()) return;
+    setSaving(true);
+    await fetch(`${apiBase}/api/settings/general`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ key, value: null }),
+    });
+    await refreshSettings();
+    setSaving(false);
+  }
+  
   async function saveGeneralSetting(key: string, value: string) {
     setSaving(true);
     await fetch(`${apiBase}/api/settings/general`, {
@@ -419,42 +440,63 @@ export default function App() {
                    saving={saving} 
                  />
                ))}
-               <div className="provider-add-box">
-                 <button className="primary" onClick={async () => {
-                   await saveProvider({ id: 0, name: "New Provider", provider_type: null, base_url: null, models: null, keys: [] });
-                   await refreshProviders();
-                 }} disabled={saving}>Add New Provider</button>
-               </div>
+                <div className="provider-add-box">
+                  <button className="primary" onClick={async () => {
+                    await saveProvider({ id: 0, name: `New Provider ${Date.now()}`, provider_type: null, base_url: null, models: null, keys: [] });
+                    await refreshProviders();
+                  }} disabled={saving}>Add New Provider</button>
+                </div>
              </div>
              <div className="panel">
                <h1>Agent Routing</h1>
                <p className="muted">Define the provider $\rightarrow$ model fallback chain for each agent.</p>
-               <div className="routes-list">
-                 {agentRoutes.map((route, idx) => (
-                   <RouteRow 
-                     key={route.id} 
-                     route={route} 
-                     providers={providers} 
-                     onSave={saveAgentRoute} 
-                     onDelete={deleteAgentRoute}
-                     saving={saving} 
-                   />
-                 ))}
-                 <button className="chip" onClick={async () => {
-                   await saveAgentRoute({ id: 0, task_type: "RESEARCH", provider_id: null, model_name: null, priority: agentRoutes.length });
-                   await refreshAgentRoutes();
-                 }} disabled={saving}>+ Add Fallback Step</button>
-               </div>
+              <div className="routes-list">
+                <RouteCard 
+                  agentName="DEFAULT" 
+                  routes={agentRoutes
+                    .filter(r => r.task_type === "DEFAULT")
+                    .sort((a, b) => a.priority - b.priority)} 
+                  providers={providers} 
+                  onSave={saveAgentRoute} 
+                  onDelete={deleteAgentRoute}
+                  saving={saving} 
+                />
+                <hr style={{ margin: "24px 0", opacity: 0.3 }} />
+                {agentNames.map(name => {
+                  const agentRoutesForTask = agentRoutes
+                    .filter(r => r.task_type === name)
+                    .sort((a, b) => a.priority - b.priority);
+                  return (
+                    <RouteCard 
+                      key={name} 
+                      agentName={name} 
+                      routes={agentRoutesForTask} 
+                      providers={providers} 
+                      onSave={saveAgentRoute} 
+                      onDelete={deleteAgentRoute}
+                      saving={saving} 
+                    />
+                  );
+                })}
+              </div>
              </div>
-             <div className="panel">
-               <h1>General Settings</h1>
-               {Object.entries(settings).map(([key, value]) => (
-                 <label key={key} className="field">
-                   <span>{key}</span>
-                   <input defaultValue={value ?? ""} onBlur={e => void saveGeneralSetting(key, e.target.value)} />
-                 </label>
-               ))}
-             </div>
+              <div className="panel">
+                <h1>General Settings</h1>
+                <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+                  <input id="new-setting-key" placeholder="Setting Key (e.g. API_KEY)" />
+                  <button className="primary" onClick={async () => {
+                    const input = document.getElementById("new-setting-key") as HTMLInputElement;
+                    await addGeneralSetting(input.value);
+                    input.value = "";
+                  }} disabled={saving}>Add Key</button>
+                </div>
+                {Object.entries(settings).map(([key, value]) => (
+                  <label key={key} className="field">
+                    <span>{key}</span>
+                    <input defaultValue={value ?? ""} onBlur={e => void saveGeneralSetting(key, e.target.value)} />
+                  </label>
+                ))}
+              </div>
            </section>
          )}
 
@@ -502,7 +544,21 @@ function ProviderRow({ provider, onSave, onSaveKey, onDeleteKey, saving }: {
   saving: boolean 
 }) {
   const [state, setState] = useState(provider);
-  useEffect(() => setState(provider), [provider]);
+  const [keysState, setKeysState] = useState(provider.keys);
+  useEffect(() => {
+    setState(provider);
+    setKeysState(provider.keys);
+  }, [provider]);
+
+  const handleKeyChange = async (idx: number, field: string, value: any) => {
+    const newKeys = [...keysState];
+    newKeys[idx] = { ...newKeys[idx], [field]: value };
+    setKeysState(newKeys);
+  };
+
+  const commitKey = async (idx: number) => {
+    await onSaveKey(keysState[idx]);
+  };
 
   return (
     <div className="provider-card">
@@ -525,6 +581,7 @@ function ProviderRow({ provider, onSave, onSaveKey, onDeleteKey, saving }: {
             <option value="ollama">Ollama</option>
             <option value="groq">Groq</option>
             <option value="openrouter">OpenRouter</option>
+            <option value="custom">Custom</option>
           </select>
         </div>
         <button className="chip" onClick={() => void onSave(state)} disabled={saving || !state.name.trim()}>Save Provider</button>
@@ -545,25 +602,32 @@ function ProviderRow({ provider, onSave, onSaveKey, onDeleteKey, saving }: {
         <div className="provider-keys">
           <h3>API Keys</h3>
           <div className="keys-list">
-            {provider.keys.map((key, idx) => (
+            {keysState.map((key, idx) => (
               <div key={key.id} className="key-row">
+                <div className="key-info">Key {idx + 1}</div>
                 <input 
+                  type="password"
                   value={key.api_key} 
-                  onChange={async e => await onSaveKey({ ...key, api_key: e.target.value })} 
+                  onChange={e => handleKeyChange(idx, "api_key", e.target.value)} 
+                  onBlur={() => commitKey(idx)}
                   placeholder="API Key" 
                 />
                 <input 
                   type="number" 
                   value={key.priority} 
-                  onChange={async e => await onSaveKey({ ...key, priority: parseInt(e.target.value) || 0 })} 
+                  onChange={e => handleKeyChange(idx, "priority", parseInt(e.target.value) || 0)} 
+                  onBlur={() => commitKey(idx)}
                   style={{ width: 60 }} 
                   placeholder="Pri" 
                 />
                 <button className="chip delete" onClick={() => void onDeleteKey(key.id)}>×</button>
               </div>
             ))}
-            <button className="chip" onClick={async () => await onSaveKey({ provider_id: provider.id, api_key: "", priority: provider.keys.length })}>
-              + Add Key
+            <button className="chip" onClick={async () => {
+              const newKey = { provider_id: provider.id, api_key: "", priority: keysState.length };
+              await onSaveKey(newKey);
+            }}>
+              + Add Fallback Key
             </button>
           </div>
         </div>
@@ -572,37 +636,99 @@ function ProviderRow({ provider, onSave, onSaveKey, onDeleteKey, saving }: {
   );
 }
 
-function RouteRow({ route, providers, onSave, onDelete, saving }: { 
-  route: AgentRouteRecord; 
-  providers: ProviderRecord[]; 
-  onSave: (route: any) => Promise<void>; 
+function RouteCard({ agentName, routes, providers, onSave, onDelete, saving }: { 
+  agentName: string;
+  routes: AgentRouteRecord[];
+  providers: ProviderRecord[];
+  onSave: (route: any) => Promise<void>;
   onDelete: (id: number) => Promise<void>;
   saving: boolean 
 }) {
-  const [state, setState] = useState(route);
-  useEffect(() => setState(route), [route]);
+  const [localRoutes, setLocalRoutes] = useState(routes);
+  useEffect(() => setLocalRoutes(routes), [routes]);
+
+  const updateRoute = (idx: number, field: string, value: any) => {
+    const newRoutes = [...localRoutes];
+    newRoutes[idx] = { ...newRoutes[idx], [field]: value };
+    setLocalRoutes(newRoutes);
+  };
+
+  const handleSave = async (idx: number) => {
+    await onSave(localRoutes[idx]);
+  };
+
+  // Calculate the resolved sequence for display
+  const resolvedSequence = [];
+  localRoutes.forEach((route, rIdx) => {
+    const provider = providers.find(p => p.id === route.provider_id);
+    if (!provider) return;
+    
+    const models = (route.models || provider.models || "").split(",").map(m => m.trim()).filter(Boolean);
+    provider.keys.forEach((key, kIdx) => {
+      models.forEach((model, mIdx) => {
+        resolvedSequence.push({
+          provider: provider.name,
+          key: `Key ${kIdx + 1}`,
+          model: model,
+          routeIdx: rIdx
+        });
+      });
+    });
+  });
 
   return (
-    <div className="route-row">
-      <div className="route-info">
-        <span className="task-badge">{state.task_type}</span>
-        <span className="priority-badge">Pri: {state.priority}</span>
+    <div className="route-card">
+      <div className="route-card-header">
+        <h3>{agentName}</h3>
       </div>
-      <select 
-        value={state.provider_id ?? ""} 
-        onChange={e => setState({ ...state, provider_id: e.target.value ? Number(e.target.value) : null })}
-      >
-        <option value="">Select Provider</option>
-        {providers.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-      </select>
-      <input 
-        value={state.model_name ?? ""} 
-        onChange={e => setState({ ...state, model_name: e.target.value || null })} 
-        placeholder="Model name" 
-      />
-      <div className="route-actions">
-        <button className="chip" onClick={() => void onSave(state)} disabled={saving}>Save</button>
-        <button className="chip delete" onClick={() => void onDelete(state.id)}>×</button>
+      <div className="route-card-body">
+        <div className="resolved-sequence">
+          <h4>Resolved Fallback Order:</h4>
+          {resolvedSequence.length > 0 ? (
+            <ol className="sequence-list">
+              {resolvedSequence.map((item, idx) => (
+                <li key={idx} className="sequence-item">
+                  {item.provider} $\to$ {item.key} $\to$ {item.model}
+                </li>
+              ))}
+            </ol>
+          ) : (
+            <p className="muted">No valid fallback sequence configured.</p>
+          )}
+        </div>
+        <hr style={{ margin: "16px 0", opacity: 0.2 }} />
+        <div className="route-slots">
+          {localRoutes.map((route, idx) => (
+            <div key={route.id} className="route-slot">
+              <div className="slot-num">#{idx + 1}</div>
+              <select 
+                value={route.provider_id ?? ""} 
+                onChange={e => updateRoute(idx, "provider_id", e.target.value ? Number(e.target.value) : null)}
+              >
+                <option value="">Select Provider</option>
+                {providers.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+              <input 
+                value={route.models ?? ""} 
+                onChange={e => updateRoute(idx, "models", e.target.value || null)} 
+                placeholder="Models (CSV)" 
+              />
+              <div className="slot-actions">
+                <button className="chip" onClick={() => void handleSave(idx)} disabled={saving}>Save</button>
+                <button className="chip delete" onClick={() => void onDelete(route.id)}>×</button>
+              </div>
+            </div>
+          ))}
+          <button className="chip add-slot" onClick={async () => {
+            await onSave({ 
+              id: 0, 
+              task_type: agentName, 
+              provider_id: null, 
+              models: null, 
+              priority: localRoutes.length 
+            });
+          }} disabled={saving}>+ Add Fallback Provider</button>
+        </div>
       </div>
     </div>
   );

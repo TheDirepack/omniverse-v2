@@ -42,20 +42,20 @@ def client():
 
 @pytest.fixture
 def seeded_db(ephemeral_db):
-    """DB with seeded Universe, ProviderConfig, AgentRoute for FK tests."""
-    from app.db.schema import Universe, ProviderConfig, AgentRoute
+    """DB with seeded Universe, ProviderConfig, AgentRouteFallback for FK tests."""
+    from app.db.schema import Universe, ProviderConfig, AgentRouteFallback
 
     u = Universe(name="TestUniverse", summary="test summary", is_explored=False)
     ephemeral_db.add(u)
     ephemeral_db.commit()
     ephemeral_db.refresh(u)
 
-    p = ProviderConfig(name="test-provider", provider_type="openai", api_key="sk-test")
+    p = ProviderConfig(name="test-provider", provider_type="openai")
     ephemeral_db.add(p)
     ephemeral_db.commit()
     ephemeral_db.refresh(p)
 
-    r = AgentRoute(task_type="RESEARCH", provider_id=p.id, model_name="gpt-4")
+    r = AgentRouteFallback(task_type="RESEARCH", provider_id=p.id, model_name="gpt-4")
     ephemeral_db.add(r)
     ephemeral_db.commit()
     ephemeral_db.refresh(r)

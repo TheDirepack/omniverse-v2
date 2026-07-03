@@ -38,6 +38,7 @@ class WebSearcher:
             return f"No authoritative lore indices found for {query}."
         finally:
             await page.close()
+            await context.close()
             browser_manager.release_page(context)
 
 

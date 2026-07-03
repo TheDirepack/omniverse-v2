@@ -11,3 +11,4 @@ class OmniverseState(TypedDict):
     generated_theories: List[Any]
     active_task: str
     errors: List[str]
+    architecture_retries: int

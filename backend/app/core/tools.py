@@ -98,23 +98,63 @@ async def tool_update_universe_meta(args: Dict[str, Any]) -> str:
 AGENT_TOOLS: Dict[str, Dict[str, Any]] = {
     "webSearch": {
         "func": tool_web_search,
-        "description": "Search the web for lore, technology, or cosmology. Arg: { 'search_query': 'string' }."
+        "description": "Search the web for lore, technology, or cosmology.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "search_query": {"type": "string", "description": "The search query to use."}
+            },
+            "required": ["search_query"]
+        }
     },
     "fetchPage": {
         "func": tool_fetch_page,
-        "description": "Fetch and read the full text of a specific URL. Arg: { 'urls': ['url1', 'url2'] } or { 'url': 'string' }."
+        "description": "Fetch and read the full text of a specific URL.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "urls": {"type": "array", "items": {"type": "string"}, "description": "List of URLs to fetch."},
+                "url": {"type": "string", "description": "A single URL to fetch."}
+            },
+            "required": []
+        }
     },
     "queryTraits": {
         "func": tool_query_universe_traits,
-        "description": "Retrieve all current traits for a universe from the database. Arg: { 'universe_name': 'string' }."
+        "description": "Retrieve all current traits for a universe from the database.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "universe_name": {"type": "string", "description": "The name of the universe."}
+            },
+            "required": ["universe_name"]
+        }
     },
     "upsertTrait": {
         "func": tool_upsert_trait,
-        "description": "Create or update a specific trait for a universe. Arg: { 'universe_name': 'string', 'name': 'string', 'value': 'string' }."
+        "description": "Create or update a specific trait for a universe.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "universe_name": {"type": "string", "description": "The name of the universe."},
+                "name": {"type": "string", "description": "The name of the trait."},
+                "value": {"type": "string", "description": "The value of the trait."}
+            },
+            "required": ["universe_name", "name", "value"]
+        }
     },
     "updateUniverseMeta": {
         "func": tool_update_universe_meta,
-        "description": "Update universe metadata (raw_data, is_explored). Arg: { 'universe_name': 'string', 'raw_data': 'string', 'is_explored': boolean }."
+        "description": "Update universe metadata (raw_data, is_explored).",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "universe_name": {"type": "string", "description": "The name of the universe."},
+                "raw_data": {"type": "string", "description": "The raw research data to store."},
+                "is_explored": {"type": "boolean", "description": "Whether the universe is now considered explored."}
+            },
+            "required": ["universe_name"]
+        }
     }
 }
 

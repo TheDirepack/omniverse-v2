@@ -24,6 +24,14 @@ def init_db():
             conn.exec_driver_sql("ALTER TABLE universe ADD COLUMN is_explored BOOLEAN NOT NULL DEFAULT 0")
         if "raw_data" not in columns:
             conn.exec_driver_sql("ALTER TABLE universe ADD COLUMN raw_data TEXT")
+        
+        # Migrate AgentRouteFallback: model_name -> models
+        route_columns = [row[1] for row in conn.exec_driver_sql("PRAGMA table_info(agentroutefallback)").fetchall()]
+        if "model_name" in route_columns and "models" not in route_columns:
+            # SQLite doesn't support renaming columns easily in old versions, 
+            # but we can add the new column and copy data.
+            conn.exec_driver_sql("ALTER TABLE agentroutefallback ADD COLUMN models TEXT")
+            conn.exec_driver_sql("UPDATE agentroutefallback SET models = model_name")
     
     # Initial world seeding from JSON
     try:

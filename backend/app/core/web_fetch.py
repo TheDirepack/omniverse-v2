@@ -17,6 +17,7 @@ class WebFetcher:
             return text
         finally:
             await page.close()
+            await context.close()
             browser_manager.release_page(context)
 
 

@@ -8,11 +8,6 @@ class ModelRouter:
     def __init__(self):
         pass
 
-    def get_general_setting(self, key: str) -> Optional[str]:
-        with Session(engine) as session:
-            statement = select(Setting).where(Setting.key == key)
-            setting = session.exec(statement).first()
-            return setting.value if setting else None
 
     async def call_llm(self, task: str, system_prompt: str, user_prompt: str, **kwargs):
         messages = [
@@ -22,34 +17,35 @@ class ModelRouter:
         return await self.call_llm_with_tools(task, messages, tools=[], **kwargs)
 
     async def call_llm_with_tools(self, task: str, messages: List[Dict[str, str]], tools: List[Dict[str, Any]], **kwargs):
+        # Remove provider_id from kwargs to avoid leaking it into litellm.acompletion
+        kwargs.pop("provider_id", None)
+        
         with Session(engine) as session:
-            # 1. Get routes for this task sorted by priority
+            # 1. Try to get routes for this specific task sorted by priority
             routes = session.exec(select(AgentRouteFallback).where(AgentRouteFallback.task_type == task).order_by(AgentRouteFallback.priority)).all()
             
+            # 2. Fallback to "DEFAULT" routes if no specific route is configured for this task
             if not routes:
-                raise ValueError(f"Task '{task}' routing is not configured. No fallback routes found.")
+                routes = session.exec(select(AgentRouteFallback).where(AgentRouteFallback.task_type == "DEFAULT").order_by(AgentRouteFallback.priority)).all()
+            
+            if not routes:
+                raise ValueError(f"No routing configured for task '{task}' and no DEFAULT route found.")
 
             for route in routes:
                 provider = session.get(ProviderConfig, route.provider_id) if route.provider_id else None
                 if not provider or not provider.provider_type:
                     continue
 
-                # 2. Get keys for this provider sorted by priority
+                # 3. Get keys for this provider sorted by priority
                 keys = session.exec(select(ProviderKey).where(ProviderKey.provider_id == provider.id).order_by(ProviderKey.priority)).all()
                 
-                # 3. Get models for this provider
-                provider_models = [m.strip() for m in (provider.models or "").split(",") if m.strip()]
-                if route.model_name and route.model_name not in provider_models:
-                    provider_models.insert(0, route.model_name)
-                elif not provider_models:
-                    # No models defined in provider, but we have route.model_name
-                    if route.model_name:
-                        provider_models = [route.model_name]
-                    else:
-                        continue
+                # 4. Resolve models for this route: route-specific CSV first, then provider global CSV
+                models = [m.strip() for m in (route.models or provider.models or "").split(",") if m.strip()]
+                if not models:
+                    continue
 
                 for key in keys:
-                    for model in provider_models:
+                    for model in models:
                         try:
                             full_model = f"{provider.provider_type}/{model}"
                             response = await litellm.acompletion(
@@ -63,7 +59,7 @@ class ModelRouter:
                             )
                             return response
                         except Exception as e:
-                            print(f"[ModelRouter] Fallback failed for {full_model} with key {key.id[:5] if hasattr(key.id, 'startswith') else '?'}: {e}")
+                            print(f"[ModelRouter] Fallback failed for {full_model} with key {key.id}: {e}")
                             continue
             
             raise RuntimeError(f"All fallback options exhausted for task '{task}'.")
@@ -74,8 +70,5 @@ class ModelRouter:
             if not provider or not provider.models:
                 return []
             return [model.strip() for model in provider.models.split(",") if model.strip()]
-
-router = ModelRouter()
-
 
 router = ModelRouter()

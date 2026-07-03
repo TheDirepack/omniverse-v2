@@ -211,7 +211,8 @@ SOP
 1. Query existing traits for the universe.
 2. Plan the merge (Update X, Create Y, Delete Z).
 3. Execute the changes using the provided DB tools.
-4. Confirm the final state of the record.
+4. Mark the universe as explored using `updateUniverseMeta(universe_name=..., is_explored=True)`.
+5. Confirm the final state of the record.
 
 You must be precise. Do not guess. If data is missing, leave it alone.
 """,

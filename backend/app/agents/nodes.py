@@ -72,7 +72,7 @@ Include precise references as "url: section/line".
     user_prompt = f"Perform deep research on {world_name}."
     
     try:
-        result, domain = await run_agent(
+        result, _ = await run_agent(
             agent_name="Researcher",
             system_prompt=system_prompt,
             user_prompt=user_prompt,
@@ -82,7 +82,7 @@ Include precise references as "url: section/line".
             submit_tool_name="submit_research"
         )
         
-        return {"name": world_name, "summary": result, "domain": domain}
+        return {"name": world_name, "summary": result}
     except Exception as e:
         log_transition(run_id, "Research Unit", f"Agent failed for {world_name}: {str(e)}", "FAILED", {})
         raise e
@@ -167,33 +167,44 @@ async def db_integrator_node(state: OmniverseState) -> Dict[str, Any]:
             tools_names=["queryTraits", "upsertTrait", "updateUniverseMeta"],
             submit_tool_name="submit_integration"
         )
+        
+        # Deterministically mark as explored after integration
+        with Session(engine) as session:
+            universe = session.exec(select(Universe).where(Universe.name == world_name)).first()
+            if universe:
+                universe.is_explored = True
+                session.add(universe)
+                session.commit()
     
     log_transition(run_id, "DB Integrator", "All research successfully integrated into DB.", "COMPLETED", state)
     return {"active_task": "SUMMARY"}
 
 
 async def research_node(state: OmniverseState) -> Dict[str, Any]:
-    """LangGraph node to execute parallel research for all target worlds."""
+    """LangGraph node to execute parallel research for all target worlds with batching to avoid overload."""
     run_id = state.get("run_id")
     check_abort(run_id)
     target_worlds = state.get("target_worlds", [])
     
-    log_transition(run_id, "Manager", "Starting parallel research phase", "IN_PROGRESS", state)
-    
-    tasks = [research_single_world(world, run_id) for world in target_worlds]
-    results = await asyncio.gather(*tasks, return_exceptions=True)
+    log_transition(run_id, "Manager", f"Starting parallel research phase for {len(target_worlds)} worlds", "IN_PROGRESS", state)
     
     successful_results = []
     errors = []
     verified_worlds = []
     
-    for r in results:
-        if isinstance(r, Exception):
-            errors.append(str(r))
-        else:
-            successful_results.append(r)
-            verified_worlds.append(r["name"])
-            
+    batch_size = 5
+    for i in range(0, len(target_worlds), batch_size):
+        batch = target_worlds[i:i + batch_size]
+        tasks = [research_single_world(world, run_id) for world in batch]
+        batch_results = await asyncio.gather(*tasks, return_exceptions=True)
+        
+        for r in batch_results:
+            if isinstance(r, Exception):
+                errors.append(str(r))
+            else:
+                successful_results.append(r)
+                verified_worlds.append(r["name"])
+    
     log_transition(run_id, "Manager", "Completed parallel research phase", "COMPLETED", state)
     
     return {
@@ -218,7 +229,11 @@ async def consolidation_node(state: OmniverseState) -> Dict[str, Any]:
     
     log_transition(run_id, "Consolidator", "Starting synthesis of target worlds", "IN_PROGRESS", state)
     
-    reports = [f"World: {r['name']}\nSummary:\n{r['summary']}" for r in results]
+    with Session(engine) as session:
+        verified_world_names = state.get("verified_worlds", [])
+        universes = session.exec(select(Universe).where(Universe.name.in_(verified_world_names))).all()
+        reports = [f"World: {u.name}\nSummary: {u.summary}\nStructured Data: {u.raw_data}" for u in universes]
+    
     synthesis_prompts = get_synthesis_prompt(reports)
     
     consolidated_dataset, _ = await run_agent(
@@ -296,14 +311,25 @@ Call `submit_audit` with a STATUS (SUCCESS/REVISION_REQUIRED) and a detailed Cor
         submit_tool_name="submit_audit"
     )
     
-    is_success = "SUCCESS" in audit_result.upper()
+    is_success = audit_success(audit_result)
     log_transition(run_id, "Logic Auditor", f"Audited Designed Tier System. Status: {'SUCCESS' if is_success else 'REVISION_REQUIRED'}", "IN_PROGRESS", state)
     
     if not is_success:
+        retries = state.get("architecture_retries", 0) + 1
+        if retries >= 3:
+            log_transition(run_id, "Manager", "Max re-architecture attempts reached. Forcing extrapolation with current best effort.", "IN_PROGRESS", state)
+            return {
+                "anomalies": [f"System Design Error: {audit_result} (Max retries reached)"],
+                "system_stable": False,
+                "active_task": "EXTRAPOLATION",
+                "architecture_retries": retries
+            }
+        
         return {
             "anomalies": [f"System Design Error: {audit_result}"],
             "system_stable": False,
-            "active_task": "RE_ARCHITECTURE"
+            "active_task": "RE_ARCHITECTURE",
+            "architecture_retries": retries
         }
         
     system_id = None
@@ -336,13 +362,14 @@ Call `submit_audit` with a STATUS (SUCCESS/REVISION_REQUIRED) and a detailed Cor
                 submit_tool_name="submit_stability"
             )
             
-            is_stable = "STATUS: STABLE" in stability_result or "ANOMALY" not in stability_result.upper()
+            is_stable = "STATUS: STABLE" in stability_result.upper()
             
             tier_num = 11
             tier_match = re.search(r"TIER:\s*(\d+)", stability_result, re.IGNORECASE)
             if tier_match:
                 try:
-                    tier_num = int(tier_match.group(1))
+                    val = int(tier_match.group(1))
+                    tier_num = max(1, min(11, val))
                 except:
                     pass
                      

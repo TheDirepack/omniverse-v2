@@ -12,6 +12,7 @@ from app.db.session import engine
 from app.db.schema import Universe, TierSystem, WorldTier, Anomaly, Theory, ExecutionState, Setting, ProviderConfig, ProviderKey, AgentRouteFallback, Trait, ModelConfig
 from app.agents.workflow import app_graph
 from app.agents.nodes import research_single_world
+from app.agents.agent_names import AGENT_NAMES
 from app.core.state import ACTIVE_RUNS, ABORTED_RUNS
 
 router = APIRouter()
@@ -46,7 +47,7 @@ class AgentRouteFallbackPayload(BaseModel):
     task_type: str = Field(min_length=1)
     priority: int = 0
     provider_id: Optional[int] = None
-    model_name: Optional[str] = None
+    models: Optional[str] = None
 
 
 
@@ -88,19 +89,19 @@ def get_settings():
                 "keys": [{"id": k.id, "api_key": k.api_key, "priority": k.priority} for k in keys]
             })
 
-        return {
-            "general_settings": {s.key: s.value for s in settings},
-            "providers": provider_details,
-            "agent_routes": [
-                {
-                    "id": r.id,
-                    "task_type": r.task_type,
-                    "provider_id": r.provider_id,
-                    "model_name": r.model_name,
-                    "priority": r.priority,
-                } for r in routes
-            ],
-        }
+    return {
+        "general_settings": {s.key: s.value for s in settings},
+        "providers": provider_details,
+        "agent_routes": [
+            {
+                "id": r.id,
+                "task_type": r.task_type,
+                "provider_id": r.provider_id,
+                "models": r.models,
+                "priority": r.priority,
+            } for r in routes
+        ],
+    }
 
 
 @router.post("/settings/general")
@@ -180,6 +181,10 @@ def get_provider_models(provider_id: int):
     return {"models": model_router.list_provider_models(provider_id)}
 
 
+@router.get("/agent-names")
+def get_agent_names():
+    return AGENT_NAMES
+
 @router.post("/agent-routes")
 def upsert_agent_route(payload: AgentRouteFallbackPayload):
     with Session(engine) as session:
@@ -196,7 +201,7 @@ def upsert_agent_route(payload: AgentRouteFallbackPayload):
             route = AgentRouteFallback(task_type=payload.task_type)
             
         route.provider_id = payload.provider_id
-        route.model_name = payload.model_name
+        route.models = payload.models
         route.priority = payload.priority
         session.add(route)
         session.commit()
@@ -216,16 +221,16 @@ def delete_agent_route(route_id: int):
 def get_agent_routes():
     with Session(engine) as session:
         routes = session.exec(select(AgentRouteFallback).order_by(AgentRouteFallback.priority)).all()
-        return [
-            {
-                "id": r.id,
-                "task_type": r.task_type,
-                "provider_id": r.provider_id,
-                "model_name": r.model_name,
-                "priority": r.priority,
-            }
-            for r in routes
-        ]
+    return [
+        {
+            "id": r.id,
+            "task_type": r.task_type,
+            "provider_id": r.provider_id,
+            "models": r.models,
+            "priority": r.priority,
+        }
+        for r in routes
+    ]
 
 
 
@@ -325,6 +330,15 @@ def clear_logs():
 async def run_pipeline_in_background(run_id: str, target_worlds: List[str]):
     from app.core.agent_engine import run_fetch_cache
     if run_id in ABORTED_RUNS:
+        with Session(engine) as session:
+            session.add(ExecutionState(
+                run_id=run_id,
+                node_name="Manager",
+                thought="Run aborted before initiation.",
+                status="FAILED",
+                state_snapshot="{}"
+            ))
+            session.commit()
         return
     run_fetch_cache.clear()
     ACTIVE_RUNS.add(run_id)
@@ -339,7 +353,8 @@ async def run_pipeline_in_background(run_id: str, target_worlds: List[str]):
         "generated_theories": [],
         "run_id": run_id,
         "active_task": "RESEARCH",
-        "errors": []
+        "errors": [],
+        "architecture_retries": 0
     }
     try:
         # Run compiled LangGraph state machine
@@ -359,6 +374,7 @@ async def run_pipeline_in_background(run_id: str, target_worlds: List[str]):
             session.commit()
     finally:
         ACTIVE_RUNS.discard(run_id)
+        ABORTED_RUNS.discard(run_id)
 
 
 async def run_focused_search_in_background(run_id: str, world_name: str, feature: str):
@@ -376,6 +392,7 @@ async def run_focused_search_in_background(run_id: str, world_name: str, feature
             session.commit()
     finally:
         ACTIVE_RUNS.discard(run_id)
+        ABORTED_RUNS.discard(run_id)
 
 
 @router.post("/orchestrate")
@@ -449,16 +466,16 @@ def get_theories():
 @router.get("/model-status")
 def model_status():
     with Session(engine) as session:
-        routes = session.exec(select(AgentRoute)).all()
+        routes = session.exec(select(AgentRouteFallback)).all()
         providers = {p.id: p for p in session.exec(select(ProviderConfig)).all()}
         route_status = []
         for route in routes:
             provider = providers.get(route.provider_id)
             route_status.append({
                 "task_type": route.task_type,
-                "configured": bool(provider and provider.provider_type and route.model_name),
+                "configured": bool(provider and provider.provider_type and route.models),
                 "provider": provider.name if provider else None,
-                "model": route.model_name,
+                "models": route.models,
             })
         return {"initialized": True, "routes": route_status}
 

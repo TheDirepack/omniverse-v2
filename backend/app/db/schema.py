@@ -24,7 +24,7 @@ class AgentRouteFallback(SQLModel, table=True):
     task_type: str
     priority: int
     provider_id: Optional[int] = Field(default=None, foreign_key="providerconfig.id")
-    model_name: Optional[str] = None
+    models: Optional[str] = None
 
 
 class Universe(SQLModel, table=True):

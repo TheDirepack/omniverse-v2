@@ -1,7 +1,7 @@
 import pytest
 from sqlmodel import select
 from app.db.schema import (
-    Universe, Setting, ProviderConfig, AgentRoute,
+    Universe, Setting, ProviderConfig, AgentRouteFallback,
     Trait, TierSystem, WorldTier, Anomaly, Theory,
     ExecutionState, ModelConfig
 )
@@ -132,38 +132,37 @@ class TestProviderConfig:
         ephemeral_db.commit()
         row = ephemeral_db.exec(select(ProviderConfig).where(ProviderConfig.name == "minimal")).first()
         assert row.provider_type is None
-        assert row.api_key is None
         assert row.base_url is None
         assert row.models is None
 
 
-class TestAgentRoute:
+class TestAgentRouteFallback:
     def test_empty_task_type(self, ephemeral_db):
-        r = AgentRoute(task_type="")
+        r = AgentRouteFallback(task_type="")
         ephemeral_db.add(r)
         ephemeral_db.commit()
-        row = ephemeral_db.get(AgentRoute, "")
+        row = ephemeral_db.get(AgentRouteFallback, "")
         assert row is not None
 
     def test_provider_id_none(self, ephemeral_db):
-        r = AgentRoute(task_type="TEST", provider_id=None)
+        r = AgentRouteFallback(task_type="TEST", provider_id=None)
         ephemeral_db.add(r)
         ephemeral_db.commit()
-        row = ephemeral_db.get(AgentRoute, "TEST")
+        row = ephemeral_db.get(AgentRouteFallback, "TEST")
         assert row.provider_id is None
 
     def test_provider_id_nonexistent_fk(self, ephemeral_db):
-        r = AgentRoute(task_type="BAD_FK", provider_id=9999)
+        r = AgentRouteFallback(task_type="BAD_FK", provider_id=9999)
         with pytest.raises(Exception):
             ephemeral_db.add(r)
             ephemeral_db.commit()
 
     def test_duplicate_task_type_upsert(self, ephemeral_db):
-        ephemeral_db.add(AgentRoute(task_type="UPSERT", model_name="v1"))
+        ephemeral_db.add(AgentRouteFallback(task_type="UPSERT", model_name="v1"))
         ephemeral_db.commit()
-        ephemeral_db.merge(AgentRoute(task_type="UPSERT", model_name="v2"))
+        ephemeral_db.merge(AgentRouteFallback(task_type="UPSERT", model_name="v2"))
         ephemeral_db.commit()
-        row = ephemeral_db.get(AgentRoute, "UPSERT")
+        row = ephemeral_db.get(AgentRouteFallback, "UPSERT")
         assert row.model_name == "v2"
 
 

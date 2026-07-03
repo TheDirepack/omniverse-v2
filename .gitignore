@@ -7,3 +7,4 @@ __pycache__/
 *.db
 frontend/dist/
 AGENTS.md
+tests/provider_config.py

@@ -5,7 +5,7 @@
 PROVIDER_CREDENTIALS = {
     "openai":     {"api_key": "", "base_url": None, "model": ""},
     "anthropic":  {"api_key": "", "base_url": None, "model": ""},
-    "gemini":     {"api_key": "AIzaSyDmLLtpZ3RAKJZrbY_CiSplWiSUr5UyHDw", "base_url": None, "model": "Gemma-4-26B"},
+    "gemini":     {"api_key": "", "base_url": None, "model": "Gemma-4-26B"},
     "ollama":     {"api_key": None, "base_url": "", "model": ""},  # set base_url to "http://localhost:11434" to test
     "groq":       {"api_key": "", "base_url": None, "model": ""},
     "openrouter": {"api_key": "", "base_url": None, "model": ""},

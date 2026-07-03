@@ -74,10 +74,11 @@ async def run_agent(
     fetched_count = 0
     
     for turn in range(max_turns):
-        response = await router.call_llm_with_tools(
+        response = await router.run_model(
             task=agent_name,
             messages=messages,
             tools=litellm_tools,
+            run_id=run_id,
             provider_id=provider_id
         )
 
@@ -120,7 +121,6 @@ async def run_agent(
                     else:
                         # Other tools (e.g. search)
                         try:
-                            from app.core.tools import AGENT_TOOLS
                             func = AGENT_TOOLS[name]["func"]
                             observation = await func(args)
                         except Exception as e:

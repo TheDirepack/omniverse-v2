@@ -4,6 +4,7 @@ from pathlib import Path
 from sqlmodel import SQLModel, create_engine, Session, select
 from sqlalchemy import event
 from app.db.schema import Universe, ProviderConfig, AgentRouteFallback
+from app.db.unconfirmed_session import init_unconfirmed_db
 
 sqlite_url = os.getenv("DATABASE_URL", "sqlite:///omniverse_v2.db")
 connect_args = {"check_same_thread": False} if sqlite_url.startswith("sqlite") else {}
@@ -34,10 +35,14 @@ def init_db():
         if "model_name" in route_columns and "models" in route_columns:
             conn.exec_driver_sql("ALTER TABLE agentroutefallback DROP COLUMN model_name")
 
-        # Migrate provider_type 'custom' -> 'openai' (old UI mapped custom dropdown to wrong value)
-        prov_columns = [row[1] for row in conn.exec_driver_sql("PRAGMA table_info(providerconfig)").fetchall()]
-        if "provider_type" in prov_columns:
-            conn.exec_driver_sql("UPDATE providerconfig SET provider_type = 'openai' WHERE provider_type = 'custom'")
+        # Migrate old 'openai' provider_type rows that have a custom base_url → 'custom'
+        provider_columns = [row[1] for row in conn.exec_driver_sql("PRAGMA table_info(providerconfig)").fetchall()]
+        if "provider_type" in provider_columns and "base_url" in provider_columns:
+            conn.exec_driver_sql(
+                "UPDATE providerconfig SET provider_type = 'custom' WHERE provider_type = 'openai' AND base_url IS NOT NULL AND base_url != ''"
+            )
+        
+        # NB: 'custom' provider_type stored as-is; router maps to 'openai' at call time
     
     # Seed default route if no routes exist
     with Session(engine) as session:
@@ -63,3 +68,9 @@ def init_db():
                 session.commit()
     except Exception as e:
         print(f"Error seeding default worlds: {e}")
+
+    # Initialize the separate unconfirmed staging database
+    try:
+        init_unconfirmed_db()
+    except Exception as e:
+        print(f"Error initializing unconfirmed database: {e}")

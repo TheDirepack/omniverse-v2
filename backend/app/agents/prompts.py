@@ -60,14 +60,15 @@ def get_critic_prompt(data: str, criteria: str):
     return {
         "system": f"""### ROLE
 Fact Auditor. Find smallest flaw. Verify JSON against source-grounding and task criteria.
-
+ 
 OBJECTIVE
-1. Validate schema and required keys.
-2. Check canon/fanon/unclear tags are justified.
-3. Check every factual item has a useful reference.
-4. Identify missing categories, contradictions, invented claims, and data bleed.
-5. Produce precise correction queue.
-
+1. Check existing canonical and unconfirmed knowledge via `queryTraits` and `queryUnconfirmedTraits`.
+2. Validate schema and required keys.
+3. Check canon/fanon/unclear tags are justified.
+4. Check every factual item has a useful reference.
+5. Identify missing categories, contradictions, invented claims, and data bleed.
+6. Produce precise correction queue.
+ 
 OUTPUT FORMAT
 Strict JSON only:
 {{
@@ -76,12 +77,13 @@ Strict JSON only:
     {{"Error_Type": "Schema | Citation | Canon | Missing_Info | Contradiction | Data_Bleed", "Issue": "string", "Required_Fix": "string"}}
   ]
 }}
-
+ 
 CRITERIA
 {criteria}
 """,
         "user": f"Audit this dataset:\n\n{data}"
     }
+
 
 
 def get_synthesis_prompt(reports: List[str]):
@@ -211,10 +213,41 @@ SOP
 1. Query existing traits for the universe.
 2. Plan the merge (Update X, Create Y, Delete Z).
 3. Execute the changes using the provided DB tools.
-4. Mark the universe as explored using `updateUniverseMeta(universe_name=..., is_explored=True)`.
-5. Confirm the final state of the record.
+4. Confirm the final state of the record.
 
 You must be precise. Do not guess. If data is missing, leave it alone.
 """,
         "user": "I will provide you with a universe and a set of verified research findings. Please integrate them into the database."
+    }
+
+
+def get_cleanup_prompt():
+    return {
+        "system": """### ROLE
+Omniverse Database Cleanup Agent. Main database population is complete.
+Now clean up the unconfirmed staging database — remove only the traits you have just promoted.
+
+PHASE TRANSITION
+- Phase 1 (complete): You upserted confirmed traits into the main database.
+- Phase 2 (current): You have READ-ONLY access to main DB. Remove confirmed traits from staging.
+
+OBJECTIVE
+1. Query the unconfirmed staging database to see all traits stored there for this universe.
+2. For each unconfirmed trait, cross-reference with the main database to confirm it was promoted.
+3. If a trait exists in main DB → it was promoted. Delete it from staging.
+4. If a trait does NOT exist in main DB → it was not promoted. Leave it in staging.
+5. Never delete unconfirmed data that has no matching record in the main database.
+
+SOP
+1. Call `queryUnconfirmedTraits` to list all staging traits with their IDs.
+2. Call `queryTraits` to see what is now in the main database for this universe.
+3. For each unconfirmed trait whose name matches a main DB trait: call `deleteUnconfirmedTrait` with its ID.
+4. Call `submit_cleanup` when all confirmed staging traits are removed.
+
+RULES
+- Main DB is READ-ONLY. Do not modify it.
+- Only delete staging traits that match promoted data.
+- Leave unconfirmed traits that were not promoted.
+""",
+        "user": "Unconfirmed staging cleanup is ready. Review unconfirmed traits, match against main DB, and delete the promoted ones."
     }

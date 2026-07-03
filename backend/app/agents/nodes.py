@@ -5,9 +5,9 @@ from typing import List, Dict, Any
 from sqlmodel import Session, select
 from app.db.session import engine
 from app.db.schema import Universe, Trait, TierSystem, WorldTier, Anomaly, Theory, ExecutionState, Setting
-from app.core.router import router
 from app.core.agent_engine import run_agent
 from app.core.state import ABORTED_RUNS
+from app.core.context import set_current_universe
 from app.agents.state import OmniverseState
 from app.agents.prompts import (
     get_extraction_prompt,
@@ -17,7 +17,8 @@ from app.agents.prompts import (
     get_stability_prompt,
     get_extrapolation_prompt,
     get_theory_auditor_prompt,
-    get_summary_prompt
+    get_summary_prompt,
+    get_cleanup_prompt
 )
 
 def log_transition(run_id: str, node_name: str, thought: str, status: str, state: dict):
@@ -49,40 +50,77 @@ async def research_single_world(world_name: str, run_id: str, focus: str | None 
     """Researches and verifies a single world using an agentic tool loop with a discovery flow."""
     check_abort(run_id)
     stage_label = f"{world_name} focused on {focus}" if focus else world_name
+    set_current_universe(world_name)
     log_transition(run_id, "Research Unit", f"Initiating agentic research for world: {stage_label}", "IN_PROGRESS", {})
-    
+
     # Discovery flow prompt
     system_prompt = f"""### ROLE
 Wiki Scout & Archivist. Your goal is to build a comprehensive canonical dataset for the universe.
-
+ 
 PROCESS
-1. DISCOVERY: Start with `webSearch` using broad queries (e.g. "{world_name} wiki", "{world_name} fandom") to discover which wiki(s) exist for this entity and identify their base domain.
-2. DOMAIN FOCUS: Once you've identified the canonical wiki, prefer `fetchPage` and targeted `webSearch` queries scoped to that domain (e.g. "site:{{domain}} {{topic}}") for deeper collection.
-3. DRILL DOWN: Follow internal links from fetched pages to sub-articles if summaries are incomplete.
-4. VERIFY: Cross-check any claim that seems central to power-tiering against at least one other source before citing it.
-
+1. KNOWLEDGE CHECK: Start by calling `queryTraits` and `queryUnconfirmedTraits` to see what is already known about {world_name}. Avoid duplicating effort.
+2. DISCOVERY: Use `webSearch` to discover wikis and authoritative sources.
+   - You can specify the `engine` (google, duckduckgo, brave).
+   - You can specify a `site_filter` to target specific domains (e.g. 'fandom.com').
+3. DOMAIN FOCUS: Once you've identified the canonical wiki, prefer `fetchPage` and targeted `webSearch` queries scoped to that domain.
+4. DRILL DOWN: Follow internal links from fetched pages to sub-articles if summaries are incomplete.
+5. VERIFY: Cross-check any claim that seems central to power-tiering against at least one other source before citing it.
+ 
 OUTPUT
 Call `submit_research` only when you have a complete picture. 
 Refer to the RESEARCH_SCHEMA for the structure.
 Include precise references as "url: section/line".
 """
+
     if focus:
         system_prompt += f"\n\nFOCUSED TARGET: {focus}. Prove/disprove existence, extract mechanisms, and provide a Focused Verdict (VERIFIED/DISPROVED/INCONCLUSIVE)."
 
     user_prompt = f"Perform deep research on {world_name}."
     
+    # Critique Loop
+    feedback_history = []
+    max_iterations = 3
+    last_result = ""
+
     try:
-        result, _ = await run_agent(
-            agent_name="Researcher",
-            system_prompt=system_prompt,
-            user_prompt=user_prompt,
-            step="Research",
-            run_id=run_id,
-            tools_names=["webSearch", "fetchPage"],
-            submit_tool_name="submit_research"
-        )
+        for i in range(max_iterations):
+            current_system_prompt = system_prompt
+            if feedback_history:
+                current_system_prompt += f"\n\nPREVIOUS FEEDBACK TO ADDRESS:\n{chr(10).join(feedback_history)}"
+            
+            result, _ = await run_agent(
+                agent_name="Researcher",
+                system_prompt=current_system_prompt,
+                user_prompt=user_prompt,
+                step=f"Research (Attempt {i+1})",
+                run_id=run_id,
+                tools_names=["webSearch", "fetchPage", "queryTraits", "queryUnconfirmedTraits"],
+                submit_tool_name="submit_research"
+            )
+
+            last_result = result
+            
+            # Critic Agent
+            from app.agents.prompts import get_critic_prompt
+            critic_prompt = get_critic_prompt(data=result, criteria=system_prompt)
+            
+            critique, _ = await run_agent(
+                agent_name="Critic",
+                system_prompt=critic_prompt["system"],
+                user_prompt=critic_prompt["user"],
+                step=f"Audit (Attempt {i+1})",
+                run_id=run_id,
+                tools_names=["webSearch", "fetchPage", "queryTraits", "queryUnconfirmedTraits"],
+                submit_tool_name="submit_audit"
+            )
+            
+            if "SUCCESS" in critique.upper():
+                return {"name": world_name, "summary": result}
+            
+            feedback_history.append(f"Attempt {i+1} failed: {critique}")
+            
+        raise Exception(f"Max iterations reached for {world_name}. Failed to achieve valid research.")
         
-        return {"name": world_name, "summary": result}
     except Exception as e:
         log_transition(run_id, "Research Unit", f"Agent failed for {world_name}: {str(e)}", "FAILED", {})
         raise e
@@ -94,7 +132,9 @@ async def summarize_universe(universe_id: int, run_id: str) -> str:
         universe = session.get(Universe, universe_id)
         if not universe:
             return "Universe not found."
-        
+
+        set_current_universe(universe.name)
+
         # Collect all traits for this universe to provide full context
         traits = session.exec(select(Trait).where(Trait.universe_id == universe_id)).all()
         traits_text = "\n".join([f"- {t.name}: {t.value}" for t in traits])
@@ -143,7 +183,7 @@ async def summary_node(state: OmniverseState) -> Dict[str, Any]:
 
 
 async def db_integrator_node(state: OmniverseState) -> Dict[str, Any]:
-    """Agent that integrates verified research into the database."""
+    """Agent that integrates verified research into the database, then cleans up unconfirmed staging."""
     run_id = state.get("run_id")
     research_results = state.get("research_results", [])
     
@@ -153,19 +193,33 @@ async def db_integrator_node(state: OmniverseState) -> Dict[str, Any]:
         world_name = result["name"]
         verified_data = result["summary"]
         
+        # Phase 1: Write confirmed data to main database
         from app.agents.prompts import get_db_agent_prompt
         prompt = get_db_agent_prompt()
-        
-        # The DB Agent uses the tools to query existing traits and upsert new ones
-        # We wrap this in run_agent
+
+        set_current_universe(world_name)
+
         await run_agent(
             agent_name="DB Architect",
             system_prompt=prompt["system"],
             user_prompt=f"Universe: {world_name}\n\nVerified Research Data:\n{verified_data}",
             step=f"Integrate {world_name}",
             run_id=run_id,
-            tools_names=["queryTraits", "upsertTrait", "updateUniverseMeta"],
+            tools_names=["queryTraits", "upsertTrait"],
             submit_tool_name="submit_integration"
+        )
+        
+        # Phase 2: Clean up unconfirmed staging — remove only promoted traits
+        cleanup_prompt = get_cleanup_prompt()
+
+        await run_agent(
+            agent_name="DB Architect",
+            system_prompt=cleanup_prompt["system"],
+            user_prompt=f"Clean up unconfirmed staging for {world_name}",
+            step=f"Cleanup {world_name}",
+            run_id=run_id,
+            tools_names=["queryTraits", "queryUnconfirmedTraits", "deleteUnconfirmedTrait"],
+            submit_tool_name="submit_cleanup"
         )
         
         # Deterministically mark as explored after integration
@@ -176,7 +230,7 @@ async def db_integrator_node(state: OmniverseState) -> Dict[str, Any]:
                 session.add(universe)
                 session.commit()
     
-    log_transition(run_id, "DB Integrator", "All research successfully integrated into DB.", "COMPLETED", state)
+    log_transition(run_id, "DB Integrator", "All research integrated and staging cleaned.", "COMPLETED", state)
     return {"active_task": "SUMMARY"}
 
 
@@ -425,10 +479,11 @@ async def extrapolation_node(state: OmniverseState) -> Dict[str, Any]:
         verified_world_names = state.get("verified_worlds", [])
         universes = session.exec(select(Universe).where(Universe.name.in_(verified_world_names))).all()
         for universe in universes:
+            set_current_universe(universe.name)
             other_universes = session.exec(select(Universe).where(Universe.id != universe.id)).all()
             comparison_texts = [f"World: {ou.name}\nFeatures: {ou.summary}" for ou in other_universes]
             comparison_context = "\n\n---\n\n".join(comparison_texts)
-            
+
             theory_prompt = get_extrapolation_prompt(universe.name, universe.summary or "", comparison_context)
             
             speculation, _ = await run_agent(

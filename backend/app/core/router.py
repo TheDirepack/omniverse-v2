@@ -2,21 +2,26 @@ import litellm
 from typing import Optional, Any, List, Dict
 from sqlmodel import Session, select
 from app.db.session import engine
-from app.db.schema import ProviderConfig, ProviderKey, AgentRouteFallback, Setting
+from app.db.schema import ProviderConfig, ProviderKey, AgentRouteFallback, Setting, ExecutionState
 
 class ModelRouter:
     def __init__(self):
         pass
 
+    async def run_model(self, task: str, messages: List[Dict[str, str]], tools: Optional[List[Dict[str, Any]]] = None, run_id: Optional[str] = None, **kwargs):
+        """
+        High-level entry point for model calls.
+        """
+        return await self.call_llm_with_tools(task, messages, tools or [], run_id=run_id, **kwargs)
 
-    async def call_llm(self, task: str, system_prompt: str, user_prompt: str, **kwargs):
+    async def call_llm(self, task: str, system_prompt: str, user_prompt: str, run_id: Optional[str] = None, **kwargs):
         messages = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt}
         ]
-        return await self.call_llm_with_tools(task, messages, tools=[], **kwargs)
+        return await self.run_model(task, messages, tools=[], run_id=run_id, **kwargs)
 
-    async def call_llm_with_tools(self, task: str, messages: List[Dict[str, str]], tools: List[Dict[str, Any]], **kwargs):
+    async def call_llm_with_tools(self, task: str, messages: List[Dict[str, str]], tools: List[Dict[str, Any]], run_id: Optional[str] = None, **kwargs):
         # Remove provider_id from kwargs to avoid leaking it into litellm.acompletion
         kwargs.pop("provider_id", None)
         
@@ -30,39 +35,57 @@ class ModelRouter:
             
             if not routes:
                 raise ValueError(f"No routing configured for task '{task}' and no DEFAULT route found.")
-
+            
+            # Collect all candidate configurations first
+            candidates = []
             for route in routes:
                 provider = session.get(ProviderConfig, route.provider_id) if route.provider_id else None
                 if not provider or not provider.provider_type:
                     continue
-
-                # 3. Get keys for this provider sorted by priority
-                keys = session.exec(select(ProviderKey).where(ProviderKey.provider_id == provider.id).order_by(ProviderKey.priority)).all()
                 
-                # 4. Resolve models for this route: route-specific CSV first, then provider global CSV
+                keys = session.exec(select(ProviderKey).where(ProviderKey.provider_id == provider.id).order_by(ProviderKey.priority)).all()
                 models = [m.strip() for m in (route.models or provider.models or "").split(",") if m.strip()]
-                if not models:
-                    continue
-
+                
                 for key in keys:
                     for model in models:
-                        try:
-                            full_model = f"{provider.provider_type}/{model}"
-                            response = await litellm.acompletion(
-                                model=full_model,
-                                messages=messages,
-                                tools=tools if tools else None,
-                                tool_choice="auto" if tools else None,
-                                api_key=key.api_key,
-                                api_base=provider.base_url,
-                                **kwargs
+                        model_prefix = "openai" if provider.provider_type == "custom" else provider.provider_type
+                        candidates.append({
+                            "provider": provider,
+                            "key": key,
+                            "model": model,
+                            "full_model": f"{model_prefix}/{model}"
+                        })
+
+            for candidate in candidates:
+                try:
+                    full_model = candidate["full_model"]
+                    response = await litellm.acompletion(
+                        model=full_model,
+                        messages=messages,
+                        tools=tools if tools else None,
+                        tool_choice="auto" if tools else None,
+                        api_key=candidate["key"].api_key,
+                        api_base=candidate["provider"].base_url,
+                        **kwargs
+                    )
+                    return response
+                except Exception as e:
+                    if run_id:
+                        with Session(engine) as log_session:
+                            log_entry = ExecutionState(
+                                run_id=run_id,
+                                node_name="ModelRouter",
+                                thought=f"Fallback: {candidate['full_model']} failed due to {e}. Trying next candidate.",
+                                status="INFO",
+                                state_snapshot="{}"
                             )
-                            return response
-                        except Exception as e:
-                            print(f"[ModelRouter] Fallback failed for {full_model} with key {key.id}: {e}")
-                            continue
+                            log_session.add(log_entry)
+                            log_session.commit()
+                    print(f"[ModelRouter] Fallback failed for {candidate['full_model']} with key {candidate['key'].id}: {e}")
+                    continue
             
             raise RuntimeError(f"All fallback options exhausted for task '{task}'.")
+
 
     def list_provider_models(self, provider_id: int) -> list[str]:
         with Session(engine) as session:

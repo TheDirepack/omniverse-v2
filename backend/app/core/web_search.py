@@ -1,45 +1,173 @@
-from app.core.browser import browser_manager
-import urllib.parse
 from typing import Optional
-
+import urllib.parse
 from bs4 import BeautifulSoup
-from sqlmodel import Session, select
+from app.core.browser import browser_manager
 
-from app.db.session import engine
-from app.db.schema import Setting
+SEARCH_URLS = {
+    "google": "https://www.google.com/search?q={q}",
+    "duckduckgo": "https://html.duckduckgo.com/html/?q={q}",
+    "brave": "https://search.brave.com/search?q={q}",
+}
 
+AI_CONTAINER_SELECTORS = [
+    "[class*='ai']",
+    "[class*='AI']",
+    "[class*='featured']",
+    "[class*='summary']",
+    "[class*='answer']",
+    "[id*='ai']",
+    "[id*='featured']",
+    "[id*='answer']",
+]
 
 class WebSearcher:
-    def get_setting(self, key: str) -> Optional[str]:
-        with Session(engine) as session:
-            setting = session.exec(select(Setting).where(Setting.key == key)).first()
-            return setting.value if setting else None
+    async def perform_search(
+        self, query: str, engine: str = "google", site_filter: Optional[str] = None
+    ) -> str:
+        if site_filter:
+            query = f"site:{site_filter} {query}"
 
-    async def perform_search(self, query: str) -> str:
-        search_query = f"{query} lore wiki official database"
-        search_url = f"https://html.duckduckgo.com/html/?q={urllib.parse.quote(search_query)}"
-        
-        # Use browser_manager instead of relaunching browser
+        url_template = SEARCH_URLS.get(engine)
+        if not url_template:
+            return f"Unsupported engine: {engine}. Supported: {', '.join(SEARCH_URLS)}."
+
+        search_url = url_template.format(q=urllib.parse.quote(query))
+
         page, context = await browser_manager.get_page()
         try:
             await page.goto(search_url, wait_until="networkidle")
             html = await page.content()
             soup = BeautifulSoup(html, "html.parser")
-            results: list[str] = []
-            for idx, result in enumerate(soup.select("a.result__a")[:5]):
-                title = result.get_text(" ", strip=True)
-                link = result.get("href", "")
-                snippet_el = result.find_parent(class_="result").select_one(".result__snippet") if result.find_parent(class_="result") else None
-                snippet = snippet_el.get_text(" ", strip=True) if snippet_el else ""
-                if title and link:
-                    results.append(f"### {idx + 1}. [{title}]({link})\n{snippet}\n")
+
+            if engine == "google":
+                results = self._parse_google(soup)
+            elif engine == "duckduckgo":
+                results = self._parse_duckduckgo(soup)
+            elif engine == "brave":
+                results = self._parse_brave(soup)
+            else:
+                results = []
+
             if results:
                 return "\n".join(results)
-            return f"No authoritative lore indices found for {query}."
+            return f"No results found for {query}."
         finally:
             await page.close()
             await context.close()
             browser_manager.release_page(context)
+
+    def _is_ai_container(self, element) -> bool:
+        for selector in AI_CONTAINER_SELECTORS:
+            if element.select_one(selector):
+                return True
+        return False
+
+    def _format_result(self, title: str, url: str, snippet: str, index: int) -> str:
+        return f"### {index}. [{title}]({url})\n{snippet}\n"
+
+    def _parse_google(self, soup: BeautifulSoup) -> list:
+        results = []
+        idx = 0
+
+        for g in soup.select("div.g"):
+            if self._is_ai_container(g):
+                continue
+
+            h3 = g.select_one("h3")
+            if not h3:
+                continue
+
+            title = h3.get_text(" ", strip=True)
+            if not title:
+                continue
+
+            link_el = g.select_one("a[href]")
+            if not link_el:
+                continue
+            href = link_el.get("href", "")
+            if href.startswith("/url?q="):
+                href = urllib.parse.parse_qs(
+                    urllib.parse.urlparse(href).query
+                ).get("q", [""])[0]
+            if not href or not href.startswith("http"):
+                continue
+
+            snippet_el = g.select_one("div.VwiC3b, span.st")
+            snippet = snippet_el.get_text(" ", strip=True) if snippet_el else ""
+
+            idx += 1
+            results.append(self._format_result(title, href, snippet, idx))
+
+        return results
+
+    def _parse_duckduckgo(self, soup: BeautifulSoup) -> list:
+        results = []
+        idx = 0
+
+        for a in soup.select("a.result__a"):
+            if self._is_ai_container(a):
+                continue
+
+            title = a.get_text(" ", strip=True)
+            href = a.get("href", "")
+            if not title or not href:
+                continue
+
+            result_div = a.find_parent(class_="result")
+            snippet = ""
+            if result_div:
+                snip_el = result_div.select_one(".result__snippet")
+                snippet = snip_el.get_text(" ", strip=True) if snip_el else ""
+
+            idx += 1
+            results.append(self._format_result(title, href, snippet, idx))
+
+        return results
+
+    def _parse_brave(self, soup: BeautifulSoup) -> list:
+        results = []
+        idx = 0
+
+        for snippet_div in soup.select("div.snippet"):
+            if self._is_ai_container(snippet_div):
+                continue
+
+            title_el = snippet_div.select_one("a[data-label='title'], a.snippet-title")
+            if not title_el:
+                continue
+
+            title = title_el.get_text(" ", strip=True)
+            href = title_el.get("href", "")
+            if not title or not href.startswith("http"):
+                continue
+
+            desc_el = snippet_div.select_one(
+                "div.snippet-description, p.snippet-description, div.description"
+            )
+            desc = desc_el.get_text(" ", strip=True) if desc_el else ""
+
+            idx += 1
+            results.append(self._format_result(title, href, desc, idx))
+
+        if not results:
+            for a in soup.select("a[href^='http']"):
+                parent = a.find_parent("div")
+                if not parent:
+                    continue
+                if self._is_ai_container(parent):
+                    continue
+                title = a.get_text(" ", strip=True)
+                href = a.get("href", "")
+                if not title or len(title) < 3:
+                    continue
+                desc_el = parent.select_one("p")
+                desc = desc_el.get_text(" ", strip=True) if desc_el else ""
+                idx += 1
+                results.append(self._format_result(title, href, desc, idx))
+                if idx >= 10:
+                    break
+
+        return results
 
 
 web_searcher = WebSearcher()

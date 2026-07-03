@@ -9,5 +9,6 @@ cloakbrowser
 beautifulsoup4
 pydantic-settings
 httpx2>=2.0.0
+httpx
 pytest
 pytest-asyncio

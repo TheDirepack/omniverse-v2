@@ -81,3 +81,11 @@ class ModelConfig(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     model_name: str
     provider_id: int = Field(foreign_key="providerconfig.id")
+
+class CandidateHealth(SQLModel, table=True):
+    candidate_hash: str = Field(primary_key=True)
+    provider_id: int = Field(index=True)
+    key_id: Optional[int] = Field(default=None, index=True)
+    model: str = Field(index=True)
+    failure_count: int = Field(default=0)
+    disabled_until: Optional[datetime] = None

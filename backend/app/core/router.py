@@ -1,9 +1,15 @@
 import litellm
 import re
+import hashlib
 from typing import Optional, Any, List, Dict
+from datetime import datetime, timedelta
 from sqlmodel import Session, select
 from app.db.session import engine
-from app.db.schema import ProviderConfig, ProviderKey, AgentRouteFallback, Setting, ExecutionState
+from app.db.schema import ProviderConfig, ProviderKey, AgentRouteFallback, Setting, ExecutionState, CandidateHealth
+
+def calculate_candidate_hash(provider_id: int, key_id: Optional[int], model: str) -> str:
+    payload = f"{provider_id}:{key_id}:{model}"
+    return hashlib.sha256(payload.encode()).hexdigest()
 
 def _clean_error(e: Exception) -> str:
     msg = str(e).split('\n')[0]
@@ -15,6 +21,37 @@ def _clean_error(e: Exception) -> str:
 class ModelRouter:
     def __init__(self):
         pass
+
+    def _get_health(self, session: Session, provider_id: int, key_id: Optional[int], model: str) -> CandidateHealth:
+        c_hash = calculate_candidate_hash(provider_id, key_id, model)
+        health = session.get(CandidateHealth, c_hash)
+        if not health:
+            health = CandidateHealth(
+                candidate_hash=c_hash,
+                provider_id=provider_id,
+                key_id=key_id,
+                model=model,
+                failure_count=0
+            )
+            session.add(health)
+            session.commit()
+            session.refresh(health)
+        return health
+
+    def _report_failure(self, session: Session, provider_id: int, key_id: Optional[int], model: str):
+        health = self._get_health(session, provider_id, key_id, model)
+        health.failure_count += 1
+        if health.failure_count >= 5:
+            health.disabled_until = datetime.utcnow() + timedelta(hours=4)
+        session.add(health)
+        session.commit()
+
+    def _report_success(self, session: Session, provider_id: int, key_id: Optional[int], model: str):
+        health = self._get_health(session, provider_id, key_id, model)
+        health.failure_count = 0
+        health.disabled_until = None
+        session.add(health)
+        session.commit()
 
     async def run_model(self, task: str, messages: List[Dict[str, str]], tools: Optional[List[Dict[str, Any]]] = None, run_id: Optional[str] = None, **kwargs):
         """
@@ -68,6 +105,12 @@ class ModelRouter:
                         })
 
             for candidate in candidates:
+                # Check if candidate is disabled
+                with Session(engine) as health_session:
+                    health = self._get_health(health_session, candidate["provider"].id, candidate["key"].id if candidate["key"].id != -1 else None, candidate["model"])
+                    if health.disabled_until and health.disabled_until > datetime.utcnow():
+                        continue
+
                 try:
                     full_model = candidate["full_model"]
                     response = await litellm.acompletion(
@@ -79,6 +122,11 @@ class ModelRouter:
                         api_base=candidate["provider"].base_url,
                         **kwargs
                     )
+                    
+                    # Report success
+                    with Session(engine) as health_session:
+                        self._report_success(health_session, candidate["provider"].id, candidate["key"].id if candidate["key"].id != -1 else None, candidate["model"])
+                    
                     if run_id:
                         with Session(engine) as log_session:
                             log_entry = ExecutionState(
@@ -92,6 +140,10 @@ class ModelRouter:
                             log_session.commit()
                     return response
                 except Exception as e:
+                    # Report failure
+                    with Session(engine) as health_session:
+                        self._report_failure(health_session, candidate["provider"].id, candidate["key"].id if candidate["key"].id != -1 else None, candidate["model"])
+                    
                     if run_id:
                         with Session(engine) as log_session:
                             clean_e = _clean_error(e)

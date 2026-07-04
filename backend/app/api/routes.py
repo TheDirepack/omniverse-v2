@@ -2,7 +2,7 @@ import json
 import asyncio
 import uuid
 from pathlib import Path
-from fastapi import APIRouter, HTTPException, BackgroundTasks
+from fastapi import APIRouter, HTTPException, BackgroundTasks, Query
 from fastapi.responses import StreamingResponse
 from sqlmodel import Session, select
 from typing import List, Optional
@@ -12,7 +12,7 @@ from app.db.session import engine
 from app.db.unconfirmed_session import engine as unconfirmed_engine
 from app.db.extrapolation_session import engine as extrapolation_engine
 from app.db.unconfirmed_schema import UnconfirmedUniverse, UnconfirmedTrait
-from app.db.schema import Universe, TierSystem, WorldTier, Anomaly, ExecutionState, Setting, ProviderConfig, ProviderKey, AgentRouteFallback, Trait, ModelConfig
+from app.db.schema import Universe, TierSystem, WorldTier, Anomaly, ExecutionState, Setting, ProviderConfig, ProviderKey, AgentRouteFallback, Trait, ModelConfig, CandidateHealth
 from app.db.extrapolation_schema import Theory
 from app.agents.workflow import app_graph
 from app.agents.nodes import research_single_world
@@ -85,6 +85,28 @@ def get_traits(universe_ids: Optional[str] = None):
             query = query.where(Trait.universe_id.in_(ids))
         
         return session.exec(query).all()
+
+@router.get("/traits/unconfirmed")
+def get_unconfirmed_traits(universe_ids: Optional[str] = None):
+    with Session(unconfirmed_engine) as session:
+        # We want to return the trait and the universe name
+        query = select(UnconfirmedTrait, UnconfirmedUniverse.name).join(UnconfirmedUniverse)
+        if universe_ids:
+            names = [n.strip() for n in universe_ids.split(",") if n.strip()]
+            query = query.where(UnconfirmedUniverse.name.in_(names))
+        
+        results = session.exec(query).all()
+        
+        # Format as list of dicts including the name
+        output = []
+        for trait, name in results:
+            trait_dict = trait.model_dump()
+            trait_dict["universe_name"] = name
+            output.append(trait_dict)
+            
+        return output
+
+
 def health():
     return {"status": "ok"}
 
@@ -194,10 +216,13 @@ def delete_world(world_id: int):
         if not universe:
             raise HTTPException(status_code=404, detail="World not found")
         
+        # Delete related data first to avoid FK constraints
         session.exec(WorldTier.__table__.delete().where(WorldTier.universe_id == world_id))
+        session.exec(Trait.__table__.delete().where(Trait.universe_id == world_id))
+        session.exec(Anomaly.__table__.delete().where(Anomaly.universe_id == world_id))
+        
         with Session(extrapolation_engine) as extra_session:
             extra_session.exec(Theory.__table__.delete().where(Theory.universe_id == world_id))
-        session.exec(Anomaly.__table__.delete().where(Anomaly.universe_id == world_id))
         
         session.delete(universe)
         session.commit()
@@ -417,6 +442,15 @@ async def run_pipeline_in_background(run_id: str, target_worlds: List[str]):
             ))
             session.commit()
         return
+    
+    # Ensure all target worlds are registered in the DB
+    with Session(engine) as session:
+        for name in target_worlds:
+            exists = session.exec(select(Universe).where(Universe.name == name)).first()
+            if not exists:
+                session.add(Universe(name=name, summary=None, is_explored=False))
+        session.commit()
+
     run_fetch_cache.clear()
     await add_active_run(run_id)
     # Initialize the workflow state
@@ -713,6 +747,38 @@ async def abort_run_endpoint(payload: dict):
         session.commit()
     return {"status": "abort_requested", "run_id": run_id}
 
+
+@router.get("/logs/file")
+def get_file_logs(
+    limit: int = Query(100, ge=1, le=1000),
+    filter: Optional[str] = None
+):
+    from app.core.agent_logger import LOG_FILE
+    if not LOG_FILE.exists():
+        return []
+    
+    try:
+        with open(LOG_FILE, "rb") as f:
+            f.seek(0, 2)
+            file_size = f.tell()
+            
+            # Read chunks from the end until we have enough lines
+            buffer = b""
+            pointer = file_size
+            while pointer > 0 and len(buffer.split(b"\n")) <= limit + 1:
+                read_size = min(pointer, 4096)
+                pointer -= read_size
+                f.seek(pointer)
+                buffer = f.read(read_size) + buffer
+            
+            lines = buffer.decode("utf-8").splitlines()
+            
+            if filter:
+                lines = [l for l in lines if filter.lower() in l.lower()]
+            
+            return lines[-limit:]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error reading logs: {str(e)}")
 
 @router.get("/logs/{run_id}")
 async def get_realtime_logs(run_id: str):

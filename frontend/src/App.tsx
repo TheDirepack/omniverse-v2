@@ -5,12 +5,16 @@ import type { Tab } from "./types";
 
 import DashboardPanel from "./components/DashboardPanel";
 import DatabasePanel from "./components/DatabasePanel";
+import TraitViewerPanel from "./components/TraitViewerPanel";
+import LogViewerPanel from "./components/LogViewerPanel";
 import TheoriesPanel from "./components/TheoriesPanel";
 import SettingsPanel from "./components/settings/SettingsPanel";
 
 const navItems: Array<{ id: Tab; label: string; Icon: LucideIcon }> = [
   { id: "dashboard", label: "Command Center", Icon: Terminal },
   { id: "database", label: "Tiers", Icon: Layers },
+  { id: "traits", label: "Main DB", Icon: Layers },
+  { id: "logs", label: "System Logs", Icon: Terminal },
   { id: "theories", label: "Theories", Icon: Lightbulb },
   { id: "settings", label: "Settings", Icon: Settings },
 ];
@@ -40,6 +44,8 @@ export default function App() {
       <main className="main">
         {tab === "dashboard" && <DashboardPanel />}
         {tab === "database" && <DatabasePanel />}
+        {tab === "traits" && <TraitViewerPanel />}
+        {tab === "logs" && <LogViewerPanel />}
         {tab === "theories" && <TheoriesPanel />}
         {tab === "settings" && <SettingsPanel />}
       </main>

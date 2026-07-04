@@ -3,15 +3,15 @@ import type { World, Anomaly, Trait } from "../types";
 import * as api from "../api";
 import { groupWorldsByTier } from "../lib/tiers";
 
-function TraitSection({ category, traits }: { category: string; traits: Trait[] }) {
+function TraitSection({ category, traits, isUnconfirmed = false }: { category: string; traits: Trait[] | any[]; isUnconfirmed?: boolean }) {
   return (
     <div style={{ marginBottom: 16 }}>
       <h4 style={{ color: "#94a3b8", fontSize: "0.9rem", marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.05em" }}>{category}</h4>
       <div style={{ display: "grid", gap: 8 }}>
-        {traits.map(t => (
-          <div key={t.id} style={{ display: "flex", justifyContent: "space-between", padding: "8px", background: "#1e293b", borderRadius: 4, border: "1px solid #334155" }}>
+        {traits.map((t, i) => (
+          <div key={t.id || i} style={{ display: "flex", justifyContent: "space-between", padding: "8px", background: isUnconfirmed ? "#2d2a2e" : "#1e293b", borderRadius: 4, border: `1px solid ${isUnconfirmed ? "#4a3f4e" : "#334155"}` }}>
             <span style={{ fontWeight: 600, color: "#f1f5f9" }}>{t.name}</span>
-            <span style={{ color: "#cbd5e1" }}>{t.value}</span>
+            <span style={{ color: isUnconfirmed ? "#c084fc" : "#cbd5e1" }}>{t.value}</span>
           </div>
         ))}
       </div>
@@ -59,9 +59,10 @@ function ComparisonMatrix({ selectedWorlds, allTraits }: { selectedWorlds: World
   );
 }
 
-function WorldDetail({ world, anomalies, traits }: { world: World; anomalies: Anomaly[]; traits: Trait[] }) {
+function WorldDetail({ world, anomalies, traits, unconfirmedTraits }: { world: World; anomalies: Anomaly[]; traits: Trait[]; unconfirmedTraits: any[] }) {
   const worldAnomalies = anomalies.filter(a => a.world_id === world.id);
   const worldTraits = traits.filter(t => t.universe_id === world.id);
+  const worldUnconfirmed = unconfirmedTraits.filter(t => t.universe_name === world.name);
   
   const groupedTraits = worldTraits.reduce((acc, t) => {
     const cat = t.category || "Other";
@@ -70,12 +71,19 @@ function WorldDetail({ world, anomalies, traits }: { world: World; anomalies: An
     return acc;
   }, {} as Record<string, Trait[]>);
 
+  const groupedUnconfirmed = worldUnconfirmed.reduce((acc, t) => {
+    const cat = t.category || "Other";
+    if (!acc[cat]) acc[cat] = [];
+    acc[cat].push(t);
+    return acc;
+  }, {} as Record<string, any[]>);
+
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
         <h2>{world.name}</h2>
         <div className="badge" style={{ fontSize: "1.2rem", padding: "4px 12px" }}>
-          Tier {world.tier !== null ? world.tier : "N/A"}
+          Tier {world.tier !== null && world.tier !== -1 ? world.tier : "Untiered"}
         </div>
       </div>
       <div className="detail-box">
@@ -89,6 +97,14 @@ function WorldDetail({ world, anomalies, traits }: { world: World; anomalies: An
           <TraitSection key={cat} category={cat} traits={ts} />
         ))}
         {worldTraits.length === 0 && <p className="muted">No structured traits found in main DB.</p>}
+      </div>
+
+      <div style={{ marginTop: 24 }}>
+        <h3>Unverified Research Notes</h3>
+        {Object.entries(groupedUnconfirmed).map(([cat, ts]) => (
+          <TraitSection key={cat} category={cat} traits={ts} isUnconfirmed />
+        ))}
+        {worldUnconfirmed.length === 0 && <p className="muted">No unconfirmed traits found in staging DB.</p>}
       </div>
 
       {worldAnomalies.length > 0 && (
@@ -117,6 +133,7 @@ function DatabasePanel() {
   const [worlds, setWorlds] = useState<World[]>([]);
   const [anomalies, setAnomalies] = useState<Anomaly[]>([]);
   const [traits, setTraits] = useState<Trait[]>([]);
+  const [unconfirmedTraits, setUnconfirmedTraits] = useState<any[]>([]);
   const [tierSystem, setTierSystem] = useState<string | null>(null);
   const [selectedWorldId, setSelectedWorldId] = useState<number | null>(null);
   const [compareIds, setCompareIds] = useState<number[]>([]);
@@ -131,8 +148,12 @@ function DatabasePanel() {
       setWorlds(data.worlds);
       setAnomalies(data.anomalies);
       
-      const allTraits = await api.fetchTraits();
+      const [allTraits, allUnconfirmed] = await Promise.all([
+        api.fetchTraits(),
+        api.fetchUnconfirmedTraits()
+      ]);
       setTraits(allTraits);
+      setUnconfirmedTraits(allUnconfirmed);
     } catch (e) { console.error(e); }
   };
 
@@ -210,7 +231,7 @@ function DatabasePanel() {
             <p className="muted">Select at least two worlds to compare.</p>
           )
         ) : (
-          selectedWorld ? <WorldDetail world={selectedWorld} anomalies={anomalies} traits={traits} /> : <p className="muted">Select a world to view details.</p>
+          selectedWorld ? <WorldDetail world={selectedWorld} anomalies={anomalies} traits={traits} unconfirmedTraits={unconfirmedTraits} /> : <p className="muted">Select a world to view details.</p>
         )}
         {anomalies.filter(a => a.world_id === null).length > 0 && (
           <div className="anomaly-list" style={{ marginTop: 16 }}>

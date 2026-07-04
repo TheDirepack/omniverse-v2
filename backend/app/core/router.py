@@ -93,7 +93,7 @@ class ModelRouter:
                 
                 keys = session.exec(select(ProviderKey).where(ProviderKey.provider_id == provider.id).order_by(ProviderKey.priority)).all()
                 if not keys and provider.provider_type in {"ollama", "custom"}:
-                    keys = [ProviderKey(id=-1, api_key="", priority=0)]
+                    keys = [ProviderKey(id=-1, api_key="not-needed", priority=0)]
 
                 models = [m.strip() for m in (route.models or provider.models or "").split(",") if m.strip()]
                 

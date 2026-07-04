@@ -1,4 +1,4 @@
-export type Tab = "dashboard" | "database" | "theories" | "settings";
+export type Tab = "dashboard" | "database" | "traits" | "logs" | "theories" | "settings";
 export type SettingsTab = "providers" | "routing" | "general";
 
 export type World = {
@@ -60,6 +60,17 @@ export type Trait = {
   reference: string | null;
   wiki_source: string | null;
 };
++
++export type UnconfirmedTrait = {
++  id: number;
++  universe_name: string;
++  category: string | null;
++  name: string;
++  value: string;
++  confidence: number;
++  source: string | null;
++};
+
 
 export type WorldRecord = {
   id: number;

@@ -1,4 +1,4 @@
-import type { World, Anomaly, LogEntry, ProviderRecord, AgentRouteRecord, WorldRecord } from "./types";
+import type { World, Anomaly, LogEntry, ProviderRecord, AgentRouteRecord, WorldRecord, Trait, UnconfirmedTrait } from "./types";
 
 const apiBase = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
 
@@ -35,6 +35,12 @@ export async function fetchTraits(universeIds?: number[]): Promise<Trait[]> {
   const query = universeIds ? `?universe_ids=${universeIds.join(",")}` : "";
   return apiFetch(`/api/traits${query}`);
 }
+
+export async function fetchUnconfirmedTraits(universeNames?: string[]): Promise<UnconfirmedTrait[]> {
+  const query = universeNames ? `?universe_ids=${universeNames.join(",")}` : "";
+  return apiFetch(`/api/traits/unconfirmed${query}`);
+}
+
 
 export async function fetchWorlds(): Promise<WorldRecord[]> {
   return apiFetch("/api/worlds");
@@ -133,6 +139,10 @@ export async function clearLogsApi(): Promise<any> {
   return apiFetch("/api/clear-logs", { method: "POST" });
 }
 
+export async function resetCandidateHealth(): Promise<any> {
+  return apiFetch("/api/settings/reset-health", { method: "POST" });
+}
+
 export async function fetchAgentActivity(): Promise<{ active_runs: string[]; logs: LogEntry[] }> {
   return apiFetch("/api/agent-activity");
 }
@@ -149,6 +159,11 @@ export async function extrapolate(payload: { scope: "all" | "worlds" | "tier"; w
     method: "POST",
     body: JSON.stringify(payload),
   });
+}
+
+export async function fetchFileLogs(filter?: string): Promise<string[]> {
+  const query = filter ? `?filter=${encodeURIComponent(filter)}` : "";
+  return apiFetch(`/api/logs/file${query}`);
 }
 
 export function createEventSource(runId: string): EventSource {

@@ -118,22 +118,15 @@ def real_server():
     run_id = _uuid.uuid4().hex[:8]
 
     # Module-local DB paths inside /tmp — no collision between modules
-    module_db_path = BACKEND_DIR / f"omniverse_v2_{run_id}.db"
+    module_db_path = Path(f"/tmp/omniverse_v2_{run_id}.db")
     module_unconfirmed_path = Path(f"/tmp/omniverse_test_unconfirmed_{run_id}.db")
 
-    # Backup real production DB if it accidentally lives in BACKEND_DIR
-    real_db_path = BACKEND_DIR / "omniverse_v2.db"
-    real_db_bak = None
-    if real_db_path.exists():
-        real_db_bak = real_db_path.with_suffix(".db.bak")
-        shutil.copy2(real_db_path, real_db_bak)
-
-    # Create seed DB at the module-local path
-    from tests.test_db import create_test_db
-    create_test_db(str(BACKEND_DIR), db_filename=f"omniverse_v2_{run_id}.db")
-
     # Start uvicorn pointing at the module-local DB
+    from tests.test_db import create_test_db
+    create_test_db("/tmp", db_filename=f"omniverse_v2_{run_id}.db")
+    
     port = _find_free_port()
+
     base_url = f"http://127.0.0.1:{port}"
     subprocess_env = {k: v for k, v in os.environ.items() if k != "DATABASE_URL"}
     subprocess_env["DATABASE_URL"] = f"sqlite:///{module_db_path}"
@@ -183,9 +176,6 @@ def real_server():
         if p.exists():
             p.unlink()
 
-    # Restore production DB backup if we made one
-    if real_db_bak and real_db_bak.exists():
-        shutil.move(str(real_db_bak), str(real_db_path))
 
 
 @pytest.fixture

@@ -195,20 +195,17 @@ function DashboardPanel() {
       </section>
 
       <section className="panel-grid" style={{ marginTop: 20 }}>
-        <div className="panel">
-          <h2>World Registry</h2>
-          <p className="help-text">Manage which worlds exist in the database. Click a world chip to toggle its explored flag.</p>
-          <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-            <input value={newWorldName} onChange={e => setNewWorldName(e.target.value)} placeholder="Add world to DB" />
-            <button className="primary" onClick={handleAddWorld} disabled={saving}>Add + Research</button>
-          </div>
-          <input
-            value={worldSearch}
-            onChange={e => setWorldSearch(e.target.value)}
-            placeholder="Search worlds..."
-          />
-          <button className="chip" onClick={handleResetAllExplored}>Reset All Explored Flags</button>
-           <div className="chips">
+          <div className="panel">
+            <h2>World Registry</h2>
+            <p className="help-text">Manage which worlds exist in the database. Click a world chip to toggle its explored flag.</p>
+            <input
+              value={worldSearch}
+              onChange={e => setWorldSearch(e.target.value)}
+              placeholder="Search worlds..."
+            />
+            <button className="chip" onClick={handleResetAllExplored}>Reset All Explored Flags</button>
+            <div className="chips">
+
              {displayWorlds.map(world => (
                <div key={world.id} style={{ display: 'inline-flex', alignItems: 'center', gap: '2px' }}>
                  <button className={world.is_explored ? "chip active" : "chip"} onClick={() => void handleResetWorldExplored(world.id)}>

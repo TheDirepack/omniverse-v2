@@ -211,6 +211,25 @@ function SettingsPanel() {
         <div className="settings-content">
           <h2>General Settings</h2>
           <p className="muted">Free-form key/value pairs used by custom agent prompts or integrations.</p>
+          
+          <div style={{ marginBottom: 24, padding: 16, background: "var(--bg-alt)", borderRadius: 8, border: "1px solid var(--border)" }}>
+            <h4 style={{ marginBottom: 8 }}>Model Health & Timeouts</h4>
+            <p className="muted" style={{ fontSize: "0.8rem", marginBottom: 12 }}>
+              Models that fail repeatedly are temporarily disabled (circuit breaker).
+            </p>
+            <button 
+              className="primary" 
+              onClick={async () => {
+                if (confirm("Reset all model timeouts and failure counts?")) {
+                  try { await api.resetCandidateHealth(); alert("Model health reset successfully."); } 
+                  catch (e) { console.error(e); }
+                }
+              }}
+            >
+              Reset Model Timeouts
+            </button>
+          </div>
+
           <div className="add-setting-row">
             <input
               value={newSettingKey}

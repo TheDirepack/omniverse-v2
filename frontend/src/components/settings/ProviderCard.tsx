@@ -64,6 +64,7 @@ function ProviderCard({ provider, onSave, onSaveKey, onDeleteKey, onDeleteProvid
   const [confirmDeleteKeyId, setConfirmDeleteKeyId] = useState<number | null>(null);
 
   const [confirmDeleteProvider, setConfirmDeleteProvider] = useState(false);
+  const [draggedItemIndex, setDraggedItemIndex] = useState<number | null>(null);
 
   const handleSaveName = async () => {
     if (!nameDraft.trim()) return;
@@ -156,6 +157,27 @@ function ProviderCard({ provider, onSave, onSaveKey, onDeleteKey, onDeleteProvid
     const newModels = [...modelsTags];
     [newModels[idx], newModels[target]] = [newModels[target], newModels[idx]];
     setModelsTags(newModels);
+  };
+
+  const handleDragStart = (e: React.DragEvent<HTMLDivElement>, index: number) => {
+    setDraggedItemIndex(index);
+    e.dataTransfer.effectAllowed = "move";
+  };
+
+  const handleDragOver = (e: React.DragEvent<HTMLDivElement>, index: number) => {
+    e.preventDefault();
+  };
+
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>, dropIndex: number) => {
+    e.preventDefault();
+    if (draggedItemIndex === null || draggedItemIndex === dropIndex) return;
+
+    const newModelsTags = [...modelsTags];
+    const [draggedItem] = newModelsTags.splice(draggedItemIndex, 1);
+    newModelsTags.splice(dropIndex, 0, draggedItem);
+
+    setModelsTags(newModelsTags);
+    setDraggedItemIndex(null);
   };
 
   const handleSaveKey = async (key: ProviderKey) => {
@@ -265,15 +287,17 @@ function ProviderCard({ provider, onSave, onSaveKey, onDeleteKey, onDeleteProvid
            <h4>Models this provider can serve</h4>
            <div className="models-list">
              {modelsTags.map((tag, idx) => (
-               <div key={tag} className="model-row">
+               <div 
+                 key={tag} 
+                 className="model-row"
+                 draggable
+                 onDragStart={(e) => handleDragStart(e, idx)}
+                 onDragOver={(e) => handleDragOver(e, idx)}
+                 onDrop={(e) => handleDrop(e, idx)}
+                 style={{ opacity: draggedItemIndex === idx ? 0.5 : 1, cursor: 'grab' }}
+               >
                  <span className="model-name">{tag}</span>
                  <div className="model-actions">
-                   {modelsTags.length > 1 && (
-                     <>
-                       <button className="chip" onClick={() => moveModelTag(idx, -1)} disabled={idx === 0}>↑</button>
-                       <button className="chip" onClick={() => moveModelTag(idx, 1)} disabled={idx === modelsTags.length - 1}>↓</button>
-                     </>
-                   )}
                    <button className="chip delete" onClick={() => removeModelTag(tag)}>×</button>
                  </div>
                </div>

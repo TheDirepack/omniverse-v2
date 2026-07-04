@@ -1,8 +1,16 @@
 import litellm
+import re
 from typing import Optional, Any, List, Dict
 from sqlmodel import Session, select
 from app.db.session import engine
 from app.db.schema import ProviderConfig, ProviderKey, AgentRouteFallback, Setting, ExecutionState
+
+def _clean_error(e: Exception) -> str:
+    msg = str(e).split('\n')[0]
+    if " - {" in msg:
+        msg = msg.split(" - {")[0]
+    msg = re.sub(r'^(litellm\.\w+Error: )+', r'\1', msg)
+    return msg.strip()
 
 class ModelRouter:
     def __init__(self):
@@ -75,16 +83,17 @@ class ModelRouter:
                 except Exception as e:
                     if run_id:
                         with Session(engine) as log_session:
+                            clean_e = _clean_error(e)
                             log_entry = ExecutionState(
                                 run_id=run_id,
                                 node_name="ModelRouter",
-                                thought=f"Fallback: {candidate['full_model']} failed due to {e}. Trying next candidate.",
+                                thought=f"Fallback: {candidate['full_model']} failed due to {clean_e}. Trying next candidate.",
                                 status="INFO",
                                 state_snapshot="{}"
                             )
                             log_session.add(log_entry)
                             log_session.commit()
-                    print(f"[ModelRouter] Fallback failed for {candidate['full_model']} with key {candidate['key'].id}: {e}")
+                    print(f"[ModelRouter] Fallback failed for {candidate['full_model']} with key {candidate['key'].id}: {_clean_error(e)}")
                     continue
             
             raise RuntimeError(f"All fallback options exhausted for task '{task}'.")

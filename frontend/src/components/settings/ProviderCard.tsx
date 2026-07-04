@@ -236,7 +236,7 @@ function ProviderCard({ provider, onSave, onSaveKey, onDeleteKey, onDeleteProvid
             <button className="chip delete" onClick={() => setConfirmDeleteProvider(true)} disabled={!onDeleteProvider}>Delete</button>
           )}
         </div>
-        {keyCount === 0 && <span className="badge-warning">⚠ 0 keys — routing steps using this provider will be skipped</span>}
+        {keyCount === 0 && typeDraft !== "ollama" && typeDraft !== "custom" && <span className="badge-warning">⚠ 0 keys — routing steps using this provider will be skipped</span>}
       </div>
 
       <div className="provider-card-body">

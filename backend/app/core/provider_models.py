@@ -5,7 +5,7 @@ from app.db.schema import ProviderConfig, ProviderKey
 
 PROVIDER_ENDPOINTS = {
     "ollama": lambda base: f"{base.rstrip('/')}/api/tags",
-    "custom": lambda base: f"{base.rstrip('/')}/v1/models",
+    "custom": lambda base: f"{base.rstrip('/')}/models" if base.rstrip('/').endswith('/v1') else f"{base.rstrip('/')}/v1/models",
     "openai": lambda _: "https://api.openai.com/v1/models",
     "anthropic": lambda _: "https://api.anthropic.com/v1/models",
     "gemini": lambda _: "https://generativelanguage.googleapis.com/v1/models",

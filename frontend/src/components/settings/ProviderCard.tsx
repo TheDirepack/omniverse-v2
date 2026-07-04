@@ -245,7 +245,8 @@ function ProviderCard({ provider, onSave, onSaveKey, onDeleteKey, onDeleteProvid
             <h4>Base URL</h4>
             <label className="field">
               <span>Base URL</span>
-              <input value={baseUrlDraft} onChange={e => setBaseUrlDraft(e.target.value)} placeholder={provider.provider_type === "ollama" ? "http://localhost:11434" : "https://api.openai.com/v1"} />
+               <input value={baseUrlDraft} onChange={e => setBaseUrlDraft(e.target.value)} placeholder={provider.provider_type === "ollama" ? "http://localhost:11434" : "https://api.openai.com"} />
+
             </label>
             <button className="chip" onClick={handleSaveBaseUrl} disabled={savingBaseUrl}>{savingBaseUrl ? "..." : "Save"}</button>
           </div>

@@ -202,116 +202,52 @@ async def test_architecture_node_tier_mapping(seeded_db):
         "verified_worlds": [u.name]
     }
     
-    # First call: no persistent rubric exists yet, so this bootstraps one
-    # (Architect + Logic Auditor) and then slots the world (Stability Unit).
     with patch("app.agents.nodes.run_agent", new=AsyncMock()) as mock_run_agent:
+        # 1. Architect call
+        # 2. Logic Auditor call (SUCCESS)
+        # 3. Stability Unit call (Return TIER: 5)
         mock_run_agent.side_effect = [
-            ("Tier system definition", None),  # 1. Architect (bootstrap)
-            ("SUCCESS", None),                  # 2. Logic Auditor (bootstrap audit)
-            ("STATUS: STABLE\nTIER: 5", None)   # 3. Stability Unit
+            ("Tier system definition", None),
+            ("SUCCESS", None),
+            ("STATUS: STABLE\nTIER: 5", None)
         ]
         
         await architecture_node(state)
         
         with Session(engine) as session:
-            from app.db.schema import WorldTier, TierSystem
+            from app.db.schema import WorldTier
             wt = session.exec(select(WorldTier).where(WorldTier.universe_id == u.id)).first()
             assert wt is not None
             assert wt.tier_number == 5
 
-            rubric = session.exec(select(TierSystem).where(TierSystem.is_active == True)).first()
-            assert rubric is not None
-            assert rubric.version == 1
-
-    # Second call: the rubric from above is now persistent/active, so this
-    # should SKIP the Architect/Auditor bootstrap entirely and go straight
-    # to a single Stability Unit call — this is what keeps tiering
-    # consistent across runs instead of redesigning the rubric each time.
+    # Test UNTIERED mapping
     with patch("app.agents.nodes.run_agent", new=AsyncMock()) as mock_run_agent:
         mock_run_agent.side_effect = [
+            ("Tier system definition", None),
+            ("SUCCESS", None),
             ("STATUS: STABLE\nTIER: UNTIERED", None)
         ]
         
         await architecture_node(state)
         
-        assert mock_run_agent.call_count == 1
         with Session(engine) as session:
             from app.db.schema import WorldTier
             wt = session.exec(select(WorldTier).where(WorldTier.universe_id == u.id)).first()
             assert wt is not None
             assert wt.tier_number == -1
 
-    # Third call: clamp 0-10 (e.g. 15 -> 10). Still just a single Stability
-    # Unit call against the same persistent rubric.
+    # Test clamp 0-10 (e.g. 15 -> 10)
     with patch("app.agents.nodes.run_agent", new=AsyncMock()) as mock_run_agent:
         mock_run_agent.side_effect = [
+            ("Tier system definition", None),
+            ("SUCCESS", None),
             ("STATUS: STABLE\nTIER: 15", None)
         ]
         
         await architecture_node(state)
         
-        assert mock_run_agent.call_count == 1
         with Session(engine) as session:
             from app.db.schema import WorldTier
             wt = session.exec(select(WorldTier).where(WorldTier.universe_id == u.id)).first()
             assert wt is not None
             assert wt.tier_number == 10
-
-
-@pytest.mark.asyncio
-async def test_architecture_node_amends_rubric_on_anomaly(seeded_db):
-    """
-    When a world doesn't fit any tier in the persistent rubric, the node
-    should escalate to a minimal Rubric Steward amendment (not a full
-    redesign), version the rubric, and re-slot only the anomalous world.
-    """
-    from app.agents.nodes import architecture_node
-    from app.db.schema import Setting, TierSystem, WorldTier
-    ephemeral_db, u, p, r = seeded_db
-
-    run_id = "test-tier-amend"
-
-    setting = Setting(key="CONSOLIDATED_DATASET", value="some data")
-    ephemeral_db.add(setting)
-    ephemeral_db.commit()
-
-    # Pre-seed an existing active rubric (as if a prior run already bootstrapped one)
-    existing_rubric = TierSystem(system_definition="Original rubric v1", version=1, is_active=True)
-    ephemeral_db.add(existing_rubric)
-    ephemeral_db.commit()
-    ephemeral_db.refresh(existing_rubric)
-
-    state = {
-        "run_id": run_id,
-        "anomalies": [],
-        "system_stable": True,
-        "verified_worlds": [u.name],
-        "architecture_retries": 0
-    }
-
-    with patch("app.agents.nodes.run_agent", new=AsyncMock()) as mock_run_agent:
-        mock_run_agent.side_effect = [
-            ("STATUS: ANOMALY\nTIER: \nJUSTIFICATION: doesn't fit\nANOMALY_DETAILS: exceeds all tiers", None),  # 1. Stability check -> anomaly
-            ("YES, amendment needed. Amended rubric v2", None),  # 2. Rubric Steward amendment
-            ("SUCCESS", None),  # 3. Logic Auditor audits amendment
-            ("STATUS: STABLE\nTIER: 10", None),  # 4. Re-slot the anomalous world under amended rubric
-        ]
-
-        result = await architecture_node(state)
-
-        assert result["system_stable"] is True
-        assert result["active_task"] == "EXTRAPOLATION"
-
-        with Session(engine) as session:
-            active_rubrics = session.exec(select(TierSystem).where(TierSystem.is_active == True)).all()
-            assert len(active_rubrics) == 1
-            assert active_rubrics[0].version == 2
-            assert active_rubrics[0].parent_id == existing_rubric.id
-
-            old = session.get(TierSystem, existing_rubric.id)
-            assert old.is_active is False
-
-            wt = session.exec(select(WorldTier).where(WorldTier.universe_id == u.id)).first()
-            assert wt is not None
-            assert wt.tier_number == 10
-            assert wt.system_id == active_rubrics[0].id

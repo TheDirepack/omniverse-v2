@@ -43,18 +43,8 @@ class Trait(SQLModel, table=True):
     value: str
 
 class TierSystem(SQLModel, table=True):
-    # A tier rubric. Rubrics are persistent: once is_active is set, new worlds
-    # should be slotted into the existing rubric rather than triggering a full
-    # redesign. version increments only when the rubric itself is amended
-    # (e.g. a new tier boundary is added to resolve a genuine anomaly).
-    # parent_id links an amended rubric back to the version it replaced, so
-    # the rubric's evolution can be audited.
     id: Optional[int] = Field(default=None, primary_key=True)
     system_definition: str
-    version: int = Field(default=1)
-    is_active: bool = Field(default=True)
-    parent_id: Optional[int] = Field(default=None, foreign_key="tiersystem.id")
-    amendment_reason: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 class WorldTier(SQLModel, table=True):

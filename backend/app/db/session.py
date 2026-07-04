@@ -44,22 +44,6 @@ def init_db():
         if "model_name" in route_columns and "models" in route_columns:
             conn.exec_driver_sql("ALTER TABLE agentroutefallback DROP COLUMN model_name")
 
-        # Migrate TierSystem into a persistent, versioned rubric
-        tiersystem_columns = [row[1] for row in conn.exec_driver_sql("PRAGMA table_info(tiersystem)").fetchall()]
-        if tiersystem_columns:
-            if "version" not in tiersystem_columns:
-                conn.exec_driver_sql("ALTER TABLE tiersystem ADD COLUMN version INTEGER NOT NULL DEFAULT 1")
-            if "is_active" not in tiersystem_columns:
-                conn.exec_driver_sql("ALTER TABLE tiersystem ADD COLUMN is_active BOOLEAN NOT NULL DEFAULT 1")
-                # Only the most recent pre-existing rubric (if any) should be considered active
-                conn.exec_driver_sql(
-                    "UPDATE tiersystem SET is_active = 0 WHERE id NOT IN (SELECT id FROM tiersystem ORDER BY created_at DESC LIMIT 1)"
-                )
-            if "parent_id" not in tiersystem_columns:
-                conn.exec_driver_sql("ALTER TABLE tiersystem ADD COLUMN parent_id INTEGER")
-            if "amendment_reason" not in tiersystem_columns:
-                conn.exec_driver_sql("ALTER TABLE tiersystem ADD COLUMN amendment_reason TEXT")
-
         # Migrate old 'openai' provider_type rows that have a custom base_url → 'custom'
         provider_columns = [row[1] for row in conn.exec_driver_sql("PRAGMA table_info(providerconfig)").fetchall()]
         if "provider_type" in provider_columns and "base_url" in provider_columns:

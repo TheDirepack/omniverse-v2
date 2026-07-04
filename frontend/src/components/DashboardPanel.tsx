@@ -172,9 +172,10 @@ function DashboardPanel() {
           <input value={focusedWorld} onChange={e => setFocusedWorld(e.target.value)} placeholder="World name" />
           <input value={focusedFeature} onChange={e => setFocusedFeature(e.target.value)} placeholder="Feature to prove/disprove" />
           <button className="primary" onClick={handleFocusedSearch} disabled={running}>Focused Search</button>
-          <h2>Database Controls</h2>
-          <p className="muted">Reset data, keep settings and seeded worlds.</p>
-          <button className="primary" onClick={handleResetDB}>Reset DB</button>
+           <h2>Database Controls</h2>
+           <p className="muted">Reset research data and flags, keep settings and worlds.</p>
+           <button className="primary" onClick={handleResetDB}>Reset DB</button>
+
         </div>
       </section>
     </>

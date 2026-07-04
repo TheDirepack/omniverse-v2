@@ -58,7 +58,9 @@ class WebSearcher:
 
     def _is_ai_container(self, element) -> bool:
         for selector in AI_CONTAINER_SELECTORS:
-            if element.select_one(selector):
+            # Check if element itself matches by checking if its parent matches it
+            parent = element.parent
+            if parent and parent.select_one(selector) == element:
                 return True
         return False
 

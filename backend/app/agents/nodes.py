@@ -6,7 +6,7 @@ from sqlmodel import Session, select
 from app.db.session import engine
 from app.db.schema import Universe, Trait, TierSystem, WorldTier, Anomaly, Theory, ExecutionState, Setting
 from app.core.agent_engine import run_agent, FetchCache
-from app.core.state import is_aborted
+from app.core.state import is_aborted, ABORTED_RUNS
 from app.core.context import set_current_universe
 from app.agents.state import OmniverseState
 from app.agents.prompts import (
@@ -48,7 +48,8 @@ def audit_success(audit_result: str) -> bool:
 
 async def research_single_world(world_name: str, run_id: str, focus: str | None = None, fetch_cache: FetchCache | None = None) -> Dict[str, Any]:
     """Researches and verifies a single world using an agentic tool loop with a discovery flow."""
-    await is_aborted(run_id)
+    if await is_aborted(run_id):
+        raise RuntimeError(f"Run {run_id} was aborted by user.")
     stage_label = f"{world_name} focused on {focus}" if focus else world_name
     set_current_universe(world_name)
     log_transition(run_id, "Research Unit", f"Initiating agentic research for world: {stage_label}", "IN_PROGRESS", {})
@@ -117,7 +118,7 @@ Include precise references as "url: section/line".
             )
             
             if "SUCCESS" in critique.upper():
-                return {"name": world_name, "summary": result}
+                return result
             
             feedback_history.append(f"Attempt {i+1} failed: {critique}")
             
@@ -126,6 +127,7 @@ Include precise references as "url: section/line".
     except Exception as e:
         log_transition(run_id, "Research Unit", f"Agent failed for {world_name}: {str(e)}", "FAILED", {})
         raise e
+
 
 
 async def summarize_universe(universe_id: int, run_id: str) -> str:
@@ -239,7 +241,8 @@ async def db_integrator_node(state: OmniverseState) -> Dict[str, Any]:
 async def research_node(state: OmniverseState) -> Dict[str, Any]:
     """LangGraph node to execute parallel research for all target worlds with batching to avoid overload."""
     run_id = state.get("run_id")
-    await is_aborted(run_id)
+    if await is_aborted(run_id):
+        raise RuntimeError(f"Run {run_id} was aborted by user.")
     target_worlds = state.get("target_worlds", [])
     
     log_transition(run_id, "Manager", f"Starting parallel research phase for {len(target_worlds)} worlds", "IN_PROGRESS", state)
@@ -281,7 +284,8 @@ async def manager_node(state: OmniverseState) -> Dict[str, Any]:
 async def consolidation_node(state: OmniverseState) -> Dict[str, Any]:
     """LangGraph node to synthesize multiple research results into a unified dataset."""
     run_id = state.get("run_id")
-    await is_aborted(run_id)
+    if await is_aborted(run_id):
+        raise RuntimeError(f"Run {run_id} was aborted by user.")
     results = state.get("research_results", [])
     
     log_transition(run_id, "Consolidator", "Starting synthesis of target worlds", "IN_PROGRESS", state)
@@ -321,7 +325,8 @@ async def consolidation_node(state: OmniverseState) -> Dict[str, Any]:
 async def architecture_node(state: OmniverseState) -> Dict[str, Any]:
     """LangGraph node to design and test the 11-tier hierarchy system with an adversarial critic."""
     run_id = state.get("run_id")
-    await is_aborted(run_id)
+    if await is_aborted(run_id):
+        raise RuntimeError(f"Run {run_id} was aborted by user.")
     anomalies = state.get("anomalies", [])
     
     log_transition(run_id, "Tier Architect", "Starting 11-tier architecture design", "IN_PROGRESS", state)
@@ -478,7 +483,8 @@ Call `submit_audit` with a STATUS (SUCCESS/REVISION_REQUIRED) and a detailed Cor
 async def extrapolation_node(state: OmniverseState) -> Dict[str, Any]:
     """LangGraph node to generate and audit speculative scaling theories."""
     run_id = state.get("run_id")
-    await is_aborted(run_id)
+    if await is_aborted(run_id):
+        raise RuntimeError(f"Run {run_id} was aborted by user.")
     log_transition(run_id, "Ontological Theorist", "Starting theoretical scaling projections", "IN_PROGRESS", state)
     
     generated_theories = []

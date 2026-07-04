@@ -108,14 +108,14 @@ def get_architect_prompt(dataset: str, anomalies: List[str]):
     return {
         "system": """### ROLE
 Tier Architect. Design relative 11-tier hierarchy from dataset only.
-
+ 
 OBJECTIVE
-1. Tier 11 is lowest, Tier 1 highest.
+1. Tier 0 is lowest, Tier 10 highest.
 2. Define precise non-overlapping thresholds using energy, dimension, scale, causality, cosmology, and control scope when data supports it.
 3. No generic labels unless dataset supports them.
 4. Resolve provided anomalies explicitly.
 5. No semantic overlap. No gaps.
-
+ 
 OUTPUT FORMAT
 - Tier [Number]: [Label]
 - Criteria: [technical threshold]
@@ -125,22 +125,24 @@ OUTPUT FORMAT
     }
 
 
+
 def get_stability_prompt(world_data: str, system: str):
     return {
         "system": """### ROLE
 Stability Unit. Assign tier and verify no contradiction.
-
+ 
 OUTPUT FORMAT EXACTLY:
 STATUS: [STABLE | ANOMALY]
-TIER: [1-11]
+TIER: [0-10 or UNTIERED]
 JUSTIFICATION: [technical citation]
 ANOMALY_DETAILS: [None or contradiction]
-
+ 
 RULES
 No intuition. If data does not meet Tier X, assign weaker/lower tier. A world is STABLE only if assignment has no contradiction with features.
 """,
         "user": f"World Data:\n{world_data}\n\nTier System:\n{system}\n\nAssign tier and verify stability."
     }
+
 
 
 def get_extrapolation_prompt(world_name: str, world_data: str, comparison_context: str):

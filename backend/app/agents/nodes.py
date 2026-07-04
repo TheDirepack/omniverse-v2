@@ -429,26 +429,24 @@ Call `submit_audit` with a STATUS (SUCCESS/REVISION_REQUIRED) and a detailed Cor
             
             is_stable = "STATUS: STABLE" in stability_result.upper()
             
-            tier_num = 11
-            tier_match = re.search(r"TIER:\s*(\d+)", stability_result, re.IGNORECASE)
-            if tier_match:
-                try:
-                    val = int(tier_match.group(1))
-                    tier_num = max(1, min(11, val))
-                except:
-                    pass
-                     
-            if not is_stable:
-                world_anomalies.append(f"{universe.name}: Anomaly detected during tiering: {stability_result}")
-                db_anomaly = Anomaly(universe_id=universe.id, description=stability_result)
-                session.add(db_anomaly)
-                session.commit()
-            else:
+                # Handle TIER: UNTIERED or numeric 0-10
+                tier_num = None
+                tier_match = re.search(r"TIER:\s*(\d+)", stability_result, re.IGNORECASE)
+                if tier_match:
+                    try:
+                        val = int(tier_match.group(1))
+                        tier_num = max(0, min(10, val))
+                    except:
+                        pass
+                elif "UNTIERED" in stability_result.upper():
+                    tier_num = -1 # Use -1 for untiered
+                
                 world_tier_mappings.append({
                     "universe_id": universe.id,
                     "tier": tier_num,
                     "justification": stability_result
                 })
+
                 
         if len(world_anomalies) > 0:
             retries = state.get("architecture_retries", 0) + 1

@@ -120,6 +120,10 @@ export async function resetDatabase(): Promise<any> {
   return apiFetch("/api/reset-database", { method: "POST" });
 }
 
+export async function resetCandidateHealth(): Promise<any> {
+  return apiFetch("/api/settings/reset-health", { method: "POST" });
+}
+
 export async function clearLogsApi(): Promise<any> {
   return apiFetch("/api/clear-logs", { method: "POST" });
 }

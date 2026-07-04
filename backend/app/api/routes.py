@@ -187,6 +187,16 @@ def delete_world(world_id: int):
         session.commit()
         return {"status": "success"}
 
+@router.post("/settings/reset-health")
+def reset_candidate_health():
+    with Session(engine) as session:
+        session.exec(select(CandidateHealth)).all() # just to make sure it exists
+        # To reset all, we can just delete them or set failure_count=0
+        # Deleting them is cleanest as _get_health will recreate them
+        session.exec(CandidateHealth.__table__.delete())
+        session.commit()
+    return {"status": "success", "message": "All candidate circuit breakers reset."}
+
 @router.get("/providers")
 def get_providers():
     with Session(engine) as session:

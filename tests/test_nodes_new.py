@@ -1,6 +1,7 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
-from sqlmodel import Session
+from sqlmodel import Session, select
+from app.db.session import engine
 from app.core.agent_engine import run_agent, FetchCache
 from app.agents.nodes import research_single_world, summarize_universe, db_integrator_node, consolidation_node, architecture_node
 from app.db.schema import Setting
@@ -180,3 +181,73 @@ async def test_extrapolation_node_success(seeded_db):
         assert result["generated_theories"][0]["theory"] == "Theories: theory1"
         assert result["active_task"] == "FINISHED"
         assert mock_run_agent.call_count == 2
+
+@pytest.mark.asyncio
+async def test_architecture_node_tier_mapping(seeded_db):
+    from app.agents.nodes import architecture_node
+    ephemeral_db, u, p, r = seeded_db
+    
+    run_id = "test-tier-map"
+    
+    # Need CONSOLIDATED_DATASET for the node to proceed
+    from app.db.schema import Setting
+    setting = Setting(key="CONSOLIDATED_DATASET", value="some data")
+    ephemeral_db.add(setting)
+    ephemeral_db.commit()
+    
+    state = {
+        "run_id": run_id,
+        "anomalies": [],
+        "system_stable": True,
+        "verified_worlds": [u.name]
+    }
+    
+    with patch("app.agents.nodes.run_agent", new=AsyncMock()) as mock_run_agent:
+        # 1. Architect call
+        # 2. Logic Auditor call (SUCCESS)
+        # 3. Stability Unit call (Return TIER: 5)
+        mock_run_agent.side_effect = [
+            ("Tier system definition", None),
+            ("SUCCESS", None),
+            ("STATUS: STABLE\nTIER: 5", None)
+        ]
+        
+        await architecture_node(state)
+        
+        with Session(engine) as session:
+            from app.db.schema import WorldTier
+            wt = session.exec(select(WorldTier).where(WorldTier.universe_id == u.id)).first()
+            assert wt is not None
+            assert wt.tier_number == 5
+
+    # Test UNTIERED mapping
+    with patch("app.agents.nodes.run_agent", new=AsyncMock()) as mock_run_agent:
+        mock_run_agent.side_effect = [
+            ("Tier system definition", None),
+            ("SUCCESS", None),
+            ("STATUS: STABLE\nTIER: UNTIERED", None)
+        ]
+        
+        await architecture_node(state)
+        
+        with Session(engine) as session:
+            from app.db.schema import WorldTier
+            wt = session.exec(select(WorldTier).where(WorldTier.universe_id == u.id)).first()
+            assert wt is not None
+            assert wt.tier_number == -1
+
+    # Test clamp 0-10 (e.g. 15 -> 10)
+    with patch("app.agents.nodes.run_agent", new=AsyncMock()) as mock_run_agent:
+        mock_run_agent.side_effect = [
+            ("Tier system definition", None),
+            ("SUCCESS", None),
+            ("STATUS: STABLE\nTIER: 15", None)
+        ]
+        
+        await architecture_node(state)
+        
+        with Session(engine) as session:
+            from app.db.schema import WorldTier
+            wt = session.exec(select(WorldTier).where(WorldTier.universe_id == u.id)).first()
+            assert wt is not None
+            assert wt.tier_number == 10

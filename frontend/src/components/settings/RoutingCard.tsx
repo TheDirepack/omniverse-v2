@@ -33,16 +33,57 @@ function RoutingCard({ agentName, routes, providers, onSave, onDelete, defaultRo
     await onSave(localRoutes[idx]);
   };
 
+  // State for tag inputs per route
+  const [modelDrafts, setModelDrafts] = useState<Record<number, string>>({});
+
+  useEffect(() => {
+    const drafts: Record<number, string> = {};
+    localRoutes.forEach((r, idx) => {
+      drafts[idx] = "";
+    });
+    setModelDrafts(drafts);
+  }, [localRoutes]);
+
+  const addModelTag = (idx: number, model: string) => {
+    if (!model.trim()) return;
+    const currentModels = (localRoutes[idx].models || "").split(",").map(m => m.trim()).filter(Boolean);
+    if (!currentModels.includes(model.trim())) {
+      const newModels = [...currentModels, model.trim()].join(",");
+      updateRoute(idx, "models", newModels);
+    }
+    setModelDrafts(prev => ({ ...prev, [idx]: "" }));
+  };
+
+  const removeModelTag = (idx: number, model: string) => {
+    const currentModels = (localRoutes[idx].models || "").split(",").map(m => m.trim()).filter(Boolean);
+    const newModels = currentModels.filter(m => m !== model).join(",");
+    updateRoute(idx, "models", newModels || null);
+  };
+
   // Compute resolved sequence
   const resolvedSequence: Array<{ provider: string; keyLabel: string; model: string }> = [];
-  const routesToResolve = localRoutes.length > 0 ? localRoutes : (defaultRoutes ?? []);
+  const routesToResolve = [...(localRoutes.length > 0 ? localRoutes : (defaultRoutes ?? []))].sort((a, b) => (a.priority ?? 0) - (b.priority ?? 0));
+  const seen = new Set<string>();
+
   routesToResolve.forEach(route => {
     const provider = providers.find(p => p.id === route.provider_id);
     if (!provider) return;
     const models = (route.models || provider.models || "").split(",").map(m => m.trim()).filter(Boolean);
-    provider.keys.forEach((_, kIdx) => {
+    
+    // If provider has no keys, treat as a single virtual key (common for Ollama/Local)
+    const keys = provider.keys.length > 0 ? provider.keys : [{}];
+    
+    keys.forEach((_, kIdx) => {
       models.forEach(model => {
-        resolvedSequence.push({ provider: provider.name, keyLabel: `Key ${kIdx + 1}`, model });
+        const id = `${provider.id}:${kIdx}:${model}`;
+        if (!seen.has(id)) {
+          resolvedSequence.push({ 
+            provider: provider.name, 
+            keyLabel: provider.keys.length > 0 ? `Key ${kIdx + 1}` : "No Key", 
+            model 
+          });
+          seen.add(id);
+        }
       });
     });
   });
@@ -90,32 +131,47 @@ function RoutingCard({ agentName, routes, providers, onSave, onDelete, defaultRo
                     {providers.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                   </select>
                   
-                   {route.provider_id && (
-                      <div className="route-models-selector">
-                        {(() => {
-                          const providerModels = providers.find(p => p.id === route.provider_id)?.models ?? null;
-                          const modelList = providerModels ? providerModels.split(",").map(m => m.trim()).filter(Boolean) : [];
-                          return (
-                            <>
-                              <select
-                                value={route.models ?? ""}
-                                onChange={e => updateRoute(idx, "models", e.target.value || null)}
-                              >
-                                <option value="">Select Model</option>
-                                {modelList.length > 0 ? modelList.map(m => (
-                                  <option key={m} value={m}>{m}</option>
-                                )) : (
-                                  <option value="" disabled>— No models configured —</option>
-                                )}
-                              </select>
-                              {modelList.length === 0 && (
-                                <span className="help-text">Add models in Provider settings</span>
-                              )}
-                            </>
-                          );
-                        })()}
-                      </div>
-                    )}
+                    {route.provider_id && (
+                       <div className="route-models-selector">
+                         {(() => {
+                           const provider = providers.find(p => p.id === route.provider_id);
+                           const providerModels = provider?.models ?? "";
+                           const modelList = providerModels ? providerModels.split(",").map(m => m.trim()).filter(Boolean) : [];
+                           const selectedModels = (route.models || "").split(",").map(m => m.trim()).filter(Boolean);
+                           return (
+                             <div className="models-tags">
+                               {selectedModels.map(m => (
+                                 <span key={m} className="tag">
+                                   {m}
+                                   <button className="tag-remove" onClick={() => removeModelTag(idx, m)}>×</button>
+                                 </span>
+                               ))}
+                               <div className="tag-input-wrap">
+                                 <select
+                                   value={modelDrafts[idx] || ""}
+                                   onChange={e => setModelDrafts(prev => ({ ...prev, [idx]: e.target.value }))}
+                                   className="tag-input"
+                                   style={{ width: '160px' }}
+                                 >
+                                   <option value="">+ Add Model</option>
+                                   {modelList.map(m => (
+                                     <option key={m} value={m}>{m}</option>
+                                   ))}
+                                 </select>
+                                 <button 
+                                   className="chip" 
+                                   onClick={() => addModelTag(idx, modelDrafts[idx] || "")}
+                                   disabled={!modelDrafts[idx]}
+                                 >
+                                   Add
+                                 </button>
+                               </div>
+                             </div>
+                           );
+                         })()}
+                       </div>
+                     )}
+
                    
                    <div className="slot-actions">
                      <button className="chip" onClick={() => void handleSave(idx)}>Save</button>

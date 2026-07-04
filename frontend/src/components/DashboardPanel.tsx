@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { Loader2, Play } from "lucide-react";
 import type { WorldRecord, LogEntry } from "../types";
 import * as api from "../api";
@@ -24,6 +24,15 @@ function DashboardPanel() {
   const [focusedFeature, setFocusedFeature] = useState("");
   const [worldSearch, setWorldSearch] = useState("");
   const [showAllWorlds, setShowAllWorlds] = useState(false);
+  const logEndRef = useRef<HTMLDivElement>(null);
+
+  const scrollToBottom = useCallback(() => {
+    logEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, []);
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [logs, scrollToBottom]);
 
   const refreshWorlds = useCallback(async () => {
     try { setWorldRegistry(await api.fetchWorlds()); } catch (e) { console.error(e); }
@@ -100,8 +109,16 @@ function DashboardPanel() {
     try { setRunId((await api.runFocusedSearch(focusedWorld.trim(), focusedFeature.trim())).run_id); } catch (e) { console.error(e); }
   };
 
-  const handleResetDB = async () => {
-    try { await api.resetDatabase(); await refreshWorlds(); } catch (e) { console.error(e); }
+  const handleStopRun = async () => {
+    if (!runId) return;
+    try {
+      await api.abortRun(runId);
+      // The EventSource will eventually receive a 'finished' message with aborted: true
+      // but we can set running to false immediately for better UI responsiveness
+      setRunning(false);
+    } catch (e) {
+      console.error("Failed to stop run:", e);
+    }
   };
 
   const handleClearLogs = async () => {
@@ -120,27 +137,38 @@ function DashboardPanel() {
             placeholder="Warhammer 40k, Star Wars, Harry Potter"
           />
           <p className="help-text">Comma-separated world names. Each one runs the full research → tier pipeline.</p>
-          <div className="button-row">
-            <button className="primary" onClick={handleStartRun} disabled={running}>
-              {running ? <Loader2 className="spin" size={16} /> : <Play size={16} />} Run
-            </button>
-            <button className="primary" onClick={handleResearchUnexplored} disabled={running}>
-              Research All Unexplored ({unexploredCount} worlds)
-            </button>
-          </div>
+           <div className="button-row">
+             {running ? (
+               <button className="chip delete" onClick={handleStopRun}>Stop Research</button>
+             ) : (
+               <>
+                 <button className="primary" onClick={handleStartRun}>
+                   <Play size={16} /> Run
+                 </button>
+                 <button className="primary" onClick={handleResearchUnexplored}>
+                   Research All Unexplored ({unexploredCount} worlds)
+                 </button>
+               </>
+             )}
+           </div>
+
         </div>
-        <div className="panel terminal">
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <h2>Live Logs</h2>
-            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-              <span className={`status-pill ${running ? "running" : logs.length > 0 ? "idle" : "idle"}`}>
-                {running ? "Running" : logs.some(l => l.status === "FAILED") ? "Failed" : logs.length > 0 ? "Completed" : "Idle"}
-              </span>
-              <button className="chip" onClick={handleClearLogs}>Clear Logs</button>
+          <div className="panel terminal">
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+              <h2>Live Logs</h2>
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <span className={`status-pill ${running ? "running" : logs.length > 0 ? "idle" : "idle"}`}>
+                  {running ? "Running" : logs.some(l => l.status === "FAILED") ? "Failed" : logs.length > 0 ? "Completed" : "Idle"}
+                </span>
+                <button className="chip" onClick={handleClearLogs}>Clear Logs</button>
+              </div>
+            </div>
+            <div className="log-container">
+              {logs.length === 0 ? <p className="muted">No logs yet.</p> : logs.map((log, index) => <LogLine key={index} log={log} />)}
+              <div ref={logEndRef} />
             </div>
           </div>
-          {logs.length === 0 ? <p className="muted">No logs yet.</p> : logs.map((log, index) => <LogLine key={index} log={log} />)}
-        </div>
+
       </section>
 
       <section className="panel-grid" style={{ marginTop: 20 }}>

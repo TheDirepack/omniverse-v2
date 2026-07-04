@@ -3,16 +3,18 @@ import sys
 import time
 import socket
 import subprocess
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import pytest
 import httpx
 
-from sqlmodel import Session
+from datetime import datetime, timedelta
+from sqlmodel import Session, select
 
 from app.db.schema import ProviderConfig, ProviderKey, AgentRouteFallback
 from app.db.session import engine
-from app.core.router import router
+from app.core.router import router, calculate_candidate_hash
 
 
 TEST_DIR = Path(__file__).parent
@@ -355,17 +357,91 @@ class TestKeyFallback:
             )
             session.add(p)
             session.flush()
-
+            
             session.add(AgentRouteFallback(
                 task_type="TEST_NO_KEYS", provider_id=p.id, models="gpt-4", priority=0
             ))
             session.commit()
-
+        
         with pytest.raises(RuntimeError, match="All fallback options exhausted"):
             await router.run_model(
                 "TEST_NO_KEYS",
                 messages=[{"role": "user", "content": "hi"}],
             )
+
+class TestCandidateHealth:
+    @pytest.mark.asyncio
+    async def test_circuit_breaker_disables_after_5_failures(self, fake_llm_server):
+        base_url = fake_llm_server
+        _set_bad_keys(base_url, ["bad-key"])
+        _seed_provider(base_url, api_keys=["bad-key"], models="gpt-4")
+        
+        # 5 failures should disable it
+        for _ in range(5):
+            with pytest.raises(RuntimeError, match="All fallback options exhausted"):
+                await router.run_model("TEST", messages=[{"role": "user", "content": "hi"}])
+        
+        # 6th call should still fail, but verify it's disabled in DB
+        with Session(engine) as session:
+            from app.db.schema import CandidateHealth
+            health = session.exec(select(CandidateHealth)).first()
+            assert health is not None
+            assert health.failure_count == 5
+            assert health.disabled_until is not None
+            
+    @pytest.mark.asyncio
+    async def test_disabled_candidate_skipped(self, fake_llm_server):
+        base_url = fake_llm_server
+        _set_bad_keys(base_url, ["bad-key"])
+        _seed_provider(base_url, api_keys=["bad-key", "good-key"], models="gpt-4")
+        
+        # Force first key to be disabled
+        with Session(engine) as session:
+            from app.db.schema import CandidateHealth
+            # We need the specific key id. Seed provider does this.
+            # Let's just find the one for 'bad-key'
+            from app.db.schema import ProviderKey
+            key = session.exec(select(ProviderKey).where(ProviderKey.api_key == "bad-key")).first()
+            provider = session.get(ProviderConfig, key.provider_id)
+            c_hash = calculate_candidate_hash(provider.id, key.id, "gpt-4")
+            health = CandidateHealth(
+                candidate_hash=c_hash,
+                provider_id=provider.id,
+                key_id=key.id,
+                model="gpt-4",
+                failure_count=5,
+                disabled_until=datetime.utcnow() + timedelta(hours=1)
+            )
+            session.add(health)
+            session.commit()
+            
+        # Should skip bad-key and go straight to good-key
+        result = await router.run_model("TEST", messages=[{"role": "user", "content": "hi"}])
+        content = result["choices"][0]["message"]["content"]
+        assert "good-key" in content
+
+    @pytest.mark.asyncio
+    async def test_success_resets_failure_count(self, fake_llm_server):
+        base_url = fake_llm_server
+        _set_bad_keys(base_url, ["bad-key"])
+        _seed_provider(base_url, api_keys=["bad-key", "good-key"], models="gpt-4")
+        
+        # Fail 3 times with bad-key (by making good-key bad temporarily)
+        _set_bad_keys(base_url, ["bad-key", "good-key"])
+        for _ in range(3):
+            with pytest.raises(RuntimeError):
+                await router.run_model("TEST", messages=[{"role": "user", "content": "hi"}])
+        
+        # Now make good-key work
+        _set_bad_keys(base_url, ["bad-key"])
+        await router.run_model("TEST", messages=[{"role": "user", "content": "hi"}])
+        
+        with Session(engine) as session:
+            from app.db.schema import CandidateHealth
+            health = session.exec(select(CandidateHealth).where(CandidateHealth.model == "gpt-4")).all()
+            # Check that at least one candidate (the successful one) has failure_count == 0
+            assert any(h.failure_count == 0 for h in health)
+
 
 
 

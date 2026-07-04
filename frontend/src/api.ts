@@ -128,6 +128,13 @@ export async function clearLogsApi(): Promise<any> {
   return apiFetch("/api/clear-logs", { method: "POST" });
 }
 
+export async function abortRun(runId: string): Promise<any> {
+  return apiFetch("/api/abort", {
+    method: "POST",
+    body: JSON.stringify({ runId }),
+  });
+}
+
 export function createEventSource(runId: string): EventSource {
   return new EventSource(`${apiBase}/api/logs/${runId}`);
 }

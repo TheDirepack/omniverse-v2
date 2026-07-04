@@ -17,6 +17,15 @@ def _enable_foreign_keys(dbapi_connection, connection_record):
     cursor.close()
 
 def init_db():
+    # Handle CandidateHealth migration: drop if missing candidate_hash PK
+    with engine.begin() as conn:
+        res = conn.exec_driver_sql("SELECT name FROM sqlite_master WHERE type='table' AND name='candidatehealth'").fetchall()
+        if res:
+            columns = [row[1] for row in conn.exec_driver_sql("PRAGMA table_info(candidatehealth)").fetchall()]
+            if "candidate_hash" not in columns:
+                print("[init_db] CandidateHealth missing candidate_hash. Dropping table for recreation.")
+                conn.exec_driver_sql("DROP TABLE candidatehealth")
+
     SQLModel.metadata.create_all(engine)
     with engine.begin() as conn:
         conn.exec_driver_sql("PRAGMA foreign_keys = ON")

@@ -41,8 +41,11 @@ class ModelRouter:
     def _report_failure(self, session: Session, provider_id: int, key_id: Optional[int], model: str):
         health = self._get_health(session, provider_id, key_id, model)
         health.failure_count += 1
+        # Disable for 1 minute on any error; if 5+ errors, disable for 4 hours
         if health.failure_count >= 5:
             health.disabled_until = datetime.utcnow() + timedelta(hours=4)
+        else:
+            health.disabled_until = datetime.utcnow() + timedelta(minutes=1)
         session.add(health)
         session.commit()
 

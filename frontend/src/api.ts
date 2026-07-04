@@ -128,6 +128,10 @@ export async function clearLogsApi(): Promise<any> {
   return apiFetch("/api/clear-logs", { method: "POST" });
 }
 
+export async function fetchAgentActivity(): Promise<{ active_runs: string[]; logs: LogEntry[] }> {
+  return apiFetch("/api/agent-activity");
+}
+
 export async function abortRun(runId: string): Promise<any> {
   return apiFetch("/api/abort", {
     method: "POST",

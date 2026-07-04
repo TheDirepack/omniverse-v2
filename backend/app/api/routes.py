@@ -573,7 +573,8 @@ async def get_realtime_logs(run_id: str):
                 ).order_by(ExecutionState.id)
                 new_logs = session.exec(statement).all()
                 for log in new_logs:
-                    yield f"data: {json.dumps({'node_name': log.node_name, 'thought': log.thought, 'status': log.status, 'created_at': str(log.created_at)})}\n\n"
+                                     yield f"data: {json.dumps({'id': log.id, 'node_name': log.node_name, 'thought': log.thought, 'status': log.status, 'created_at': str(log.created_at)})}\n\n"
+
                     last_id = log.id
                     if log.status in {"FAILED", "ABORTED", "ABORT_REQUESTED"}:
                         yield f"data: {json.dumps({'finished': True, 'failed': True if log.status == 'FAILED' else False, 'aborted': True if log.status != 'FAILED' else False})}\n\n"

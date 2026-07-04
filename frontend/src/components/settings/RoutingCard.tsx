@@ -37,11 +37,17 @@ function RoutingCard({ agentName, routes, providers, onSave, onDelete, defaultRo
   const [modelDrafts, setModelDrafts] = useState<Record<number, string>>({});
 
   useEffect(() => {
-    const drafts: Record<number, string> = {};
-    localRoutes.forEach((r, idx) => {
-      drafts[idx] = "";
+    setModelDrafts(prev => {
+      const next = { ...prev };
+      let changed = false;
+      localRoutes.forEach((_, idx) => {
+        if (!(idx in next)) {
+          next[idx] = "";
+          changed = true;
+        }
+      });
+      return changed ? next : prev;
     });
-    setModelDrafts(drafts);
   }, [localRoutes]);
 
   const addModelTag = (idx: number, model: string) => {
@@ -62,16 +68,16 @@ function RoutingCard({ agentName, routes, providers, onSave, onDelete, defaultRo
 
   // Compute resolved sequence
   const resolvedSequence: Array<{ provider: string; keyLabel: string; model: string }> = [];
-  const routesToResolve = [...(localRoutes.length > 0 ? localRoutes : (defaultRoutes ?? []))].sort((a, b) => (a.priority ?? 0) - (b.priority ?? 0));
+  const routesToResolve = (localRoutes.length > 0 ? localRoutes : (defaultRoutes ?? [])).slice().sort((a, b) => (a.priority ?? 0) - (b.priority ?? 0));
   const seen = new Set<string>();
 
   routesToResolve.forEach(route => {
+    if (!route) return;
     const provider = providers.find(p => p.id === route.provider_id);
     if (!provider) return;
     const models = (route.models || provider.models || "").split(",").map(m => m.trim()).filter(Boolean);
     
-    // If provider has no keys, treat as a single virtual key (common for Ollama/Local)
-    const keys = provider.keys.length > 0 ? provider.keys : [{}];
+    const keys = provider.keys && provider.keys.length > 0 ? provider.keys : [{}];
     
     keys.forEach((_, kIdx) => {
       models.forEach(model => {
@@ -79,7 +85,7 @@ function RoutingCard({ agentName, routes, providers, onSave, onDelete, defaultRo
         if (!seen.has(id)) {
           resolvedSequence.push({ 
             provider: provider.name, 
-            keyLabel: provider.keys.length > 0 ? `Key ${kIdx + 1}` : "No Key", 
+            keyLabel: provider.keys && provider.keys.length > 0 ? `Key ${kIdx + 1}` : "No Key", 
             model 
           });
           seen.add(id);

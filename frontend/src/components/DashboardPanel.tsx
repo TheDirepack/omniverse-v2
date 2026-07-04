@@ -38,13 +38,29 @@ function DashboardPanel() {
     try { setWorldRegistry(await api.fetchWorlds()); } catch (e) { console.error(e); }
   }, []);
 
-  useEffect(() => { void refreshWorlds(); }, [refreshWorlds]);
+  useEffect(() => {
+    const init = async () => {
+      try {
+        const { active_runs, logs: recentLogs } = await api.fetchAgentActivity();
+        if (active_runs.length > 0) {
+          setRunId(active_runs[0]);
+          setLogs([...recentLogs].reverse());
+          setRunning(true);
+        }
+      } catch (e) {
+        console.error("Failed to fetch initial activity:", e);
+      }
+    };
+    refreshWorlds();
+    init();
+  }, [refreshWorlds]);
 
   useEffect(() => {
     if (!runId) return;
-    setLogs([]);
     setRunning(true);
     const source = api.createEventSource(runId);
+    const seenIds = new Set(logs.map(l => l.id));
+
     source.onmessage = event => {
       const data = JSON.parse(event.data) as LogEntry & { finished?: boolean };
       if (data.finished) {
@@ -52,7 +68,10 @@ function DashboardPanel() {
         setRunning(false);
         return;
       }
-      setLogs(prev => [...prev, data]);
+      if (data.id && !seenIds.has(data.id)) {
+        setLogs(prev => [...prev, data]);
+        seenIds.add(data.id);
+      }
     };
     source.onerror = () => { source.close(); setRunning(false); };
     return () => source.close();
@@ -113,12 +132,14 @@ function DashboardPanel() {
     if (!runId) return;
     try {
       await api.abortRun(runId);
-      // The EventSource will eventually receive a 'finished' message with aborted: true
-      // but we can set running to false immediately for better UI responsiveness
       setRunning(false);
     } catch (e) {
       console.error("Failed to stop run:", e);
     }
+  };
+
+  const handleResetDB = async () => {
+    try { await api.resetDatabase(); await refreshWorlds(); } catch (e) { console.error(e); }
   };
 
   const handleClearLogs = async () => {

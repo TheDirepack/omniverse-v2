@@ -150,6 +150,14 @@ function ProviderCard({ provider, onSave, onSaveKey, onDeleteKey, onDeleteProvid
     setModelsTags(modelsTags.filter(t => t !== tag));
   };
 
+  const moveModelTag = (idx: number, direction: -1 | 1) => {
+    const target = idx + direction;
+    if (target < 0 || target >= modelsTags.length) return;
+    const newModels = [...modelsTags];
+    [newModels[idx], newModels[target]] = [newModels[target], newModels[idx]];
+    setModelsTags(newModels);
+  };
+
   const handleSaveKey = async (key: ProviderKey) => {
     setSavingKeyIds(prev => new Set(prev).add(key.id));
     try {
@@ -252,32 +260,42 @@ function ProviderCard({ provider, onSave, onSaveKey, onDeleteKey, onDeleteProvid
           </div>
         )}
 
-        {/* Models */}
-        <div className="provider-section">
-          <h4>Models this provider can serve</h4>
-          <div className="models-tags">
-            {modelsTags.map(tag => (
-              <span key={tag} className="tag">
-                {tag}
-                <button className="tag-remove" onClick={() => removeModelTag(tag)}>×</button>
-              </span>
-            ))}
-            <span className="tag-input-wrap">
-              <input
-                value={newModelTag}
-                onChange={e => setNewModelTag(e.target.value)}
-                onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); addModelTag(); } }}
-                placeholder="+ add model"
-                className="tag-input"
-              />
-            </span>
-          </div>
+         {/* Models */}
+         <div className="provider-section">
+           <h4>Models this provider can serve</h4>
+           <div className="models-list">
+             {modelsTags.map((tag, idx) => (
+               <div key={tag} className="model-row">
+                 <span className="model-name">{tag}</span>
+                 <div className="model-actions">
+                   {modelsTags.length > 1 && (
+                     <>
+                       <button className="chip" onClick={() => moveModelTag(idx, -1)} disabled={idx === 0}>↑</button>
+                       <button className="chip" onClick={() => moveModelTag(idx, 1)} disabled={idx === modelsTags.length - 1}>↓</button>
+                     </>
+                   )}
+                   <button className="chip delete" onClick={() => removeModelTag(tag)}>×</button>
+                 </div>
+               </div>
+             ))}
+           </div>
+           <div className="tag-input-wrap">
+             <input
+               value={newModelTag}
+               onChange={e => setNewModelTag(e.target.value)}
+               onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); addModelTag(); } }}
+               placeholder="+ add model"
+               className="tag-input"
+             />
+             <button className="chip" onClick={addModelTag} disabled={!newModelTag.trim()}>Add</button>
+           </div>
            <p className="help-text">These become the model choices when you build routing rules for this provider. Enter model names and press Enter to add.</p>
            <div className="provider-actions">
              <button className="chip" onClick={handleSaveModels} disabled={savingModels}>{savingModels ? "..." : "Save"}</button>
              <button className="chip" onClick={fetchModels} disabled={fetchingModels}>{fetchingModels ? "..." : "Sync Saved Models"}</button>
            </div>
          </div>
+
 
         {/* API Keys */}
         <div className="provider-section">

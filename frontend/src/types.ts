@@ -19,6 +19,7 @@ export type Anomaly = {
 };
 
 export type LogEntry = {
+  id: number;
   node_name: string;
   thought: string;
   status: string;

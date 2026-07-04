@@ -172,6 +172,21 @@ def delete_provider(provider_id: int):
         session.commit()
         return {"status": "success"}
 
+@router.delete("/worlds/{world_id}")
+def delete_world(world_id: int):
+    with Session(engine) as session:
+        universe = session.get(Universe, world_id)
+        if not universe:
+            raise HTTPException(status_code=404, detail="World not found")
+        
+        session.exec(WorldTier.__table__.delete().where(WorldTier.universe_id == world_id))
+        session.exec(Theory.__table__.delete().where(Theory.universe_id == world_id))
+        session.exec(Anomaly.__table__.delete().where(Anomaly.universe_id == world_id))
+        
+        session.delete(universe)
+        session.commit()
+        return {"status": "success"}
+
 @router.get("/providers")
 def get_providers():
     with Session(engine) as session:

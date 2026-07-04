@@ -84,8 +84,14 @@ function DashboardPanel() {
   const handleResetWorldExplored = async (worldId: number) => {
     await api.resetWorldExplored(worldId); await refreshWorlds();
   };
-
+ 
+  const handleDeleteWorld = async (worldId: number) => {
+    if (!confirm("Are you sure you want to delete this world? All associated data will be lost.")) return;
+    try { await api.deleteWorld(worldId); await refreshWorlds(); } catch (e) { console.error(e); }
+  };
+ 
   const handleFocusedSearch = async () => {
+
     if (!focusedWorld.trim() || !focusedFeature.trim()) return;
     try { setRunId((await api.runFocusedSearch(focusedWorld.trim(), focusedFeature.trim())).run_id); } catch (e) { console.error(e); }
   };
@@ -147,14 +153,18 @@ function DashboardPanel() {
             placeholder="Search worlds..."
           />
           <button className="chip" onClick={handleResetAllExplored}>Reset All Explored Flags</button>
-          <div className="chips">
-            {displayWorlds.map(world => (
-              <button key={world.id} className={world.is_explored ? "chip active" : "chip"} onClick={() => void handleResetWorldExplored(world.id)}>
-                {world.name} {world.is_explored ? "✓" : ""}
-              </button>
-            ))}
-            {hasMore && <button className="chip" onClick={() => setShowAllWorlds(true)}>+{filteredWorlds.length - 24} more</button>}
-          </div>
+           <div className="chips">
+             {displayWorlds.map(world => (
+               <div key={world.id} style={{ display: 'inline-flex', alignItems: 'center', gap: '2px' }}>
+                 <button className={world.is_explored ? "chip active" : "chip"} onClick={() => void handleResetWorldExplored(world.id)}>
+                   {world.name} {world.is_explored ? "✓" : ""}
+                 </button>
+                 <button className="chip delete" style={{ padding: '0 4px', fontSize: '10px' }} onClick={() => void handleDeleteWorld(world.id)}>×</button>
+               </div>
+             ))}
+             {hasMore && <button className="chip" onClick={() => setShowAllWorlds(true)}>+{filteredWorlds.length - 24} more</button>}
+           </div>
+
         </div>
         <div className="panel">
           <h2>Focused Search</h2>

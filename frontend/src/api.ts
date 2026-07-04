@@ -61,6 +61,10 @@ export async function resetWorldExplored(worldId: number): Promise<any> {
   return apiFetch(`/api/worlds/${worldId}/reset-explored`, { method: "POST" });
 }
 
+export async function deleteWorld(worldId: number): Promise<any> {
+  return apiFetch(`/api/worlds/${worldId}`, { method: "DELETE" });
+}
+
 export async function runFocusedSearch(world_name: string, feature: string): Promise<{ run_id: string }> {
   return apiFetch("/api/focused-search", {
     method: "POST",

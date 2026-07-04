@@ -34,6 +34,36 @@ async def tool_fetch_page(args: Dict[str, Any]) -> str:
 
     return "\n\n".join(results)
 
+async def tool_compare_source_freshness(args: Dict[str, Any]) -> str:
+    """
+    Fetches each candidate URL and compares their freshness/staleness signals
+    (HTTP Last-Modified header, on-page 'last edited' text, redirect/canonical
+    behavior, and moved/deprecated notices) so the agent can pick the
+    currently-maintained source instead of an abandoned mirror that happens
+    to rank higher in search results. Purely heuristic — no paid APIs, and
+    the patterns used are generic across wiki engines.
+    """
+    urls = args.get("urls", [])
+    if not urls or not isinstance(urls, list):
+        return "Error: Missing or invalid urls argument (expected a list of at least 2 URLs)."
+
+    reports = []
+    for url in urls:
+        try:
+            content = await web_fetcher.fetch_page(url, include_freshness=True)
+            signal_block = content.split("[END SIGNALS]")[0] + "[END SIGNALS]"
+            reports.append(f"CANDIDATE: {url}\n{signal_block}")
+        except Exception as e:
+            reports.append(f"CANDIDATE: {url}\nError fetching: {str(e)}")
+
+    return (
+        "Compare these candidates. Prefer sources with NO staleness warning, "
+        "a recent Last-Modified/'last edited' signal, and no unresolved 'moved' notice. "
+        "A source that a redirect or canonical tag points AWAY from is likely the stale one, "
+        "even if it ranked first in search results.\n\n" + "\n\n".join(reports)
+    )
+
+
 async def tool_query_universe_traits(args: Dict[str, Any]) -> str:
     universe_name = get_current_universe()
     if not universe_name:
@@ -178,6 +208,17 @@ AGENT_TOOLS: Dict[str, Dict[str, Any]] = {
                 "url": {"type": "string", "description": "A single URL to fetch."}
             },
             "required": []
+        }
+    },
+    "compareSourceFreshness": {
+        "func": tool_compare_source_freshness,
+        "description": "Compare 2+ candidate URLs for the same subject and report which is actively maintained vs. stale/moved/archived, using HTTP headers, on-page 'last edited' text, and redirect/canonical signals. Use this whenever webSearch surfaces more than one plausible wiki for the same universe, BEFORE settling on a canonical domain.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "urls": {"type": "array", "items": {"type": "string"}, "description": "2 or more candidate URLs covering the same subject/universe."}
+            },
+            "required": ["urls"]
         }
     },
     "queryTraits": {

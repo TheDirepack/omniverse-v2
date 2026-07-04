@@ -11,6 +11,11 @@ async def test_browser_manager_start_stop():
         mock_launch.return_value = mock_browser
         
         await manager.start()
+        # start() is now a no-op; browser is launched lazily on first get_page()
+        assert manager.browser is None
+        mock_launch.assert_not_called()
+        
+        await manager.get_page()
         assert manager.browser == mock_browser
         mock_launch.assert_called_once()
         
@@ -19,10 +24,12 @@ async def test_browser_manager_start_stop():
         mock_browser.close.assert_called_once()
 
 @pytest.mark.asyncio
-async def test_get_page_not_started():
+async def test_get_page_lazy_loading():
     manager = BrowserManager()
-    with pytest.raises(RuntimeError, match="BrowserManager not started"):
+    # No RuntimeError should be raised because of lazy loading
+    with patch("app.core.browser.launch_async", new=AsyncMock()) as mock_launch:
         await manager.get_page()
+        mock_launch.assert_called_once()
 
 @pytest.mark.asyncio
 async def test_get_page_success():

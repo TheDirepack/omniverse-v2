@@ -465,7 +465,8 @@ async def run_pipeline_in_background(run_id: str, target_worlds: List[str]):
         "run_id": run_id,
         "active_task": "RESEARCH",
         "errors": [],
-        "architecture_retries": 0
+        "architecture_retries": 0,
+        "architecture_attempts": 0
     }
     try:
         # Run compiled LangGraph state machine

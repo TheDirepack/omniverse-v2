@@ -299,6 +299,19 @@ async def research_node(state: OmniverseState) -> Dict[str, Any]:
     
     log_transition(run_id, "Manager", "Completed parallel research phase", "COMPLETED", state)
     
+    if not verified_worlds:
+        log_transition(
+            run_id, "Manager",
+            f"All {len(target_worlds)} world(s) failed research; nothing to consolidate. Errors: {errors}",
+            "FAILED", state
+        )
+        return {
+            "research_results": successful_results,
+            "verified_worlds": verified_worlds,
+            "errors": errors,
+            "active_task": "FINISHED"
+        }
+
     # If this is a focused search, we go straight to DB integration and then potentially to Architecture
     # Otherwise, we follow the standard flow (Consolidation -> Architecture)
     next_task = "DB_INTEGRATION" if state.get("is_focused_search") else "CONSOLIDATION"
@@ -415,6 +428,9 @@ def _parse_stability_result(stability_result: str) -> Dict[str, Any]:
     return {"status": status, "tier": tier_num, "justification": stability_result}
 
 
+MAX_ARCHITECTURE_ATTEMPTS = 5
+
+
 async def architecture_node(state: OmniverseState) -> Dict[str, Any]:
     """
     LangGraph node responsible for tiering. This maintains ONE persistent,
@@ -435,7 +451,19 @@ async def architecture_node(state: OmniverseState) -> Dict[str, Any]:
     if await is_aborted(run_id):
         raise RuntimeError(f"Run {run_id} was aborted by user.")
     anomalies = state.get("anomalies", [])
+    attempt = state.get("architecture_attempts", 0) + 1
     cache = FetchCache()
+
+    if attempt > MAX_ARCHITECTURE_ATTEMPTS:
+        log_transition(
+            run_id, "Manager",
+            f"Architecture/critic loop exceeded {MAX_ARCHITECTURE_ATTEMPTS} attempts without reaching a stable, "
+            f"audited tier system. Aborting run to avoid an unbounded retry loop. Last anomalies: {anomalies}",
+            "FAILED", state
+        )
+        raise RuntimeError(
+            f"Architecture design failed to stabilize after {MAX_ARCHITECTURE_ATTEMPTS} attempts."
+        )
 
     dataset = ""
     with Session(engine) as session:
@@ -446,7 +474,7 @@ async def architecture_node(state: OmniverseState) -> Dict[str, Any]:
 
     if active_rubric is None:
         # ---- BOOTSTRAP: design the rubric from scratch, once ----
-        log_transition(run_id, "Tier Architect", "No persistent rubric found. Bootstrapping tier rubric from scratch.", "IN_PROGRESS", state)
+        log_transition(run_id, "Tier Architect", f"No persistent rubric found. Bootstrapping tier rubric from scratch (attempt {attempt}/{MAX_ARCHITECTURE_ATTEMPTS}).", "IN_PROGRESS", state)
 
         architect_prompts = get_architect_prompt(dataset, anomalies)
         tier_system_definition, _ = await run_agent(
@@ -463,20 +491,11 @@ async def architecture_node(state: OmniverseState) -> Dict[str, Any]:
         log_transition(run_id, "Logic Auditor", f"Audited bootstrap Tier Rubric. Status: {'SUCCESS' if is_success else 'REVISION_REQUIRED'}", "IN_PROGRESS", state)
 
         if not is_success:
-            retries = state.get("architecture_retries", 0) + 1
-            if retries >= 3:
-                log_transition(run_id, "Manager", "Max bootstrap attempts reached. Forcing extrapolation with current best effort.", "IN_PROGRESS", state)
-                return {
-                    "anomalies": [f"System Design Error: {audit_result} (Max retries reached)"],
-                    "system_stable": False,
-                    "active_task": "EXTRAPOLATION",
-                    "architecture_retries": retries
-                }
             return {
                 "anomalies": [f"System Design Error: {audit_result}"],
                 "system_stable": False,
                 "active_task": "RE_ARCHITECTURE",
-                "architecture_retries": retries
+                "architecture_attempts": attempt
             }
 
         with Session(engine) as session:
@@ -498,6 +517,7 @@ async def architecture_node(state: OmniverseState) -> Dict[str, Any]:
     with Session(engine) as session:
         verified_world_names = state.get("verified_worlds", [])
         universes = session.exec(select(Universe).where(Universe.name.in_(verified_world_names))).all()
+        world_anomalies = []
         for universe in universes:
             traits = session.exec(select(Trait).where(Trait.universe_id == universe.id)).all()
             if not traits:
@@ -516,17 +536,37 @@ async def architecture_node(state: OmniverseState) -> Dict[str, Any]:
                 submit_tool_name="submit_stability",
                 fetch_cache=cache
             )
-            parsed = _parse_stability_result(stability_result)
             
-            if parsed["status"] == "STABLE" and parsed["tier"] is not None:
+            # Parse the STATUS field explicitly rather than doing loose substring
+            # matching. A raw "ANOMALY" substring check is unreliable because the
+            # required output format always includes an "ANOMALY_DETAILS:" field
+            # label, so that substring is present even on genuinely stable results.
+            status_match = re.search(r"STATUS:\s*(STABLE|ANOMALY|INSUFFICIENT_DATA)", stability_result, re.IGNORECASE)
+            status = status_match.group(1).upper() if status_match else "UNKNOWN"
+            is_stable = status == "STABLE"
+            
+            tier_num = 11
+            tier_match = re.search(r"TIER:\s*(\d+)", stability_result, re.IGNORECASE)
+            if tier_match:
+                try:
+                    tier_num = int(tier_match.group(1))
+                except ValueError:
+                    log_transition(run_id, "Stability Unit", f"Could not parse TIER value for {universe.name}, defaulting to Tier 11.", "IN_PROGRESS", state)
+            else:
+                log_transition(run_id, "Stability Unit", f"No TIER field found in stability output for {universe.name}, defaulting to Tier 11.", "IN_PROGRESS", state)
+
+            if is_stable:
                 world_tier_mappings.append({
                     "universe_id": universe.id,
-                    "tier": parsed["tier"],
-                    "justification": parsed["justification"]
+                    "tier": tier_num,
+                    "justification": stability_result
                 })
-            elif parsed["status"] == "INSUFFICIENT":
+            elif status == "INSUFFICIENT_DATA":
                 continue # Skip untiered/insufficient data, do not escalate
             else:
+                world_anomalies.append(f"{universe.name}: Anomaly detected during tiering: {stability_result}")
+                db_anomaly = Anomaly(universe_id=universe.id, description=stability_result)
+                session.add(db_anomaly)
                 anomalous.append((universe, stability_result))
 
     # ---- Amend the rubric minimally if any world couldn't be slotted ----
@@ -573,7 +613,7 @@ async def architecture_node(state: OmniverseState) -> Dict[str, Any]:
                 "anomalies": [f"Rubric Amendment Error: {audit_result}"] + anomaly_descriptions,
                 "system_stable": False,
                 "active_task": "RE_ARCHITECTURE",
-                "architecture_retries": retries
+                "architecture_attempts": attempt
             }
 
         # Persist confirmed (non-anomalous) worlds under the OLD rubric version first,
@@ -646,7 +686,8 @@ async def architecture_node(state: OmniverseState) -> Dict[str, Any]:
     return {
         "current_tier_system": rubric_text,
         "system_stable": True,
-        "active_task": next_task
+        "active_task": next_task,
+        "architecture_attempts": 0
     }
 
 

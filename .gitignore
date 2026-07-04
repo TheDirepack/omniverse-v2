@@ -1,12 +1,5 @@
-node_modules/
-.venv/
-venv/
 __pycache__/
 *.pyc
-.env.local
+backend/venv/
+frontend/node_modules/
 *.db
-*.db.bak
-frontend/dist/
-tests/provider_config.py
-backend/logs/
-agents.log

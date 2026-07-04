@@ -64,11 +64,21 @@ def ephemeral_db():
         yield session
 
 
+from unittest.mock import patch
+
 @pytest.fixture
 def client():
-    """FastAPI TestClient against app with ephemeral DB."""
-    with TestClient(app) as c:
-        yield c
+    """FastAPI TestClient against app with ephemeral DB.
+
+    app startup normally calls init_db(), which (among other things) seeds
+    ~150 default worlds from default_worlds.json. auto_create_db already
+    creates a clean schema for every test, so we no-op init_db here to keep
+    the DB genuinely empty by default -- tests that want seeded worlds add
+    them explicitly.
+    """
+    with patch("app.main.init_db"):
+        with TestClient(app) as c:
+            yield c
 
 
 @pytest.fixture

@@ -8,17 +8,28 @@ class BrowserManager:
         self.semaphore = asyncio.Semaphore(5)  # Limit concurrent browser operations
 
     async def start(self):
-        if self.browser is None:
-            self.browser = await launch_async()
+        # Intentionally a no-op: the browser binary is downloaded/launched lazily,
+        # on the first call to get_page().
+        return
 
     async def stop(self):
         if self.browser:
             await self.browser.close()
             self.browser = None
 
+    async def _ensure_browser(self):
+        if self.browser is not None:
+            return
+        # We use a lock to prevent multiple concurrent launches
+        # Note: self._launch_lock needs to be initialized in __init__
+        if not hasattr(self, '_launch_lock'):
+            self._launch_lock = asyncio.Lock()
+        async with self._launch_lock:
+            if self.browser is None:
+                self.browser = await launch_async()
+
     async def get_page(self):
-        if self.browser is None:
-            raise RuntimeError("BrowserManager not started. Call start() first.")
+        await self._ensure_browser()
         
         # We use a semaphore to limit the number of concurrent pages/contexts
         # and avoid overloading the system or triggering anti-bot protections.

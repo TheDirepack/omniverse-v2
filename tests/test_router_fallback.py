@@ -341,7 +341,7 @@ class TestKeyFallback:
 
         content = result[0].choices[0].message.content
         assert "none-models-" in content
-        assert result[1] == "gpt-3.5-turbo"
+        assert result[1] == "openai/gpt-3.5-turbo"
 
     @pytest.mark.asyncio
     async def test_provider_no_keys_custom_type(self, fake_llm_server):

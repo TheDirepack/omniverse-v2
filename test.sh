@@ -7,6 +7,8 @@ echo "=== Backend Tests ==="
 cd "$BASE_DIR"
 if [ -f "backend/.venv/bin/activate" ]; then
     source backend/.venv/bin/activate
+elif [ -f "backend/venv/bin/activate" ]; then
+    source backend/venv/bin/activate
 fi
 
 python -m pytest tests/ -v --tb=short -m "not slow" "$@"

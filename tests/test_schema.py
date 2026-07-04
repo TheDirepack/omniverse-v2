@@ -1,7 +1,7 @@
 import pytest
 from sqlmodel import select
 from app.db.schema import (
-    Universe, Setting, ProviderConfig, AgentRouteFallback,
+    Universe, Setting, ProviderConfig, ProviderKey, AgentRouteFallback,
     Trait, TierSystem, WorldTier, Anomaly,
     ExecutionState, ModelConfig
 )
@@ -137,10 +137,42 @@ class TestProviderConfig:
         assert row.models is None
 
 
+class TestProviderKey:
+    def test_create(self, ephemeral_db):
+        p = ProviderConfig(name="key-owner")
+        ephemeral_db.add(p)
+        ephemeral_db.commit()
+        ephemeral_db.refresh(p)
+
+        k = ProviderKey(provider_id=p.id, api_key="sk-test", priority=0)
+        ephemeral_db.add(k)
+        ephemeral_db.commit()
+        row = ephemeral_db.exec(select(ProviderKey).where(ProviderKey.provider_id == p.id)).first()
+        assert row.api_key == "sk-test"
+
+    def test_nonexistent_provider_fk(self, ephemeral_db):
+        k = ProviderKey(provider_id=9999, api_key="sk-test")
+        with pytest.raises(Exception):
+            ephemeral_db.add(k)
+            ephemeral_db.commit()
+
+    def test_priority_default(self, ephemeral_db):
+        p = ProviderConfig(name="default-pri")
+        ephemeral_db.add(p)
+        ephemeral_db.commit()
+        ephemeral_db.refresh(p)
+
+        k = ProviderKey(provider_id=p.id, api_key="sk-test")
+        ephemeral_db.add(k)
+        ephemeral_db.commit()
+        row = ephemeral_db.exec(select(ProviderKey).where(ProviderKey.provider_id == p.id)).first()
+        assert row.priority == 0
+
+
 class TestAgentRouteFallback:
     def test_empty_task_type(self, ephemeral_db):
         from sqlmodel import select
-        r = AgentRouteFallback(task_type="")
+        r = AgentRouteFallback(task_type="", priority=0)
         ephemeral_db.add(r)
         ephemeral_db.commit()
         row = ephemeral_db.exec(select(AgentRouteFallback).where(AgentRouteFallback.task_type == "")).first()
@@ -148,29 +180,32 @@ class TestAgentRouteFallback:
 
     def test_provider_id_none(self, ephemeral_db):
         from sqlmodel import select
-        r = AgentRouteFallback(task_type="TEST", provider_id=None)
+        r = AgentRouteFallback(task_type="TEST", priority=0, provider_id=None)
         ephemeral_db.add(r)
         ephemeral_db.commit()
         row = ephemeral_db.exec(select(AgentRouteFallback).where(AgentRouteFallback.task_type == "TEST")).first()
         assert row.provider_id is None
-
+ 
     def test_provider_id_nonexistent_fk(self, ephemeral_db):
-        r = AgentRouteFallback(task_type="BAD_FK", provider_id=9999)
+        r = AgentRouteFallback(task_type="BAD_FK", priority=0, provider_id=9999)
         with pytest.raises(Exception):
             ephemeral_db.add(r)
             ephemeral_db.commit()
+ 
+    def test_multiple_fallback_rows_per_task_type(self, ephemeral_db):
+        # AgentRouteFallback intentionally allows multiple priority-ordered
+        # rows per task_type (a fallback chain), unlike the old single-row
+        # AgentRoute keyed by task_type.
+        ephemeral_db.add(AgentRouteFallback(task_type="CHAIN", priority=0, model_name="v1"))
+        ephemeral_db.add(AgentRouteFallback(task_type="CHAIN", priority=1, model_name="v2"))
+        ephemeral_db.commit()
+        rows = ephemeral_db.exec(
+            select(AgentRouteFallback).where(AgentRouteFallback.task_type == "CHAIN").order_by(AgentRouteFallback.priority)
+        ).all()
+        assert len(rows) == 2
+        assert rows[0].models == "v1"
+        assert rows[1].models == "v2"
 
-    def test_duplicate_task_type_upsert(self, ephemeral_db):
-        from sqlmodel import select
-        a = AgentRouteFallback(task_type="UPSERT", models="v1")
-        ephemeral_db.add(a)
-        ephemeral_db.commit()
-        ephemeral_db.refresh(a)
-        a.models = "v2"
-        ephemeral_db.merge(a)
-        ephemeral_db.commit()
-        row = ephemeral_db.exec(select(AgentRouteFallback).where(AgentRouteFallback.id == a.id)).first()
-        assert row.models == "v2"
 
 
 class TestTrait:

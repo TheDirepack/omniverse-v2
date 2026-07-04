@@ -38,7 +38,7 @@ async def test_run_tiering_in_background_execution(seeded_db):
     
     from app.api.routes import run_tiering_in_background
     
-    with patch("app.api.routes.architecture_node", new=AsyncMock()) as mock_node:
+    with patch("app.agents.nodes.architecture_node", new=AsyncMock()) as mock_node:
         await run_tiering_in_background(run_id)
         
         # Verify architecture_node was called

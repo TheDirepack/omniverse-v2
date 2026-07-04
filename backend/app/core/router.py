@@ -69,17 +69,26 @@ class ModelRouter:
         ]
         return await self.run_model(task, messages, tools=[], run_id=run_id, **kwargs)
 
-    async def call_llm_with_tools(self, task: str, messages: List[Dict[str, str]], tools: List[Dict[str, Any]], run_id: Optional[str] = None, **kwargs):
-        # Remove provider_id from kwargs to avoid leaking it into litellm.acompletion
-        kwargs.pop("provider_id", None)
-        
+    async def call_llm_with_tools(self, task: str, messages: List[Dict[str, str]], tools: List[Dict[str, Any]], run_id: Optional[str] = None, provider_id: Optional[int] = None, **kwargs):
         with Session(engine) as session:
             # 1. Try to get routes for this specific task sorted by priority
             routes = session.exec(select(AgentRouteFallback).where(AgentRouteFallback.task_type == task).order_by(AgentRouteFallback.priority)).all()
             
+            # If a specific provider was requested, restrict the fallback chain to
+            # routes pointing at that provider (falling back to all routes if none match,
+            # so an invalid/unknown provider_id doesn't hard-fail the whole call).
+            if provider_id is not None:
+                filtered = [r for r in routes if r.provider_id == provider_id]
+                if filtered:
+                    routes = filtered
+            
             # 2. Fallback to "DEFAULT" routes if no specific route is configured for this task
             if not routes:
                 routes = session.exec(select(AgentRouteFallback).where(AgentRouteFallback.task_type == "DEFAULT").order_by(AgentRouteFallback.priority)).all()
+                if provider_id is not None:
+                    filtered = [r for r in routes if r.provider_id == provider_id]
+                    if filtered:
+                        routes = filtered
             
             if not routes:
                 raise ValueError(f"No routing configured for task '{task}' and no DEFAULT route found.")

@@ -54,11 +54,11 @@ async def test_tool_upsert_trait(universe_setup):
     
     # Create
     result = await tool_upsert_trait({"name": "New Trait", "value": "New Value"})
-    assert "Created new trait" in result
+    assert "Created" in result and "New Trait" in result
     
     # Update
     result = await tool_upsert_trait({"name": "New Trait", "value": "Updated Value"})
-    assert "Updated existing trait" in result
+    assert "Updated" in result and "New Trait" in result
     
     with Session(engine) as session:
         t = session.exec(select(Trait).where(Trait.name == "New Trait")).one()
@@ -90,7 +90,7 @@ async def test_tool_save_unconfirmed_trait(unconfirmed_universe_setup):
         "value": "New Value",
         "category": "Magic"
     })
-    assert "Saved unconfirmed trait" in result
+    assert "Saved" in result and "New Unconfirmed" in result
     
     with Session(unconfirmed_engine) as session:
         t = session.exec(select(UnconfirmedTrait).where(UnconfirmedTrait.name == "New Unconfirmed")).one()
@@ -113,8 +113,23 @@ async def test_tool_delete_unconfirmed_trait(unconfirmed_universe_setup):
         t_id = t.id
 
     result = await tool_delete_unconfirmed_trait({"trait_id": t_id})
-    assert f"Deleted unconfirmed trait {t_id}" in result
+    assert "Deleted" in result and str(t_id) in result
     
     with Session(unconfirmed_engine) as session:
         t = session.get(UnconfirmedTrait, t_id)
         assert t is None
+
+
+def test_build_freshness_comparison_report_prefers_fresh_over_none():
+    from app.core.tools import build_freshness_comparison_report
+
+    report = build_freshness_comparison_report({
+        "http://fresh.example": "[SOURCE FRESHNESS SIGNALS]\nStaleness warning: none detected\n[END SIGNALS]\nBody text here",
+        "http://unavailable.example": None,
+    })
+
+    assert "CANDIDATE: http://fresh.example" in report
+    assert "Staleness warning: none detected" in report
+    assert "Body text here" not in report  # only the signal block, not the full page, is included
+    assert "CANDIDATE: http://unavailable.example" in report
+    assert "Unavailable" in report

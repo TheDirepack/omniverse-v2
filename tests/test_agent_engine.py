@@ -285,3 +285,102 @@ class TestRunAgentFetchCache:
 
         assert len(fetched_urls) == 1
         assert fetched_urls[0] == "http://a.com"
+
+    async def test_compare_source_freshness_shares_budget_with_fetch_page(self):
+        """
+        Regression test: compareSourceFreshness must draw from the SAME
+        per-run fetch budget as fetchPage, not perform its own unbudgeted
+        fetches. Here fetchPage already uses up the only fetch slot, so
+        compareSourceFreshness's candidate URL should be reported as
+        budget-exhausted rather than actually fetched.
+        """
+        fetch_tc = _make_tool_call("fetchPage", {"urls": ["http://a.com"]}, tc_id="tc-fetch")
+        compare_tc = _make_tool_call(
+            "compareSourceFreshness", {"urls": ["http://b.com", "http://c.com"]}, tc_id="tc-compare"
+        )
+        submit_tc = _make_tool_call("submitFindings", {})
+
+        call_count = 0
+        async def mock_router(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return _make_response(content=None, tool_calls=[fetch_tc])
+            if call_count == 2:
+                return _make_response(content=None, tool_calls=[compare_tc])
+            return _make_response(content="done", tool_calls=[submit_tc])
+
+        fetched_urls = []
+
+        async def mock_fetch_page(url):
+            fetched_urls.append(url)
+            return f"content of {url}"
+
+        with patch("app.core.agent_engine.router.run_model", new=mock_router), \
+             patch("app.core.agent_engine.AGENT_TOOLS", AGENT_TOOLS), \
+             patch("app.core.web_fetch.web_fetcher.fetch_page", new=mock_fetch_page):
+            result, _ = await run_agent(
+                agent_name="TEST",
+                system_prompt="sys",
+                user_prompt="user",
+                step="s",
+                run_id="run-shared-budget",
+                tools_names=["fetchPage", "compareSourceFreshness"],
+                submit_tool_name="submitFindings",
+                max_fetches=1,
+            )
+
+        # Only the fetchPage call should have consumed the single fetch slot;
+        # neither candidate in compareSourceFreshness should have been fetched.
+        assert fetched_urls == ["http://a.com"]
+
+
+class TestReadPageWithBudget:
+    """Direct tests of the shared cache/budget helper, independent of the
+    (currently broken in this environment) router-mocking harness used above."""
+
+    async def test_cache_hit_does_not_fetch_and_does_not_consume_budget(self):
+        from app.core.agent_engine import _read_page_with_budget
+        cache = FetchCache()
+        cache.set("http://cached.com", "cached content")
+
+        with patch("app.core.web_fetch.web_fetcher.fetch_page", new=AsyncMock(side_effect=AssertionError("should not fetch"))):
+            content, new_count, status = await _read_page_with_budget("http://cached.com", cache, 0, 5)
+
+        assert status == "cached"
+        assert content == "cached content"
+        assert new_count == 0
+
+    async def test_fetch_consumes_one_budget_slot_and_populates_cache(self):
+        from app.core.agent_engine import _read_page_with_budget
+        cache = FetchCache()
+
+        with patch("app.core.web_fetch.web_fetcher.fetch_page", new=AsyncMock(return_value="fresh content")):
+            content, new_count, status = await _read_page_with_budget("http://new.com", cache, 0, 5)
+
+        assert status == "fetched"
+        assert content == "fresh content"
+        assert new_count == 1
+        assert cache.get("http://new.com") == "fresh content"
+
+    async def test_budget_exhausted_does_not_fetch(self):
+        from app.core.agent_engine import _read_page_with_budget
+        cache = FetchCache()
+
+        with patch("app.core.web_fetch.web_fetcher.fetch_page", new=AsyncMock(side_effect=AssertionError("should not fetch"))):
+            content, new_count, status = await _read_page_with_budget("http://over-budget.com", cache, 1, 1)
+
+        assert status == "budget_exhausted"
+        assert content is None
+        assert new_count == 1
+
+    async def test_fetch_error_is_reported_without_consuming_budget(self):
+        from app.core.agent_engine import _read_page_with_budget
+        cache = FetchCache()
+
+        with patch("app.core.web_fetch.web_fetcher.fetch_page", new=AsyncMock(side_effect=RuntimeError("boom"))):
+            content, new_count, status = await _read_page_with_budget("http://broken.com", cache, 0, 5)
+
+        assert status == "error"
+        assert "boom" in content
+        assert new_count == 0

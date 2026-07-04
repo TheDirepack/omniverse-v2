@@ -9,6 +9,24 @@ SEARCH_URLS = {
     "brave": "https://search.brave.com/search?q={q}",
 }
 
+MAX_RESULTS_PER_ENGINE = 10
+
+# Generic phrases search engines show when they've served a bot-check/CAPTCHA
+# instead of real results. Detecting this avoids the agent wrongly concluding
+# "no results exist" when it was actually blocked, which is a very different
+# situation (it should try a different engine or back off, not give up).
+BOT_CHECK_PATTERNS = [
+    "detected unusual traffic",
+    "our systems have detected unusual traffic",
+    "verify you are a human",
+    "verify you're a human",
+    "please verify you are human",
+    "recaptcha",
+    "/sorry/index",
+    "unusual traffic from your computer network",
+    "access to this page has been denied",
+]
+
 AI_CONTAINER_SELECTORS = [
     "[class*='ai']",
     "[class*='AI']",
@@ -35,8 +53,24 @@ class WebSearcher:
 
         page, context = await browser_manager.get_page()
         try:
-            await page.goto(search_url, wait_until="networkidle")
+            try:
+                await page.goto(search_url, wait_until="networkidle", timeout=20000)
+            except Exception:
+                # Retry with a looser wait condition rather than failing outright —
+                # some search result pages never go fully idle (ads, telemetry).
+                await page.goto(search_url, wait_until="domcontentloaded", timeout=15000)
             html = await page.content()
+
+            lower_html = html.lower()
+            if any(pattern in lower_html for pattern in BOT_CHECK_PATTERNS):
+                return (
+                    f"[BLOCKED] {engine} appears to have shown a bot-verification "
+                    f"page instead of search results for this query. This does NOT "
+                    f"mean there are no results — try a different engine (the other "
+                    f"options are: {', '.join(e for e in SEARCH_URLS if e != engine)}), "
+                    f"or a fetchPage on a known relevant URL directly."
+                )
+
             soup = BeautifulSoup(html, "html.parser")
 
             if engine == "google":
@@ -49,8 +83,12 @@ class WebSearcher:
                 results = []
 
             if results:
-                return "\n".join(results)
-            return f"No results found for {query}."
+                return "\n".join(results[:MAX_RESULTS_PER_ENGINE])
+            return (
+                f"No results found for {query} on {engine}. If this is unexpected, "
+                f"try a different engine — a page layout change or soft block can "
+                f"also produce zero parsed results without an explicit bot-check page."
+            )
         finally:
             await page.close()
             await context.close()

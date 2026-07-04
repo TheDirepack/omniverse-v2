@@ -4,7 +4,7 @@ import json
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urlparse
 from app.core.router import router
-from app.core.tools import AGENT_TOOLS
+from app.core.tools import AGENT_TOOLS, build_freshness_comparison_report
 from app.core.agent_logger import agent_logger
 
 class FetchCache:
@@ -27,6 +27,30 @@ class FetchCache:
 # Global cache for the current run
 # In a production environment, this would be per-run_id in Redis
 run_fetch_cache = FetchCache()
+
+
+async def _read_page_with_budget(url: str, cache: FetchCache, fetched_count: int, max_fetches: int):
+    """
+    Single choke point for reading full page content during an agent run.
+    Every tool that needs page content (fetchPage, compareSourceFreshness,
+    and any future one) MUST go through this so they all draw from the same
+    cache and the same per-run fetch budget, instead of a tool fetching
+    pages on its own and silently exceeding the budget.
+    Returns (content_or_error_message, updated_fetched_count, status) where
+    status is one of "cached", "fetched", "budget_exhausted", "error".
+    """
+    cached = cache.get(url)
+    if cached:
+        return cached, fetched_count, "cached"
+    if fetched_count >= max_fetches:
+        return None, fetched_count, "budget_exhausted"
+    try:
+        from app.core.web_fetch import web_fetcher
+        page_content = await web_fetcher.fetch_page(url)
+        cache.set(url, page_content)
+        return page_content, fetched_count + 1, "fetched"
+    except Exception as e:
+        return str(e), fetched_count, "error"
 
 async def run_agent(
     agent_name: str,
@@ -140,28 +164,38 @@ async def run_agent(
                             model=model,
                             key_id=key_id
                         )
-                        # Handle fetch budget and cache
+                        # Handle fetch budget and cache. Any tool that needs full page
+                        # content is special-cased here (rather than left to the
+                        # generic branch below) so ALL page reads in a run share ONE
+                        # cache and ONE fetch budget — otherwise a tool that fetches
+                        # pages internally (e.g. compareSourceFreshness) could bypass
+                        # the budget entirely.
                         if name == "fetchPage":
                             urls = args.get("urls", []) if isinstance(args.get("urls"), list) else [args.get("url")]
                             urls = [u for u in urls if u]
-                            
+
                             results = []
                             for url in urls:
-                                cached = cache.get(url)
-                                if cached:
-                                    results.append(f"Cached content for {url}:\n{cached}")
-                                elif fetched_count < max_fetches:
-                                    try:
-                                        from app.core.web_fetch import web_fetcher
-                                        page_content = await web_fetcher.fetch_page(url)
-                                        cache.set(url, page_content)
-                                        results.append(f"Fetched content for {url}:\n{page_content}")
-                                        fetched_count += 1
-                                    except Exception as e:
-                                        results.append(f"Error fetching {url}: {str(e)}")
-                                else:
+                                content, fetched_count, status = await _read_page_with_budget(url, cache, fetched_count, max_fetches)
+                                if status == "cached":
+                                    results.append(f"Cached content for {url}:\n{content}")
+                                elif status == "fetched":
+                                    results.append(f"Fetched content for {url}:\n{content}")
+                                elif status == "budget_exhausted":
                                     results.append(f"Fetch budget exhausted for {url}.")
+                                else:
+                                    results.append(f"Error fetching {url}: {content}")
                             observation = "\n\n".join(results)
+                        elif name == "compareSourceFreshness":
+                            urls = args.get("urls", [])
+                            if not urls or not isinstance(urls, list):
+                                observation = "Error: Missing or invalid urls argument (expected a list of at least 2 URLs)."
+                            else:
+                                url_content_map = {}
+                                for url in urls:
+                                    content, fetched_count, status = await _read_page_with_budget(url, cache, fetched_count, max_fetches)
+                                    url_content_map[url] = content if status in ("cached", "fetched") else None
+                                observation = build_freshness_comparison_report(url_content_map)
                         else:
                             # Other tools (e.g. search)
                             try:

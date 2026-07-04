@@ -8,4 +8,5 @@ AGENT_NAMES = [
     "Stability Unit",
     "Ontological Theorist",
     "Theoretical Auditor",
+    "Rubric Steward",
 ]

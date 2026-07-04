@@ -15,6 +15,7 @@ class TestWorkflowCreation:
         g = graph.get_graph()
         assert "research" in g.nodes
         assert "manager" in g.nodes
-        assert "consolidation" in g.nodes
-        assert "architecture" in g.nodes
+        assert "db_integrator" in g.nodes
+        assert "summary" in g.nodes
         assert "extrapolation" in g.nodes
+        assert "consolidation" not in g.nodes

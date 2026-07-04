@@ -2,9 +2,10 @@ import pytest
 from sqlmodel import select
 from app.db.schema import (
     Universe, Setting, ProviderConfig, AgentRouteFallback,
-    Trait, TierSystem, WorldTier, Anomaly, Theory,
+    Trait, TierSystem, WorldTier, Anomaly,
     ExecutionState, ModelConfig
 )
+from app.db.extrapolation_schema import Theory
 
 
 class TestUniverse:
@@ -269,28 +270,6 @@ class TestAnomaly:
         with pytest.raises(Exception):
             ephemeral_db.add(a)
             ephemeral_db.commit()
-
-
-class TestTheory:
-    def test_nonexistent_fk(self, ephemeral_db):
-        t = Theory(universe_id=9999, theory_text="content")
-        with pytest.raises(Exception):
-            ephemeral_db.add(t)
-            ephemeral_db.commit()
-
-    def test_empty_theory_text(self, seeded_db):
-        ephemeral_db, u, p, r = seeded_db
-        t = Theory(universe_id=u.id, theory_text="")
-        ephemeral_db.add(t)
-        ephemeral_db.commit()
-
-    def test_auditor_feedback_none(self, seeded_db):
-        ephemeral_db, u, p, r = seeded_db
-        t = Theory(universe_id=u.id, theory_text="text")
-        ephemeral_db.add(t)
-        ephemeral_db.commit()
-        row = ephemeral_db.exec(select(Theory)).first()
-        assert row.auditor_feedback is None
 
 
 class TestExecutionState:

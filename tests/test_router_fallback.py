@@ -116,7 +116,7 @@ class TestKeyFallback:
             messages=[{"role": "user", "content": "hi"}],
         )
 
-        content = result["choices"][0]["message"]["content"]
+        content = result[0].choices[0].message.content
         assert "good-key" in content
 
     @pytest.mark.asyncio
@@ -142,7 +142,7 @@ class TestKeyFallback:
             messages=[{"role": "user", "content": "hi"}],
         )
 
-        content = result["choices"][0]["message"]["content"]
+        content = result[0].choices[0].message.content
         assert "only-key" in content
 
     @pytest.mark.asyncio
@@ -173,7 +173,7 @@ class TestKeyFallback:
             messages=[{"role": "user", "content": "hi"}],
         )
 
-        content = result["choices"][0]["message"]["content"]
+        content = result[0].choices[0].message.content
         assert "highest" in content
 
     @pytest.mark.asyncio
@@ -260,7 +260,7 @@ class TestKeyFallback:
             messages=[{"role": "user", "content": "hi"}],
         )
 
-        content = result["choices"][0]["message"]["content"]
+        content = result[0].choices[0].message.content
         # key1 fails on both models, then key2 succeeds on model1
         assert "key2" in content
 
@@ -275,7 +275,7 @@ class TestKeyFallback:
             messages=[{"role": "user", "content": "hi"}],
         )
 
-        content = result["choices"][0]["message"]["content"]
+        content = result[0].choices[0].message.content
         assert "test-key" in content
 
     @pytest.mark.asyncio
@@ -308,7 +308,7 @@ class TestKeyFallback:
             messages=[{"role": "user", "content": "hi"}],
         )
 
-        content = result["choices"][0]["message"]["content"]
+        content = result[0].choices[0].message.content
         assert "default-key" in content
 
     @pytest.mark.asyncio
@@ -339,9 +339,9 @@ class TestKeyFallback:
             messages=[{"role": "user", "content": "hi"}],
         )
 
-        content = result["choices"][0]["message"]["content"]
+        content = result[0].choices[0].message.content
         assert "none-models-" in content
-        assert result["model"] == "gpt-3.5-turbo"
+        assert result[1] == "gpt-3.5-turbo"
 
     @pytest.mark.asyncio
     async def test_provider_no_keys_custom_type(self, fake_llm_server):
@@ -417,7 +417,7 @@ class TestCandidateHealth:
             
         # Should skip bad-key and go straight to good-key
         result = await router.run_model("TEST", messages=[{"role": "user", "content": "hi"}])
-        content = result["choices"][0]["message"]["content"]
+        content = result[0].choices[0].message.content
         assert "good-key" in content
 
     @pytest.mark.asyncio

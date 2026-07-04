@@ -1,7 +1,8 @@
 import pytest
-from app.agents.nodes import log_transition, check_abort, audit_success
+import asyncio
+from unittest.mock import AsyncMock, patch
+from app.agents.nodes import log_transition, check_abort, audit_success, db_integrator_node
 from app.core.state import ABORTED_RUNS
-
 
 class TestLogTransition:
     def test_writes_execution_state(self, ephemeral_db):
@@ -30,7 +31,6 @@ class TestLogTransition:
     def test_special_chars_in_thought(self):
         log_transition("sp", "Node", "<script>alert(1)</script> & ' \"", "OK", {})
 
-
 class TestCheckAbort:
     def setup_method(self):
         ABORTED_RUNS.clear()
@@ -47,7 +47,6 @@ class TestCheckAbort:
         ABORTED_RUNS.add("")
         with pytest.raises(RuntimeError):
             check_abort("")
-
 
 class TestAuditSuccess:
     def test_success_keyword(self):
@@ -79,3 +78,38 @@ class TestAuditSuccess:
     def test_revision_required_variants(self):
         assert audit_success("REVISION_REQUIRED: fix this") is False
         assert audit_success("REVISION REQUIRED: fix that") is False
+
+class TestDBIntegratorNode:
+    """Tests that the DB integrator runs integration then cleanup in a stateful session."""
+
+    @pytest.mark.asyncio
+    async def test_chained_session_execution(self):
+        # Mock state
+        state = {
+            "run_id": "run-chain",
+            "research_results": [
+                {"name": "Universe-1", "summary": "Verified data for U1"}
+            ]
+        }
+        
+        # Mock run_agent to return different results for integration and cleanup
+        integration_history = [{"role": "assistant", "content": "integrated"}]
+        cleanup_history = [{"role": "assistant", "content": "cleaned"}]
+        
+        call_count = 0
+        async def mock_run_agent(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return "Integrated U1", integration_history
+            return "Cleaned U1", cleanup_history
+
+        with patch("app.agents.nodes.run_agent", side_effect=mock_run_agent), \
+             patch("app.agents.nodes.set_current_universe"), \
+             patch("app.agents.nodes.log_transition"), \
+             patch("app.agents.nodes.Session"):
+            
+            result = await db_integrator_node(state)
+            
+            assert result["active_task"] == "SUMMARY"
+            assert call_count == 2

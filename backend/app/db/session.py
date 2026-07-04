@@ -5,6 +5,7 @@ from sqlmodel import SQLModel, create_engine, Session, select
 from sqlalchemy import event
 from app.db.schema import Universe, ProviderConfig, AgentRouteFallback
 from app.db.unconfirmed_session import init_unconfirmed_db
+from app.db.extrapolation_session import init_extrapolation_db
 
 sqlite_url = os.getenv("DATABASE_URL", "sqlite:///omniverse_v2.db")
 connect_args = {"check_same_thread": False} if sqlite_url.startswith("sqlite") else {}
@@ -99,3 +100,9 @@ def init_db():
         init_unconfirmed_db()
     except Exception as e:
         print(f"Error initializing unconfirmed database: {e}")
+
+    # Initialize the extrapolation database
+    try:
+        init_extrapolation_db()
+    except Exception as e:
+        print(f"Error initializing extrapolation database: {e}")

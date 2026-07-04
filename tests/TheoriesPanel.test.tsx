@@ -1,10 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import TheoriesPanel from "../frontend/src/components/TheoriesPanel";
 import * as api from "../frontend/src/api";
 
 vi.mock("../frontend/src/api", () => ({
   fetchResults: vi.fn(),
+  extrapolate: vi.fn(),
 }));
 
 describe("TheoriesPanel", () => {
@@ -52,7 +53,7 @@ describe("TheoriesPanel", () => {
       anomalies: [],
     });
     render(<TheoriesPanel />);
-    await screen.findByText("No theories generated yet. Run the full pipeline to extrapolate interactions.");
+    await screen.findByText("No theories generated yet. Use the trigger above to extrapolate interactions.");
   });
 
   it("filters out worlds without theory", async () => {
@@ -79,16 +80,60 @@ describe("TheoriesPanel", () => {
     consoleSpy.mockRestore();
   });
 
-  it("hides Auditor Verdict section when theory_audit is null", async () => {
-    vi.mocked(api.fetchResults).mockResolvedValue({
-      tier_system: null,
-      worlds: [
-        { id: 1, name: "Warhammer 40k", tier: 1, theory: "Chaos Gods are real", theory_audit: null, summary: null, tier_justification: null, is_explored: true },
-      ],
-      anomalies: [],
-    });
+  it("triggers extrapolate API call with correct payload for 'all' scope", async () => {
+    vi.mocked(api.fetchResults).mockResolvedValue({ tier_system: null, worlds: [], anomalies: [] });
+    vi.mocked(api.extrapolate).mockResolvedValue({ run_id: "test-run", worlds: [] });
+    
     render(<TheoriesPanel />);
-    await screen.findByText("Warhammer 40k");
-    expect(screen.queryByText("Auditor Verdict")).not.toBeInTheDocument();
+    const button = await screen.findByText("Trigger Extrapolation");
+    fireEvent.click(button);
+    
+    expect(api.extrapolate).toHaveBeenCalledWith({ scope: "all" });
+  });
+
+  it("triggers extrapolate API call with correct payload for 'worlds' scope", async () => {
+    vi.mocked(api.fetchResults).mockResolvedValue({ tier_system: null, worlds: [], anomalies: [] });
+    vi.mocked(api.extrapolate).mockResolvedValue({ run_id: "test-run", worlds: [] });
+    
+    render(<TheoriesPanel />);
+    
+    // Change scope to worlds
+    const select = await screen.findByRole("combobox");
+    fireEvent.change(select, { target: { value: "worlds" } });
+    
+    // Enter worlds
+    const input = screen.getByPlaceholderText("Marvel, DC...");
+    fireEvent.change(input, { target: { value: "Marvel, DC" } });
+    
+    const button = screen.getByText("Trigger Extrapolation");
+    fireEvent.click(button);
+    
+    expect(api.extrapolate).toHaveBeenCalledWith({ 
+      scope: "worlds", 
+      worlds: ["Marvel", "DC"] 
+    });
+  });
+
+  it("triggers extrapolate API call with correct payload for 'tier' scope", async () => {
+    vi.mocked(api.fetchResults).mockResolvedValue({ tier_system: null, worlds: [], anomalies: [] });
+    vi.mocked(api.extrapolate).mockResolvedValue({ run_id: "test-run", worlds: [] });
+    
+    render(<TheoriesPanel />);
+    
+    // Change scope to tier
+    const select = await screen.findByRole("combobox");
+    fireEvent.change(select, { target: { value: "tier" } });
+    
+    // Enter tier
+    const input = screen.getByPlaceholderText("5");
+    fireEvent.change(input, { target: { value: "5" } });
+    
+    const button = screen.getByText("Trigger Extrapolation");
+    fireEvent.click(button);
+    
+    expect(api.extrapolate).toHaveBeenCalledWith({ 
+      scope: "tier", 
+      tier: 5 
+    });
   });
 });

@@ -10,8 +10,10 @@ from pydantic import BaseModel, Field, field_validator
 
 from app.db.session import engine
 from app.db.unconfirmed_session import engine as unconfirmed_engine
+from app.db.extrapolation_session import engine as extrapolation_engine
 from app.db.unconfirmed_schema import UnconfirmedUniverse, UnconfirmedTrait
-from app.db.schema import Universe, TierSystem, WorldTier, Anomaly, Theory, ExecutionState, Setting, ProviderConfig, ProviderKey, AgentRouteFallback, Trait, ModelConfig
+from app.db.schema import Universe, TierSystem, WorldTier, Anomaly, ExecutionState, Setting, ProviderConfig, ProviderKey, AgentRouteFallback, Trait, ModelConfig
+from app.db.extrapolation_schema import Theory
 from app.agents.workflow import app_graph
 from app.agents.nodes import research_single_world
 from app.agents.agent_names import AGENT_NAMES
@@ -61,15 +63,28 @@ class AddWorldPayload(BaseModel):
 
 
 class FocusedSearchPayload(BaseModel):
-    world_name: str
-    feature: str
+    worlds: List[str]
+    features: List[str]
 
 
 class OrchestratePayload(BaseModel):
     worlds: List[str]
 
+class ExtrapolatePayload(BaseModel):
+    scope: str = Field(..., pattern="^(all|worlds|tier)$")
+    worlds: Optional[List[str]] = None
+    tier: Optional[int] = None
 
-@router.get("/health")
+
+@router.get("/traits")
+def get_traits(universe_ids: Optional[str] = None):
+    with Session(engine) as session:
+        query = select(Trait)
+        if universe_ids:
+            ids = [int(id_str) for id_str in universe_ids.split(",") if id_str.strip()]
+            query = query.where(Trait.universe_id.in_(ids))
+        
+        return session.exec(query).all()
 def health():
     return {"status": "ok"}
 
@@ -180,7 +195,8 @@ def delete_world(world_id: int):
             raise HTTPException(status_code=404, detail="World not found")
         
         session.exec(WorldTier.__table__.delete().where(WorldTier.universe_id == world_id))
-        session.exec(Theory.__table__.delete().where(Theory.universe_id == world_id))
+        with Session(extrapolation_engine) as extra_session:
+            extra_session.exec(Theory.__table__.delete().where(Theory.universe_id == world_id))
         session.exec(Anomaly.__table__.delete().where(Anomaly.universe_id == world_id))
         
         session.delete(universe)
@@ -343,15 +359,19 @@ def research_unexplored(background_tasks: BackgroundTasks):
 @router.post("/focused-search")
 def focused_search(payload: FocusedSearchPayload, background_tasks: BackgroundTasks):
     run_id = str(uuid.uuid4())
-    background_tasks.add_task(run_focused_search_in_background, run_id, payload.world_name, payload.feature)
-    return {"status": "started", "run_id": run_id, "world_name": payload.world_name, "feature": payload.feature}
+    background_tasks.add_task(run_focused_search_in_background, run_id, payload.worlds, payload.features)
+    return {"status": "started", "run_id": run_id, "worlds": payload.worlds, "features": payload.features}
 
 
 @router.post("/reset-database")
 def reset_database():
     with Session(engine) as session:
-        for table in [ExecutionState, Trait, WorldTier, TierSystem, Theory, Anomaly, ModelConfig]:
+        for table in [ExecutionState, Trait, WorldTier, TierSystem, Anomaly, ModelConfig]:
             session.exec(table.__table__.delete())
+        
+        with Session(extrapolation_engine) as extra_session:
+            extra_session.exec(Theory.__table__.delete())
+            
         worlds = session.exec(select(Universe)).all()
         for world in worlds:
             world.summary = None
@@ -433,18 +453,75 @@ async def run_pipeline_in_background(run_id: str, target_worlds: List[str]):
         await remove_run(run_id)
 
 
-async def run_focused_search_in_background(run_id: str, world_name: str, feature: str):
+async def run_extrapolation_in_background(run_id: str, target_worlds: List[str]):
+    from app.core.agent_engine import run_fetch_cache
+    run_fetch_cache.clear()
+    await add_active_run(run_id)
+    
+    inputs = {
+        "target_worlds": target_worlds,
+        "verified_worlds": target_worlds, # Treat these as already verified for extrapolation
+        "run_id": run_id,
+        "active_task": "EXTRAPOLATION",
+        "generated_theories": [],
+    }
+    try:
+        await app_graph.ainvoke(inputs)
+    except Exception as e:
+        print(f"[API] Error executing extrapolation: {e}")
+        with Session(engine) as session:
+            err_log = ExecutionState(
+                run_id=run_id,
+                node_name="Manager",
+                thought=f"Critical Extrapolation Failure: {str(e)}",
+                status="FAILED",
+                state_snapshot=json.dumps({"error": str(e)})
+            )
+            session.add(err_log)
+            session.commit()
+    finally:
+        await remove_run(run_id)
+
+
+async def run_focused_search_in_background(run_id: str, target_worlds: List[str], focused_features: List[str]):
+    from app.core.agent_engine import run_fetch_cache
     await add_active_run(run_id)
     try:
         if await is_aborted(run_id):
             raise RuntimeError("Run aborted before start")
-        await research_single_world(world_name, run_id, focus=feature)
-        with Session(engine) as session:
-            session.add(ExecutionState(run_id=run_id, node_name="Focused Search", thought="Focused search completed", status="COMPLETED", state_snapshot=json.dumps({"world_name": world_name, "feature": feature})))
-            session.commit()
+        
+        run_fetch_cache.clear()
+        
+        # Initialize the workflow state for focused search
+        inputs = {
+            "target_worlds": target_worlds,
+            "focused_features": focused_features,
+            "is_focused_search": True,
+            "research_results": [],
+            "verified_worlds": [],
+            "current_tier_system": None,
+            "system_stable": False,
+            "anomalies": [],
+            "generated_theories": [],
+            "run_id": run_id,
+            "active_task": "RESEARCH",
+            "errors": [],
+            "architecture_retries": 0
+        }
+        
+        # Run compiled LangGraph state machine
+        await app_graph.ainvoke(inputs)
+        
     except Exception as e:
         with Session(engine) as session:
-            session.add(ExecutionState(run_id=run_id, node_name="Focused Search", thought=f"Focused search failed: {e}", status="FAILED", state_snapshot=json.dumps({"error": str(e)})))
+            err_log = ExecutionState(
+                run_id=run_id,
+                node_name="Focused Search",
+                thought=f"Focused search failed: {str(e)}",
+                status="FAILED",
+                state_snapshot=json.dumps({"error": str(e)})
+            )
+            session.add(err_log)
             session.commit()
     finally:
         await remove_run(run_id)
@@ -458,6 +535,82 @@ def trigger_orchestration(payload: OrchestratePayload, background_tasks: Backgro
     run_id = str(uuid.uuid4())
     background_tasks.add_task(run_pipeline_in_background, run_id, payload.worlds)
     return {"status": "started", "run_id": run_id, "worlds": payload.worlds}
+
+
+@router.post("/tiering")
+def trigger_tiering(background_tasks: BackgroundTasks):
+    run_id = str(uuid.uuid4())
+    background_tasks.add_task(run_tiering_in_background, run_id)
+    return {"status": "started", "run_id": run_id}
+
+async def run_tiering_in_background(run_id: str):
+    from app.agents.nodes import architecture_node
+    from app.agents.state import OmniverseState
+    from app.core.state import add_active_run, remove_run
+    
+    await add_active_run(run_id)
+    
+    with Session(engine) as session:
+        # Prepare state with verified worlds
+        verified_worlds = [u.name for u in session.exec(select(Universe).where(Universe.is_explored == True)).all()]
+        
+        # We need the consolidated dataset for architecture_node
+        setting = session.get(Setting, "CONSOLIDATED_DATASET")
+        dataset = setting.value if setting else ""
+        
+        state: OmniverseState = {
+            "run_id": run_id,
+            "target_worlds": [],
+            "research_results": [],
+            "verified_worlds": verified_worlds,
+            "current_tier_system": None,
+            "system_stable": False,
+            "anomalies": [],
+            "generated_theories": [],
+            "errors": [],
+            "architecture_retries": 0,
+            "active_task": "ARCHITECTURE"
+        }
+        
+        try:
+            # Manually run the node
+            await architecture_node(state)
+        except Exception as e:
+            print(f"[API] Error executing tiering: {e}")
+        finally:
+            await remove_run(run_id)
+
+
+@router.post("/extrapolate")
+def trigger_extrapolation(payload: ExtrapolatePayload, background_tasks: BackgroundTasks):
+    with Session(engine) as session:
+        if payload.scope == "all":
+            target_worlds = [u.name for u in session.exec(select(Universe).where(Universe.is_explored == True)).all()]
+        elif payload.scope == "worlds":
+            if not payload.worlds:
+                raise HTTPException(status_code=400, detail="worlds list required for 'worlds' scope")
+            
+            # Verify that all requested worlds are actually explored/verified
+            verified_names = [u.name for u in session.exec(select(Universe).where(Universe.is_explored == True)).all()]
+            target_worlds = [w for w in payload.worlds if w in verified_names]
+            
+            if not target_worlds:
+                return {"status": "noop", "message": "None of the specified worlds are verified."}
+        elif payload.scope == "tier":
+            if payload.tier is None:
+                raise HTTPException(status_code=400, detail="tier value required for 'tier' scope")
+            target_worlds = [u.name for u in session.exec(
+                select(Universe).join(WorldTier).where(WorldTier.tier_number == payload.tier)
+            ).all()]
+        else:
+            raise HTTPException(status_code=400, detail="Invalid scope")
+
+    if not target_worlds:
+        return {"status": "noop", "message": "No worlds matched the specified scope."}
+
+    run_id = str(uuid.uuid4())
+    background_tasks.add_task(run_extrapolation_in_background, run_id, target_worlds)
+    return {"status": "started", "run_id": run_id, "worlds": target_worlds}
 
 
 @router.get("/results")
@@ -477,9 +630,10 @@ def get_results():
                 
         theories_map = {}
         if universe_ids:
-            theories = session.exec(select(Theory).where(Theory.universe_id.in_(universe_ids))).all()
-            for th in theories:
-                theories_map[th.universe_id] = th
+            with Session(extrapolation_engine) as extra_session:
+                theories = extra_session.exec(select(Theory).where(Theory.universe_id.in_(universe_ids))).all()
+                for th in theories:
+                    theories_map[th.universe_id] = th
         
         results = []
         for uni in universes:
@@ -513,7 +667,7 @@ def get_tiers():
 
 @router.get("/theories")
 def get_theories():
-    with Session(engine) as session:
+    with Session(extrapolation_engine) as session:
         theories = session.exec(select(Theory).order_by(Theory.created_at.desc())).all()
         return [{"id": t.id, "universe_id": t.universe_id, "theory": t.theory_text, "auditor_feedback": t.auditor_feedback, "created_at": str(t.created_at)} for t in theories]
 

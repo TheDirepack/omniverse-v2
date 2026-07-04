@@ -31,6 +31,11 @@ export async function fetchAgentNames(): Promise<string[]> {
   return apiFetch("/api/agent-names");
 }
 
+export async function fetchTraits(universeIds?: number[]): Promise<Trait[]> {
+  const query = universeIds ? `?universe_ids=${universeIds.join(",")}` : "";
+  return apiFetch(`/api/traits${query}`);
+}
+
 export async function fetchWorlds(): Promise<WorldRecord[]> {
   return apiFetch("/api/worlds");
 }
@@ -65,10 +70,10 @@ export async function deleteWorld(worldId: number): Promise<any> {
   return apiFetch(`/api/worlds/${worldId}`, { method: "DELETE" });
 }
 
-export async function runFocusedSearch(world_name: string, feature: string): Promise<{ run_id: string }> {
+export async function runFocusedSearch(worlds: string[], features: string[]): Promise<{ run_id: string }> {
   return apiFetch("/api/focused-search", {
     method: "POST",
-    body: JSON.stringify({ world_name, feature }),
+    body: JSON.stringify({ worlds, features }),
   });
 }
 
@@ -120,8 +125,8 @@ export async function resetDatabase(): Promise<any> {
   return apiFetch("/api/reset-database", { method: "POST" });
 }
 
-export async function resetCandidateHealth(): Promise<any> {
-  return apiFetch("/api/settings/reset-health", { method: "POST" });
+export async function runTiering(): Promise<{ run_id: string }> {
+  return apiFetch("/api/tiering", { method: "POST" });
 }
 
 export async function clearLogsApi(): Promise<any> {
@@ -136,6 +141,13 @@ export async function abortRun(runId: string): Promise<any> {
   return apiFetch("/api/abort", {
     method: "POST",
     body: JSON.stringify({ runId }),
+  });
+}
+
+export async function extrapolate(payload: { scope: "all" | "worlds" | "tier"; worlds?: string[]; tier?: number }): Promise<{ run_id: string; worlds: string[] }> {
+  return apiFetch("/api/extrapolate", {
+    method: "POST",
+    body: JSON.stringify(payload),
   });
 }
 

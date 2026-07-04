@@ -4,13 +4,15 @@ import re
 from typing import List, Dict, Any, Optional
 from sqlmodel import Session, select
 from app.db.session import engine
-from app.db.schema import Universe, Trait, TierSystem, WorldTier, Anomaly, Theory, ExecutionState, Setting
+from app.db.extrapolation_session import engine as extrapolation_engine
+from app.db.schema import Universe, Trait, TierSystem, WorldTier, Anomaly, ExecutionState, Setting
+from app.db.extrapolation_schema import Theory
 from app.core.agent_engine import run_agent, FetchCache
 from app.core.state import is_aborted, ABORTED_RUNS
 from app.core.context import set_current_universe
 from app.agents.state import OmniverseState
 from app.agents.prompts import (
-    get_extraction_prompt,
+    get_researcher_prompt,
     get_critic_prompt,
     get_synthesis_prompt,
     get_architect_prompt,
@@ -21,6 +23,7 @@ from app.agents.prompts import (
     get_summary_prompt,
     get_cleanup_prompt
 )
+
 
 def log_transition(run_id: str, node_name: str, thought: str, status: str, state: dict):
     with Session(engine) as session:
@@ -63,38 +66,33 @@ def audit_success(audit_result: str) -> bool:
     return "SUCCESS" in upper or "VERIFIED" in upper
 
 
+def clear_tier(universe_id: int, session: Session):
+    session.exec(WorldTier.__table__.delete().where(WorldTier.universe_id == universe_id))
+
 async def research_single_world(world_name: str, run_id: str, focus: str | None = None, fetch_cache: FetchCache | None = None) -> Dict[str, Any]:
     """Researches and verifies a single world using an agentic tool loop with a discovery flow."""
     if await is_aborted(run_id):
         raise RuntimeError(f"Run {run_id} was aborted by user.")
+    
+    # Tier Reset on Re-Research
+    with Session(engine) as session:
+        universe = session.exec(select(Universe).where(Universe.name == world_name)).first()
+        if universe:
+            clear_tier(universe.id, session)
+            session.commit()
+    
     stage_label = f"{world_name} focused on {focus}" if focus else world_name
     set_current_universe(world_name)
     log_transition(run_id, "Research Unit", f"Initiating agentic research for world: {stage_label}", "IN_PROGRESS", {})
 
-    # Discovery flow prompt
-    system_prompt = f"""### ROLE
-Wiki Scout & Archivist. Your goal is to build a comprehensive canonical dataset for the universe.
- 
-PROCESS
-1. KNOWLEDGE CHECK: Start by calling `queryTraits` and `queryUnconfirmedTraits` to see what is already known about {world_name}. Avoid duplicating effort.
-2. DISCOVERY: Use `webSearch` to discover wikis and authoritative sources.
-   - You can specify the `engine` (google, duckduckgo, brave).
-   - You can specify a `site_filter` to target specific domains (e.g. 'fandom.com').
-3. SOURCE FRESHNESS: If more than one plausible wiki/domain surfaces for the same universe, call `compareSourceFreshness` on the candidates BEFORE picking one. A wiki can rank highly in search yet be an abandoned mirror of a wiki that has since moved elsewhere — prefer the actively maintained source (recent Last-Modified/'last edited' signal, no staleness warning, not the source a redirect/canonical tag points away from) even if it's not the first search result.
-4. DOMAIN FOCUS: Once you've identified the canonical wiki, prefer `fetchPage` and targeted `webSearch` queries scoped to that domain.
-5. DRILL DOWN: Follow internal links from fetched pages to sub-articles if summaries are incomplete.
-6. VERIFY: Cross-check any claim that seems central to power-tiering against at least one other source before citing it.
-7. PERSIST AS YOU GO: Call `saveUnconfirmedTrait` for each batch of items as soon as you have Name, Detail, Canon_Status, and Reference for them. Use the `items` batch parameter to save everything you found from one page/session in a single call, rather than one call per item — do not hold findings only in your own reasoning; write them to staging immediately so nothing is lost if the run is interrupted, and so the Logic Auditor can inspect them independently.
-
-OUTPUT
-When you believe research is complete, call `queryUnconfirmedTraits` one final time to review everything you have staged, then call `submit_research`. Your final message content (alongside the submit_research call) MUST be the complete JSON per RESEARCH_SCHEMA, built from what is in staging. Return strict JSON only — no markdown fences, no commentary before or after the JSON.
-Include precise references as "url: section/line".
-"""
-
-    if focus:
-        system_prompt += f"\n\nFOCUSED TARGET: {focus}. Prove/disprove existence, extract mechanisms, and provide a Focused Verdict (VERIFIED/DISPROVED/INCONCLUSIVE)."
-
-    user_prompt = f"Perform deep research on {world_name}."
+    # Use the refactored Researcher prompt
+    researcher_prompt = get_researcher_prompt(
+        entity=world_name,
+        requirements="Collect comprehensive canonical wiki data.",
+        focus=focus
+    )
+    system_prompt = researcher_prompt["system"]
+    user_prompt = researcher_prompt["user"]
     
     researcher_tools = ["webSearch", "fetchPage", "compareSourceFreshness", "queryTraits", "queryUnconfirmedTraits", "saveUnconfirmedTrait"]
     auditor_tools = ["webSearch", "fetchPage", "compareSourceFreshness", "queryTraits", "queryUnconfirmedTraits"]
@@ -124,7 +122,6 @@ Include precise references as "url: section/line".
             last_result = result
             
             # Critic Agent
-            from app.agents.prompts import get_critic_prompt
             critic_prompt = get_critic_prompt(data=result, criteria=system_prompt)
             
             critique, _ = await run_agent(
@@ -148,6 +145,7 @@ Include precise references as "url: section/line".
     except Exception as e:
         log_transition(run_id, "Research Unit", f"Agent failed for {world_name}: {str(e)}", "FAILED", {})
         raise e
+
 
 
 
@@ -204,11 +202,16 @@ async def summary_node(state: OmniverseState) -> Dict[str, Any]:
     await asyncio.gather(*tasks)
     
     log_transition(run_id, "Summarizer", "All summaries generated successfully.", "COMPLETED", state)
+    
+    # If focused search, go straight to tiering (architecture)
+    if state.get("is_focused_search"):
+        return {"active_task": "ARCHITECTURE"}
+        
     return {"active_task": "CONSOLIDATION"}
 
 
 async def db_integrator_node(state: OmniverseState) -> Dict[str, Any]:
-    """Agent that integrates verified research into the database, then cleans up unconfirmed staging."""
+    """Agent that integrates verified research into the database, then cleans up unconfirmed staging in a stateful session."""
     run_id = state.get("run_id")
     research_results = state.get("research_results", [])
     
@@ -219,12 +222,12 @@ async def db_integrator_node(state: OmniverseState) -> Dict[str, Any]:
         verified_data = result["summary"]
         
         # Phase 1: Write confirmed data to main database
-        from app.agents.prompts import get_db_agent_prompt
+        from app.agents.prompts import get_db_agent_prompt, get_cleanup_prompt
         prompt = get_db_agent_prompt()
 
         set_current_universe(world_name)
 
-        await run_agent(
+        final_ans, history = await run_agent(
             agent_name="DB Architect",
             system_prompt=prompt["system"],
             user_prompt=f"Universe: {world_name}\n\nVerified Research Data:\n{verified_data}",
@@ -235,6 +238,8 @@ async def db_integrator_node(state: OmniverseState) -> Dict[str, Any]:
         )
         
         # Phase 2: Clean up unconfirmed staging — remove only promoted traits
+        # We pass the history from the integration phase to maintain context,
+        # but we omit the 'upsertTrait' tool to ensure the agent cannot modify the main DB.
         cleanup_prompt = get_cleanup_prompt()
 
         await run_agent(
@@ -244,7 +249,8 @@ async def db_integrator_node(state: OmniverseState) -> Dict[str, Any]:
             step=f"Cleanup {world_name}",
             run_id=run_id,
             tools_names=["queryTraits", "queryUnconfirmedTraits", "deleteUnconfirmedTrait"],
-            submit_tool_name="submit_cleanup"
+            submit_tool_name="submit_cleanup",
+            history=history
         )
         
         # Deterministically mark as explored after integration
@@ -265,6 +271,7 @@ async def research_node(state: OmniverseState) -> Dict[str, Any]:
     if await is_aborted(run_id):
         raise RuntimeError(f"Run {run_id} was aborted by user.")
     target_worlds = state.get("target_worlds", [])
+    focused_features = state.get("focused_features")
     
     log_transition(run_id, "Manager", f"Starting parallel research phase for {len(target_worlds)} worlds", "IN_PROGRESS", state)
     
@@ -274,9 +281,13 @@ async def research_node(state: OmniverseState) -> Dict[str, Any]:
     
     cache = FetchCache()
     batch_size = 5
+    
+    # Join features into a single string for the 'focus' parameter if they exist
+    focus_str = ", ".join(focused_features) if focused_features else None
+
     for i in range(0, len(target_worlds), batch_size):
         batch = target_worlds[i:i + batch_size]
-        tasks = [research_single_world(world, run_id, fetch_cache=cache) for world in batch]
+        tasks = [research_single_world(world, run_id, focus=focus_str, fetch_cache=cache) for world in batch]
         batch_results = await asyncio.gather(*tasks, return_exceptions=True)
         
         for r in batch_results:
@@ -288,11 +299,15 @@ async def research_node(state: OmniverseState) -> Dict[str, Any]:
     
     log_transition(run_id, "Manager", "Completed parallel research phase", "COMPLETED", state)
     
+    # If this is a focused search, we go straight to DB integration and then potentially to Architecture
+    # Otherwise, we follow the standard flow (Consolidation -> Architecture)
+    next_task = "DB_INTEGRATION" if state.get("is_focused_search") else "CONSOLIDATION"
+
     return {
         "research_results": successful_results,
         "verified_worlds": verified_worlds,
         "errors": errors,
-        "active_task": "CONSOLIDATION"
+        "active_task": next_task
     }
 
 
@@ -380,7 +395,15 @@ def _get_active_rubric(session: Session) -> Optional[TierSystem]:
 
 
 def _parse_stability_result(stability_result: str) -> Dict[str, Any]:
-    is_stable = "STATUS: STABLE" in stability_result.upper()
+    upper = stability_result.upper()
+    status = "UNKNOWN"
+    if "STATUS: STABLE" in upper:
+        status = "STABLE"
+    elif "STATUS: ANOMALY" in upper:
+        status = "ANOMALY"
+    elif "STATUS: INSUFFICIENT_DATA" in upper:
+        status = "INSUFFICIENT"
+    
     tier_num = None
     tier_match = re.search(r"TIER:\s*(\d+)", stability_result, re.IGNORECASE)
     if tier_match:
@@ -388,9 +411,8 @@ def _parse_stability_result(stability_result: str) -> Dict[str, Any]:
             tier_num = max(0, min(10, int(tier_match.group(1))))
         except Exception:
             pass
-    elif "UNTIERED" in stability_result.upper():
-        tier_num = -1
-    return {"is_stable": is_stable, "tier": tier_num, "justification": stability_result}
+            
+    return {"status": status, "tier": tier_num, "justification": stability_result}
 
 
 async def architecture_node(state: OmniverseState) -> Dict[str, Any]:
@@ -477,7 +499,13 @@ async def architecture_node(state: OmniverseState) -> Dict[str, Any]:
         verified_world_names = state.get("verified_worlds", [])
         universes = session.exec(select(Universe).where(Universe.name.in_(verified_world_names))).all()
         for universe in universes:
-            stability_prompts = get_stability_prompt(universe.summary or "", rubric_text)
+            traits = session.exec(select(Trait).where(Trait.universe_id == universe.id)).all()
+            if not traits:
+                continue # Skip unresearched
+
+            traits_text = "\n".join([f"- {t.name}: {t.value}" for t in traits])
+            stability_prompts = get_stability_prompt(traits_text, rubric_text)
+
             stability_result, _ = await run_agent(
                 agent_name="Stability Unit",
                 system_prompt=stability_prompts["system"],
@@ -489,12 +517,15 @@ async def architecture_node(state: OmniverseState) -> Dict[str, Any]:
                 fetch_cache=cache
             )
             parsed = _parse_stability_result(stability_result)
-            if parsed["is_stable"] and parsed["tier"] is not None:
+            
+            if parsed["status"] == "STABLE" and parsed["tier"] is not None:
                 world_tier_mappings.append({
                     "universe_id": universe.id,
                     "tier": parsed["tier"],
                     "justification": parsed["justification"]
                 })
+            elif parsed["status"] == "INSUFFICIENT":
+                continue # Skip untiered/insufficient data, do not escalate
             else:
                 anomalous.append((universe, stability_result))
 
@@ -592,10 +623,13 @@ async def architecture_node(state: OmniverseState) -> Dict[str, Any]:
             session.commit()
 
         log_transition(run_id, "Manager", f"Rubric amended to v{new_rubric_version}. Tiering complete.", "COMPLETED", state)
+        
+        next_task = "EXTRAPOLATION" if not state.get("is_focused_search") else "FINISHED"
+        
         return {
             "current_tier_system": new_rubric_text,
             "system_stable": True,
-            "active_task": "EXTRAPOLATION"
+            "active_task": next_task
         }
 
     # ---- No anomalies: persist mappings under the existing rubric, done ----
@@ -606,12 +640,15 @@ async def architecture_node(state: OmniverseState) -> Dict[str, Any]:
         session.commit()
 
     log_transition(run_id, "Manager", "Completed tiering under persistent rubric.", "COMPLETED", state)
+    
+    next_task = "EXTRAPOLATION" if not state.get("is_focused_search") else "FINISHED"
 
     return {
         "current_tier_system": rubric_text,
         "system_stable": True,
-        "active_task": "EXTRAPOLATION"
+        "active_task": next_task
     }
+
 
 
 async def extrapolation_node(state: OmniverseState) -> Dict[str, Any]:
@@ -626,13 +663,33 @@ async def extrapolation_node(state: OmniverseState) -> Dict[str, Any]:
     with Session(engine) as session:
         verified_world_names = state.get("verified_worlds", [])
         universes = session.exec(select(Universe).where(Universe.name.in_(verified_world_names))).all()
+        
+        # Pre-fetch all traits for all verified universes to avoid N+1 in the loop
+        all_verified_ids = [u.id for u in universes]
+        all_traits = session.exec(select(Trait).where(Trait.universe_id.in_(all_verified_ids))).all()
+        trait_map = {}
+        for t in all_traits:
+            trait_map.setdefault(t.universe_id, []).append(f"- {t.name}: {t.value}")
+
         for universe in universes:
             set_current_universe(universe.name)
-            other_universes = session.exec(select(Universe).where(Universe.id != universe.id)).all()
-            comparison_texts = [f"World: {ou.name}\nFeatures: {ou.summary}" for ou in other_universes]
+            
+            # Context for this universe (using traits, not summary)
+            uni_traits = trait_map.get(universe.id, [])
+            uni_context = "\n".join(uni_traits) if uni_traits else "No specific traits recorded."
+            
+            # Context from other universes (using traits)
+            comparison_texts = []
+            for other in universes:
+                if other.id == universe.id:
+                    continue
+                other_traits = trait_map.get(other.id, [])
+                traits_text = "\n".join(other_traits) if other_traits else "No traits recorded."
+                comparison_texts.append(f"World: {other.name}\nTraits:\n{traits_text}")
+            
             comparison_context = "\n\n---\n\n".join(comparison_texts)
 
-            theory_prompt = get_extrapolation_prompt(universe.name, universe.summary or "", comparison_context)
+            theory_prompt = get_extrapolation_prompt(universe.name, uni_context, comparison_context)
             
             speculation, _ = await run_agent(
                 agent_name="Ontological Theorist",
@@ -640,7 +697,7 @@ async def extrapolation_node(state: OmniverseState) -> Dict[str, Any]:
                 user_prompt=theory_prompt["user"],
                 step="Extrapolation",
                 run_id=run_id,
-                tools_names=["webSearch", "fetchPage"],
+                tools_names=[],
                 submit_tool_name="submit_theory"
             )
             
@@ -652,7 +709,7 @@ async def extrapolation_node(state: OmniverseState) -> Dict[str, Any]:
                 user_prompt=audit_prompt["user"],
                 step="Theory Audit",
                 run_id=run_id,
-                tools_names=["webSearch", "fetchPage"],
+                tools_names=[],
                 submit_tool_name="submit_audit"
             )
             
@@ -661,16 +718,16 @@ async def extrapolation_node(state: OmniverseState) -> Dict[str, Any]:
                 log_transition(run_id, "Theoretical Auditor", f"Rejected theory for {universe.name}", "REVISION_REQUIRED", {"audit": audit_result})
                 continue
             
-            session.exec(Theory.__table__.delete().where(Theory.universe_id == universe.id))
-            session.commit()
-            
-            db_theory = Theory(
-                universe_id=universe.id,
-                theory_text=speculation,
-                auditor_feedback=audit_result
-            )
-            session.add(db_theory)
-            session.commit()
+            with Session(extrapolation_engine) as extra_session:
+                extra_session.exec(Theory.__table__.delete().where(Theory.universe_id == universe.id))
+                
+                db_theory = Theory(
+                    universe_id=universe.id,
+                    theory_text=speculation,
+                    auditor_feedback=audit_result
+                )
+                extra_session.add(db_theory)
+                extra_session.commit()
             
             generated_theories.append({
                 "universe_name": universe.name,

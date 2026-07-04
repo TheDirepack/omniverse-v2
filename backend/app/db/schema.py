@@ -71,13 +71,6 @@ class Anomaly(SQLModel, table=True):
     description: str
     detected_at: datetime = Field(default_factory=datetime.utcnow)
 
-class Theory(SQLModel, table=True):
-    id: Optional[int] = Field(default=None, primary_key=True)
-    universe_id: int = Field(foreign_key="universe.id")
-    theory_text: str
-    auditor_feedback: Optional[str] = None
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-
 class ExecutionState(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     run_id: str

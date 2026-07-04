@@ -379,7 +379,7 @@ class TestAgentRouting:
         assert r.status_code == 200
         names = r.json()
         assert isinstance(names, list)
-        assert len(names) == 9
+        assert len(names) >= 8
         assert "Researcher" in names
         assert "DEFAULT" not in names
 

@@ -1,8 +1,7 @@
 import pytest
 from app.agents.prompts import (
-    get_extraction_prompt,
+    get_researcher_prompt,
     get_critic_prompt,
-    get_synthesis_prompt,
     get_architect_prompt,
     get_stability_prompt,
     get_extrapolation_prompt,
@@ -12,29 +11,40 @@ from app.agents.prompts import (
 
 class TestExtractionPrompt:
     def test_basic(self):
-        result = get_extraction_prompt("Marvel", "Magic System, Technology")
+        result = get_researcher_prompt("Marvel", "Magic System, Technology")
         assert "system" in result
         assert "user" in result
         assert "Marvel" in result["system"]
         assert "Marvel" in result["user"]
 
     def test_empty_entity(self):
-        result = get_extraction_prompt("", "")
+        result = get_researcher_prompt("", "")
         assert "system" in result
         assert "user" in result
 
     def test_with_focus(self):
-        result = get_extraction_prompt("DC", "Speed Force", focus="Speed Force abilities")
+        result = get_researcher_prompt("DC", "Speed Force", focus="Speed Force abilities")
         assert "FOCUSED FEATURE TARGET" in result["system"]
         assert "Speed Force" in result["system"]
 
     def test_empty_focus(self):
-        result = get_extraction_prompt("Test", "req", focus="")
+        result = get_researcher_prompt("Test", "req", focus="")
         assert "FOCUSED FEATURE TARGET" not in result["system"]
 
     def test_requirements_in_system(self):
-        result = get_extraction_prompt("W", "Custom Requirement")
+        result = get_researcher_prompt("W", "Custom Requirement")
         assert "Custom Requirement" in result["system"]
+
+    def test_prohibits_scaling(self):
+        result = get_researcher_prompt("Marvel", "req")
+        assert "PROHIBITED" in result["system"]
+        assert "power-scaling" in result["system"]
+        assert "feat analysis" in result["system"]
+
+    def test_enforces_staging_reframing(self):
+        result = get_researcher_prompt("Marvel", "req")
+        assert "RESEARCH NOTES (Staging DB)" in result["system"]
+        assert "persistent research notes" in result["system"]
 
 
 class TestCriticPrompt:
@@ -50,23 +60,15 @@ class TestCriticPrompt:
         assert "system" in result
         assert "user" in result
 
-
-class TestSynthesisPrompt:
-    def test_single_report(self):
-        result = get_synthesis_prompt(["Report 1"])
-        assert "Report 1" in result["user"]
-
-    def test_multiple_reports(self):
-        result = get_synthesis_prompt(["R1", "R2"])
-        assert "R1" in result["user"]
-        assert "R2" in result["user"]
-
-    def test_empty_list(self):
-        result = get_synthesis_prompt([])
-        assert "user" in result
+    def test_prohibits_scaling(self):
+        result = get_critic_prompt("data", "crit")
+        assert "PROHIBITED" in result["system"]
+        assert "power-scaling" in result["system"]
+        assert "relative strength comparisons" in result["system"]
 
 
 class TestArchitectPrompt:
+
     def test_basic(self):
         result = get_architect_prompt("dataset here", ["anomaly1"])
         assert "dataset here" in result["user"]

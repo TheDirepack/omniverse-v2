@@ -5,8 +5,8 @@ __pycache__/
 *.pyc
 .env.local
 *.db
+*.db.bak
 frontend/dist/
-AGENTS.md
 tests/provider_config.py
 backend/logs/
 agents.log

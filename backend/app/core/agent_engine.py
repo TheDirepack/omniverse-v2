@@ -64,17 +64,30 @@ async def run_agent(
     max_retries: int = 1,
     max_fetches: int = 5,
     provider_id: Optional[int] = None,
-    fetch_cache: Optional[FetchCache] = None
-) -> Tuple[str, None]:
+    fetch_cache: Optional[FetchCache] = None,
+    history: Optional[List[Dict[str, str]]] = None
+) -> Tuple[str, List[Dict[str, Any]]]:
     """
     Runs a tool-using agent loop.
-    Returns (final_answer, None).
+    Returns (final_answer, full_messages_history).
     """
     for attempt in range(max_retries + 1):
-        messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt}
-        ]
+        if history:
+            messages = list(history)
+            # Ensure system prompt is current if it's the first message or needs update
+            if not messages or messages[0]["role"] != "system":
+                messages.insert(0, {"role": "system", "content": system_prompt})
+            elif messages[0]["role"] == "system":
+                messages[0]["content"] = system_prompt
+            
+            # If the history doesn't end with the current user prompt, add it
+            if not messages or messages[-1]["role"] != "user" or messages[-1]["content"] != user_prompt:
+                messages.append({"role": "user", "content": user_prompt})
+        else:
+            messages = [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ]
         
         # Use provided cache or fallback to global (legacy)
         cache = fetch_cache or run_fetch_cache
@@ -153,7 +166,8 @@ async def run_agent(
                     args = json.loads(tool_call.function.arguments)
 
                     if name == submit_tool_name:
-                        return content or "Findings submitted.", None
+                        return content or "Findings submitted.", messages
+
 
                     if name in available_tools:
                         # Log tool request
@@ -236,11 +250,11 @@ async def run_agent(
                 messages.append({"role": "user", "content": "Please use the available tools to research and eventually call the submit tool."})
                 continue
             
-            return content, None
+            return content, messages
             
         if attempt < max_retries:
             continue
         else:
-            return "MAX_TURNS_REACHED", None
+            return "MAX_TURNS_REACHED", messages
 
-    return "Error: Max turns reached without submission.", None
+    return "Error: Max turns reached without submission.", messages

@@ -114,7 +114,7 @@ function DashboardPanel() {
   };
  
   const handleSelectWorldForFocusedSearch = (name: string) => {
-    setFocusedWorld(name);
+    setFocusedWorld(prev => prev ? `${prev}, ${name}` : name);
   };
  
   const handleDeleteWorld = async (worldId: number) => {
@@ -123,10 +123,12 @@ function DashboardPanel() {
   };
  
   const handleFocusedSearch = async () => {
-
-    if (!focusedWorld.trim() || !focusedFeature.trim()) return;
-    try { setRunId((await api.runFocusedSearch(focusedWorld.trim(), focusedFeature.trim())).run_id); } catch (e) { console.error(e); }
+    const worlds = focusedWorld.split(",").map(v => v.trim()).filter(Boolean);
+    const features = focusedFeature.split(",").map(v => v.trim()).filter(Boolean);
+    if (!worlds.length || !features.length) return;
+    try { setRunId((await api.runFocusedSearch(worlds, features)).run_id); } catch (e) { console.error(e); }
   };
+
 
   const handleStopRun = async () => {
     if (!runId) return;
@@ -157,7 +159,7 @@ function DashboardPanel() {
             onChange={e => setWorldsInput(e.target.value)}
             placeholder="Warhammer 40k, Star Wars, Harry Potter"
           />
-          <p className="help-text">Comma-separated world names. Each one runs the full research → tier pipeline.</p>
+           <p className="help-text">Comma-separated world names. Each one runs the full research → integration → summary pipeline.</p>
            <div className="button-row">
              {running ? (
                <button className="chip delete" onClick={handleStopRun}>Stop Research</button>
@@ -222,9 +224,9 @@ function DashboardPanel() {
         </div>
         <div className="panel">
           <h2>Focused Search</h2>
-          <p className="help-text">Prove or disprove a specific feature about a world.</p>
-          <input value={focusedWorld} onChange={e => setFocusedWorld(e.target.value)} placeholder="World name" />
-          <input value={focusedFeature} onChange={e => setFocusedFeature(e.target.value)} placeholder="Feature to prove/disprove" />
+          <p className="help-text">Prove or disprove specific features about worlds.</p>
+          <textarea value={focusedWorld} onChange={e => setFocusedWorld(e.target.value)} placeholder="World names (comma-separated)" />
+          <textarea value={focusedFeature} onChange={e => setFocusedFeature(e.target.value)} placeholder="Features to prove/disprove (comma-separated)" />
           <button className="primary" onClick={handleFocusedSearch} disabled={running}>Focused Search</button>
            <h2>Database Controls</h2>
            <p className="muted">Reset research data and flags, keep settings and worlds.</p>

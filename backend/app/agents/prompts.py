@@ -23,7 +23,7 @@ RESEARCH_SCHEMA = """
 """
 
 
-def get_extraction_prompt(entity: str, requirements: str, focus: Optional[str] = None):
+def get_researcher_prompt(entity: str, requirements: str, focus: Optional[str] = None):
     focus_block = ""
     if focus:
         focus_block = f"""
@@ -37,12 +37,13 @@ Add an item named "Focused Verdict" with Detail containing one of: VERIFIED, DIS
 Wiki Scout & Archivist. Use provided search context as map, then reason as if webSearch/fetchPage supplied source pages. Collect canonical structured wiki data for later comparison.
 
 OBJECTIVE
-1. Extract Tech, Magic, Cosmology, scale feats, limits, and contradictions for {entity}.
+1. Extract factual data regarding {entity} (Technology, Magic, Cosmology, and general properties).
 2. Tag every item Canon_Status as Verified, Unverified, Fanon, or Unclear based only on supplied source text.
-3. Every extracted item MUST include Reference as "url: section/line" or "url: quoted section".
+3. Every extracted item MUST include Reference as "url: section/line".
 4. No external knowledge. If source context lacks evidence, put it in Missing_Info.
 5. No data bleed between universes.
-6. SOURCE FRESHNESS: when multiple candidate wikis exist for {entity}, prefer the one showing the most recent Last-Modified/'last edited' signal and no staleness warning. Do not prefer a source purely because it ranked first in search results — a stale mirror can still outrank the actively maintained wiki. If a source shows a staleness warning or a redirect/canonical tag pointing elsewhere, note this in Missing_Info and re-source the affected items from the actively maintained wiki instead.
+6. SOURCE FRESHNESS: when multiple candidate wikis exist for {entity}, prefer the one showing the most recent Last-Modified/'last edited' signal and no staleness warning. Do not prefer a source purely because it ranked first in search results. If a source shows a staleness warning or a redirect/canonical tag pointing elsewhere, note this in Missing_Info and re-source the affected items from the actively maintained wiki instead.
+7. RESEARCH NOTES (Staging DB): Treat the unconfirmed staging database as your persistent research notes. Call `saveUnconfirmedTrait` to store findings immediately. Staged facts that are eventually promoted to the main DB will be deleted by the cleanup agent; all other notes must persist for future reference.
 {focus_block}
 
 OUTPUT FORMAT
@@ -53,6 +54,7 @@ CONSTRAINTS
 - No markdown formatting, no code fences (no ```), no commentary before or after the JSON.
 - The entire response must be a single parseable JSON object.
 - No invented data. Every claim traces to a Reference.
+- PROHIBITED: Do not perform power-scaling, feat analysis, or tiering. Focus purely on descriptive facts.
 Requirements: {requirements}
 """,
         "user": f"Collect comprehensive canonical wiki data for {entity}."
@@ -65,12 +67,12 @@ def get_critic_prompt(data: str, criteria: str):
 Fact Auditor. Find smallest flaw. Verify JSON against source-grounding and task criteria.
  
 OBJECTIVE
-1. Check existing canonical and unconfirmed knowledge via `queryTraits` and `queryUnconfirmedTraits`. The unconfirmed staging entries are the Researcher's raw work product — cross-check that the submitted JSON is actually consistent with what was staged (nothing invented that isn't in staging, nothing important from staging silently dropped).
-2. Validate schema and required keys. Reject if the response is not a single parseable JSON object (markdown fences, commentary text, or truncated JSON are all Schema errors).
-3. Check canon/fanon/unclear tags are justified.
-4. Check every factual item has a useful reference.
+1. Check existing canonical and unconfirmed knowledge via `queryTraits` and `queryUnconfirmedTraits`. Cross-check that the submitted JSON is consistent with the research notes in staging (nothing invented that isn't in staging, nothing important from staging silently dropped).
+2. Validate schema and required keys. Reject if the response is not a single parseable JSON object.
+3. Verify Canon_Status tags (Verified/Unverified/Fanon/Unclear) are strictly justified by the source text.
+4. Ensure every factual item has a precise reference ("url: section/line").
 5. SOURCE FRESHNESS: if `compareSourceFreshness` was available, check whether the Researcher used it when multiple candidate wikis existed, and flag it as an error if a stale/moved source appears to have been preferred over an actively maintained one.
-6. Identify missing categories, contradictions, invented claims, and data bleed.
+6. Identify contradictions, invented claims, and data bleed.
 7. Produce precise correction queue.
  
 OUTPUT FORMAT
@@ -84,31 +86,33 @@ Strict JSON only, no markdown fences, no commentary outside the JSON:
  
 CRITERIA
 {criteria}
+- PROHIBITED: Do not perform any power-scaling, feat analysis, or relative strength comparisons. Focus exclusively on factual accuracy and source grounding.
 """,
         "user": f"Audit this dataset:\n\n{data}"
     }
-
 
 
 def get_synthesis_prompt(reports: List[str]):
     return {
         "system": """### ROLE
 Consolidator. Merge verified reports into a master dataset.
-
+ 
 OBJECTIVE
 1. Preserve universe separation. No data bleed.
 2. Dedupe repeated items while preserving strongest citation.
 3. Maintain compact high-density technical summaries.
 4. Keep canon/fanon/unclear distinctions.
-
+ 
 OUTPUT FORMAT
 Structured markdown or JSON is acceptable, but each world must remain separately labeled.
 """,
         "user": "Consolidate these verified reports:\n\n" + "\n\n--- REPORT ---\n".join(reports)
     }
-
-
+ 
+ 
 def get_architect_prompt(dataset: str, anomalies: List[str]):
+
+
     """
     Bootstrap-only prompt. This designs the tier rubric FROM SCRATCH and should
     only run once, when no persistent rubric exists yet. Once a rubric is
@@ -167,28 +171,30 @@ OUTPUT FORMAT
 
 
 
-def get_stability_prompt(world_data: str, system: str):
+def get_stability_prompt(world_traits: str, system: str):
     """
-    Slots one world into the PERSISTENT rubric (`system`). This should not
-    invent new thresholds or reinterpret tier boundaries — if the world
-    genuinely does not fit anywhere in the existing rubric, that is an
-    ANOMALY to be escalated to the Rubric Steward, not something to be
-    resolved ad hoc here. This is what keeps tiering consistent across runs.
+    Slots one world into the PERSISTENT rubric (`system`).
+    This evaluates world traits directly (not summary).
+    Does NOT expose existing tier (blind evaluation).
+    Three outcomes: STABLE, ANOMALY, INSUFFICIENT_DATA.
     """
     return {
         "system": """### ROLE
-Stability Unit. Assign this world a tier under the EXISTING, PERSISTENT rubric provided below, and verify no contradiction. You do not redesign or reinterpret the rubric — you only apply it.
+Stability Unit. Assign this world a tier under the EXISTING, PERSISTENT rubric provided below.
  
 OUTPUT FORMAT EXACTLY:
-STATUS: [STABLE | ANOMALY]
-TIER: [0-10]
-JUSTIFICATION: [technical citation, referencing the specific rubric criterion met]
-ANOMALY_DETAILS: [None or contradiction/description of why the world doesn't fit any existing tier]
+STATUS: [STABLE | ANOMALY | INSUFFICIENT_DATA]
+TIER: [0-10 or None]
+JUSTIFICATION: [technical citation]
+ANOMALY_DETAILS: [None or reason for anomaly/insufficiency]
  
 RULES
-No intuition. If data does not meet Tier X, assign weaker/lower tier. A world is STABLE only if assignment has no contradiction with features AND fits cleanly within one existing tier's criteria as written. If the world's demonstrated scale falls between two tiers, or exceeds/undercuts every tier, mark ANOMALY rather than forcing a fit — this signals the rubric may need amendment.
+- Use the provided TRAITS. Do not use a pre-existing tier (this is a blind re-evaluation).
+- If world traits are too sparse to map to any threshold, output STATUS: INSUFFICIENT_DATA and TIER: None.
+- If world fits rubric cleanly: STATUS: STABLE, TIER: [0-10].
+- If world traits fall between tiers, exceed rubric, or contradict rubric: STATUS: ANOMALY, TIER: None (escalated to Rubric Steward).
 """,
-        "user": f"World Data:\n{world_data}\n\nPersistent Tier Rubric:\n{system}\n\nAssign tier and verify stability."
+        "user": f"World Traits:\n{world_traits}\n\nPersistent Tier Rubric:\n{system}\n\nAssign tier or escalate."
     }
 
 

@@ -50,6 +50,17 @@ export type AgentRouteRecord = {
   priority: number;
 };
 
+export type Trait = {
+  id: number;
+  universe_id: number;
+  category: string | null;
+  name: string;
+  value: string;
+  canon_status: string | null;
+  reference: string | null;
+  wiki_source: string | null;
+};
+
 export type WorldRecord = {
   id: number;
   name: string;

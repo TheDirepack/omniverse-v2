@@ -224,6 +224,12 @@ describe("DashboardPanel", () => {
     consoleSpy.mockRestore();
   });
 
+  it("displays correct pipeline description help text", async () => {
+    render(<DashboardPanel />);
+    const helpText = screen.getByText(/research \u2192 integration \u2192 summary pipeline/i);
+    expect(helpText).toBeInTheDocument();
+  });
+
   it("calls resetAllExplored when Reset All Explored Flags clicked", async () => {
     vi.mocked(api.resetAllExplored).mockResolvedValue(undefined);
     const user = userEvent.setup();

@@ -48,7 +48,7 @@ class TestRunAgentDirectSubmit:
         submit_tc = _make_tool_call("submitFindings", {})
         response = _make_response(content="Here are my findings.", tool_calls=[submit_tc])
 
-        with patch("app.core.agent_engine.router.run_model", new=AsyncMock(return_value=response)):
+        with patch("app.core.agent_engine.router.run_model", new=AsyncMock(return_value=(response, "mock-model", "mock-key"))):
             result, _ = await run_agent(
                 agent_name="TEST",
                 system_prompt="You are a researcher.",
@@ -65,7 +65,7 @@ class TestRunAgentDirectSubmit:
         submit_tc = _make_tool_call("submitFindings", {})
         response = _make_response(content=None, tool_calls=[submit_tc])
 
-        with patch("app.core.agent_engine.router.run_model", new=AsyncMock(return_value=response)):
+        with patch("app.core.agent_engine.router.run_model", new=AsyncMock(return_value=(response, "mock-model", "mock-key"))):
             result, _ = await run_agent(
                 agent_name="TEST",
                 system_prompt="sys",
@@ -92,7 +92,7 @@ class TestRunAgentToolLoop:
         async def mock_run_model(*args, **kwargs):
             nonlocal call_count
             call_count += 1
-            return search_response if call_count == 1 else submit_response
+            return (search_response, "model", "key") if call_count == 1 else (submit_response, "model", "key")
 
         captured_messages = []
 
@@ -126,8 +126,8 @@ class TestRunAgentToolLoop:
             nonlocal call_count
             call_count += 1
             if call_count == 1:
-                return _make_response(content=None, tool_calls=[unknown_tc])
-            return _make_response(content="submitted", tool_calls=[submit_tc])
+                return (_make_response(content=None, tool_calls=[unknown_tc]), "m", "k")
+            return (_make_response(content="submitted", tool_calls=[submit_tc]), "m", "k")
 
         with patch("app.core.agent_engine.router.run_model", new=mock_run_model):
             result, _ = await run_agent(
@@ -150,7 +150,7 @@ class TestRunAgentMaxTurns:
         # then max_turns exceeded
         no_tool_response = _make_response(content=None, tool_calls=None)
 
-        with patch("app.core.agent_engine.router.run_model", new=AsyncMock(return_value=no_tool_response)):
+        with patch("app.core.agent_engine.router.run_model", new=AsyncMock(return_value=(no_tool_response, "m", "k"))):
             result, _ = await run_agent(
                 agent_name="TEST",
                 system_prompt="sys",
@@ -161,13 +161,13 @@ class TestRunAgentMaxTurns:
                 submit_tool_name="submitFindings",
                 max_turns=2,
             )
-        assert "Max turns reached" in result
+        assert "MAX_TURNS_REACHED" in result
 
     async def test_text_response_without_tool_calls_returns_content(self):
         """If the model returns plain text with no tool calls, return it immediately."""
         text_response = _make_response(content="Here is my answer.", tool_calls=None)
 
-        with patch("app.core.agent_engine.router.run_model", new=AsyncMock(return_value=text_response)):
+        with patch("app.core.agent_engine.router.run_model", new=AsyncMock(return_value=(text_response, "m", "k"))):
             result, _ = await run_agent(
                 agent_name="TEST",
                 system_prompt="sys",
@@ -213,10 +213,11 @@ class TestRunAgentFetchCache:
             nonlocal call_count
             call_count += 1
             if call_count == 1:
-                return _make_response(content=None, tool_calls=[fetch_tc])
-            return _make_response(content="done", tool_calls=[submit_tc])
+                return (_make_response(content=None, tool_calls=[fetch_tc]), "m", "k")
+            return (_make_response(content="done", tool_calls=[submit_tc]), "m", "k")
 
         fetched_urls = []
+
 
         async def mock_fetch_page(url):
             fetched_urls.append(url)
@@ -258,10 +259,11 @@ class TestRunAgentFetchCache:
             nonlocal call_count
             call_count += 1
             if call_count == 1:
-                return _make_response(content=None, tool_calls=[fetch_tc])
-            return _make_response(content="done", tool_calls=[submit_tc])
+                return (_make_response(content=None, tool_calls=[fetch_tc]), "m", "k")
+            return (_make_response(content="done", tool_calls=[submit_tc]), "m", "k")
 
         fetched_urls = []
+
 
         async def mock_fetch_page(url):
             fetched_urls.append(url)
@@ -305,10 +307,10 @@ class TestRunAgentFetchCache:
             nonlocal call_count
             call_count += 1
             if call_count == 1:
-                return _make_response(content=None, tool_calls=[fetch_tc])
+                return (_make_response(content=None, tool_calls=[fetch_tc]), "m", "k")
             if call_count == 2:
-                return _make_response(content=None, tool_calls=[compare_tc])
-            return _make_response(content="done", tool_calls=[submit_tc])
+                return (_make_response(content=None, tool_calls=[compare_tc]), "m", "k")
+            return (_make_response(content="done", tool_calls=[submit_tc]), "m", "k")
 
         fetched_urls = []
 
@@ -384,3 +386,63 @@ class TestReadPageWithBudget:
         assert status == "error"
         assert "boom" in content
         assert new_count == 0
+
+class TestRunAgentStateful:
+    """Tests for the stateful session capabilities of run_agent."""
+
+    async def test_run_agent_with_history_preserves_messages(self):
+        """When history is provided, run_agent should use it and return the extended history."""
+        history = [
+            {"role": "system", "content": "Old System"},
+            {"role": "user", "content": "Hello"},
+            {"role": "assistant", "content": "Hi there!"}
+        ]
+        submit_tc = _make_tool_call("submitFindings", {})
+        response = _make_response(content="Final Answer", tool_calls=[submit_tc])
+
+        with patch("app.core.agent_engine.router.run_model", new=AsyncMock(return_value=(response, "mock-model", "mock-key"))) as mock_router:
+            result, final_history = await run_agent(
+                agent_name="TEST",
+                system_prompt="New System",
+                user_prompt="Submit now",
+                step="step1",
+                run_id="run-stateful",
+                tools_names=[],
+                submit_tool_name="submitFindings",
+                history=history
+            )
+        
+        assert result == "Final Answer"
+        # Check that router was called with the combined history
+        called_messages = mock_router.call_args[1]["messages"]
+        assert called_messages[0]["role"] == "system"
+        assert called_messages[0]["content"] == "New System"
+        assert called_messages[1]["content"] == "Hello"
+        assert called_messages[2]["content"] == "Hi there!"
+        assert called_messages[3]["role"] == "user"
+        assert called_messages[3]["content"] == "Submit now"
+        
+        # Check that the returned history includes everything
+        assert len(final_history) > len(history)
+        assert final_history[0]["content"] == "New System"
+
+    async def test_run_agent_without_history_starts_fresh(self):
+        """Without history, run_agent should start with system and user prompts."""
+        submit_tc = _make_tool_call("submitFindings", {})
+        response = _make_response(content="Final Answer", tool_calls=[submit_tc])
+
+        with patch("app.core.agent_engine.router.run_model", new=AsyncMock(return_value=(response, "mock-model", "mock-key"))) as mock_router:
+            result, final_history = await run_agent(
+                agent_name="TEST",
+                system_prompt="Sys",
+                user_prompt="User",
+                step="step1",
+                run_id="run-fresh",
+                tools_names=[],
+                submit_tool_name="submitFindings",
+            )
+        
+        called_messages = mock_router.call_args[1]["messages"]
+        assert len(called_messages) == 2
+        assert called_messages[0]["content"] == "Sys"
+        assert called_messages[1]["content"] == "User"

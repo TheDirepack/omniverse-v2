@@ -1,11 +1,13 @@
 import litellm
 import re
 import hashlib
+import json
 from typing import Optional, Any, List, Dict
 from datetime import datetime, timedelta
 from sqlmodel import Session, select
 from app.db.session import engine
 from app.db.schema import ProviderConfig, ProviderKey, AgentRouteFallback, Setting, ExecutionState, CandidateHealth
+from app.core.agent_logger import agent_logger
 
 def calculate_candidate_hash(provider_id: int, key_id: Optional[int], model: str) -> str:
     payload = f"{provider_id}:{key_id}:{model}"
@@ -41,11 +43,8 @@ class ModelRouter:
     def _report_failure(self, session: Session, provider_id: int, key_id: Optional[int], model: str):
         health = self._get_health(session, provider_id, key_id, model)
         health.failure_count += 1
-        # Disable for 1 minute on any error; if 5+ errors, disable for 4 hours
         if health.failure_count >= 5:
             health.disabled_until = datetime.utcnow() + timedelta(hours=4)
-        else:
-            health.disabled_until = datetime.utcnow() + timedelta(minutes=1)
         session.add(health)
         session.commit()
 
@@ -59,6 +58,7 @@ class ModelRouter:
     async def run_model(self, task: str, messages: List[Dict[str, str]], tools: Optional[List[Dict[str, Any]]] = None, run_id: Optional[str] = None, **kwargs):
         """
         High-level entry point for model calls.
+        Returns (response, model_name, key_id).
         """
         return await self.call_llm_with_tools(task, messages, tools or [], run_id=run_id, **kwargs)
 
@@ -130,6 +130,15 @@ class ModelRouter:
                     with Session(engine) as health_session:
                         self._report_success(health_session, candidate["provider"].id, candidate["key"].id if candidate["key"].id != -1 else None, candidate["model"])
                     
+                    # Log agent model call
+                    agent_logger.log(
+                        agent="ModelRouter",
+                        event_type="MODEL_CALL",
+                        content=f"Successful response from {candidate['full_model']}",
+                        model=candidate["full_model"],
+                        key_id=str(candidate["key"].id)
+                    )
+                    
                     if run_id:
                         with Session(engine) as log_session:
                             log_entry = ExecutionState(
@@ -141,7 +150,7 @@ class ModelRouter:
                             )
                             log_session.add(log_entry)
                             log_session.commit()
-                    return response
+                    return response, candidate["full_model"], str(candidate["key"].id)
                 except Exception as e:
                     # Report failure
                     with Session(engine) as health_session:

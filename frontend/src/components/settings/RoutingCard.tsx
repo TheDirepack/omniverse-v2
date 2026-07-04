@@ -12,6 +12,8 @@ function RoutingCard({ agentName, routes, providers, onSave, onDelete, defaultRo
   const [expanded, setExpanded] = useState(agentName === "DEFAULT");
   const [resolvedExpanded, setResolvedExpanded] = useState(false);
   const [localRoutes, setLocalRoutes] = useState(routes);
+  const [draggedIdx, setDraggedIdx] = useState<number | null>(null);
+
 
   useEffect(() => {
     setLocalRoutes(routes);
@@ -64,6 +66,30 @@ function RoutingCard({ agentName, routes, providers, onSave, onDelete, defaultRo
     const currentModels = (localRoutes[idx].models || "").split(",").map(m => m.trim()).filter(Boolean);
     const newModels = currentModels.filter(m => m !== model).join(",");
     updateRoute(idx, "models", newModels || null);
+  };
+
+  const handleDragStart = (idx: number) => {
+    setDraggedIdx(idx);
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+  };
+
+  const handleDrop = async (targetIdx: number) => {
+    if (draggedIdx === null || draggedIdx === targetIdx) return;
+
+    const newRoutes = [...localRoutes];
+    const [movedRoute] = newRoutes.splice(draggedIdx, 1);
+    newRoutes.splice(targetIdx, 0, movedRoute);
+
+    setLocalRoutes(newRoutes);
+    setDraggedIdx(null);
+
+    // Persist new priority
+    for (let i = 0; i < newRoutes.length; i++) {
+      await onSave({ ...newRoutes[i], priority: i });
+    }
   };
 
   // Compute resolved sequence
@@ -127,7 +153,14 @@ function RoutingCard({ agentName, routes, providers, onSave, onDelete, defaultRo
             {localRoutes.map((route, idx) => {
               const providerModels = providers.find(p => p.id === route.provider_id)?.models ?? "";
               return (
-                <div key={route.id} className="route-slot">
+                <div 
+                  key={route.id} 
+                  className={`route-slot ${draggedIdx === idx ? "dragging" : ""}`}
+                  draggable
+                  onDragStart={() => handleDragStart(idx)}
+                  onDragOver={handleDragOver}
+                  onDrop={() => handleDrop(idx)}
+                >
                   <span className="slot-num">#{idx + 1}</span>
                   <select
                     value={route.provider_id ?? ""}

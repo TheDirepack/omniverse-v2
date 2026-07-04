@@ -581,7 +581,6 @@ async def get_realtime_logs(run_id: str):
                     if log.status == "COMPLETED" and log.node_name in {"Ontological Theorist", "Focused Search"}:
                         yield "data: {\"finished\": true}\n\n"
                         return
-
             await asyncio.sleep(1)
 
     return StreamingResponse(log_generator(), media_type="text/event-stream")

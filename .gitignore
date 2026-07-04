@@ -8,3 +8,5 @@ __pycache__/
 frontend/dist/
 AGENTS.md
 tests/provider_config.py
+backend/logs/
+agents.log

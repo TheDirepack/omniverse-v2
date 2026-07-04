@@ -4,6 +4,7 @@ import * as api from "../../api";
 import ProviderCard from "./ProviderCard";
 import RoutingCard from "./RoutingCard";
 import SettingItem from "./SettingItem";
+import SettingToggle from "./SettingToggle";
 
 function SettingsPanel() {
   const [settingsTab, setSettingsTab] = useState<SettingsTab>("providers");
@@ -26,7 +27,10 @@ function SettingsPanel() {
         api.fetchAgentRoutes(),
         api.fetchAgentNames(),
       ]);
-      setSettings(s.general_settings);
+       setSettings({
+         AGENT_LOGGING: "true",
+         ...s.general_settings,
+       });
       setProviders(p);
       setAgentRoutes(r);
       setAgentNames(n);
@@ -218,17 +222,29 @@ function SettingsPanel() {
               {savingAddKey ? "..." : "Add Key"}
             </button>
           </div>
-          <div className="settings-list">
-            {Object.entries(settings).map(([key, value]) => (
-              <SettingItem
-                key={key}
-                keyName={key}
-                value={value ?? ""}
-                onSave={handleSaveSetting}
-                onDelete={handleDeleteSetting}
-              />
-            ))}
-          </div>
+           <div className="settings-list">
+             {Object.entries(settings).map(([key, value]) => {
+               if (key === "AGENT_LOGGING") {
+                 return (
+                   <SettingToggle
+                     key={key}
+                     keyName={key}
+                     value={value ?? "true"}
+                     onSave={handleSaveSetting}
+                   />
+                 );
+               }
+               return (
+                 <SettingItem
+                   key={key}
+                   keyName={key}
+                   value={value ?? ""}
+                   onSave={handleSaveSetting}
+                   onDelete={handleDeleteSetting}
+                 />
+               );
+             })}
+           </div>
         </div>
       )}
     </section>

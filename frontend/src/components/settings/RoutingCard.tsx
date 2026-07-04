@@ -10,6 +10,7 @@ function RoutingCard({ agentName, routes, providers, onSave, onDelete, defaultRo
   defaultRoutes?: AgentRouteRecord[];
 }) {
   const [expanded, setExpanded] = useState(agentName === "DEFAULT");
+  const [resolvedExpanded, setResolvedExpanded] = useState(false);
   const [localRoutes, setLocalRoutes] = useState(routes);
 
   useEffect(() => {
@@ -34,7 +35,8 @@ function RoutingCard({ agentName, routes, providers, onSave, onDelete, defaultRo
 
   // Compute resolved sequence
   const resolvedSequence: Array<{ provider: string; keyLabel: string; model: string }> = [];
-  localRoutes.forEach(route => {
+  const routesToResolve = localRoutes.length > 0 ? localRoutes : (defaultRoutes ?? []);
+  routesToResolve.forEach(route => {
     const provider = providers.find(p => p.id === route.provider_id);
     if (!provider) return;
     const models = (route.models || provider.models || "").split(",").map(m => m.trim()).filter(Boolean);
@@ -73,20 +75,7 @@ function RoutingCard({ agentName, routes, providers, onSave, onDelete, defaultRo
       {expanded && (
         <div className="routing-card-body">
           <p className="help-text">Each agent tries its fallback chain top to bottom: provider → its keys in order → its models in order. If everything fails, the run fails that step. Agents without their own chain use the DEFAULT chain.</p>
-
-          {resolvedSequence.length > 0 && (
-            <div className="resolved-sequence">
-              <h4>Resolved Fallback Order:</h4>
-              <ol className="sequence-list">
-                {resolvedSequence.map((item, idx) => (
-                  <li key={idx} className="sequence-item">{item.provider} → {item.keyLabel} → {item.model}</li>
-                ))}
-              </ol>
-            </div>
-          )}
-
-          <hr className="routing-divider" />
-
+          
           <div className="route-slots">
             {localRoutes.map((route, idx) => {
               const providerModels = providers.find(p => p.id === route.provider_id)?.models ?? "";
@@ -102,49 +91,68 @@ function RoutingCard({ agentName, routes, providers, onSave, onDelete, defaultRo
                   </select>
                   
                    {route.provider_id && (
-                     <div className="route-models-selector">
-                       {(() => {
-                         const providerModels = providers.find(p => p.id === route.provider_id)?.models ?? null;
-                         const modelList = providerModels ? providerModels.split(",").map(m => m.trim()).filter(Boolean) : [];
-                         return (
-                           <>
-                             <select
-                               value={route.models ?? ""}
-                               onChange={e => updateRoute(idx, "models", e.target.value || null)}
-                             >
-                               <option value="">Select Model</option>
-                               {modelList.length > 0 ? modelList.map(m => (
-                                 <option key={m} value={m}>{m}</option>
-                               )) : (
-                                 <option value="" disabled>— No models configured —</option>
-                               )}
-                             </select>
-                             {modelList.length === 0 && (
-                               <span className="help-text">Add models in Provider settings</span>
-                             )}
-                           </>
-                         );
-                       })()}
-                     </div>
-                   )}
-                  
-                  <div className="slot-actions">
-                    <button className="chip" onClick={() => void handleSave(idx)}>Save</button>
-                    <button className="chip delete" onClick={async () => {
-                      await onDelete(route.id);
-                      setLocalRoutes(prev => prev.filter(r => r.id !== route.id));
-                    }}>×</button>
-                  </div>
-                </div>
+                      <div className="route-models-selector">
+                        {(() => {
+                          const providerModels = providers.find(p => p.id === route.provider_id)?.models ?? null;
+                          const modelList = providerModels ? providerModels.split(",").map(m => m.trim()).filter(Boolean) : [];
+                          return (
+                            <>
+                              <select
+                                value={route.models ?? ""}
+                                onChange={e => updateRoute(idx, "models", e.target.value || null)}
+                              >
+                                <option value="">Select Model</option>
+                                {modelList.length > 0 ? modelList.map(m => (
+                                  <option key={m} value={m}>{m}</option>
+                                )) : (
+                                  <option value="" disabled>— No models configured —</option>
+                                )}
+                              </select>
+                              {modelList.length === 0 && (
+                                <span className="help-text">Add models in Provider settings</span>
+                              )}
+                            </>
+                          );
+                        })()}
+                      </div>
+                    )}
+                   
+                   <div className="slot-actions">
+                     <button className="chip" onClick={() => void handleSave(idx)}>Save</button>
+                     <button className="chip delete" onClick={async () => {
+                       await onDelete(route.id);
+                       setLocalRoutes(prev => prev.filter(r => r.id !== route.id));
+                     }}>×</button>
+                   </div>
+                 </div>
               );
             })}
-
+ 
             <button className="chip add-slot" onClick={async () => {
               const savedRoute = await onSave({ id: 0, task_type: agentName, provider_id: null, models: null, priority: localRoutes.length });
               if (savedRoute) setLocalRoutes(prev => [...prev, savedRoute]);
             }}>+ Add Provider Step</button>
           </div>
+          
+          <hr className="routing-divider" />
+          
+          {resolvedSequence.length > 0 && (
+            <div className="resolved-sequence-container">
+              <div className="resolved-header" onClick={() => setResolvedExpanded(!resolvedExpanded)}>
+                <h4>Resolved Fallback Order:</h4>
+                <span className="expand-icon">{resolvedExpanded ? "▲" : "▼"}</span>
+              </div>
+              {resolvedExpanded && (
+                <ol className="sequence-list">
+                  {resolvedSequence.map((item, idx) => (
+                    <li key={idx} className="sequence-item">{item.provider} → {item.keyLabel} → {item.model}</li>
+                  ))}
+                </ol>
+              )}
+            </div>
+          )}
         </div>
+
       )}
     </div>
   );

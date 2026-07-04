@@ -538,25 +538,42 @@ button.primary:disabled { opacity: 0.5; cursor: not-allowed; }
 }
 
 /* Resolved Sequence */
-.resolved-sequence {
+.resolved-sequence-container {
   background: #0a0a0a;
   border-radius: 8px;
-  padding: 12px;
-  margin-bottom: 12px;
+  border: 1px solid #222;
+  overflow: hidden;
+  margin-top: 16px;
 }
 
-.resolved-sequence h4 {
-  margin: 0 0 8px 0;
+.resolved-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  cursor: pointer;
+  user-select: none;
+  background: #111;
+  border-bottom: 1px solid #222;
+}
+
+.resolved-header h4 {
+  margin: 0;
   font-size: 0.85rem;
   color: #888;
 }
 
-.sequence-list {
-  margin: 0;
-  padding-left: 20px;
+.resolved-header .expand-icon {
+  font-size: 0.7rem;
+  color: #666;
 }
 
-.sequence-item {
+.resolved-sequence-container .sequence-list {
+  margin: 0;
+  padding: 12px 12px 12px 32px;
+}
+
+.resolved-sequence-container .sequence-item {
   font-size: 0.85rem;
   color: #ccc;
   margin-bottom: 4px;

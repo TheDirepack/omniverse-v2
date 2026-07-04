@@ -37,15 +37,24 @@ os.environ["DATABASE_URL"] = f"sqlite:///{TEST_DB_PATH}"
 os.environ["UNCONFIRMED_DB_URL"] = "sqlite:////tmp/omniverse_test_unconfirmed.db"
 
 from app.db.session import engine
+from app.db.unconfirmed_session import engine as unconfirmed_engine, init_unconfirmed_db
+from app.db.unconfirmed_schema import unconfirmed_metadata
 from app.main import app
+
+
 
 
 @pytest.fixture(autouse=True)
 def auto_create_db():
     """Autouse: create tables before each test, drop after. Ensures clean slate."""
     SQLModel.metadata.create_all(engine)
+    init_unconfirmed_db()
     yield
     SQLModel.metadata.drop_all(engine)
+    unconfirmed_metadata.drop_all(unconfirmed_engine)
+
+    # We don't explicitly drop unconfirmed tables here to avoid complexity, 
+    # but since we use a temp file that is cleaned up at atexit, it's okay.
 
 
 @pytest.fixture

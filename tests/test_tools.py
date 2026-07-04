@@ -59,6 +59,8 @@ class TestFetchPageTool:
         result = await tool["func"]({})
         assert "Missing or invalid urls" in result
 
+    @pytest.mark.slow
+    @pytest.mark.network
     async def test_urls_not_list_but_string(self):
         """A bare string in 'urls' (not a list) is coerced to a single-item list."""
         tool = AGENT_TOOLS["fetchPage"]

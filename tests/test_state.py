@@ -52,3 +52,39 @@ class TestAbortedRuns:
     def test_isolation_from_active(self):
         ACTIVE_RUNS.add("shared")
         assert "shared" not in ABORTED_RUNS
+
+
+class TestAsyncStateHelpers:
+    @pytest.mark.asyncio
+    async def test_add_active_run_async(self):
+        from app.core.state import add_active_run, get_active_runs
+        ACTIVE_RUNS.clear()
+        await add_active_run("async-run-1")
+        runs = await get_active_runs()
+        assert "async-run-1" in runs
+
+    @pytest.mark.asyncio
+    async def test_abort_and_is_aborted_async(self):
+        from app.core.state import abort_run, is_aborted
+        ABORTED_RUNS.clear()
+        assert not await is_aborted("abort-run-1")
+        await abort_run("abort-run-1")
+        assert await is_aborted("abort-run-1")
+
+    @pytest.mark.asyncio
+    async def test_remove_run_async(self):
+        from app.core.state import add_active_run, abort_run, remove_run, get_active_runs, is_aborted
+        ACTIVE_RUNS.clear()
+        ABORTED_RUNS.clear()
+
+        await add_active_run("run-to-remove")
+        await abort_run("run-to-remove")
+
+        assert "run-to-remove" in await get_active_runs()
+        assert await is_aborted("run-to-remove")
+
+        await remove_run("run-to-remove")
+
+        assert "run-to-remove" not in await get_active_runs()
+        assert not await is_aborted("run-to-remove")
+

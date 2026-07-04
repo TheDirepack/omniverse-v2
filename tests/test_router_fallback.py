@@ -275,3 +275,122 @@ class TestKeyFallback:
 
         content = result["choices"][0]["message"]["content"]
         assert "test-key" in content
+
+    @pytest.mark.asyncio
+    async def test_fallback_to_default_route(self, fake_llm_server):
+        base_url = fake_llm_server
+        _set_bad_keys(base_url, [])
+        
+        # Seed provider and default route
+        with Session(engine) as session:
+            p = ProviderConfig(
+                name="default-route-provider",
+                provider_type="custom",
+                base_url=base_url,
+                models="gpt-4",
+            )
+            session.add(p)
+            session.flush()
+
+            session.add(ProviderKey(provider_id=p.id, api_key="default-key", priority=0))
+            
+            # Setup DEFAULT fallback route
+            session.add(AgentRouteFallback(
+                task_type="DEFAULT", provider_id=p.id, models="gpt-4", priority=0
+            ))
+            session.commit()
+
+        # Run a task with NO specific routing (e.g. "UNKNOWN_TASK")
+        result = await router.run_model(
+            "UNKNOWN_TASK",
+            messages=[{"role": "user", "content": "hi"}],
+        )
+
+        content = result["choices"][0]["message"]["content"]
+        assert "default-key" in content
+
+    @pytest.mark.asyncio
+    async def test_route_models_none_falls_back_to_provider_models(self, fake_llm_server):
+        base_url = fake_llm_server
+        _set_bad_keys(base_url, [])
+        
+        with Session(engine) as session:
+            p = ProviderConfig(
+                name="none-models-provider",
+                provider_type="custom",
+                base_url=base_url,
+                models="gpt-3.5-turbo",
+            )
+            session.add(p)
+            session.flush()
+
+            session.add(ProviderKey(provider_id=p.id, api_key="none-models-key", priority=0))
+            
+            # AgentRouteFallback with models=None
+            session.add(AgentRouteFallback(
+                task_type="TEST_NONE_MODELS", provider_id=p.id, models=None, priority=0
+            ))
+            session.commit()
+
+        result = await router.run_model(
+            "TEST_NONE_MODELS",
+            messages=[{"role": "user", "content": "hi"}],
+        )
+
+        content = result["choices"][0]["message"]["content"]
+        assert "none-models-" in content
+        assert result["model"] == "gpt-3.5-turbo"
+
+    @pytest.mark.asyncio
+    async def test_provider_no_keys_custom_type(self, fake_llm_server):
+        base_url = fake_llm_server
+        _set_bad_keys(base_url, [])
+        
+        with Session(engine) as session:
+            p = ProviderConfig(
+                name="no-keys-custom-provider",
+                provider_type="custom",
+                base_url=base_url,
+                models="gpt-4",
+            )
+            session.add(p)
+            session.flush()
+
+            session.add(AgentRouteFallback(
+                task_type="TEST_NO_KEYS", provider_id=p.id, models="gpt-4", priority=0
+            ))
+            session.commit()
+
+        with pytest.raises(RuntimeError, match="All fallback options exhausted"):
+            await router.run_model(
+                "TEST_NO_KEYS",
+                messages=[{"role": "user", "content": "hi"}],
+            )
+
+
+
+@pytest.mark.asyncio
+async def test_provider_no_keys_custom_type(fake_llm_server):
+    base_url = fake_llm_server
+    _set_bad_keys(base_url, [])
+    
+    with Session(engine) as session:
+        p = ProviderConfig(
+            name="no-keys-custom-provider",
+            provider_type="custom",
+            base_url=base_url,
+            models="gpt-4",
+        )
+        session.add(p)
+        session.flush()
+
+        session.add(AgentRouteFallback(
+            task_type="TEST_NO_KEYS", provider_id=p.id, models="gpt-4", priority=0
+        ))
+        session.commit()
+
+    with pytest.raises(RuntimeError, match="All fallback options exhausted"):
+        await router.run_model(
+            "TEST_NO_KEYS",
+            messages=[{"role": "user", "content": "hi"}],
+        )

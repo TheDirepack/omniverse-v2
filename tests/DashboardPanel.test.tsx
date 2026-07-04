@@ -212,4 +212,67 @@ describe("DashboardPanel", () => {
     expect(screen.getByText("Warframe")).toBeInTheDocument();
     expect(screen.queryByText("Star Wars")).not.toBeInTheDocument();
   });
+
+  it("handles fetchWorlds API error gracefully on mount", async () => {
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.mocked(api.fetchWorlds).mockRejectedValue(new Error("Network Failure"));
+    
+    render(<DashboardPanel />);
+    // Verify it doesn't crash and keeps registry empty
+    await waitFor(() => expect(api.fetchWorlds).toHaveBeenCalledOnce());
+    expect(consoleSpy).toHaveBeenCalled();
+    consoleSpy.mockRestore();
+  });
+
+  it("calls resetAllExplored when Reset All Explored Flags clicked", async () => {
+    vi.mocked(api.resetAllExplored).mockResolvedValue(undefined);
+    const user = userEvent.setup();
+    render(<DashboardPanel />);
+    await user.click(screen.getByRole("button", { name: /reset all explored flags/i }));
+    expect(api.resetAllExplored).toHaveBeenCalledOnce();
+    expect(api.fetchWorlds).toHaveBeenCalledTimes(2);
+  });
+
+  it("closes EventSource and stops running state on SSE error", async () => {
+    const src = sourceMock();
+    vi.mocked(api.createEventSource).mockReturnValue(src);
+    vi.mocked(api.startOrchestrate).mockResolvedValue({ run_id: "run-1" });
+
+    const user = userEvent.setup();
+    render(<DashboardPanel />);
+
+    const textarea = screen.getByPlaceholderText("Warhammer 40k, Star Wars, Harry Potter");
+    await user.type(textarea, "TestWorld");
+    await user.click(screen.getByRole("button", { name: /run/i }));
+
+    await waitFor(() => expect(api.createEventSource).toHaveBeenCalled());
+    expect(screen.getByText("Running")).toBeInTheDocument();
+
+    act(() => {
+      src.onerror();
+    });
+
+    await waitFor(() => expect(screen.queryByText("Running")).not.toBeInTheDocument());
+    expect(src.close).toHaveBeenCalled();
+  });
+
+  it("shows more worlds button when registry has more than 24 worlds", async () => {
+    const mockWorlds = Array.from({ length: 30 }, (_, i) => ({
+      id: i,
+      name: `World-${i}`,
+      is_explored: false,
+      summary: null,
+    }));
+    vi.mocked(api.fetchWorlds).mockResolvedValue(mockWorlds);
+    const user = userEvent.setup();
+    render(<DashboardPanel />);
+
+    await screen.findByText("World-0");
+    expect(screen.getByText("+6 more")).toBeInTheDocument();
+
+    await user.click(screen.getByText("+6 more"));
+    expect(screen.queryByText("+6 more")).not.toBeInTheDocument();
+    expect(screen.getByText("World-29")).toBeInTheDocument();
+  });
 });
+

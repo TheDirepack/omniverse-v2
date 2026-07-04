@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from app.core.agent_engine import run_agent, FetchCache
 from app.core.state import ABORTED_RUNS
+from app.core.tools import AGENT_TOOLS
 
 
 def _make_response(content=None, tool_calls=None):
@@ -224,9 +225,10 @@ class TestRunAgentFetchCache:
         cache = FetchCache()
 
         with patch("app.core.agent_engine.router.run_model", new=mock_router), \
-             patch("app.core.agent_engine.AGENT_TOOLS", {}), \
+             patch("app.core.agent_engine.AGENT_TOOLS", {
+                 "fetchPage": {"func": AsyncMock(), "description": "fetch", "parameters": {}}
+             }), \
              patch("app.core.web_fetch.web_fetcher.fetch_page", new=mock_fetch_page):
-            # Pre-populate cache
             cache.set("http://example.com", "cached content")
             result, _ = await run_agent(
                 agent_name="TEST",
@@ -266,7 +268,9 @@ class TestRunAgentFetchCache:
             return f"content of {url}"
 
         with patch("app.core.agent_engine.router.run_model", new=mock_router), \
-             patch("app.core.agent_engine.AGENT_TOOLS", {}), \
+             patch("app.core.agent_engine.AGENT_TOOLS", {
+                 "fetchPage": {"func": AsyncMock(), "description": "fetch", "parameters": {}}
+             }), \
              patch("app.core.web_fetch.web_fetcher.fetch_page", new=mock_fetch_page):
             await run_agent(
                 agent_name="TEST",

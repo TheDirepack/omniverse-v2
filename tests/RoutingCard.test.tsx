@@ -83,4 +83,45 @@ describe("RoutingCard", () => {
       expect.objectContaining({ task_type: "Researcher", provider_id: 1, models: "gpt-4" })
     );
   });
+
+  it("shows select provider option and hides model selector when provider_id is null", () => {
+    const routesWithNull = [{ id: 1, task_type: "DEFAULT", provider_id: null, models: null, priority: 0 }];
+    render(<RoutingCard agentName="DEFAULT" routes={routesWithNull} providers={mockProviders} onSave={mockOnSave} onDelete={mockOnDelete} />);
+    const selects = screen.getAllByRole("combobox");
+    expect(selects).toHaveLength(1); // Only provider select is rendered
+    expect(selects[0]).toHaveValue(""); // Empty value / "Select Provider"
+  });
+
+  it("populates model selector with options from the selected provider models", async () => {
+    const user = userEvent.setup();
+    const routesWithNull = [{ id: 1, task_type: "DEFAULT", provider_id: null, models: null, priority: 0 }];
+    render(<RoutingCard agentName="DEFAULT" routes={routesWithNull} providers={mockProviders} onSave={mockOnSave} onDelete={mockOnDelete} />);
+    
+    // Select first provider (OpenAI, which has gpt-4 and gpt-3.5-turbo)
+    const select = screen.getByRole("combobox");
+    await user.selectOptions(select, "1");
+
+    // Model select should be displayed
+    await waitFor(() => expect(screen.getAllByRole("combobox")).toHaveLength(2));
+    const modelSelect = screen.getAllByRole("combobox")[1];
+    expect(modelSelect).toBeInTheDocument();
+    
+    // Check that models are in the options list
+    const options = within(modelSelect).getAllByRole("option");
+    const optionValues = options.map(opt => opt.getAttribute("value"));
+    expect(optionValues).toContain("gpt-4");
+    expect(optionValues).toContain("gpt-3.5-turbo");
+  });
+
+  it("calls onSave to add a new slot when + Add Provider Step is clicked", async () => {
+    const user = userEvent.setup();
+    mockOnSave.mockClear();
+    mockOnSave.mockResolvedValue({ id: 100, task_type: "DEFAULT", provider_id: null, models: null, priority: 1 });
+    render(<RoutingCard agentName="DEFAULT" routes={mockDefaultRoutes} providers={mockProviders} onSave={mockOnSave} onDelete={mockOnDelete} />);
+    
+    await user.click(screen.getByRole("button", { name: /\+ add provider step/i }));
+    expect(mockOnSave).toHaveBeenCalledWith({ id: 0, task_type: "DEFAULT", provider_id: null, models: null, priority: 1 });
+    // Verify slot list expands
+    await waitFor(() => expect(screen.getAllByRole("combobox")).toHaveLength(3)); // 2 for slot 1 (provider+model), 1 for new slot (provider only)
+  });
 });

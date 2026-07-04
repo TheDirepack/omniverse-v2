@@ -68,4 +68,27 @@ describe("TheoriesPanel", () => {
     await screen.findByText("Has Theory");
     expect(screen.queryByText("No Theory")).not.toBeInTheDocument();
   });
+
+  it("handles fetchResults API error gracefully on mount", async () => {
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.mocked(api.fetchResults).mockRejectedValue(new Error("Database offline"));
+    
+    render(<TheoriesPanel />);
+    await waitFor(() => expect(api.fetchResults).toHaveBeenCalledOnce());
+    expect(consoleSpy).toHaveBeenCalled();
+    consoleSpy.mockRestore();
+  });
+
+  it("hides Auditor Verdict section when theory_audit is null", async () => {
+    vi.mocked(api.fetchResults).mockResolvedValue({
+      tier_system: null,
+      worlds: [
+        { id: 1, name: "Warhammer 40k", tier: 1, theory: "Chaos Gods are real", theory_audit: null, summary: null, tier_justification: null, is_explored: true },
+      ],
+      anomalies: [],
+    });
+    render(<TheoriesPanel />);
+    await screen.findByText("Warhammer 40k");
+    expect(screen.queryByText("Auditor Verdict")).not.toBeInTheDocument();
+  });
 });

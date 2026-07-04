@@ -202,7 +202,7 @@ class TestTierSystem:
 
 
 class TestWorldTier:
-    def test_tier_number_out_of_range(self, seeded_db):
+    def test_tier_number_below_range(self, seeded_db):
         ephemeral_db, u, p, r = seeded_db
         ts = TierSystem(system_definition="test system")
         ephemeral_db.add(ts)
@@ -212,10 +212,24 @@ class TestWorldTier:
         wt = WorldTier(universe_id=u.id, system_id=ts.id, tier_number=-1, justification="below range")
         ephemeral_db.add(wt)
         ephemeral_db.commit()
+        assert wt.tier_number == -1
 
-        wt2 = WorldTier(universe_id=u.id, system_id=ts.id, tier_number=999, justification="above range")
-        ephemeral_db.add(wt2)
+    def test_tier_number_above_range(self, seeded_db):
+        ephemeral_db, u, p, r = seeded_db
+        ts = TierSystem(system_definition="test system")
+        ephemeral_db.add(ts)
         ephemeral_db.commit()
+        ephemeral_db.refresh(ts)
+
+        u2 = Universe(name="Second Universe")
+        ephemeral_db.add(u2)
+        ephemeral_db.commit()
+        ephemeral_db.refresh(u2)
+
+        wt = WorldTier(universe_id=u2.id, system_id=ts.id, tier_number=999, justification="above range")
+        ephemeral_db.add(wt)
+        ephemeral_db.commit()
+        assert wt.tier_number == 999
 
     def test_nonexistent_universe_fk(self, seeded_db):
         ephemeral_db, u, p, r = seeded_db

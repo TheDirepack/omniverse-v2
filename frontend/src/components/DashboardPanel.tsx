@@ -85,6 +85,10 @@ function DashboardPanel() {
     await api.resetWorldExplored(worldId); await refreshWorlds();
   };
  
+  const handleSelectWorldForFocusedSearch = (name: string) => {
+    setFocusedWorld(name);
+  };
+ 
   const handleDeleteWorld = async (worldId: number) => {
     if (!confirm("Are you sure you want to delete this world? All associated data will be lost.")) return;
     try { await api.deleteWorld(worldId); await refreshWorlds(); } catch (e) { console.error(e); }
@@ -159,6 +163,7 @@ function DashboardPanel() {
                  <button className={world.is_explored ? "chip active" : "chip"} onClick={() => void handleResetWorldExplored(world.id)}>
                    {world.name} {world.is_explored ? "✓" : ""}
                  </button>
+                 <button className="chip" style={{ padding: '0 4px', fontSize: '10px' }} title="Focused Search" onClick={() => handleSelectWorldForFocusedSearch(world.name)}>🔍</button>
                  <button className="chip delete" style={{ padding: '0 4px', fontSize: '10px' }} onClick={() => void handleDeleteWorld(world.id)}>×</button>
                </div>
              ))}

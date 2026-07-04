@@ -79,6 +79,17 @@ class ModelRouter:
                         api_base=candidate["provider"].base_url,
                         **kwargs
                     )
+                    if run_id:
+                        with Session(engine) as log_session:
+                            log_entry = ExecutionState(
+                                run_id=run_id,
+                                node_name="ModelRouter",
+                                thought=f"Success: Candidate {candidate['full_model']} provided a response.",
+                                status="INFO",
+                                state_snapshot="{}"
+                            )
+                            log_session.add(log_entry)
+                            log_session.commit()
                     return response
                 except Exception as e:
                     if run_id:

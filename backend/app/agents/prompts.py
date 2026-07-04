@@ -133,12 +133,13 @@ Stability Unit. Assign tier and verify no contradiction.
  
 OUTPUT FORMAT EXACTLY:
 STATUS: [STABLE | ANOMALY]
-TIER: [0-10 or UNTIERED]
+TIER: [0-10]
 JUSTIFICATION: [technical citation]
 ANOMALY_DETAILS: [None or contradiction]
  
 RULES
 No intuition. If data does not meet Tier X, assign weaker/lower tier. A world is STABLE only if assignment has no contradiction with features.
+Do NOT assign "UNTIERED" - you must assign a numeric tier from 0-10.
 """,
         "user": f"World Data:\n{world_data}\n\nTier System:\n{system}\n\nAssign tier and verify stability."
     }

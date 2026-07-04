@@ -138,6 +138,8 @@ function DatabasePanel() {
   const [selectedWorldId, setSelectedWorldId] = useState<number | null>(null);
   const [compareIds, setCompareIds] = useState<number[]>([]);
   const [isCompareMode, setIsCompareMode] = useState(false);
+  const [worldFilter, setWorldFilter] = useState("");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
 
   useEffect(() => { void refresh(); }, []);
 
@@ -171,7 +173,21 @@ function DatabasePanel() {
 
   const selectedWorld = useMemo(() => worlds.find(w => w.id === selectedWorldId) ?? null, [worlds, selectedWorldId]);
   const compareWorlds = useMemo(() => worlds.filter(w => compareIds.includes(w.id)), [worlds, compareIds]);
-  const grouped = groupWorldsByTier(worlds);
+  
+  const processedGrouped = useMemo(() => {
+    const filtered = worlds.filter(w => w.name.toLowerCase().includes(worldFilter.toLowerCase()));
+    const grouped = groupWorldsByTier(filtered);
+    
+    // Sort worlds within each tier alphabetically
+    grouped.forEach(g => {
+      g.worlds.sort((a, b) => a.name.localeCompare(b.name));
+    });
+
+    // Sort tiers based on sortOrder
+    return sortOrder === "asc" 
+      ? grouped.sort((a, b) => a.tier - b.tier) 
+      : grouped.sort((a, b) => b.tier - a.tier);
+  }, [worlds, worldFilter, sortOrder]);
 
   return (
     <section className="panel-grid tiers">
@@ -185,7 +201,16 @@ function DatabasePanel() {
           }}>
             {isCompareMode ? "View Details" : "Compare Worlds"}
           </button>
+          <button className="chip" onClick={() => setSortOrder(prev => prev === "asc" ? "desc" : "asc")}>
+            Sort Tiers: {sortOrder === "asc" ? "↑" : "↓"}
+          </button>
         </div>
+        <input 
+          className="world-filter-input"
+          placeholder="Filter worlds..." 
+          value={worldFilter} 
+          onChange={e => setWorldFilter(e.target.value)} 
+        />
         <p className="help-text">
           {isCompareMode 
             ? "Select multiple worlds to compare traits." 
@@ -198,7 +223,7 @@ function DatabasePanel() {
           </div>
         )}
         {!tierSystem && <p className="muted">No tier system yet. Run the pipeline to generate one.</p>}
-        {grouped.map(({ tier, worlds: tierWorlds }) => (
+        {processedGrouped.map(({ tier, worlds: tierWorlds }) => (
           <div key={tier} className="tier-row">
             <div className="tier-label">Tier {tier}</div>
             <div className="chips">

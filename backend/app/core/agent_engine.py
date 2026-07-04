@@ -166,7 +166,11 @@ async def run_agent(
                     args = json.loads(tool_call.function.arguments)
 
                     if name == submit_tool_name:
-                        return content or "Findings submitted.", messages
+                        # If the tool provides a dataset, use it; otherwise, fallback to content
+                        args_dataset = args.get("dataset")
+                        return args_dataset or content or "Findings submitted.", messages
+
+
 
 
                     if name in available_tools:

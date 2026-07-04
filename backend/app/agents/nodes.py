@@ -45,12 +45,9 @@ def check_abort(run_id: str):
 
 def audit_success(audit_result: str) -> bool:
     """
-    Prefer parsing the strict `Verification_Status` field the Critic/Logic
-    Auditor prompts now guarantee, since loose substring matching on the
-    whole blob is fooled by phrases like "was unsuccessful" or "inconclusive
-    success rate" appearing inside a Correction_Queue entry. Falls back to
-    substring matching for auditors that don't emit that JSON shape (e.g.
-    the plain-text Tier System / Theory audits).
+    Strictly validates the audit result. Prioritizes the structured `Verification_Status` field.
+    Falls back to a more precise boundary check for non-JSON outputs to avoid false positives
+    from explanatory text.
     """
     try:
         parsed = json.loads(audit_result)
@@ -61,20 +58,29 @@ def audit_success(audit_result: str) -> bool:
         pass
 
     upper = audit_result.upper()
-    if "REVISION_REQUIRED" in upper or "REVISION REQUIRED" in upper:
+    # Check for explicit status markers at the start or on their own lines
+    if "REVISION_REQUIRED" in upper:
         return False
-    return "SUCCESS" in upper or "VERIFIED" in upper
+    
+    # Only return True if SUCCESS/VERIFIED is the primary signal, 
+    # avoiding matches inside "previously verified" or "unsuccessful"
+    lines = upper.splitlines()
+    for line in lines:
+        line = line.strip()
+        if line == "SUCCESS" or line == "VERIFIED" or line.startswith("STATUS: SUCCESS") or line.startswith("STATUS: VERIFIED"):
+            return True
+            
+    return False
 
 
 def clear_tier(universe_id: int, session: Session):
     session.exec(WorldTier.__table__.delete().where(WorldTier.universe_id == universe_id))
 
 async def research_single_world(world_name: str, run_id: str, focus: str | None = None, fetch_cache: FetchCache | None = None) -> Dict[str, Any]:
-    """Researches and verifies a single world using an agentic tool loop with a discovery flow."""
+    """Researches and verifies a single world using an incremental Patch & Refine loop."""
     if await is_aborted(run_id):
         raise RuntimeError(f"Run {run_id} was aborted by user.")
     
-    # Tier Reset on Re-Research
     with Session(engine) as session:
         universe = session.exec(select(Universe).where(Universe.name == world_name)).first()
         if universe:
@@ -83,46 +89,81 @@ async def research_single_world(world_name: str, run_id: str, focus: str | None 
     
     stage_label = f"{world_name} focused on {focus}" if focus else world_name
     set_current_universe(world_name)
-    log_transition(run_id, "Research Unit", f"Initiating agentic research for world: {stage_label}", "IN_PROGRESS", {})
+    log_transition(run_id, "Research Unit", f"Initiating incremental research for world: {stage_label}", "IN_PROGRESS", {})
 
-    # Use the refactored Researcher prompt
-    researcher_prompt = get_researcher_prompt(
-        entity=world_name,
-        requirements="Collect comprehensive canonical wiki data.",
-        focus=focus
-    )
-    system_prompt = researcher_prompt["system"]
-    user_prompt = researcher_prompt["user"]
-    
     researcher_tools = ["webSearch", "fetchPage", "compareSourceFreshness", "queryTraits", "queryUnconfirmedTraits", "saveUnconfirmedTrait"]
     auditor_tools = ["webSearch", "fetchPage", "compareSourceFreshness", "queryTraits", "queryUnconfirmedTraits"]
 
-    # Critique Loop
-    feedback_history = []
+    feedback_history = [] # List of dicts: {"attempt": i, "corrections": [...], "status": "RESOLVED"|"OUTSTANDING"}
     max_iterations = 3
-    last_result = ""
+    last_result = None
+    history = None
 
     try:
         for i in range(max_iterations):
-            current_system_prompt = system_prompt
-            if feedback_history:
-                current_system_prompt += f"\n\nPREVIOUS FEEDBACK TO ADDRESS:\n{chr(10).join(feedback_history)}"
+            # 1. Extract actionable leads from previous result to prioritize in the prompt
+            research_queue = ""
+            if last_result:
+                try:
+                    data = json.loads(last_result)
+                    leads = [f"- {l['Lead']} ({l.get('Expected_Value', 'Unknown')})" for l in data.get("Knowledge_Graph", [])]
+                    missing = [f"- {m}" for m in data.get("Missing_Info", [])]
+                    if leads or missing:
+                        research_queue = "\n".join(["PRIORITY LEADS:"] + leads + ["\nUNRESOLVED GAPS:"] + missing)
+                except:
+                    pass
+
+            # 2. Build the feedback summary (Resolved vs Outstanding)
+            outstanding = []
+            resolved = []
+            for entry in feedback_history:
+                for corr in entry["corrections"]:
+                    if entry["status"] == "RESOLVED":
+                        resolved.append(f"✓ {corr['Issue']}")
+                    else:
+                        outstanding.append(f"• {corr['Issue']} -> Fix: {corr['Required_Fix']}")
             
-            result, _ = await run_agent(
+            feedback_summary = "\n".join([
+                "RESOLVED:", *resolved, 
+                "\nOUTSTANDING:", *outstanding
+            ]) if (resolved or outstanding) else "None"
+
+            # 3. Generate Prompts
+            researcher_prompt = get_researcher_prompt(
+                entity=world_name,
+                requirements="Collect comprehensive canonical wiki data.",
+                focus=focus,
+                previous_dataset=last_result,
+                outstanding_corrections=feedback_summary
+            )
+            
+            # Append the research queue to the user prompt to make it actionable
+            user_prompt = researcher_prompt["user"]
+            if research_queue:
+                user_prompt += f"\n\n{research_queue}\n\nPrioritize these leads in your tool use."
+
+            # 4. Execution
+            result, turn_history = await run_agent(
                 agent_name="Researcher",
-                system_prompt=current_system_prompt,
+                system_prompt=researcher_prompt["system"],
                 user_prompt=user_prompt,
                 step=f"Research (Attempt {i+1})",
                 run_id=run_id,
                 tools_names=researcher_tools,
                 submit_tool_name="submit_research",
-                fetch_cache=fetch_cache
+                fetch_cache=fetch_cache,
+                history=history
             )
-
+            history = turn_history
             last_result = result
             
-            # Critic Agent
-            critic_prompt = get_critic_prompt(data=result, criteria=system_prompt)
+            # 5. Incremental Audit
+            critic_prompt = get_critic_prompt(
+                data=result, 
+                criteria=researcher_prompt["system"], 
+                previous_corrections=feedback_summary,
+                is_final_attempt=(i == max_iterations - 1)
+            )
             
             critique, _ = await run_agent(
                 agent_name="Logic Auditor",
@@ -136,15 +177,33 @@ async def research_single_world(world_name: str, run_id: str, focus: str | None 
             )
             
             if audit_success(critique):
-                return result
+                return {"name": world_name, "summary": result, "status": "VERIFIED"}
             
-            feedback_history.append(f"Attempt {i+1} failed: {critique}")
+            # Parse corrections to track them
+            try:
+                parsed_critique = json.loads(critique)
+                corrections = parsed_critique.get("Correction_Queue", [])
+                
+                # If this was the final attempt and we have a sifted dataset, return it as PARTIAL
+                if i == max_iterations - 1 and "Sifted_Dataset" in parsed_critique:
+                    sifted_data = parsed_critique["Sifted_Dataset"]
+                    # Ensure it's a string for the summary field
+                    if isinstance(sifted_data, (dict, list)):
+                        sifted_data = json.dumps(sifted_data)
+                    return {"name": world_name, "summary": sifted_data, "status": "PARTIAL"}
+                    
+            except:
+                corrections = [{"Issue": critique, "Required_Fix": "General revision required"}]
             
-        raise Exception(f"Max iterations reached for {world_name}. Failed to achieve valid research.")
+            feedback_history.append({"attempt": i+1, "corrections": corrections, "status": "OUTSTANDING"})
+            
+        # Fallback if no Sifted_Dataset was provided on final attempt
+        return {"name": world_name, "summary": last_result, "status": "PARTIAL"}
         
     except Exception as e:
         log_transition(run_id, "Research Unit", f"Agent failed for {world_name}: {str(e)}", "FAILED", {})
         raise e
+
 
 
 
@@ -220,17 +279,21 @@ async def db_integrator_node(state: OmniverseState) -> Dict[str, Any]:
     for result in research_results:
         world_name = result["name"]
         verified_data = result["summary"]
+        status = result.get("status", "VERIFIED")
         
         # Phase 1: Write confirmed data to main database
         from app.agents.prompts import get_db_agent_prompt, get_cleanup_prompt
         prompt = get_db_agent_prompt()
-
+        
+        # Append status to the prompt so the DB Architect knows if it's partially verified
+        user_prompt_data = f"Universe: {world_name}\nVerification Status: {status}\n\nVerified Research Data:\n{verified_data}"
+        
         set_current_universe(world_name)
-
+        
         final_ans, history = await run_agent(
             agent_name="DB Architect",
             system_prompt=prompt["system"],
-            user_prompt=f"Universe: {world_name}\n\nVerified Research Data:\n{verified_data}",
+            user_prompt=user_prompt_data,
             step=f"Integrate {world_name}",
             run_id=run_id,
             tools_names=["queryTraits", "upsertTrait"],
@@ -280,7 +343,10 @@ async def research_node(state: OmniverseState) -> Dict[str, Any]:
     verified_worlds = []
     
     cache = FetchCache()
-    batch_size = 5
+    
+    with Session(engine) as session:
+        setting = session.get(Setting, "MAX_PARALLEL_AGENTS")
+        batch_size = int(setting.value) if setting and setting.value else 5
     
     # Join features into a single string for the 'focus' parameter if they exist
     focus_str = ", ".join(focused_features) if focused_features else None

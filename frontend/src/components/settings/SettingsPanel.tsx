@@ -5,6 +5,8 @@ import ProviderCard from "./ProviderCard";
 import RoutingCard from "./RoutingCard";
 import SettingItem from "./SettingItem";
 import SettingToggle from "./SettingToggle";
+import SettingSlider from "./SettingSlider";
+
 
 function SettingsPanel() {
   const [settingsTab, setSettingsTab] = useState<SettingsTab>("providers");
@@ -213,7 +215,7 @@ function SettingsPanel() {
           <p className="muted">Free-form key/value pairs used by custom agent prompts or integrations.</p>
           
           <div style={{ marginBottom: 24, padding: 16, background: "var(--bg-alt)", borderRadius: 8, border: "1px solid var(--border)" }}>
-            <h4 style={{ marginBottom: 8 }}>Model Health & Timeouts</h4>
+            <h4 style={{ marginBottom: 8 }}>Model Health & Performance</h4>
             <p className="muted" style={{ fontSize: "0.8rem", marginBottom: 12 }}>
               Models that fail repeatedly are temporarily disabled (circuit breaker).
             </p>
@@ -228,9 +230,17 @@ function SettingsPanel() {
             >
               Reset Model Timeouts
             </button>
+            
+            <hr style={{ margin: "16px 0", border: "none", borderTop: "1px solid var(--border)" }} />
+            
+            <SettingSlider 
+              keyName="MAX_PARALLEL_AGENTS" 
+              value={settings["MAX_PARALLEL_AGENTS"] ?? "5"} 
+              onSave={handleSaveSetting} 
+            />
           </div>
-
-          <div className="add-setting-row">
+ 
+           <div className="add-setting-row">
             <input
               value={newSettingKey}
               onChange={e => setNewSettingKey(e.target.value)}

@@ -12,7 +12,9 @@ async def tool_web_search(args: Dict[str, Any]) -> str:
     query = args.get("search_query", "")
     if not query:
         return "Error: Missing search_query argument."
-    engine = args.get("engine", "google")
+    engine = args.get("engine", "duckduckgo")
+    if isinstance(engine, str) and "," in engine:
+        engine = engine.split(",")[0].strip().lower()
     site_filter = args.get("site_filter", None)
     return await web_searcher.perform_search(query, engine=engine, site_filter=site_filter)
 

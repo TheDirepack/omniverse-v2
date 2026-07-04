@@ -4,7 +4,8 @@ from pathlib import Path
 from typing import Optional
 from app.core.context import get_current_universe
 
-LOG_FILE = Path("backend/logs/agents.log")
+# Define log file path relative to this file: backend/app/core/agent_logger.py -> backend/logs/agents.log
+LOG_FILE = Path(__file__).parent.parent.parent / "logs" / "agents.log"
 
 # Ensure directory exists
 LOG_FILE.parent.mkdir(parents=True, exist_ok=True)

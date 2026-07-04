@@ -18,12 +18,32 @@ RESEARCH_SCHEMA = """
       ]
     }
   ],
+  "Knowledge_Graph": [
+    {
+      "Lead": "string (person, place, term, or specific detail)",
+      "Reason": "Why this is worth investigating further (e.g. 'mentions a secret lab', 'contradicts X', 'references unknown technology')",
+      "Expected_Value": "What info we hope to find by following this lead",
+      "URL": "url to follow if available"
+    }
+  ],
   "Missing_Info": ["string"]
 }
 """
 
 
-def get_researcher_prompt(entity: str, requirements: str, focus: Optional[str] = None):
+C_STAGING_DB = """
+### RESEARCH NOTES (Staging DB)
+Treat the unconfirmed staging database as your persistent research workspace. 
+- Call `saveUnconfirmedTrait` IMMEDIATELY whenever you find:
+    1. Factual details (even if unverified).
+    2. High-value leads (links, specific names, terms, or documents) to explore in later turns.
+    3. Contradictions that require deeper investigation.
+- Do not wait until the end of the turn; save as you discover.
+- Use the staging DB to "bookmark" your progress so you can resume deep-dives across multiple iterations.
+- Staged facts promoted to main DB are deleted by cleanup; all other research notes must persist.
+"""
+
+def get_researcher_prompt(entity: str, requirements: str, focus: Optional[str] = None, previous_dataset: Optional[str] = None, outstanding_corrections: Optional[str] = None, unconfirmed_data: Optional[str] = None):
     focus_block = ""
     if focus:
         focus_block = f"""
@@ -32,64 +52,126 @@ Investigate this feature specifically: {focus}
 Goal: prove existence, disprove existence, or mark inconclusive. Extract details, mechanism, limits, contradictions, and citations.
 Add an item named "Focused Verdict" with Detail containing one of: VERIFIED, DISPROVED, INCONCLUSIVE.
 """
+    
+    unconfirmed_block = ""
+    if unconfirmed_data and unconfirmed_data.strip():
+        unconfirmed_block = f"""
+STAGING DATABASE (Unconfirmed Findings):
+The following data was previously found but not yet verified:
+{unconfirmed_data}
+"""
+
+    mode_block = "INITIAL RESEARCH"
+    if previous_dataset:
+        mode_block = f"""PATCH & REFINE MODE
+You are updating an existing dataset. 
+PREVIOUS DATASET:
+{previous_dataset}
+
+OUTSTANDING CORRECTIONS:
+{outstanding_corrections or "None"}
+
+INSTRUCTIONS:
+1. Do NOT regenerate the entire dataset.
+2. Identify exactly which entries are affected by the Outstanding Corrections.
+3. Perform targeted research to fix those specific entries.
+4. Keep all unaffected verified data exactly as it is.
+5. Update the JSON by patching only the necessary fields.
+"""
+
     return {
         "system": f"""### ROLE
-Wiki Scout & Archivist. Use provided search context as map, then reason as if webSearch/fetchPage supplied source pages. Collect canonical structured wiki data for later comparison.
+Deep-Dive Wiki Investigator & Archivist. You are a forensic researcher. You operate in a phased workflow to ensure maximum precision and zero hallucination.
 
-OBJECTIVE
-1. Extract factual data regarding {entity} (Technology, Magic, Cosmology, and general properties).
-2. Tag every item Canon_Status as Verified, Unverified, Fanon, or Unclear based only on supplied source text.
-3. Every extracted item MUST include Reference as "url: section/line".
-4. No external knowledge. If source context lacks evidence, put it in Missing_Info.
-5. No data bleed between universes.
-6. SOURCE FRESHNESS: when multiple candidate wikis exist for {entity}, prefer the one showing the most recent Last-Modified/'last edited' signal and no staleness warning. Do not prefer a source purely because it ranked first in search results. If a source shows a staleness warning or a redirect/canonical tag pointing elsewhere, note this in Missing_Info and re-source the affected items from the actively maintained wiki instead.
-7. RESEARCH NOTES (Staging DB): Treat the unconfirmed staging database as your persistent research notes. Call `saveUnconfirmedTrait` to store findings immediately. Staged facts that are eventually promoted to the main DB will be deleted by the cleanup agent; all other notes must persist for future reference.
+MODE: {mode_block}
+{unconfirmed_block}
+
+PHASED WORKFLOW
+1. DISCOVERY: Use `webSearch` to find candidate wikis. If multiple distinct domains are returned, use `compareSourceFreshness` to select the most active canonical source. Use Category pages ONLY to extract article links.
+2. EXTRACTION: Fetch specific articles using `fetchPage`. Extract high-density factual data. NEVER cite a Category page as an authoritative source.
+3. SYNTHESIS: Build the `Knowledge_Graph` (leads for next turns) and `Missing_Info` (unresolved gaps). 
+   - MANDATORY: Every lead in the `Knowledge_Graph` and every gap in `Missing_Info` MUST also be saved to the staging DB using `saveUnconfirmedTrait` with categories 'Research Lead' and 'Information Gap' respectively. This ensures they are visible in the research dashboard.
+4. FORMATTING: Return the results in the strict JSON schema.
+
+CORE DIRECTIVES
+- KNOWLEDGE BOUNDARY: Distinguish between Universe Lore (internal facts) and Production Trivia (writing/censorship/meta). Record ONLY Universe Lore.
+- PRECISE GROUNDING: Every item MUST have a Reference as "url: section/line".
+- NO EXTERNAL KNOWLEDGE: If evidence is missing from source text, mark it in `Missing_Info`.
+- NO DATA BLEED: Keep universes strictly isolated.
+- SOURCE RIGOR: If a source shows a staleness warning or redirect, re-source from the active wiki.
+
+{C_STAGING_DB}
 {focus_block}
 
 OUTPUT FORMAT
-Return strict JSON only, matching this schema exactly (same key names, same nesting):
+Return strict JSON only, matching this schema exactly:
 {RESEARCH_SCHEMA}
 
 CONSTRAINTS
-- No markdown formatting, no code fences (no ```), no commentary before or after the JSON.
-- The entire response must be a single parseable JSON object.
-- No invented data. Every claim traces to a Reference.
-- PROHIBITED: Do not perform power-scaling, feat analysis, or tiering. Focus purely on descriptive facts.
+- No markdown formatting, no code fences (no ```), no commentary.
+- Single parseable JSON object.
+- No invented data.
+- PROHIBITED: No power-scaling, feat analysis, or tiering.
 Requirements: {requirements}
 """,
-        "user": f"Collect comprehensive canonical wiki data for {entity}."
+        "user": f"Perform the research operation for {entity}. Focus on the phased workflow: Discover $\rightarrow$ Extract $\rightarrow$ Synthesize $\rightarrow$ Format."
     }
 
 
-def get_critic_prompt(data: str, criteria: str):
+def get_critic_prompt(data: str, criteria: str, previous_corrections: Optional[str] = None, is_final_attempt: bool = False):
+    history_block = ""
+    if previous_corrections:
+        history_block = f"""
+PREVIOUS AUDIT HISTORY:
+{previous_corrections}
+
+INSTRUCTIONS for INCREMENTAL AUDIT:
+1. Verify that the "Resolved" items from the previous turn are actually fixed.
+2. Identify if any new flaws were introduced during the patching process.
+3. Check if any "Outstanding" items from the previous turn remain unresolved.
+"""
+
+    final_attempt_block = ""
+    if is_final_attempt:
+        final_attempt_block = """
+FINAL ATTEMPT PROTOCOL:
+This is the final audit. If the dataset is not fully verified (Revision_Required), you MUST include a field called "Sifted_Dataset" in your JSON response. 
+The "Sifted_Dataset" must be a complete JSON object following the RESEARCH_SCHEMA, containing ONLY the items that you have verified as correct. Remove all flagged or problematic entries.
+"""
+
     return {
         "system": f"""### ROLE
-Fact Auditor. Find smallest flaw. Verify JSON against source-grounding and task criteria.
- 
+Fact Auditor & Depth Controller. Find smallest flaw and identify shallow research. Verify JSON against source-grounding and task criteria.
+  
 OBJECTIVE
-1. Check existing canonical and unconfirmed knowledge via `queryTraits` and `queryUnconfirmedTraits`. Cross-check that the submitted JSON is consistent with the research notes in staging (nothing invented that isn't in staging, nothing important from staging silently dropped).
-2. Validate schema and required keys. Reject if the response is not a single parseable JSON object.
-3. Verify Canon_Status tags (Verified/Unverified/Fanon/Unclear) are strictly justified by the source text.
-4. Ensure every factual item has a precise reference ("url: section/line").
-5. SOURCE FRESHNESS: if `compareSourceFreshness` was available, check whether the Researcher used it when multiple candidate wikis existed, and flag it as an error if a stale/moved source appears to have been preferred over an actively maintained one.
-6. Identify contradictions, invented claims, and data bleed.
-7. Produce precise correction queue.
- 
+1. Depth Check: Evaluate if the research is "surface-level". If the entity is complex but the dataset is sparse, or if the `Knowledge_Graph` contains promising leads that weren't followed, mark as Revision_Required.
+2. Cross-check: Verify that submitted JSON is consistent with research notes in staging (nothing invented that isn't in staging, nothing important from staging silently dropped).
+3. Validate schema and required keys. Reject if the response is not a single parseable JSON object.
+4. Verify Canon_Status tags (Verified/Unverified/Fanon/Unclear) are strictly justified by the source text.
+5. Ensure every factual item has a precise reference ("url: section/line").
+6. SOURCE FRESHNESS: if `compareSourceFreshness` was available, check whether the Researcher used it when multiple candidate wikis existed, and flag it as an error if a stale/moved source appears to have been preferred over an actively maintained one.
+7. Identify contradictions, invented claims, and data bleed.
+8. Produce precise correction queue. Every `Required_Fix` MUST be an actionable instruction (e.g., "Fetch article X to verify Y", "Search for Z using engine 'brave'").
+{history_block}
+{final_attempt_block}
+  
 OUTPUT FORMAT
 Strict JSON only, no markdown fences, no commentary outside the JSON:
 {{
   "Verification_Status": "Success | Revision_Required",
   "Correction_Queue": [
-    {{"Error_Type": "Schema | Citation | Canon | Missing_Info | Contradiction | Data_Bleed | Stale_Source", "Issue": "string", "Required_Fix": "string"}}
-  ]
+    {{"Error_Type": "Schema | Citation | Canon | Missing_Info | Contradiction | Data_Bleed | Stale_Source | Depth", "Issue": "string", "Required_Fix": "string"}}
+  ],
+  "Sifted_Dataset": {{ ...optional, only on final attempt if Revision_Required... }}
 }}
- 
+  
 CRITERIA
 {criteria}
 - PROHIBITED: Do not perform any power-scaling, feat analysis, or relative strength comparisons. Focus exclusively on factual accuracy and source grounding.
 """,
-        "user": f"Audit this dataset:\n\n{data}"
+        "user": f"Audit this dataset for accuracy and depth:\n\n{data}"
     }
+
 
 
 def get_synthesis_prompt(reports: List[str]):
@@ -292,21 +374,42 @@ PHASE TRANSITION
 
 OBJECTIVE
 1. Query the unconfirmed staging database to see all traits stored there for this universe.
-2. For each unconfirmed trait, cross-reference with the main database to confirm it was promoted.
-3. If a trait exists in main DB → it was promoted. Delete it from staging.
-4. If a trait does NOT exist in main DB → it was not promoted. Leave it in staging.
-5. Never delete unconfirmed data that has no matching record in the main database.
+2. Use the integration history from Phase 1 and the current state of the main DB to determine which staging traits were promoted.
+3. A trait is "promoted" if its factual content was integrated into the main database, regardless of whether the name was kept exactly the same or slightly adjusted for consistency.
+4. If a trait was promoted $\rightarrow$ Delete it from staging using its staging ID.
+5. If a trait was NOT promoted (e.g., it was rejected by the auditor or ignored) $\rightarrow$ Leave it in staging.
+6. Never delete unconfirmed data that was not integrated into the main database.
 
 SOP
-1. Call `queryUnconfirmedTraits` to list all staging traits with their IDs.
-2. Call `queryTraits` to see what is now in the main database for this universe.
-3. Collect the IDs of every staged trait whose name matches a promoted main DB trait, then call `deleteUnconfirmedTrait` ONCE with all of them in `trait_ids` — do not call it once per ID.
-4. Call `submit_cleanup` when all confirmed staging traits are removed.
+1. Call `queryUnconfirmedTraits` to list all staging traits with their IDs and names.
+2. Call `queryTraits` to see all traits currently in the main database for this universe.
+3. Review the integration history to map which staging IDs resulted in which main DB traits.
+4. Call `deleteUnconfirmedTrait` ONCE with all identified promoted staging IDs in the `trait_ids` list. If no matches are found, do not call the tool.
+5. Call `submit_cleanup` when all confirmed staging traits are removed.
 
 RULES
 - Main DB is READ-ONLY. Do not modify it.
-- Only delete staging traits that match promoted data.
+- Use semantic matching and integration history to identify promoted traits, not just exact name matches.
 - Leave unconfirmed traits that were not promoted.
 """,
         "user": "Unconfirmed staging cleanup is ready. Review unconfirmed traits, match against main DB, and delete the promoted ones."
+    }
+
+def get_sifting_prompt(dataset: str, audit_history: str):
+    return {
+        "system": """### ROLE
+Data Sifter & Quality Gate. Your job is to extract ONLY the verified, high-confidence segments of a research dataset by filtering out any items flagged by the Auditor.
+
+OBJECTIVE
+1. Analyze the provided Dataset and the Audit History (all previous corrections).
+2. Identify every item in the dataset that is currently flagged as problematic, contradictory, or missing citations in the latest audit.
+3. Identify items that were flagged in earlier turns but have since been corrected.
+4. REMOVE any item that remains "Revision Required" or is flagged in the most recent audit.
+5. KEEP only the items that are explicitly verified or were never flagged.
+6. Ensure the final output matches the original RESEARCH_SCHEMA exactly.
+
+OUTPUT FORMAT
+Return strict JSON only, matching the RESEARCH_SCHEMA. No commentary, no markdown fences.
+""",
+        "user": f"Dataset:\n{dataset}\n\nAudit History:\n{audit_history}\n\nSift this dataset and return only the verified segments."
     }

@@ -69,7 +69,7 @@ class ModelRouter:
         ]
         return await self.run_model(task, messages, tools=[], run_id=run_id, **kwargs)
 
-    async def call_llm_with_tools(self, task: str, messages: List[Dict[str, str]], tools: List[Dict[str, Any]], run_id: Optional[str] = None, provider_id: Optional[int] = None, **kwargs):
+    async def call_llm_with_tools(self, task: str, messages: List[Dict[str, str]], tools: List[Dict[str, Any]], run_id: Optional[str] = None, provider_id: Optional[int] = None, exclude_provider_id: Optional[int] = None, **kwargs):
         with Session(engine) as session:
             # 1. Try to get routes for this specific task sorted by priority
             routes = session.exec(select(AgentRouteFallback).where(AgentRouteFallback.task_type == task).order_by(AgentRouteFallback.priority)).all()
@@ -92,7 +92,31 @@ class ModelRouter:
             
             if not routes:
                 raise ValueError(f"No routing configured for task '{task}' and no DEFAULT route found.")
-            
+
+            # Independence guard: if a provider is explicitly excluded (e.g. the
+            # Rule Critic must not reuse the Rule Proposer's provider for a given
+            # run), drop routes pointing at it — but only if alternatives exist.
+            # Falling back to the excluded provider when nothing else is
+            # configured is allowed, but must be logged loudly since it silently
+            # breaks the independence assumption callers rely on.
+            if exclude_provider_id is not None:
+                non_excluded = [r for r in routes if r.provider_id != exclude_provider_id]
+                if non_excluded:
+                    routes = non_excluded
+                else:
+                    print(f"[ModelRouter] WARNING: no alternative provider configured for task '{task}' "
+                          f"other than excluded provider {exclude_provider_id}. Independence guard could not be honored.")
+                    if run_id:
+                        with Session(engine) as log_session:
+                            log_session.add(ExecutionState(
+                                run_id=run_id,
+                                node_name="ModelRouter",
+                                thought=f"WARNING: independence guard failed for task '{task}' — no non-excluded provider available, reusing provider {exclude_provider_id}.",
+                                status="WARNING",
+                                state_snapshot="{}"
+                            ))
+                            log_session.commit()
+
             # Collect all candidate configurations first
             candidates = []
             for route in routes:

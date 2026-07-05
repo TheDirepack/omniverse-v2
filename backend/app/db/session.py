@@ -3,7 +3,7 @@ import json
 from pathlib import Path
 from sqlmodel import SQLModel, create_engine, Session, select
 from sqlalchemy import event
-from app.db.schema import Universe, ProviderConfig, AgentRouteFallback
+from app.db.schema import Universe, ProviderConfig, AgentRouteFallback, Setting
 from app.db.unconfirmed_session import init_unconfirmed_db
 from app.db.extrapolation_session import init_extrapolation_db
 
@@ -94,6 +94,14 @@ def init_db():
                 session.commit()
     except Exception as e:
         print(f"Error seeding default worlds: {e}")
+
+    # Seed default inference composition depth (configurable via Settings UI;
+    # kept small since composition depth grows combinatorially in dense graphs)
+    with Session(engine) as session:
+        existing_depth = session.get(Setting, "max_composition_depth")
+        if not existing_depth:
+            session.add(Setting(key="max_composition_depth", value="2"))
+            session.commit()
 
     # Initialize the separate unconfirmed staging database
     try:

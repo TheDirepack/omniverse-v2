@@ -85,6 +85,71 @@ class ModelConfig(SQLModel, table=True):
     model_name: str
     provider_id: int = Field(foreign_key="providerconfig.id")
 
+class Entity(SQLModel, table=True):
+    __table_args__ = (UniqueConstraint("universe_id", "name"),)
+    id: Optional[int] = Field(default=None, primary_key=True)
+    name: str = Field(index=True)
+    entity_type: str
+    universe_id: int = Field(foreign_key="universe.id")
+    canonical: bool = Field(default=False)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+class EntityAlias(SQLModel, table=True):
+    __table_args__ = (UniqueConstraint("alias", "universe_id"),)
+    id: Optional[int] = Field(default=None, primary_key=True)
+    entity_id: int = Field(foreign_key="entity.id")
+    alias: str = Field(index=True)
+    universe_id: int = Field(foreign_key="universe.id")
+
+class Claim(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    subject_id: int = Field(foreign_key="entity.id")
+    predicate: str = Field(index=True)
+    object_id: int = Field(foreign_key="entity.id")
+    source_reference: Optional[str] = None
+    source_wiki: Optional[str] = None
+    confidence_score: float = Field(default=0.0)
+    status: str = Field(default="PENDING")  # PENDING, VERIFIED, CONTRADICTED, SUPERSEDED
+    universe_scope: Optional[int] = Field(default=None, foreign_key="universe.id")
+    superseded_by: Optional[int] = Field(default=None, foreign_key="claim.id")
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+class InferenceRule(SQLModel, table=True):
+    # A composition rule: predicate_1 followed by predicate_2 (via a shared
+    # intermediate entity) implies implied_predicate directly between the
+    # outer subject/object. Proposed by an LLM pair (proposer + independent
+    # critic), never auto-approved: human_approved must be set explicitly
+    # before the rule is used in path materialization, since a bad rule
+    # silently corrupts every inference derived from it.
+    id: Optional[int] = Field(default=None, primary_key=True)
+    predicate_1: str
+    predicate_2: str
+    implied_predicate: str
+    rule_type: str = Field(default="compose")  # "compose" | "block"
+    status: str = Field(default="PROPOSED")  # PROPOSED, CRITIQUED, APPROVED, REJECTED
+    proposer_model: Optional[str] = None
+    proposer_rationale: Optional[str] = None
+    critic_model: Optional[str] = None
+    critic_verdict: Optional[str] = None  # APPROVE, REJECT, REVISE
+    critic_rationale: Optional[str] = None
+    human_approved: bool = Field(default=False)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+class InferredClaim(SQLModel, table=True):
+    # A materialized path-composition, not directly asserted by any source.
+    # contradicts_claim_id is a flag for semantic review only — it must never
+    # be auto-resolved, since a mismatch may mean the rule composed correctly
+    # but the asserted claim is a legitimate exception, not an error.
+    id: Optional[int] = Field(default=None, primary_key=True)
+    subject_id: int = Field(foreign_key="entity.id")
+    predicate: str
+    object_id: int = Field(foreign_key="entity.id")
+    derived_from_rule_id: int = Field(foreign_key="inferencerule.id")
+    path_claim_ids: str  # JSON list of Claim.id forming this path
+    contradicts_claim_id: Optional[int] = Field(default=None, foreign_key="claim.id")
+    reviewed: bool = Field(default=False)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
 class CandidateHealth(SQLModel, table=True):
     candidate_hash: str = Field(primary_key=True)
     provider_id: int = Field(index=True)

@@ -63,6 +63,7 @@ async def run_agent(
     max_turns: int = 50,
     max_retries: int = 1,
     max_fetches: int = 5,
+    min_turns: int = 0,
     provider_id: Optional[int] = None,
     fetch_cache: Optional[FetchCache] = None,
     history: Optional[List[Dict[str, str]]] = None
@@ -122,10 +123,15 @@ async def run_agent(
             if await is_aborted(run_id):
                 raise RuntimeError(f"Run {run_id} was aborted by user.")
 
+            gated = turn < min_turns
+            active_tools = litellm_tools if not gated else [
+                t for t in litellm_tools if t["function"]["name"] != submit_tool_name
+            ]
+
             response, model, key_id = await router.run_model(
                 task=agent_name,
                 messages=messages,
-                tools=litellm_tools,
+                tools=active_tools,
                 run_id=run_id,
                 provider_id=provider_id
             )
@@ -166,6 +172,12 @@ async def run_agent(
                     args = json.loads(tool_call.function.arguments)
 
                     if name == submit_tool_name:
+                        if gated:
+                            messages.append({
+                                "role": "tool", "tool_call_id": tool_call.id, "name": name,
+                                "content": f"Error: cannot submit yet — minimum {min_turns} research turns required, currently at turn {turn}. Continue investigating."
+                            })
+                            continue
                         # If the tool provides a dataset, use it; otherwise, fallback to content
                         args_dataset = args.get("dataset")
                         return args_dataset or content or "Findings submitted.", messages
@@ -248,8 +260,14 @@ async def run_agent(
                 # After executing tool calls, the agent needs to process observations
                 continue
             
-            # If no tool calls, the model might have just replied. 
-            # If it's not a submit call, we nudge it to use tools or submit.
+            # No tool calls at all.
+            if gated:
+                messages.append({
+                    "role": "user",
+                    "content": f"You're at turn {turn+1} of a required minimum {min_turns}. Keep researching with the available tools before concluding."
+                })
+                continue
+
             if not content:
                 messages.append({"role": "user", "content": "Please use the available tools to research and eventually call the submit tool."})
                 continue

@@ -238,6 +238,12 @@ function SettingsPanel() {
               value={settings["MAX_PARALLEL_AGENTS"] ?? "5"} 
               onSave={handleSaveSetting} 
             />
+            <SettingSlider 
+              keyName="MIN_RESEARCH_TURNS" 
+              value={settings["MIN_RESEARCH_TURNS"] ?? "6"} 
+              onSave={handleSaveSetting} 
+              max={50}
+            />
           </div>
  
            <div className="add-setting-row">

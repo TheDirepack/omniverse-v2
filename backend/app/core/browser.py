@@ -16,7 +16,10 @@ class BrowserManager:
 
     async def stop(self):
         if self.browser:
-            await self.browser.close()
+            try:
+                await self.browser.close()
+            except Exception:
+                pass
             self.browser = None
 
     async def _ensure_browser(self):

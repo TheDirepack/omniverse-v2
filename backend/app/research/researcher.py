@@ -59,9 +59,11 @@ async def research_single_world(world_name: str, run_id: str, focus: str | None 
     
     from app.services.universe_service import UniverseService
     from app.services.tiering_service import TieringService
+    from app.services.settings_service import SettingsService
     
     uni_service = UniverseService()
     tier_service = TieringService()
+    settings_service = SettingsService()
     
     universe = uni_service.get_universe(world_name)
     if universe:
@@ -98,6 +100,9 @@ async def research_single_world(world_name: str, run_id: str, focus: str | None 
             elif research_queue:
                 user_prompt += f"\n\nSECONDARY LEADS (Address only after all corrections are resolved):\n{research_queue}"
 
+            min_turns_setting = settings_service.get_setting("MIN_RESEARCH_TURNS")
+            min_turns = int(min_turns_setting.value) if min_turns_setting and min_turns_setting.value else 6
+            
             result, turn_history = await run_agent(
                 agent_name="Researcher",
                 system_prompt=researcher_prompt["system"],
@@ -106,9 +111,13 @@ async def research_single_world(world_name: str, run_id: str, focus: str | None 
                 run_id=run_id,
                 tools_names=researcher_tools,
                 submit_tool_name="submit_research",
+                min_turns=min_turns,
                 fetch_cache=fetch_cache,
                 history=retry_handler.agent_history
             )
+
+
+
             
             # Deterministic Validation
             try:

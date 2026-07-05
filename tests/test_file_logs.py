@@ -14,7 +14,8 @@ def test_get_file_logs_basic(client):
     # Test fetching all logs
     response = client.get("/api/runs/logs/file")
     assert response.status_code == 200
-    logs = response.json()
+    data = response.json()
+    logs = data["logs"]
     assert len(logs) == 3
     assert "Line 1: Error" in logs[0]
     assert "Line 3: Warning" in logs[2]
@@ -28,14 +29,14 @@ def test_get_file_logs_filter(client):
     # Test filtering for "Error"
     response = client.get("/api/runs/logs/file?filter=Error")
     assert response.status_code == 200
-    logs = response.json()
+    logs = response.json()["logs"]
     assert len(logs) == 2
     assert all("Error" in line for line in logs)
 
     # Test filtering for "Success"
     response = client.get("/api/runs/logs/file?filter=Success")
     assert response.status_code == 200
-    logs = response.json()
+    logs = response.json()["logs"]
     assert len(logs) == 1
     assert "Success" in logs[0]
 
@@ -49,14 +50,16 @@ def test_get_file_logs_limit(client):
     # Test limit of 100 (default)
     response = client.get("/api/runs/logs/file")
     assert response.status_code == 200
-    assert len(response.json()) == 100
-    assert "Log line 149" in response.json()[-1]
+    logs = response.json()["logs"]
+    assert len(logs) == 100
+    assert "Log line 149" in logs[-1]
 
     # Test custom limit of 10
     response = client.get("/api/runs/logs/file?limit=10")
     assert response.status_code == 200
-    assert len(response.json()) == 10
-    assert "Log line 149" in response.json()[-1]
+    logs = response.json()["logs"]
+    assert len(logs) == 10
+    assert "Log line 149" in logs[-1]
 
 def test_get_file_logs_no_file(client):
     # Setup: Ensure log file does not exist
@@ -65,4 +68,4 @@ def test_get_file_logs_no_file(client):
 
     response = client.get("/api/runs/logs/file")
     assert response.status_code == 200
-    assert response.json() == []
+    assert response.json() == {"logs": [], "total": 0, "has_more": False}

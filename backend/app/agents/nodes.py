@@ -99,17 +99,25 @@ async def db_integrator_node(state: OmniverseState) -> Dict[str, Any]:
             submit_tool_name="submit_integration"
         )
         
-        cleanup_prompt = get_cleanup_prompt()
-        await run_agent(
-            agent_name="DB Architect",
-            system_prompt=cleanup_prompt["system"],
-            user_prompt=f"Clean up unconfirmed staging for {world_name}",
-            step=f"Cleanup {world_name}",
-            run_id=run_id,
-            tools_names=["queryClaims", "queryUnconfirmedClaims", "deleteUnconfirmedClaim"],
-            submit_tool_name="submit_cleanup",
-            history=history
-        )
+        # Only proceed to cleanup if integration was successful
+        if "Error" not in final_ans and "MAX_TURNS_REACHED" not in final_ans:
+            cleanup_prompt = get_cleanup_prompt()
+            await run_agent(
+                agent_name="DB Architect",
+                system_prompt=cleanup_prompt["system"],
+                user_prompt=f"Clean up unconfirmed staging for {world_name}",
+                step=f"Cleanup {world_name}",
+                run_id=run_id,
+                tools_names=["queryClaims", "queryUnconfirmedClaims", "deleteUnconfirmedClaim"],
+                submit_tool_name="submit_cleanup",
+                history=history
+            )
+        else:
+            exec_service.log_transition(
+                run_id, "DB Integrator", 
+                f"Integration failed for {world_name} ({final_ans}). Skipping cleanup to preserve staging data.", 
+                "FAILED", state
+            )
         
     # Mark all integrated universes as explored in one batch
     from app.services.universe_service import UniverseService

@@ -37,6 +37,8 @@ def _make_tool_call(name: str, args: dict, tc_id: str = "tc1"):
 @pytest.fixture(autouse=True)
 def clear_aborted():
     ABORTED_RUNS.clear()
+    from app.core.agent_engine import run_fetch_cache
+    run_fetch_cache.clear()
     yield
     ABORTED_RUNS.clear()
 
@@ -184,9 +186,11 @@ class TestRunAgentAbort:
     """Run aborts when run_id is in ABORTED_RUNS."""
 
     async def test_abort_raises_runtime_error(self):
-        ABORTED_RUNS.add("run-aborted")
+        from app.core.runtime_state import abort_run
+        await abort_run("run-aborted")
 
         with patch("app.core.agent_engine.router.run_model", new=AsyncMock()) as mock_router:
+
             with pytest.raises(RuntimeError, match="aborted by user"):
                 await run_agent(
                     agent_name="TEST",
@@ -442,6 +446,7 @@ class TestRunAgentStateful:
                 submit_tool_name="submitFindings",
             )
         
+        assert mock_router.call_count == 1
         called_messages = mock_router.call_args[1]["messages"]
         assert len(called_messages) == 2
         assert called_messages[0]["content"] == "Sys"

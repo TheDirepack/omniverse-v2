@@ -6,6 +6,7 @@ from typing import Optional, Any, List, Dict
 from datetime import datetime, timedelta
 from sqlmodel import Session, select
 from app.db.session import engine
+from app.db.settings_session import settings_engine
 from app.db.schema import ProviderConfig, ProviderKey, AgentRouteFallback, Setting, ExecutionState, CandidateHealth
 from app.core.agent_logger import agent_logger
 
@@ -70,7 +71,7 @@ class ModelRouter:
         return await self.run_model(task, messages, tools=[], run_id=run_id, **kwargs)
 
     async def call_llm_with_tools(self, task: str, messages: List[Dict[str, str]], tools: List[Dict[str, Any]], run_id: Optional[str] = None, provider_id: Optional[int] = None, exclude_provider_id: Optional[int] = None, **kwargs):
-        with Session(engine) as session:
+        with Session(settings_engine) as session:
             # 1. Try to get routes for this specific task sorted by priority
             routes = session.exec(select(AgentRouteFallback).where(AgentRouteFallback.task_type == task).order_by(AgentRouteFallback.priority)).all()
             
@@ -142,7 +143,7 @@ class ModelRouter:
 
             for candidate in candidates:
                 # Check if candidate is disabled
-                with Session(engine) as health_session:
+                with Session(settings_engine) as health_session:
                     health = self._get_health(health_session, candidate["provider"].id, candidate["key"].id if candidate["key"].id != -1 else None, candidate["model"])
                     if health.disabled_until and health.disabled_until > datetime.utcnow():
                         continue
@@ -160,7 +161,7 @@ class ModelRouter:
                     )
                     
                     # Report success
-                    with Session(engine) as health_session:
+                    with Session(settings_engine) as health_session:
                         self._report_success(health_session, candidate["provider"].id, candidate["key"].id if candidate["key"].id != -1 else None, candidate["model"])
                     
                     # Log agent model call
@@ -186,12 +187,20 @@ class ModelRouter:
                     return response, candidate["full_model"], str(candidate["key"].id)
                 except Exception as e:
                     # Report failure
-                    with Session(engine) as health_session:
+                    with Session(settings_engine) as health_session:
                         self._report_failure(health_session, candidate["provider"].id, candidate["key"].id if candidate["key"].id != -1 else None, candidate["model"])
                     
+                    clean_e = _clean_error(e)
+                    agent_logger.log(
+                        agent="ModelRouter",
+                        event_type="ERROR",
+                        content=f"Fallback: {candidate['full_model']} failed due to {clean_e}. Trying next candidate.",
+                        model=candidate["full_model"],
+                        key_id=str(candidate["key"].id)
+                    )
+
                     if run_id:
                         with Session(engine) as log_session:
-                            clean_e = _clean_error(e)
                             log_entry = ExecutionState(
                                 run_id=run_id,
                                 node_name="ModelRouter",
@@ -201,14 +210,14 @@ class ModelRouter:
                             )
                             log_session.add(log_entry)
                             log_session.commit()
-                    print(f"[ModelRouter] Fallback failed for {candidate['full_model']} with key {candidate['key'].id}: {_clean_error(e)}")
+                    print(f"[ModelRouter] Fallback failed for {candidate['full_model']} with key {candidate['key'].id}: {clean_e}")
                     continue
             
             raise RuntimeError(f"All fallback options exhausted for task '{task}'.")
 
 
     def list_provider_models(self, provider_id: int) -> list[str]:
-        with Session(engine) as session:
+        with Session(settings_engine) as session:
             provider = session.get(ProviderConfig, provider_id)
             if not provider or not provider.models:
                 return []

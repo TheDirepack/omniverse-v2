@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import * as api from "../api";
 
 export default function LogViewerPanel() {
@@ -19,10 +19,13 @@ export default function LogViewerPanel() {
   const [loading, setLoading] = useState(false);
   const [offset, setOffset] = useState(0);
   const [hasMore, setHasMore] = useState(false);
+  const logContainerRef = useRef<HTMLDivElement>(null);
 
   const refreshLogs = async (reset = true) => {
     setLoading(true);
     const currentOffset = reset ? 0 : offset;
+    const hasFilters = !!(filters.q || filters.agent || filters.world || filters.model || filters.event_type || filters.tool);
+    
     try {
       const data = await api.fetchFileLogs({
         limit: 100,
@@ -35,7 +38,27 @@ export default function LogViewerPanel() {
         tool: filters.tool
       });
       
-      setLogs(reset ? data.logs : [...logs, ...data.logs]);
+      if (reset) {
+        setLogs(data.logs);
+      } else {
+        if (hasFilters) {
+          setLogs(prev => [...prev, ...data.logs]);
+        } else {
+          const container = logContainerRef.current;
+          if (container) {
+            const oldHeight = container.scrollHeight;
+            setLogs(prev => [...data.logs, ...prev]);
+            requestAnimationFrame(() => {
+              if (container) {
+                container.scrollTop = container.scrollHeight - oldHeight;
+              }
+            });
+          } else {
+            setLogs(prev => [...data.logs, ...prev]);
+          }
+        }
+      }
+      
       setHasMore(data.has_more);
       setOffset(currentOffset + 100);
     } catch (e) {
@@ -87,6 +110,23 @@ export default function LogViewerPanel() {
   const updateFilter = (key: string, value: string) => {
     setFilters(prev => ({ ...prev, [key]: value }));
     setOffset(0); // Reset pagination on filter change
+  };
+
+  const handleScroll = () => {
+    const container = logContainerRef.current;
+    if (!container || loading) return;
+
+    const hasFilters = !!(filters.q || filters.agent || filters.world || filters.model || filters.event_type || filters.tool);
+    
+    if (hasFilters) {
+      if (container.scrollTop + container.clientHeight >= container.scrollHeight - 50) {
+        if (hasMore) refreshLogs(false);
+      }
+    } else {
+      if (container.scrollTop <= 50) {
+        if (hasMore) refreshLogs(false);
+      }
+    }
   };
 
   return (
@@ -165,17 +205,20 @@ export default function LogViewerPanel() {
           </div>
         </div>
 
-        <div className="log-container" style={{ 
-          fontFamily: "monospace", 
-          fontSize: "0.85rem", 
-          background: "#0f172a", 
-          padding: 12, 
-          borderRadius: 8, 
-          border: "1px solid #334155",
-          flex: 1,
-          overflowY: "auto",
-          whiteSpace: "pre-wrap"
-        }}>
+        <div 
+          ref={logContainerRef}
+          onScroll={handleScroll}
+          className="log-container" style={{ 
+            fontFamily: "monospace", 
+            fontSize: "0.85rem", 
+            background: "#0f172a", 
+            padding: 12, 
+            borderRadius: 8, 
+            border: "1px solid #334155",
+            flex: 1,
+            overflowY: "auto",
+            whiteSpace: "pre-wrap"
+          }}>
           {logs.length === 0 ? (
             <p className="muted">No logs found.</p>
           ) : (
@@ -186,13 +229,6 @@ export default function LogViewerPanel() {
             ))
           )}
         </div>
-        {hasMore && (
-          <div style={{ textAlign: "center", marginTop: 12 }}>
-            <button className="secondary" onClick={() => refreshLogs(false)} disabled={loading}>
-              {loading ? "..." : "Load More"}
-            </button>
-          </div>
-        )}
       </div>
     </section>
   );

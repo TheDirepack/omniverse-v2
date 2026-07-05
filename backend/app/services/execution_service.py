@@ -3,6 +3,7 @@ from sqlmodel import Session
 from app.db.session import engine
 from app.db.schema import ExecutionState
 from app.repositories.execution import ExecutionRepository
+from app.core.agent_logger import agent_logger
 
 class ExecutionService:
     def __init__(self, session: Optional[Session] = None):
@@ -20,6 +21,15 @@ class ExecutionService:
             state_snapshot=snapshot_str
         )
         self.repo.create_log(log_entry)
+        
+        # Mirror to file logs for parity with live logs
+        agent_logger.log(
+            agent=node_name,
+            event_type=status,
+            content=thought,
+            model="system",
+            key_id="system"
+        )
 
     def get_recent_logs(self, limit: int = 50) -> Sequence[ExecutionState]:
         return self.repo.get_recent_logs(limit)
@@ -29,3 +39,4 @@ class ExecutionService:
 
     def clear_logs(self):
         self.repo.clear_logs()
+

@@ -102,17 +102,21 @@ class EntityAlias(SQLModel, table=True):
     universe_id: int = Field(foreign_key="universe.id")
 
 class Predicate(SQLModel, table=True):
-    canonical_name: str = Field(primary_key=True)
+    id: Optional[int] = Field(default=None, primary_key=True)
+    canonical_name: str = Field(index=True, unique=True)
     description: Optional[str] = None
+    category: Optional[str] = None
+    parent_predicate_id: Optional[int] = Field(default=None, foreign_key="predicate.id")
 
 class PredicateAlias(SQLModel, table=True):
     alias: str = Field(primary_key=True)
-    canonical_name: str = Field(foreign_key="predicate.canonical_name")
+    predicate_id: Optional[int] = Field(default=None, foreign_key="predicate.id")
 
 class Claim(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     subject_id: int = Field(foreign_key="entity.id")
-    predicate: str = Field(index=True) # Stores canonical predicate
+    predicate_id: Optional[int] = Field(default=None, foreign_key="predicate.id")
+    predicate: str = Field(index=True) # Stores canonical predicate (deprecated)
     object_entity_id: Optional[int] = Field(default=None, foreign_key="entity.id")
     object_literal: Optional[str] = None
     source_reference: Optional[str] = None

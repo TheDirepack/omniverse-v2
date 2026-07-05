@@ -26,11 +26,13 @@ async def tool_fetch_page(args: Dict[str, Any]) -> str:
             urls = [urls]
         else:
             return "Error: Missing or invalid urls argument (expected list)."
-
+    
+    max_links = args.get("max_links", 20)
+    
     results = []
     for url in urls:
         try:
-            content = await web_fetcher.fetch_page(url)
+            content = await web_fetcher.fetch_page(url, max_links=max_links)
             results.append(f"--- Content from {url} ---\n{content}")
         except Exception as e:
             results.append(f"Error fetching {url}: {str(e)}")
@@ -206,7 +208,12 @@ async def tool_upsert_claims(args: Dict[str, Any]) -> str:
                 continue
 
             # Normalization
-            predicate = pred_service.normalize(raw_pred)
+            predicate_name = pred_service.normalize(raw_pred)
+            pred_ent = session.exec(select(Predicate).where(Predicate.canonical_name == predicate_name)).first()
+            if not pred_ent:
+                pred_ent = Predicate(canonical_name=predicate_name)
+                session.add(pred_ent)
+                session.flush()
             
             s_ent = get_or_create_entity(s_name)
             
@@ -221,7 +228,7 @@ async def tool_upsert_claims(args: Dict[str, Any]) -> str:
             existing = session.exec(
                 select(Claim).where(
                     Claim.subject_id == s_ent.id,
-                    Claim.predicate == predicate,
+                    Claim.predicate_id == pred_ent.id,
                     (Claim.object_entity_id == o_entity_id) if o_entity_id else (Claim.object_literal == o_literal)
                 )
             ).first()
@@ -231,12 +238,13 @@ async def tool_upsert_claims(args: Dict[str, Any]) -> str:
                 existing.source_wiki = item.get("source_wiki") or existing.source_wiki
                 existing.support_count += 1
                 session.add(existing)
-                updated.append(f"({s_name}, {predicate}, {o_val})")
+                updated.append(f"({s_name}, {predicate_name}, {o_val})")
                 target_claim = existing
             else:
                 new_claim = Claim(
                     subject_id=s_ent.id,
-                    predicate=predicate,
+                    predicate_id=pred_ent.id,
+                    predicate=predicate_name,
                     object_entity_id=o_entity_id,
                     object_literal=o_literal,
                     source_reference=item.get("source_reference"),
@@ -247,7 +255,7 @@ async def tool_upsert_claims(args: Dict[str, Any]) -> str:
                 )
                 session.add(new_claim)
                 session.flush() # get ID
-                created.append(f"({s_name}, {predicate}, {o_val})")
+                created.append(f"({s_name}, {predicate_name}, {o_val})")
                 target_claim = new_claim
 
             # Handle attributes
@@ -561,12 +569,13 @@ AGENT_TOOLS: Dict[str, Dict[str, Any]] = {
     },
     "fetchPage": {
         "func": tool_fetch_page,
-        "description": "Fetch and read the full text of a specific URL. Reads are cached and count against a shared per-run fetch budget (also shared with compareSourceFreshness), so re-fetching the same URL is free but the total number of distinct pages you can read in one research pass is limited — spend it on pages you actually need.",
+        "description": "Fetch and read the full text of a specific URL. Reads are cached and count against a shared per-run fetch budget (also shared with compareSourceFreshness). Returns structured content including the main article, a scored list of internal research leads (links), and metadata. You can specify `max_links` to get more or fewer internal links.",
         "parameters": {
             "type": "object",
             "properties": {
                 "urls": {"type": "array", "items": {"type": "string"}, "description": "List of URLs to fetch."},
-                "url": {"type": "string", "description": "A single URL to fetch."}
+                "url": {"type": "string", "description": "A single URL to fetch."},
+                "max_links": {"type": "integer", "description": "Maximum number of internal research links to return. Default is 20.", "default": 20}
             },
             "required": []
         }

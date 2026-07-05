@@ -23,9 +23,9 @@ class AgentLogger:
     @staticmethod
     def _is_logging_enabled() -> bool:
         try:
-            from app.db.session import Session, engine
+            from app.db.settings_session import Session, settings_engine
             from app.db.schema import Setting
-            with Session(engine) as session:
+            with Session(settings_engine) as session:
                 setting = session.get(Setting, "AGENT_LOGGING")
                 if setting is None:
                     return True

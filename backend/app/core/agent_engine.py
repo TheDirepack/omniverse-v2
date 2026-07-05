@@ -106,6 +106,9 @@ async def run_agent(
                 }
             })
         
+        # Track consecutive tool failures to provide guided retries
+        tool_failures: Dict[str, int] = {}
+        
         # Add the submit tool
         litellm_tools.append({
             "type": "function",
@@ -130,7 +133,7 @@ async def run_agent(
 
             response, model, key_id = await router.run_model(
                 task=agent_name,
-                messages=messages,
+                messages=list(messages),
                 tools=active_tools,
                 run_id=run_id,
                 provider_id=provider_id
@@ -141,12 +144,22 @@ async def run_agent(
             content = message.content
             tool_calls = getattr(message, "tool_calls", None)
 
-            # Log agent thinking
+            # Log agent thinking/turn
             if content:
                 agent_logger.log(
                     agent=agent_name,
                     event_type="THOUGHT",
                     content=content,
+                    model=model,
+                    key_id=key_id
+                )
+            elif tool_calls:
+                # Log that the agent is acting even if it didn't "think" in text
+                tool_names = [tc.function.name for tc in tool_calls]
+                agent_logger.log(
+                    agent=agent_name,
+                    event_type="THOUGHT",
+                    content=f"Agent decided to use tools: {', '.join(tool_names)}",
                     model=model,
                     key_id=key_id
                 )
@@ -231,8 +244,17 @@ async def run_agent(
                             try:
                                 func = AGENT_TOOLS[name]["func"]
                                 observation = await func(args)
+                                # Success! Reset failure count for this tool
+                                tool_failures[name] = 0
                             except Exception as e:
-                                observation = f"Error executing tool {name}: {str(e)}"
+                                # Track failure
+                                count = tool_failures.get(name, 0) + 1
+                                tool_failures[name] = count
+                                
+                                if count < 3:
+                                    observation = f"Error executing tool {name}: {str(e)}. Please analyze the error, correct your parameters, and try again. (Attempt {count}/3)"
+                                else:
+                                    observation = f"Tool {name} has failed {count} times consecutively. It may be fundamentally broken or the requested operation is impossible. Please attempt a different approach or use an alternative tool."
 
                         messages.append({
                             "role": "tool",
@@ -245,7 +267,7 @@ async def run_agent(
                         agent_logger.log(
                             agent=agent_name,
                             event_type="TOOL_RES",
-                            content=f"Observation from {name}: {observation[:500]}..." if len(observation) > 500 else f"Observation from {name}: {observation}",
+                            content=f"Observation from {name}: {observation}",
                             model=model,
                             key_id=key_id
                         )

@@ -1,6 +1,6 @@
 from typing import List, Optional, Sequence
-from sqlmodel import Session, select
-from app.db.schema import Universe, Trait
+from sqlmodel import Session, select, delete
+from app.db.schema import Universe, Trait, Claim
 
 class UniverseRepository:
     def __init__(self, session: Session):
@@ -56,7 +56,10 @@ class UniverseRepository:
         self.session.refresh(trait)
         return trait
 
-    def delete_traits(self, universe_id: int):
-        from sqlmodel import delete
-        self.session.exec(delete(Trait).where(Trait.universe_id == universe_id))
-        self.session.commit()
+    def get_verified_claims(self, universe_id: int) -> Sequence[Claim]:
+        return self.session.exec(
+            select(Claim).where(
+                Claim.universe_scope == universe_id, 
+                Claim.status == "VERIFIED"
+            )
+        ).all()

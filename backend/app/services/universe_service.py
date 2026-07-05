@@ -1,7 +1,7 @@
 from typing import List, Optional, Sequence, Dict, Any
 from sqlmodel import Session
 from app.db.session import engine
-from app.db.schema import Universe, Trait
+from app.db.schema import Universe, Trait, Claim
 from app.repositories.universe import UniverseRepository
 
 class UniverseService:
@@ -108,26 +108,9 @@ class UniverseService:
                     traits.extend(repo.get_traits(u.id))
             return [t.model_dump() for t in traits]
 
-    def delete_universe(self, universe_id: int):
+    def get_verified_claims(self, universe_id: int) -> Sequence[Claim]:
         with Session(engine) if not self.session else self.session as session:
-            repo = UniverseRepository(session)
-            universe = repo.get_by_id(universe_id)
-            if universe:
-                repo.delete_traits(universe_id)
-                from app.repositories.tiering import TieringRepository
-                from app.repositories.theory import TheoryRepository
-                from app.db.extrapolation_session import engine as extra_engine
-                
-                with Session(engine) as tier_session:
-                    tier_repo = TieringRepository(tier_session)
-                    tier_repo.delete_world_tier(universe_id)
-                    tier_repo.delete_anomalies(universe_id)
-                
-                with Session(extra_engine) as theory_session:
-                    theory_repo = TheoryRepository(theory_session)
-                    theory_repo.delete_theory_for_universe(universe_id)
-                
-                repo.delete(universe)
+            return UniverseRepository(session).get_verified_claims(universe_id)
 
     def update_summary(self, universe_id: int, summary: str):
         with Session(engine) if not self.session else self.session as session:

@@ -1,9 +1,48 @@
 import re
 import logging
+import asyncio
 from bs4 import BeautifulSoup
 from urllib.parse import urlparse
 import socket
+import trafilatura
 from app.core.browser import browser_manager
+
+# Patterns for detecting cookie/consent pages
+COOKIE_PATTERNS = [
+    "we value your privacy",
+    "cookie settings",
+    "manage cookies",
+    "consent preferences",
+    "your privacy choices",
+    "accept all",
+    "reject all",
+    "legitimate interest",
+]
+
+# Button text to look for when dismissing banners
+DISMISS_BUTTON_TEXTS = [
+    "Reject All",
+    "Reject",
+    "Decline",
+    "Necessary Only",
+    "Continue without accepting",
+    "Accept All", # Fallback
+]
+
+# Tags to be aggressively removed
+NOISE_TAGS = [
+    "script", "style", "nav", "footer", "iframe", "noscript", "header",
+    "aside", "dialog", "form", "menu", "svg", "canvas", "picture",
+    "button", "input", "label"
+]
+
+# CSS selectors for common consent/cookie overlays
+NOISE_SELECTORS = [
+    "[id*='cookie']", "[class*='cookie']",
+    "[id*='consent']", "[class*='consent']",
+    "[id*='gdpr']", "[class*='gdpr']",
+    ".cookie-banner", ".consent-modal", ".privacy-overlay"
+]
 
 # Patterns below are intentionally generic (not tied to any single wiki host)
 # so freshness detection keeps working as wikis move between MediaWiki,
@@ -63,7 +102,190 @@ def _extract_freshness_signals(url: str, final_url: str, html: str, text: str, l
 
 
 class WebFetcher:
-    async def fetch_page(self, url: str, include_freshness: bool = True) -> str:
+    async def _dismiss_cookie_banners(self, page):
+        """Attempt to dismiss cookie banners by clicking known 'reject' buttons."""
+        try:
+            for text in DISMISS_BUTTON_TEXTS:
+                # Use a case-insensitive regex for the button name
+                button = page.get_by_role("button", name=re.compile(text, re.IGNORECASE), exact=False).first
+                if await button.is_visible():
+                    await button.click()
+                    await asyncio.sleep(0.5)
+                    return True
+            # Fallback: try Escape key
+            await page.keyboard.press("Escape")
+            await asyncio.sleep(0.5)
+        except Exception as e:
+            logger.debug(f"Error dismissing cookie banners: {e}")
+        return False
+
+    def _is_cookie_page(self, text: str) -> bool:
+        """Check if the text is dominated by cookie/consent vocabulary."""
+        if not text:
+            return False
+        
+        first_1000 = text[:1000].lower()
+        matches = sum(1 for pat in COOKIE_PATTERNS if pat in first_1000)
+        
+        # If 3 or more patterns match in the first 1000 chars, it's likely a cookie page
+        return matches >= 3
+
+    def _normalize_whitespace(self, text: str) -> str:
+        """Normalize repeated whitespace to reduce token usage."""
+        # Replace 3+ newlines with 2, and 2+ spaces with 1
+        text = re.sub(r'\n{3,}', '\n\n', text)
+        text = re.sub(r' {2,}', ' ', text)
+        return text.strip()
+
+    def _extract_internal_links(self, soup: BeautifulSoup, max_links: int = 20) -> str:
+        """Extract, classify, and score internal links for research discovery."""
+        links_data = {} # (url, title) -> {"score": 0, "tier": "Low", "sections": set()}
+        
+        # Identify high-value areas
+        high_value_selectors = [
+            "main", "article", ".infobox", ".mw-parser-output",
+            "[id*='seealso']", "[class*='seealso']", "[id*='references']", "[class*='references']"
+        ]
+        medium_value_selectors = [
+            ".catlinks", ".navbox", ".navmenu", ".category-list"
+        ]
+        
+        # To avoid duplicates and junk
+        discard_keywords = {"privacy", "terms", "policy", "help", "login", "signup", "register", "about", "contact", "discord", "twitter", "facebook"}
+        
+        all_links = soup.find_all("a", href=True)
+        
+        for a in all_links:
+            href = a['href']
+            title = a.get_text(strip=True)
+            if not title or not href:
+                continue
+            
+            # Only internal links (relative or same domain)
+            if href.startswith("http") and not href.startswith(soup.find("base")["href"] if soup.find("base") else ""):
+                # We keep some external links if they are in references, but for now, keep it simple
+                if not any(sel in str(a.find_parent()) for sel in ["references", "citations"]):
+                    continue
+            
+            # Filter out junk by title/href
+            if any(kw in title.lower() or kw in href.lower() for kw in discard_keywords):
+                continue
+                
+            # Determine Tier
+            tier = "Low"
+            parent_html = str(a.find_parent()).lower()
+            
+            if any(sel in parent_html for sel in high_value_selectors) or a.find_parent("main") or a.find_parent("article"):
+                tier = "High"
+            elif any(sel in parent_html for sel in medium_value_selectors) or "category" in parent_html:
+                tier = "Medium"
+                
+            # Scoring and aggregation
+            key = (href, title)
+            if key not in links_data:
+                links_data[key] = {"score": 0, "tier": tier, "sections": set()}
+            
+            links_data[key]["score"] += 1
+            
+            # Try to find a section heading for this link
+            # Look for the nearest preceding heading
+            curr = a
+            while curr and curr.name != "body":
+                # If we find a heading, it's the section
+                if curr.name in ["h1", "h2", "h3", "h4", "h5", "h6"]:
+                    links_data[key]["sections"].add(curr.get_text(strip=True))
+                    break
+                
+                # Or if we are in a sibling of a heading, look back at siblings
+                if curr.name in ["p", "div", "li", "table", "ul", "ol"]:
+                    prev = curr.find_previous_sibling()
+                    while prev and prev.name != "body":
+                        if prev.name in ["h1", "h2", "h3", "h4", "h5", "h6"]:
+                            links_data[key]["sections"].add(prev.get_text(strip=True))
+                            break
+                        prev = prev.find_previous_sibling()
+                
+                curr = curr.find_parent()
+
+        # Sort by tier (High > Medium > Low) and then by score
+        tier_priority = {"High": 3, "Medium": 2, "Low": 1}
+        sorted_links = sorted(
+            links_data.items(), 
+            key=lambda x: (tier_priority.get(x[1]["tier"], 0), x[1]["score"]), 
+            reverse=True
+        )
+        
+        results = []
+        for (url, title), data in sorted_links[:max_links]:
+            section = ", ".join(list(data["sections"])[:2]) if data["sections"] else "General"
+            results.append(f"- {title} [{data['tier']} Value | {data['score']}x | {section}]({url})")
+            
+        return "\n".join(results)
+
+    def _extract_text_from_soup(self, soup: BeautifulSoup) -> str:
+        """Basic text extraction with noise stripping for cookie detection."""
+        # Work on a copy to avoid mutating the original soup used for signals
+        temp_soup = BeautifulSoup(str(soup), "html.parser")
+        for tag in temp_soup(NOISE_TAGS):
+            tag.decompose()
+        
+        # Remove elements matching noise selectors
+        for selector in NOISE_SELECTORS:
+            for element in temp_soup.select(selector):
+                element.decompose()
+                
+        text = "\n".join(line.strip() for line in temp_soup.get_text().splitlines() if line.strip())
+        return self._normalize_whitespace(text)
+
+    def _extract_research_signals(self, soup: BeautifulSoup) -> str:
+        """Extract research-critical navigation like 'See Also', Categories, etc."""
+        signals = []
+        
+        # 1. Look for 'See Also' or 'Related' sections
+        # This is heuristic and looks for headings that sound like 'See Also'
+        for heading in soup.find_all(["h2", "h3", "h4"]):
+            h_text = heading.get_text().strip().lower()
+            if "see also" in h_text or "related" in h_text or "further reading" in h_text:
+                # Extract the next sibling element (usually a list)
+                sibling = heading.find_next_sibling()
+                if sibling:
+                    signals.append(f"--- {heading.get_text().strip()} ---\n{sibling.get_text(separator='\\n', strip=True)}")
+
+        # 2. Extract Categories (common in wikis)
+        cat_div = soup.find("div", class_="catlinks") or \
+                  soup.find("div", class_="categories") or \
+                  soup.find("div", id="mw-category")
+        if cat_div:
+            signals.append(f"--- Categories ---\n{cat_div.get_text(separator='\\n', strip=True)}")
+
+        # 3. Extract Breadcrumbs
+        breadcrumb = soup.find("nav", {"aria-label": "Breadcrumb"}) or \
+                     soup.find("div", {"class": "breadcrumbs"})
+        if breadcrumb:
+            signals.append(f"--- Breadcrumbs ---\n{breadcrumb.get_text(separator=' > ', strip=True)}")
+
+        # 4. Extract Infobox links (common in wikis)
+        infobox = soup.find("table", {"class": "infobox"})
+        if infobox:
+            # Just get the text of the infobox, but keep it concise
+            signals.append(f"--- Infobox Summary ---\n{infobox.get_text(separator='\\n', strip=True)}")
+
+        return "\n\n".join(signals)
+
+    def _detect_page_type(self, html: str, text: str) -> str:
+        """Detect if the page is a known non-article type."""
+        text_low = text.lower()
+        if "captcha" in text_low or "robot" in text_low and "verify" in text_low:
+            return "CAPTCHA"
+        if "404" in text_low and "not found" in text_low:
+            return "404 NOT FOUND"
+        if "login" in text_low and ("password" in text_low or "username" in text_low) and len(text) < 5000:
+            return "LOGIN PAGE"
+        if "search results" in text_low or "results for" in text_low:
+            return "SEARCH RESULTS"
+        return "ARTICLE"
+
+    async def fetch_page(self, url: str, include_freshness: bool = True, max_links: int = 20) -> str:
         # SSRF Protection
         parsed = urlparse(url)
         if parsed.scheme not in ("http", "https"):
@@ -83,7 +305,7 @@ class WebFetcher:
                 raise ValueError(f"Access to private IP {ip} is forbidden.")
         except socket.gaierror:
             pass
-
+        
         # Use browser_manager instead of relaunching browser
         page, context = await browser_manager.get_page()
         try:
@@ -91,10 +313,11 @@ class WebFetcher:
                 response = await page.goto(url, wait_until="networkidle", timeout=20000)
             except Exception as e:
                 logger.debug(f"networkidle timeout for {url}, falling back to domcontentloaded: {e}")
-                # Some pages (analytics beacons, live chat widgets, etc.) never go
-                # fully idle. Fall back to a looser wait rather than failing the
-                # whole fetch — partial/late-loading content is still useful.
                 response = await page.goto(url, wait_until="domcontentloaded", timeout=15000)
+            
+            # 1. Initial cookie dismissal attempt
+            await self._dismiss_cookie_banners(page)
+            
             html = await page.content()
             final_url = page.url
             last_modified_header = None
@@ -106,22 +329,68 @@ class WebFetcher:
                     last_modified_header = None
 
             soup = BeautifulSoup(html, "html.parser")
-            for tag in soup(["script", "style", "nav", "footer", "iframe", "noscript", "header"]):
-                tag.decompose()
-            text = "\n".join(line.strip() for line in soup.get_text().splitlines() if line.strip())
+            
+            # 2. Detect if it's still a cookie page
+            text_for_detection = self._extract_text_from_soup(soup)
+            if self._is_cookie_page(text_for_detection):
+                logger.info(f"Cookie page detected for {url}. Attempting second dismissal...")
+                await self._dismiss_cookie_banners(page)
+                html = await page.content()
+                soup = BeautifulSoup(html, "html.parser")
+                text_for_detection = self._extract_text_from_soup(soup)
 
-            if len(text) > 20000:
-                text = text[:20000] + "\n... [truncated at 20,000 characters]"
+            # 3. Page Type Detection
+            page_type = self._detect_page_type(html, text_for_detection)
+            if page_type != "ARTICLE":
+                return f"PAGE_TYPE: {page_type}\n\nContent Summary:\n{text_for_detection[:1000]}"
+
+            # 4. Semantic Extraction
+            # Main Article via trafilatura
+            main_article = trafilatura.extract(html) or ""
+            if not main_article:
+                # Fallback to basic extraction if trafilatura fails
+                main_article = text_for_detection
+
+            # Internal Links (The Topology)
+            links = self._extract_internal_links(soup, max_links=max_links)
+
+            # Research Signals via custom logic
+            signals = self._extract_research_signals(soup)
+            
+            # 5. Structure the output
+            output_parts = []
+            
+            # Metadata / Stats
+            stats = f"Words: {len(main_article.split())} | Noise Stripped: Yes | Type: {page_type}"
+            output_parts.append(f"[EXTRACTION REPORT]\n{stats}")
+            
+            # Main Article
+            output_parts.append("[MAIN ARTICLE]\n" + main_article)
+            
+            # Internal Links
+            if links:
+                output_parts.append("[INTERNAL LINKS]\n" + links)
+            
+            # Research Signals
+            if signals:
+                output_parts.append("[RESEARCH SIGNALS]\n" + signals)
+            
+            full_text = "\n\n".join(output_parts)
+            full_text = self._normalize_whitespace(full_text)
+
+            if len(full_text) > 20000:
+                full_text = full_text[:20000] + "\n... [truncated at 20,000 characters]"
 
             if not include_freshness:
-                return text
+                return full_text
 
-            signals = _extract_freshness_signals(url, final_url, html, text, last_modified_header)
-            return signals + "\n" + text
+            signals_header = _extract_freshness_signals(url, final_url, html, full_text, last_modified_header)
+            return signals_header + "\n" + full_text
         finally:
             await page.close()
             await context.close()
             browser_manager.release_page(context)
+
 
 
 web_fetcher = WebFetcher()

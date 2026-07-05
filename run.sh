@@ -3,6 +3,11 @@ set -e
 
 BASE_DIR="$(cd "$(dirname "$0")" && pwd)"
 
+# Kill processes using the required ports
+echo "Cleaning up ports 8000 and 5173..."
+fuser -k 8000/tcp 2>/dev/null || true
+fuser -k 5173/tcp 2>/dev/null || true
+
 echo "Starting Omniverse V2 Backend..."
 cd "$BASE_DIR/backend"
 if [ -d ".venv" ]; then

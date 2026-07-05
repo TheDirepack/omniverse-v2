@@ -293,11 +293,10 @@ function DatabasePanel() {
           ) : (
             <p className="muted">Select at least two worlds to compare.</p>
           )
-                ) : (
-          selectedWorld ? <WorldDetail world={selectedWorld} anomalies={anomalies} traits={traits} unconfirmedTraits={unconfirmedTraits} claims={claims} unconfirmedClaims={unconfirmedClaims} /> : <p className="muted">Select a world to view details.</p>
-        )
-}
-        {anomalies.filter(a => a.world_id === null).length > 0 && (
+         ) : (
+           selectedWorld ? <WorldDetail world={selectedWorld} anomalies={anomalies} traits={traits} unconfirmedTraits={unconfirmedTraits} claims={claims} unconfirmedClaims={unconfirmedClaims} /> : <p className="muted">Select a world to view details.</p>
+         )}
+         {anomalies.filter(a => a.world_id === null).length > 0 && (
           <div className="anomaly-list" style={{ marginTop: 16 }}>
             <h4>Global Anomalies</h4>
             {anomalies.filter(a => a.world_id === null).map((a, i) => <div key={i} className="anomaly">{a.description}</div>)}

@@ -13,11 +13,26 @@ async def summarize_universe(universe_id: int, run_id: str) -> str:
 
     set_current_universe(universe.name)
     
-    traits = uni_service.repo.get_traits(universe_id)
-    traits_text = "\n".join([f"- {t.name}: {t.value}" for t in traits])
+    # Retrieve verified claims as the source of truth
+    claims = uni_service.get_verified_claims(universe_id)
     
-    raw_data = universe.raw_data or "No structured data available."
-    structured_context = f"Structured JSON:\n{raw_data}\n\nExtracted Traits:\n{traits_text}"
+    if not claims:
+        structured_context = "No verified claims found for this universe."
+    else:
+        # Format claims into a readable Knowledge Graph representation
+        # Example: Subject -> Predicate -> Object
+        claims_list = []
+        for c in claims:
+            # Use the predicate string if predicate_id isn't mapped back yet, 
+            # or fetch the canonical name.
+            pred = c.predicate or "unknown"
+            obj = c.object_literal or f"Entity({c.object_entity_id})"
+            
+            # To be more robust, we should resolve subject_id to a name
+            # but for the prompt, IDs are often acceptable or we can use a simple lookup
+            claims_list.append(f"Entity({c.subject_id}) -> {pred} -> {obj}")
+            
+        structured_context = "Verified Knowledge Graph:\n" + "\n".join(claims_list)
     
     prompt = get_summary_prompt(universe.name, structured_context)
     

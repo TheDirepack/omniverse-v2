@@ -16,8 +16,9 @@ def get_traits(universe_ids: Optional[str] = None):
 def get_claims(universe_ids: Optional[str] = None):
     from sqlmodel import Session, select
     from app.db.schema import Claim, Universe
+    from app.db.session import engine
     
-    with Session() as session:
+    with Session(engine) as session:
         query = select(Claim).join(Universe)
         if universe_ids:
             ids = [int(i) for i in universe_ids.split(",") if i.strip().isdigit()]

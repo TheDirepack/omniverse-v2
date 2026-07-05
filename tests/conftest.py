@@ -31,19 +31,21 @@ TEST_DB_PATH = "/tmp/omniverse_test.db"
 
 @atexit.register
 def _cleanup():
-    for p in [TEST_DB_PATH, "/tmp/omniverse_test_unconfirmed.db", "/tmp/omniverse_test_extrapolation.db"]:
+    for p in [TEST_DB_PATH, "/tmp/omniverse_test_unconfirmed.db", "/tmp/omniverse_test_extrapolation.db", "/tmp/omniverse_test_settings.db"]:
         if os.path.exists(p):
             os.remove(p)
 
 os.environ["DATABASE_URL"] = f"sqlite:///{TEST_DB_PATH}"
 os.environ["UNCONFIRMED_DB_URL"] = "sqlite:////tmp/omniverse_test_unconfirmed.db"
 os.environ["EXTRAPOLATION_DB_URL"] = "sqlite:////tmp/omniverse_test_extrapolation.db"
+os.environ["SETTINGS_DATABASE_URL"] = "sqlite:////tmp/omniverse_test_settings.db"
 
 from app.db.session import engine
 from app.db.unconfirmed_session import engine as unconfirmed_engine, init_unconfirmed_db
 from app.db.unconfirmed_schema import unconfirmed_metadata
 from app.db.extrapolation_session import engine as extrapolation_engine, init_extrapolation_db
 from app.db.extrapolation_schema import extrapolation_metadata
+from app.db.settings_session import settings_engine, init_settings_db
 from app.main import app
 
 
@@ -55,10 +57,15 @@ def auto_create_db():
     SQLModel.metadata.create_all(engine)
     init_unconfirmed_db()
     init_extrapolation_db()
+    init_settings_db()
     yield
     SQLModel.metadata.drop_all(engine)
     unconfirmed_metadata.drop_all(unconfirmed_engine)
     extrapolation_metadata.drop_all(extrapolation_engine)
+    # init_settings_db() creates ALL tables (shared SQLModel.metadata, not a
+    # dedicated settings-only metadata) against settings_engine -- drop_all
+    # here mirrors that same shared-metadata choice for symmetry.
+    SQLModel.metadata.drop_all(settings_engine)
 
     # We don't explicitly drop unconfirmed tables here to avoid complexity, 
     # but since we use a temp file that is cleaned up at atexit, it's okay.
@@ -137,6 +144,8 @@ def real_server():
     # Module-local DB paths inside /tmp — no collision between modules
     module_db_path = Path(f"/tmp/omniverse_v2_{run_id}.db")
     module_unconfirmed_path = Path(f"/tmp/omniverse_test_unconfirmed_{run_id}.db")
+    module_settings_path = Path(f"/tmp/omniverse_test_settings_{run_id}.db")
+    module_extrapolation_path = Path(f"/tmp/omniverse_test_extrapolation_{run_id}.db")
 
     # Start uvicorn pointing at the module-local DB
     from tests.test_db import create_test_db
@@ -148,6 +157,15 @@ def real_server():
     subprocess_env = {k: v for k, v in os.environ.items() if k != "DATABASE_URL"}
     subprocess_env["DATABASE_URL"] = f"sqlite:///{module_db_path}"
     subprocess_env["UNCONFIRMED_DB_URL"] = f"sqlite:///{module_unconfirmed_path}"
+    # Without dedicated paths here, this module-scoped subprocess would
+    # inherit the SAME settings.db/extrapolation.db path the function-scoped
+    # auto_create_db autouse fixture drops and recreates between every test
+    # in THIS (parent) process -- yanking tables out from under the
+    # still-running subprocess mid-module and causing exactly the kind of
+    # widespread, hard-to-place 404s/"no such table" failures this was
+    # producing in test_settings_api.py.
+    subprocess_env["SETTINGS_DATABASE_URL"] = f"sqlite:///{module_settings_path}"
+    subprocess_env["EXTRAPOLATION_DB_URL"] = f"sqlite:///{module_extrapolation_path}"
 
     proc = subprocess.Popen(
         [sys.executable, "-m", "uvicorn", "app.main:app",

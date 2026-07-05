@@ -114,3 +114,14 @@ def init_db():
         init_extrapolation_db()
     except Exception as e:
         print(f"Error initializing extrapolation database: {e}")
+
+    # Initialize the separate settings database (providers, routing,
+    # general settings). This was previously never called anywhere in the
+    # app -- on a fresh deployment, settings.db would have no tables at all
+    # until someone manually ran a migration script, causing "no such
+    # table: setting" the moment anything touched SettingsService.
+    try:
+        from app.db.settings_session import init_settings_db
+        init_settings_db()
+    except Exception as e:
+        print(f"Error initializing settings database: {e}")

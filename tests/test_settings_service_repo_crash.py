@@ -18,8 +18,11 @@ class TestSettingsServiceGetSetting:
         assert svc.get_setting("DOES_NOT_EXIST") is None
 
     def test_get_setting_returns_value(self, ephemeral_db):
-        ephemeral_db.add(Setting(key="MAX_PARALLEL_AGENTS", value="7"))
-        ephemeral_db.commit()
+        from sqlmodel import Session
+        from app.db.settings_session import settings_engine
+        with Session(settings_engine) as s:
+            s.add(Setting(key="MAX_PARALLEL_AGENTS", value="7"))
+            s.commit()
 
         svc = SettingsService()
         setting = svc.get_setting("MAX_PARALLEL_AGENTS")
@@ -45,8 +48,11 @@ class TestResearchNodeSettingsLookup:
     async def test_research_node_reads_batch_size_without_crashing(self, ephemeral_db):
         from app.agents.nodes import research_node
 
-        ephemeral_db.add(Setting(key="MAX_PARALLEL_AGENTS", value="2"))
-        ephemeral_db.commit()
+        from sqlmodel import Session
+        from app.db.settings_session import settings_engine
+        with Session(settings_engine) as s:
+            s.add(Setting(key="MAX_PARALLEL_AGENTS", value="2"))
+            s.commit()
 
         state = {
             "run_id": "test-run-settings-crash",

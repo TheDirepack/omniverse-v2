@@ -1,4 +1,5 @@
 import re
+import logging
 from bs4 import BeautifulSoup
 from urllib.parse import urlparse
 import socket
@@ -23,6 +24,8 @@ MOVED_OR_STALE_PATTERNS = [
 ]
 
 CANONICAL_LINK_PATTERN = re.compile(r'<link[^>]+rel=["\']canonical["\'][^>]+href=["\']([^"\']+)["\']', re.IGNORECASE)
+
+logger = logging.getLogger(__name__)
 
 
 def _extract_freshness_signals(url: str, final_url: str, html: str, text: str, last_modified_header: str | None) -> str:
@@ -86,7 +89,8 @@ class WebFetcher:
         try:
             try:
                 response = await page.goto(url, wait_until="networkidle", timeout=20000)
-            except Exception:
+            except Exception as e:
+                logger.debug(f"networkidle timeout for {url}, falling back to domcontentloaded: {e}")
                 # Some pages (analytics beacons, live chat widgets, etc.) never go
                 # fully idle. Fall back to a looser wait rather than failing the
                 # whole fetch — partial/late-loading content is still useful.
@@ -97,7 +101,8 @@ class WebFetcher:
             if response is not None:
                 try:
                     last_modified_header = response.headers.get("last-modified")
-                except Exception:
+                except Exception as e:
+                    logger.debug(f"Failed to get last-modified header for {url}: {e}")
                     last_modified_header = None
 
             soup = BeautifulSoup(html, "html.parser")

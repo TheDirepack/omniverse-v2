@@ -24,7 +24,17 @@ Tests use ephemeral SQLite at `/tmp/omniverse_test.db`. Autouse fixture drops/re
 
 ## Architecture
 
-- `backend/app/` — FastAPI, SQLModel (SQLite), LangGraph, litellm
+### Backend Layered Structure
+- `app/api/` — FastAPI routers (entrypoints).
+- `app/services/` — Business logic (orchestrates repositories and workflows).
+- `app/repositories/` — Data access layer (SQLModel operations).
+- `app/agents/` — LangGraph node implementations and agent prompts.
+- `app/workflow/` — Specialized LangGraph state machines (Consolidation, Extrapolation, Tiering).
+- `app/research/` — High-level research agent logic.
+- `app/core/` — Low-level utilities (agent engine, tools, browser, router).
+- `app/db/` — Database schemas and session management.
+
+### Frontend
 - `frontend/src/` — React 18, Vite, vitest (node environment)
 
 ### DBs
@@ -35,7 +45,7 @@ Tests use ephemeral SQLite at `/tmp/omniverse_test.db`. Autouse fixture drops/re
 
 ### Pipeline (LangGraph state machine)
 
-`research` → `db_integrator` → `summary` → `FINISHED`
+`research` $\rightarrow$ `db_integrator` $\rightarrow$ `summary` $\rightarrow$ `FINISHED`
 
 - **Research**: Generic fact collection. No power-scaling analysis at this stage.
 - **DB Integrator**: Stateful sequence (Integration $\rightarrow$ Cleanup).

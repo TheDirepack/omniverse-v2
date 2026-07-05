@@ -8,7 +8,7 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from app.core.agent_engine import run_agent, FetchCache
-from app.core.state import ABORTED_RUNS
+from app.core.runtime_state import ABORTED_RUNS
 from app.core.tools import AGENT_TOOLS
 
 

@@ -52,5 +52,5 @@ async def test_run_tiering_in_background_execution(seeded_db):
         assert state["current_tier_system"] is None
         
     # Verify run was removed from active runs (mocked or real)
-    from app.core.state import ACTIVE_RUNS
+    from app.core.runtime_state import ACTIVE_RUNS
     assert run_id not in ACTIVE_RUNS

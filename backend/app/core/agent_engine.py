@@ -118,7 +118,7 @@ async def run_agent(
         fetched_count = 0
         
         for turn in range(max_turns):
-            from app.core.state import is_aborted
+            from app.core.runtime_state import is_aborted
             if await is_aborted(run_id):
                 raise RuntimeError(f"Run {run_id} was aborted by user.")
 

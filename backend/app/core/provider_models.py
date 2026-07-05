@@ -1,7 +1,10 @@
+import logging
 import httpx
 from sqlmodel import Session, select
 from app.db.session import engine
 from app.db.schema import ProviderConfig, ProviderKey
+
+logger = logging.getLogger(__name__)
 
 PROVIDER_ENDPOINTS = {
     "ollama": lambda base: f"{base.rstrip('/')}/api/tags",
@@ -79,7 +82,8 @@ async def fetch_live_models(provider: ProviderConfig) -> list[str]:
             r = await client.get(url, headers=headers)
             r.raise_for_status()
             data = r.json()
-    except Exception:
+    except Exception as e:
+        logger.exception(f"Failed to fetch models for {ptype} at {url}: {e}")
         return []
 
     parser = PARSERS.get(ptype)

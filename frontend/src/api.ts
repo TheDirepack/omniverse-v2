@@ -12,7 +12,7 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
 }
 
 export async function fetchResults(): Promise<{ tier_system: string | null; worlds: World[]; anomalies: Anomaly[] }> {
-  return apiFetch("/api/results");
+  return apiFetch("/api/research/results");
 }
 
 export async function fetchSettings(): Promise<{ general_settings: Record<string, string | null>; providers: ProviderRecord[]; agent_routes: AgentRouteRecord[] }> {
@@ -24,21 +24,21 @@ export async function fetchProviders(): Promise<ProviderRecord[]> {
 }
 
 export async function fetchAgentRoutes(): Promise<AgentRouteRecord[]> {
-  return apiFetch("/api/agent-routes");
+  return apiFetch("/api/settings/agent-routes");
 }
 
 export async function fetchAgentNames(): Promise<string[]> {
-  return apiFetch("/api/agent-names");
+  return apiFetch("/api/settings/agent-names");
 }
 
 export async function fetchTraits(universeIds?: number[]): Promise<Trait[]> {
   const query = universeIds ? `?universe_ids=${universeIds.join(",")}` : "";
-  return apiFetch(`/api/traits${query}`);
+  return apiFetch(`/api/research/traits${query}`);
 }
 
 export async function fetchUnconfirmedTraits(universeNames?: string[]): Promise<UnconfirmedTrait[]> {
   const query = universeNames ? `?universe_ids=${universeNames.join(",")}` : "";
-  return apiFetch(`/api/traits/unconfirmed${query}`);
+  return apiFetch(`/api/research/traits/unconfirmed${query}`);
 }
 
 
@@ -47,7 +47,7 @@ export async function fetchWorlds(): Promise<WorldRecord[]> {
 }
 
 export async function startOrchestrate(worlds: string[]): Promise<{ run_id: string }> {
-  return apiFetch("/api/orchestrate", {
+  return apiFetch("/api/runs/orchestrate", {
     method: "POST",
     body: JSON.stringify({ worlds }),
   });
@@ -77,7 +77,7 @@ export async function deleteWorld(worldId: number): Promise<any> {
 }
 
 export async function runFocusedSearch(worlds: string[], features: string[]): Promise<{ run_id: string }> {
-  return apiFetch("/api/focused-search", {
+  return apiFetch("/api/runs/focused-search", {
     method: "POST",
     body: JSON.stringify({ worlds, features }),
   });
@@ -117,26 +117,26 @@ export async function deleteProvider(providerId: number): Promise<any> {
 }
 
 export async function saveAgentRoute(route: any): Promise<any> {
-  return apiFetch("/api/agent-routes", {
+  return apiFetch("/api/settings/agent-routes", {
     method: "POST",
     body: JSON.stringify(route),
   });
 }
 
 export async function deleteAgentRoute(routeId: number): Promise<any> {
-  return apiFetch(`/api/agent-routes/${routeId}`, { method: "DELETE" });
+  return apiFetch(`/api/settings/agent-routes/${routeId}`, { method: "DELETE" });
 }
 
 export async function resetDatabase(): Promise<any> {
-  return apiFetch("/api/reset-database", { method: "POST" });
+  return apiFetch("/api/worlds/reset-database", { method: "POST" });
 }
 
 export async function runTiering(): Promise<{ run_id: string }> {
-  return apiFetch("/api/tiering", { method: "POST" });
+  return apiFetch("/api/runs/tiering", { method: "POST" });
 }
 
 export async function clearLogsApi(): Promise<any> {
-  return apiFetch("/api/clear-logs", { method: "POST" });
+  return apiFetch("/api/worlds/clear-logs", { method: "POST" });
 }
 
 export async function resetCandidateHealth(): Promise<any> {
@@ -144,18 +144,18 @@ export async function resetCandidateHealth(): Promise<any> {
 }
 
 export async function fetchAgentActivity(): Promise<{ active_runs: string[]; logs: LogEntry[] }> {
-  return apiFetch("/api/agent-activity");
+  return apiFetch("/api/runs/agent-activity");
 }
 
 export async function abortRun(runId: string): Promise<any> {
-  return apiFetch("/api/abort", {
+  return apiFetch("/api/runs/abort", {
     method: "POST",
     body: JSON.stringify({ runId }),
   });
 }
 
 export async function extrapolate(payload: { scope: "all" | "worlds" | "tier"; worlds?: string[]; tier?: number }): Promise<{ run_id: string; worlds: string[] }> {
-  return apiFetch("/api/extrapolate", {
+  return apiFetch("/api/runs/extrapolate", {
     method: "POST",
     body: JSON.stringify(payload),
   });
@@ -163,9 +163,9 @@ export async function extrapolate(payload: { scope: "all" | "worlds" | "tier"; w
 
 export async function fetchFileLogs(filter?: string): Promise<string[]> {
   const query = filter ? `?filter=${encodeURIComponent(filter)}` : "";
-  return apiFetch(`/api/logs/file${query}`);
+  return apiFetch(`/api/runs/logs/file${query}`);
 }
 
 export function createEventSource(runId: string): EventSource {
-  return new EventSource(`${apiBase}/api/logs/${runId}`);
+  return new EventSource(`${apiBase}/api/runs/logs/${runId}`);
 }

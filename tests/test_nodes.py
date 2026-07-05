@@ -2,7 +2,7 @@ import pytest
 import asyncio
 from unittest.mock import AsyncMock, patch
 from app.agents.nodes import log_transition, check_abort, audit_success, db_integrator_node
-from app.core.state import ABORTED_RUNS
+from app.core.runtime_state import ABORTED_RUNS
 
 class TestLogTransition:
     def test_writes_execution_state(self, ephemeral_db):

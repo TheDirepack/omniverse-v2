@@ -1,4 +1,5 @@
 from typing import Optional
+import logging
 import urllib.parse
 from bs4 import BeautifulSoup
 from app.core.browser import browser_manager
@@ -55,7 +56,8 @@ class WebSearcher:
         try:
             try:
                 await page.goto(search_url, wait_until="networkidle", timeout=20000)
-            except Exception:
+            except Exception as e:
+                logging.warning(f"Search page load failed, retrying: {e}")
                 # Retry with a looser wait condition rather than failing outright —
                 # some search result pages never go fully idle (ads, telemetry).
                 await page.goto(search_url, wait_until="domcontentloaded", timeout=15000)

@@ -10,6 +10,15 @@ LOG_FILE = Path(__file__).parent.parent.parent / "logs" / "agents.log"
 # Ensure directory exists
 LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
 
+# Configure a dedicated logger for agents
+agent_sys_logger = logging.getLogger("agent_system")
+agent_sys_logger.setLevel(logging.INFO)
+handler = logging.FileHandler(LOG_FILE, encoding="utf-8")
+# We use a simple format because the log() method handles the structured content
+formatter = logging.Formatter("%(message)s")
+handler.setFormatter(formatter)
+agent_sys_logger.addHandler(handler)
+
 class AgentLogger:
     @staticmethod
     def _is_logging_enabled() -> bool:
@@ -21,7 +30,8 @@ class AgentLogger:
                 if setting is None:
                     return True
                 return setting.value.lower() != "false"
-        except Exception:
+        except Exception as e:
+            logging.error(f"Error checking AGENT_LOGGING setting: {e}")
             return True
 
     @staticmethod
@@ -39,9 +49,9 @@ class AgentLogger:
         world_name = get_current_universe() or "unknown"
         
         # [Timestamp] [Agent] [Model] [KeyID] [WorldName] [Type] Content
-        log_line = f"[{timestamp}] [{agent}] [{model}] [{key_id}] [{world_name}] [{event_type}] {content}\n"
+        log_line = f"[{timestamp}] [{agent}] [{model}] [{key_id}] [{world_name}] [{event_type}] {content}"
         
-        with open(LOG_FILE, "a", encoding="utf-8") as f:
-            f.write(log_line)
+        # Use the configured logger instead of direct file writing
+        agent_sys_logger.info(log_line)
 
 agent_logger = AgentLogger()

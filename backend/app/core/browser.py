@@ -1,5 +1,7 @@
 import asyncio
-from typing import Optional
+import logging
+from typing import Optional, AsyncGenerator
+from contextlib import asynccontextmanager
 from cloakbrowser import launch_async
 
 class BrowserManager:
@@ -31,16 +33,28 @@ class BrowserManager:
     async def get_page(self):
         await self._ensure_browser()
         
-        # We use a semaphore to limit the number of concurrent pages/contexts
-        # and avoid overloading the system or triggering anti-bot protections.
         await self.semaphore.acquire()
         try:
             context = await self.browser.new_context()
             page = await context.new_page()
             return page, context
-        except Exception:
+        except Exception as e:
+            logging.exception("Failed to create browser page/context")
             self.semaphore.release()
             raise
+
+    @asynccontextmanager
+    async def page(self) -> AsyncGenerator[any, None]:
+        """
+        Async context manager that provides a page and handles cleanup automatically.
+        """
+        page, context = await self.get_page()
+        try:
+            yield page
+        finally:
+            await page.close()
+            await context.close()
+            self.release_page(context)
 
     def release_page(self, context):
         self.semaphore.release()

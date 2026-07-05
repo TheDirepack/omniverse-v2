@@ -1,5 +1,5 @@
 from langgraph.graph import StateGraph, END
-from app.agents.state import OmniverseState
+from app.agents.workflow_state import OmniverseState
 from app.agents.nodes import (
     research_node,
     manager_node,

@@ -95,7 +95,7 @@ async def db_integrator_node(state: OmniverseState) -> Dict[str, Any]:
             user_prompt=user_prompt_data,
             step=f"Integrate {world_name}",
             run_id=run_id,
-            tools_names=["queryTraits", "upsertTrait"],
+            tools_names=["queryClaims", "upsertClaims"],
             submit_tool_name="submit_integration"
         )
         
@@ -106,7 +106,7 @@ async def db_integrator_node(state: OmniverseState) -> Dict[str, Any]:
             user_prompt=f"Clean up unconfirmed staging for {world_name}",
             step=f"Cleanup {world_name}",
             run_id=run_id,
-            tools_names=["queryTraits", "queryUnconfirmedTraits", "deleteUnconfirmedTrait"],
+            tools_names=["queryClaims", "queryUnconfirmedClaims", "deleteUnconfirmedClaim"],
             submit_tool_name="submit_cleanup",
             history=history
         )

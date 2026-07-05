@@ -235,26 +235,70 @@ def reset_activity():
     return {"status": "success"}
 
 @router.get("/logs/file")
-def get_file_logs(limit: int = 100, filter: Optional[str] = None):
+def get_file_logs(
+    limit: Optional[int] = 100, 
+    offset: Optional[int] = 0,
+    filter: Optional[str] = None, 
+    agent: Optional[str] = None, 
+    world: Optional[str] = None, 
+    model: Optional[str] = None, 
+    event_type: Optional[str] = None,
+    tool: Optional[str] = None
+):
     from app.core.agent_logger import LOG_FILE
     from pathlib import Path
     if not LOG_FILE.exists():
-        return []
+        return {"logs": [], "total": 0, "has_more": False}
     try:
-        with open(LOG_FILE, "rb") as f:
-            f.seek(0, 2)
-            file_size = f.tell()
-            buffer = b""
-            pointer = file_size
-            while pointer > 0 and len(buffer.split(b"\n")) <= limit + 1:
-                read_size = min(pointer, 4096)
-                pointer -= read_size
-                f.seek(pointer)
-                buffer = f.read(read_size) + buffer
-            lines = buffer.decode("utf-8").splitlines()
-            if filter:
-                lines = [l for l in lines if filter.lower() in l.lower()]
-            return lines[-limit:]
+        has_filters = any([filter, agent, world, model, event_type, tool])
+        
+        with open(LOG_FILE, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+            
+        results = []
+        for line in lines:
+            line = line.strip()
+            if not line: continue
+            
+            parts = line.split("] ")
+            if len(parts) < 6:
+                if filter and filter.lower() not in line.lower():
+                    continue
+                results.append(line)
+                continue
+            
+            log_agent = parts[1].strip("[")
+            log_model = parts[2].strip("[")
+            log_world = parts[4].strip("[")
+            log_type = parts[5].strip("[")
+            log_content = " ".join(parts[6:])
+            
+            if agent and agent.lower() not in log_agent.lower(): continue
+            if world and world.lower() not in log_world.lower(): continue
+            if model and model.lower() not in log_model.lower(): continue
+            if event_type and event_type.upper() != log_type.upper(): continue
+            if filter and filter.lower() not in line.lower(): continue
+            if tool and tool.lower() not in log_content.lower(): continue
+            
+            results.append(line)
+        
+        total = len(results)
+        
+        if not has_filters:
+            # Tail read logic: return most recent first
+            # offset 0, limit 100 -> results[total-100 : total]
+            end_idx = total - offset
+            start_idx = total - (offset + (limit or 100))
+            sliced_logs = results[max(0, start_idx):max(0, end_idx)]
+        else:
+            # Filtered logs: return in chronological order
+            sliced_logs = results[offset : offset + (limit or 100)]
+
+        return {
+            "logs": sliced_logs, 
+            "total": total, 
+            "has_more": (total - (offset + (limit or 100)) > 0) if not has_filters else (offset + (limit or 100) < total)
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error reading logs: {str(e)}")
 

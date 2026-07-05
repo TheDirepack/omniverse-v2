@@ -1,7 +1,29 @@
 import { useState, useEffect, useMemo } from "react";
-import type { World, Anomaly, Trait } from "../types";
+import type { World, Anomaly, Trait, Claim, UnconfirmedClaim } from "../types";
 import * as api from "../api";
 import { groupWorldsByTier } from "../lib/tiers";
+
+function ClaimSection({ title, claims, isUnconfirmed = false }: { title: string; claims: Claim[] | UnconfirmedClaim[]; isUnconfirmed?: boolean }) {
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <h4 style={{ color: "#94a3b8", fontSize: "0.9rem", marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.05em" }}>{title}</h4>
+      <div style={{ display: "grid", gap: 8 }}>
+        {claims.map((c, i) => (
+          <div key={c.id || i} style={{ display: "flex", justifyContent: "space-between", padding: "8px", background: isUnconfirmed ? "#2d2a2e" : "#1e293b", borderRadius: 4, border: `1px solid ${isUnconfirmed ? "#4a3f4e" : "#334155"}` }}>
+            <span style={{ color: "#cbd5e1", fontSize: "0.9rem" }}>
+              {typeof c === 'object' && 'subject' in c ? c.subject : 'Unknown'} 
+              <span style={{ color: "#64748b", margin: "0 8px" }}>$\rightarrow$ {c.predicate} $\rightarrow$</span> 
+              {typeof c === 'object' && 'object_val' in c ? c.object_val : (c as any).object_literal || 'Unknown'}
+            </span>
+            <span style={{ fontSize: "0.7rem", color: "#94a3b8", marginLeft: 8 }}>
+              {isUnconfirmed ? (c as any).confidence : (c as any).support_count}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 function TraitSection({ category, traits, isUnconfirmed = false }: { category: string; traits: Trait[] | any[]; isUnconfirmed?: boolean }) {
   return (
@@ -59,10 +81,12 @@ function ComparisonMatrix({ selectedWorlds, allTraits }: { selectedWorlds: World
   );
 }
 
-function WorldDetail({ world, anomalies, traits, unconfirmedTraits }: { world: World; anomalies: Anomaly[]; traits: Trait[]; unconfirmedTraits: any[] }) {
+function WorldDetail({ world, anomalies, traits, unconfirmedTraits, claims, unconfirmedClaims }: { world: World; anomalies: Anomaly[]; traits: Trait[]; unconfirmedTraits: any[]; claims: Claim[]; unconfirmedClaims: UnconfirmedClaim[] }) {
   const worldAnomalies = anomalies.filter(a => a.world_id === world.id);
   const worldTraits = traits.filter(t => t.universe_id === world.id);
   const worldUnconfirmed = unconfirmedTraits.filter(t => t.universe_name === world.name);
+  const worldClaims = claims.filter(c => c.universe_scope === world.id);
+  const worldUnconfirmedClaims = unconfirmedClaims.filter(c => c.universe_name === world.name);
   
   const groupedTraits = worldTraits.reduce((acc, t) => {
     const cat = t.category || "Other";
@@ -92,19 +116,27 @@ function WorldDetail({ world, anomalies, traits, unconfirmedTraits }: { world: W
       </div>
       
       <div style={{ marginTop: 24 }}>
-        <h3>Verified Database Traits</h3>
-        {Object.entries(groupedTraits).map(([cat, ts]) => (
-          <TraitSection key={cat} category={cat} traits={ts} />
-        ))}
-        {worldTraits.length === 0 && <p className="muted">No structured traits found in main DB.</p>}
+        <h3>Verified Knowledge Graph</h3>
+        <ClaimSection title="Verified Claims" claims={worldClaims} />
+        <div style={{ marginTop: 16 }}>
+          <h4>Structured Traits</h4>
+          {Object.entries(groupedTraits).map(([cat, ts]) => (
+            <TraitSection key={cat} category={cat} traits={ts} />
+          ))}
+          {worldTraits.length === 0 && <p className="muted">No structured traits found in main DB.</p>}
+        </div>
       </div>
 
       <div style={{ marginTop: 24 }}>
         <h3>Unverified Research Notes</h3>
-        {Object.entries(groupedUnconfirmed).map(([cat, ts]) => (
-          <TraitSection key={cat} category={cat} traits={ts} isUnconfirmed />
-        ))}
-        {worldUnconfirmed.length === 0 && <p className="muted">No unconfirmed traits found in staging DB.</p>}
+        <ClaimSection title="Staging Claims" claims={worldUnconfirmedClaims} isUnconfirmed />
+        <div style={{ marginTop: 16 }}>
+          <h4>Staging Traits</h4>
+          {Object.entries(groupedUnconfirmed).map(([cat, ts]) => (
+            <TraitSection key={cat} category={cat} traits={ts} isUnconfirmed />
+          ))}
+          {worldUnconfirmed.length === 0 && <p className="muted">No unconfirmed traits found in staging DB.</p>}
+        </div>
       </div>
 
       {worldAnomalies.length > 0 && (
@@ -133,7 +165,9 @@ function DatabasePanel() {
   const [worlds, setWorlds] = useState<World[]>([]);
   const [anomalies, setAnomalies] = useState<Anomaly[]>([]);
   const [traits, setTraits] = useState<Trait[]>([]);
+  const [claims, setClaims] = useState<Claim[]>([]);
   const [unconfirmedTraits, setUnconfirmedTraits] = useState<any[]>([]);
+  const [unconfirmedClaims, setUnconfirmedClaims] = useState<UnconfirmedClaim[]>([]);
   const [tierSystem, setTierSystem] = useState<string | null>(null);
   const [selectedWorldId, setSelectedWorldId] = useState<number | null>(null);
   const [compareIds, setCompareIds] = useState<number[]>([]);
@@ -150,12 +184,16 @@ function DatabasePanel() {
       setWorlds(data.worlds);
       setAnomalies(data.anomalies);
       
-      const [allTraits, allUnconfirmed] = await Promise.all([
+      const [allTraits, allClaims, allUnconfirmedTraits, allUnconfirmedClaims] = await Promise.all([
         api.fetchTraits(),
-        api.fetchUnconfirmedTraits()
+        api.fetchClaims(),
+        api.fetchUnconfirmedTraits(),
+        api.fetchUnconfirmedClaims()
       ]);
       setTraits(allTraits);
-      setUnconfirmedTraits(allUnconfirmed);
+      setClaims(allClaims);
+      setUnconfirmedTraits(allUnconfirmedTraits);
+      setUnconfirmedClaims(allUnconfirmedClaims);
     } catch (e) { console.error(e); }
   };
 
@@ -255,9 +293,10 @@ function DatabasePanel() {
           ) : (
             <p className="muted">Select at least two worlds to compare.</p>
           )
-        ) : (
-          selectedWorld ? <WorldDetail world={selectedWorld} anomalies={anomalies} traits={traits} unconfirmedTraits={unconfirmedTraits} /> : <p className="muted">Select a world to view details.</p>
-        )}
+                ) : (
+          selectedWorld ? <WorldDetail world={selectedWorld} anomalies={anomalies} traits={traits} unconfirmedTraits={unconfirmedTraits} claims={claims} unconfirmedClaims={unconfirmedClaims} /> : <p className="muted">Select a world to view details.</p>
+        )
+}
         {anomalies.filter(a => a.world_id === null).length > 0 && (
           <div className="anomaly-list" style={{ marginTop: 16 }}>
             <h4>Global Anomalies</h4>

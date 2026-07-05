@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import type { World, Trait } from "../types";
+import type { World, Trait, Claim } from "../types";
 import * as api from "../api";
 
 function TraitRow({ world, traits }: { world: World; traits: Trait[] }) {
@@ -35,21 +35,69 @@ function TraitRow({ world, traits }: { world: World; traits: Trait[] }) {
   );
 }
 
+function ClaimRow({ world, claims }: { world: World; claims: Claim[] }) {
+  return (
+    <div style={{ 
+      display: "flex", 
+      flexDirection: "column",
+      gap: 8, 
+      padding: "12px", 
+      background: "#1e293b", 
+      borderRadius: 8, 
+      border: "1px solid #334155", 
+      marginBottom: 12,
+    }}>
+      <div style={{ fontWeight: 600, color: "#f1f5f9", marginBottom: 4 }}>{world.name}</div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+        {claims.map(c => (
+          <div key={c.id} style={{ 
+            padding: "4px 8px", 
+            background: "#0f172a", 
+            borderRadius: 4, 
+            border: "1px solid #475569", 
+            fontSize: "0.8rem",
+            display: "flex",
+            alignItems: "center",
+            gap: 6
+          }}>
+            <span style={{ color: "#94a3b8" }}>{c.predicate}</span>
+            <span style={{ color: "#64748b" }}>$\rightarrow$</span>
+            <span style={{ color: "#cbd5e1" }}>{c.object_literal ?? "Entity ID: " + c.object_entity_id}</span>
+            <span style={{ 
+              fontSize: "0.7rem", 
+              padding: "0 4px", 
+              background: "#334155", 
+              borderRadius: 3, 
+              color: "#94a3b8" 
+            }}>
+              {c.support_count}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function TraitViewerPanel() {
   const [worlds, setWorlds] = useState<World[]>([]);
   const [traits, setTraits] = useState<Trait[]>([]);
-  const [filterOnlyWithTraits, setFilterOnlyWithTraits] = useState(false);
+  const [claims, setClaims] = useState<Claim[]>([]);
+  const [viewMode, setViewMode] = useState<"traits" | "claims">("traits");
+  const [filterOnlyWithData, setFilterOnlyWithData] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     async function load() {
       try {
-        const [results, allTraits] = await Promise.all([
+        const [results, allTraits, allClaims] = await Promise.all([
           api.fetchResults(),
-          api.fetchTraits()
+          api.fetchTraits(),
+          api.fetchClaims()
         ]);
         setWorlds(results.worlds);
         setTraits(allTraits);
+        setClaims(allClaims);
       } catch (e) {
         console.error(e);
       } finally {
@@ -59,37 +107,58 @@ export default function TraitViewerPanel() {
     load();
   }, []);
 
-  const worldsWithTraits = useMemo(() => {
+  const worldsWithData = useMemo(() => {
     return worlds.map(w => ({
       world: w,
-      worldTraits: traits.filter(t => t.universe_id === w.id)
+      worldTraits: traits.filter(t => t.universe_id === w.id),
+      worldClaims: claims.filter(c => c.universe_scope === w.id)
     })).filter(item => {
-      if (!filterOnlyWithTraits) return true;
-      return item.worldTraits.length > 0;
+      if (!filterOnlyWithData) return true;
+      return item.worldTraits.length > 0 || item.worldClaims.length > 0;
     });
-  }, [worlds, traits, filterOnlyWithTraits]);
+  }, [worlds, traits, claims, filterOnlyWithData]);
 
-  if (loading) return <div className="muted" style={{ padding: 24 }}>Loading traits...</div>;
+  if (loading) return <div className="muted" style={{ padding: 24 }}>Loading database...</div>;
 
   return (
     <section className="panel-grid single">
       <div className="panel">
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
-          <h1>Main Database Traits</h1>
+          <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+            <h1>Main Database</h1>
+            <div style={{ display: "flex", background: "#0f172a", padding: 4, borderRadius: 6, border: "1px solid #334155" }}>
+              <button 
+                className={viewMode === "traits" ? "chip active" : "chip"} 
+                onClick={() => setViewMode("traits")}
+                style={{ border: "none", background: "none", cursor: "pointer" }}
+              >
+                Traits
+              </button>
+              <button 
+                className={viewMode === "claims" ? "chip active" : "chip"} 
+                onClick={() => setViewMode("claims")}
+                style={{ border: "none", background: "none", cursor: "pointer" }}
+              >
+                Claims
+              </button>
+            </div>
+          </div>
           <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", fontSize: "0.9rem", color: "#94a3b8" }}>
             <input 
               type="checkbox" 
-              checked={filterOnlyWithTraits} 
-              onChange={e => setFilterOnlyWithTraits(e.target.checked)} 
+              checked={filterOnlyWithData} 
+              onChange={e => setFilterOnlyWithData(e.target.checked)} 
             />
-            Only worlds with traits
+            Only worlds with data
           </label>
         </div>
 
         <div style={{ display: "flex", flexDirection: "column" }}>
-          {worldsWithTraits.length > 0 ? (
-            worldsWithTraits.map(({ world, worldTraits }) => (
-              <TraitRow key={world.id} world={world} traits={worldTraits} />
+          {worldsWithData.length > 0 ? (
+            worldsWithData.map(({ world, worldTraits, worldClaims }) => (
+              viewMode === "traits" 
+                ? <TraitRow key={world.id} world={world} traits={worldTraits} />
+                : <ClaimRow key={world.id} world={world} claims={worldClaims} />
             ))
           ) : (
             <p className="muted">No worlds found matching the current filter.</p>

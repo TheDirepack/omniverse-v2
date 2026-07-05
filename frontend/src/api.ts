@@ -36,13 +36,23 @@ export async function fetchTraits(universeIds?: number[]): Promise<Trait[]> {
   return apiFetch(`/api/research/traits${query}`);
 }
 
+export async function fetchClaims(universeIds?: number[]): Promise<Claim[]> {
+  const query = universeIds ? `?universe_ids=${universeIds.join(",")}` : "";
+  return apiFetch(`/api/research/claims${query}`);
+}
+
 export async function fetchUnconfirmedTraits(universeNames?: string[]): Promise<UnconfirmedTrait[]> {
   const query = universeNames ? `?universe_ids=${universeNames.join(",")}` : "";
   return apiFetch(`/api/research/traits/unconfirmed${query}`);
 }
 
+export async function fetchUnconfirmedClaims(universeNames?: string[]): Promise<UnconfirmedClaim[]> {
+  const query = universeNames ? `?universe_ids=${universeNames.join(",")}` : "";
+  return apiFetch(`/api/research/claims/unconfirmed${query}`);
+}
 
 export async function fetchWorlds(): Promise<WorldRecord[]> {
+
   return apiFetch("/api/worlds");
 }
 
@@ -161,9 +171,27 @@ export async function extrapolate(payload: { scope: "all" | "worlds" | "tier"; w
   });
 }
 
-export async function fetchFileLogs(filter?: string): Promise<string[]> {
-  const query = filter ? `?filter=${encodeURIComponent(filter)}` : "";
-  return apiFetch(`/api/runs/logs/file${query}`);
+export async function fetchFileLogs(filters: { 
+  limit?: number; 
+  offset?: number;
+  filter?: string; 
+  agent?: string; 
+  world?: string; 
+  model?: string; 
+  event_type?: string; 
+  tool?: string; 
+}): Promise<{ logs: string[]; total: number; has_more: boolean }> {
+  const params = new URLSearchParams();
+  if (filters.limit) params.append("limit", filters.limit.toString());
+  if (filters.offset !== undefined) params.append("offset", filters.offset.toString());
+  if (filters.filter) params.append("filter", filters.filter);
+  if (filters.agent) params.append("agent", filters.agent);
+  if (filters.world) params.append("world", filters.world);
+  if (filters.model) params.append("model", filters.model);
+  if (filters.event_type) params.append("event_type", filters.event_type);
+  if (filters.tool) params.append("tool", filters.tool);
+  
+  return apiFetch(`/api/runs/logs/file?${params.toString()}`);
 }
 
 export function createEventSource(runId: string): EventSource {

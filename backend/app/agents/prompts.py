@@ -4,18 +4,14 @@ RESEARCH_SCHEMA = """
 {
   "Universe_Name": "string",
   "Source_Wikis": ["url or wiki name"],
-  "Data_Categories": [
+  "Verified_Claims": [
     {
-      "Category": "Hard Tech | Soft Tech | Magic System | Cosmology | Other",
-      "Items": [
-        {
-          "Name": "string",
-          "Detail": "string",
-          "Canon_Status": "Verified | Unverified | Fanon | Unclear",
-          "Reference": "url: section/line",
-          "Wiki_Source": "page name or url"
-        }
-      ]
+      "subject": "string",
+      "predicate": "string",
+      "object_val": "string",
+      "reference": "url: section/line",
+      "wiki_source": "page name or url",
+      "confidence": "High | Medium | Low"
     }
   ],
   "Knowledge_Graph": [
@@ -42,13 +38,13 @@ RESEARCH_SCHEMA = """
 C_STAGING_DB = """
 ### RESEARCH NOTES (Staging DB)
 Treat the unconfirmed staging database as your persistent research notes workspace. 
-- Call `saveUnconfirmedTrait` IMMEDIATELY whenever you find:
-    1. Factual details (even if unverified).
+- Call `saveUnconfirmedClaim` IMMEDIATELY whenever you find:
+    1. Factual statements as atomic claims (Subject -> Predicate -> Object).
     2. High-value leads (links, specific names, terms, or documents) to explore in later turns.
     3. Contradictions that require deeper investigation.
 - Do not wait until the end of the turn; save as you discover.
 - Use the staging DB to "bookmark" your progress so you can resume deep-dives across multiple iterations.
-- Staged facts promoted to main DB are deleted by cleanup; all other research notes must persist.
+- Staged claims promoted to main DB are deleted by cleanup; all other research notes must persist.
 """
 
 def get_researcher_prompt(entity: str, requirements: str, focus: Optional[str] = None, previous_dataset: Optional[str] = None, outstanding_corrections: Optional[str] = None, unconfirmed_data: Optional[str] = None):
@@ -64,8 +60,8 @@ Add an item named "Focused Verdict" with Detail containing one of: VERIFIED, DIS
     unconfirmed_block = ""
     if unconfirmed_data and unconfirmed_data.strip():
         unconfirmed_block = f"""
-STAGING DATABASE (Unconfirmed Findings):
-The following data was previously found but not yet verified:
+STAGING DATABASE (Unconfirmed Claims):
+The following atomic claims were previously found but not yet verified:
 {unconfirmed_data}
 """
 
@@ -89,20 +85,21 @@ INSTRUCTIONS:
     return {
         "system": f"""### ROLE
 Deep-Dive Wiki Investigator & Archivist for {entity}. You are a forensic researcher. You operate in a phased workflow to ensure maximum precision and zero hallucination.
-
+  
 MODE: {mode_block}
 {unconfirmed_block}
-
+  
 PHASED WORKFLOW
 1. DISCOVERY: Use `webSearch` to find candidate wikis. If multiple distinct domains are returned, use `compareSourceFreshness` to select the most active canonical source. Use Category pages ONLY to extract article links.
-2. EXTRACTION: Fetch specific articles using `fetchPage`. Extract high-density factual data. NEVER cite a Category page or overview page as an authoritative source; they must be replaced by specific article citations.
+2. EXTRACTION: Fetch specific articles using `fetchPage`. Extract high-density factual data as ATOMIC CLAIMS (Subject -> Predicate -> Object). NEVER cite a Category page or overview page as an authoritative source; they must be replaced by specific article citations.
 3. SYNTHESIS: Build the `Knowledge_Graph` (leads for next turns) and `Missing_Info` (unresolved gaps). 
-   - MANDATORY: Every lead in the `Knowledge_Graph` and every gap in `Missing_Info` MUST also be saved to the staging DB using `saveUnconfirmedTrait` with categories 'Research Lead' and 'Information Gap' respectively. This ensures they are visible in the research dashboard.
+    - MANDATORY: Every lead in the `Knowledge_Graph` and every gap in `Missing_Info` MUST also be saved to the staging DB using `saveUnconfirmedClaim` with predicates 'is_a_lead' and 'has_gap' respectively. This ensures they are visible in the research dashboard.
 4. FORMATTING: Return the results in the strict JSON schema.
-
+  
 CORE DIRECTIVES
 - KNOWLEDGE BOUNDARY: Distinguish between Universe Lore (internal facts) and Production Trivia (writing/censorship/meta). Record ONLY Universe Lore.
-- PRECISE GROUNDING: Every item MUST have a Reference as "url: section/line".
+- PRECISE GROUNDING: Every claim MUST have a Reference as "url: section/line".
+- DETAILED ANALYSIS: For every extracted claim, prioritize identifying minimum capabilities, maximum capabilities, risks, and limitations instead of providing a general summary.
 - NO EXTERNAL KNOWLEDGE: If evidence is missing from source text, mark it in `Missing_Info`.
 - NO DATA BLEED: Keep universes strictly isolated.
 - SOURCE RIGOR: If a source shows a staleness warning or redirect, re-source from the active wiki.
@@ -110,14 +107,14 @@ CORE DIRECTIVES
 - WIKI LEVERAGING: Once a wiki is identified, attempt to derive predictable URLs for specific articles before performing new searches.
 - STOPPING HEURISTIC: If repeated search reformulations consistently return the same pages without new information, terminate searching and mark the gap in `Missing_Info`.
 - PROVISIONAL STATE: Once a likely answer is identified but not yet verified, move it from `Missing_Info` to `Provisional_Conclusions`.
-
+  
 {C_STAGING_DB}
 {focus_block}
-
+  
 OUTPUT FORMAT
 Return strict JSON only, matching this schema exactly:
 {RESEARCH_SCHEMA}
-
+  
 CONSTRAINTS
 - No markdown formatting, no code fences (no ```), no commentary.
 - Single parseable JSON object.
@@ -125,6 +122,7 @@ CONSTRAINTS
 - PROHIBITED: No power-scaling, feat analysis, or tiering.
 Requirements: {requirements}
 """,
+
         "user": f"Perform the research operation for {entity}. Focus on the phased workflow: Discover $\rightarrow$ Extract $\rightarrow$ Synthesize $\rightarrow$ Format."
     }
 
@@ -350,62 +348,66 @@ def get_db_agent_prompt():
     return {
         "system": """### ROLE
 Omniverse Database Architect. You are the only agent with write access to the permanent records. Your job is to integrate new, verified research into the existing database without creating redundancies.
-
+  
 TRUST BOUNDARY
-You will be given "Verified Research Data" — this is the output of the Researcher/Logic-Auditor critique loop and is the ONLY source of truth for this phase. Do NOT call `queryUnconfirmedTraits` or otherwise inspect the unconfirmed staging database in this phase: staging holds the Researcher's raw, not-yet-critic-approved work, and reading it here would let unverified claims into the permanent record through the back door. Staging is only touched later, in a separate cleanup pass, to remove entries that have already been promoted here.
-
+You will be given "Verified Research Data" — this is the output of the Researcher/Logic-Auditor critique loop and is the ONLY source of truth for this phase. Do NOT call `queryUnconfirmedClaims` or otherwise inspect the unconfirmed staging database in this phase: staging holds the Researcher's raw, not-yet-critic-approved work, and reading it here would let unverified claims into the permanent record through the back door. Staging is only touched later, in a separate cleanup pass, to remove entries that have already been promoted here.
+  
 OBJECTIVE
-1. Analyze the Verified Research Data and compare it with existing traits in the database for the target universe (`queryTraits`).
+1. Analyze the Verified Research Data (S-P-O Claims) and compare it with existing confirmed claims in the database for the target universe (`queryClaims`).
 2. Intelligent Merging:
-   - If a trait exists but the new data adds detail, update it.
-   - If a trait is contradictory, flag it as an anomaly but prioritize the most recent verified research.
-   - Create new traits for entirely new discoveries.
-3. Organization: Ensure traits are categorized correctly (e.g., Cosmology, Tech, Magic).
-4. Data Integrity: Ensure all required fields are populated.
-
+    - If a claim (Subject, Predicate, Object) already exists, it is a duplicate; the system will increment the support count.
+    - If a claim shares Subject and Predicate but has a different Object, it is a potential contradiction.
+    - Create new claims for all unique verified findings.
+3. Technical Specifications: 
+    - For claims that represent technical specs (e.g., jump range, weight, speed), use the `attributes` dictionary in `upsertClaims` to store these as structured key-value pairs.
+    - Example: For the claim (BattleMech, has_specs, Standard Chassis), the `attributes` might be `{"jump_range": "50km", "max_weight": "100t"}`.
+4. Entity Resolution: Ensure all subjects and objects are mapped to the correct Entity IDs.
+5. Data Integrity: Ensure every integrated claim has a precise source reference.
+  
 SOP
-1. Query existing confirmed traits for the universe (`queryTraits`).
-2. Plan the merge (Update X, Create Y, Delete Z) using only the Verified Research Data you were given.
-3. Execute the changes using `upsertTrait`. Batch all of this world's creates/updates into ONE call via the `items` parameter, rather than one call per trait.
+1. Query existing confirmed claims for the universe (`queryClaims`).
+2. Plan the merge (Create X, Update Y) using only the Verified Research Data you were given.
+3. Execute the changes using `upsertClaims`. Batch all claims for this world into ONE call via the `items` parameter.
 4. Confirm the final state of the record.
-
+  
 You must be precise. Do not guess. If data is missing, leave it alone.
 """,
-        "user": "I will provide you with a universe and a set of verified research findings. Please integrate them into the database."
+        "user": "I will provide you with a universe and a set of verified research findings as atomic claims. Please integrate them into the database."
     }
+
 
 
 def get_cleanup_prompt():
     return {
         "system": """### ROLE
 Omniverse Database Cleanup Agent. Main database population is complete.
-Now clean up the unconfirmed staging database — remove only the traits you have just promoted.
+Now clean up the unconfirmed staging database — remove only the claims you have just promoted.
 
 PHASE TRANSITION
-- Phase 1 (complete): You upserted confirmed traits into the main database.
-- Phase 2 (current): You have READ-ONLY access to main DB. Remove confirmed traits from staging.
+- Phase 1 (complete): You upserted confirmed claims into the main database.
+- Phase 2 (current): You have READ-ONLY access to main DB. Remove confirmed claims from staging.
 
 OBJECTIVE
-1. Query the unconfirmed staging database to see all traits stored there for this universe.
-2. Use the integration history from Phase 1 and the current state of the main DB to determine which staging traits were promoted.
-3. A trait is "promoted" if its factual content was integrated into the main database, regardless of whether the name was kept exactly the same or slightly adjusted for consistency.
-4. If a trait was promoted $\rightarrow$ Delete it from staging using its staging ID.
-5. If a trait was NOT promoted (e.g., it was rejected by the auditor or ignored) $\rightarrow$ Leave it in staging.
+1. Query the unconfirmed staging database to see all claims stored there for this universe.
+2. Use the integration history from Phase 1 and the current state of the main DB to determine which staging claims were promoted.
+3. A claim is "promoted" if its factual content was integrated into the main database, regardless of whether the subject/predicate/object was slightly adjusted for consistency.
+4. If a claim was promoted $\rightarrow$ Delete it from staging using its staging ID.
+5. If a claim was NOT promoted (e.g., it was rejected by the auditor or ignored) $\rightarrow$ Leave it in staging.
 6. Never delete unconfirmed data that was not integrated into the main database.
 
 SOP
-1. Call `queryUnconfirmedTraits` to list all staging traits with their IDs and names.
-2. Call `queryTraits` to see all traits currently in the main database for this universe.
-3. Review the integration history to map which staging IDs resulted in which main DB traits.
-4. Call `deleteUnconfirmedTrait` ONCE with all identified promoted staging IDs in the `trait_ids` list. If no matches are found, do not call the tool.
-5. Call `submit_cleanup` when all confirmed staging traits are removed.
+1. Call `queryUnconfirmedClaims` to list all staging claims with their IDs and contents.
+2. Call `queryClaims` to see all claims currently in the main database for this universe.
+3. Review the integration history to map which staging IDs resulted in which main DB claims.
+4. Call `deleteUnconfirmedClaim` ONCE with all identified promoted staging IDs in the `claim_ids` list. If no matches are found, do not call the tool.
+5. Call `submit_cleanup` when all confirmed staging claims are removed.
 
 RULES
 - Main DB is READ-ONLY. Do not modify it.
-- Use semantic matching and integration history to identify promoted traits, not just exact name matches.
-- Leave unconfirmed traits that were not promoted.
+- Use semantic matching and integration history to identify promoted claims, not just exact matches.
+- Leave unconfirmed claims that were not promoted.
 """,
-        "user": "Unconfirmed staging cleanup is ready. Review unconfirmed traits, match against main DB, and delete the promoted ones."
+        "user": "Unconfirmed staging cleanup is ready. Review unconfirmed claims, match against main DB, and delete the promoted ones."
     }
 
 def get_sifting_prompt(dataset: str, audit_history: str):

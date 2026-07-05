@@ -101,18 +101,34 @@ class EntityAlias(SQLModel, table=True):
     alias: str = Field(index=True)
     universe_id: int = Field(foreign_key="universe.id")
 
+class Predicate(SQLModel, table=True):
+    canonical_name: str = Field(primary_key=True)
+    description: Optional[str] = None
+
+class PredicateAlias(SQLModel, table=True):
+    alias: str = Field(primary_key=True)
+    canonical_name: str = Field(foreign_key="predicate.canonical_name")
+
 class Claim(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     subject_id: int = Field(foreign_key="entity.id")
-    predicate: str = Field(index=True)
-    object_id: int = Field(foreign_key="entity.id")
+    predicate: str = Field(index=True) # Stores canonical predicate
+    object_entity_id: Optional[int] = Field(default=None, foreign_key="entity.id")
+    object_literal: Optional[str] = None
     source_reference: Optional[str] = None
     source_wiki: Optional[str] = None
-    confidence_score: float = Field(default=0.0)
+    support_count: int = Field(default=1)
+    contradiction_count: int = Field(default=0)
     status: str = Field(default="PENDING")  # PENDING, VERIFIED, CONTRADICTED, SUPERSEDED
     universe_scope: Optional[int] = Field(default=None, foreign_key="universe.id")
     superseded_by: Optional[int] = Field(default=None, foreign_key="claim.id")
     created_at: datetime = Field(default_factory=datetime.utcnow)
+
+class ClaimAttribute(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    claim_id: int = Field(foreign_key="claim.id", ondelete="CASCADE")
+    key: str = Field(index=True)
+    value: str
 
 class InferenceRule(SQLModel, table=True):
     # A composition rule: predicate_1 followed by predicate_2 (via a shared

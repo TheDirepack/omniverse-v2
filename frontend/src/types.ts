@@ -60,6 +60,21 @@ export type Trait = {
   reference: string | null;
   wiki_source: string | null;
 };
+
+export type Claim = {
+  id: number;
+  subject_id: number;
+  predicate: string;
+  object_entity_id: number | null;
+  object_literal: string | null;
+  source_reference: string | null;
+  source_wiki: string | null;
+  support_count: number;
+  contradiction_count: number;
+  status: string;
+  universe_scope: number | null;
+};
+
 export type UnconfirmedTrait = {
   id: number;
   universe_name: string;
@@ -68,6 +83,17 @@ export type UnconfirmedTrait = {
   value: string;
   confidence: number;
   source: string | null;
+};
+
+export type UnconfirmedClaim = {
+  id: number;
+  universe_name: string;
+  subject: string;
+  predicate: string;
+  object_val: string;
+  reference: string | null;
+  wiki_source: string | null;
+  confidence: string | null;
 };
 
 

@@ -1,9 +1,10 @@
 from typing import Any, Dict, List, Optional
 from sqlmodel import Session, select
 from app.db.session import engine
-from app.db.schema import Universe, Trait
+from app.db.schema import Universe, Trait, Entity, Claim, ClaimAttribute, EntityAlias
+from app.services.predicate_service import PredicateService
 from app.db.unconfirmed_session import engine as unconfirmed_engine
-from app.db.unconfirmed_schema import UnconfirmedUniverse, UnconfirmedTrait
+from app.db.unconfirmed_schema import UnconfirmedUniverse, UnconfirmedTrait, UnconfirmedClaim
 from app.core.web_search import web_searcher
 from app.core.web_fetch import web_fetcher
 from app.core.context import get_current_universe
@@ -151,6 +152,129 @@ async def tool_upsert_trait(args: Dict[str, Any]) -> str:
             parts.append(f"Skipped (missing name): {', '.join(skipped)}")
         return f"For {universe_name} — " + ("; ".join(parts) if parts else "no changes.")
 
+
+async def tool_upsert_claims(args: Dict[str, Any]) -> str:
+    """
+    Integrates atomic claims (Subject, Predicate, Object) into the permanent records.
+    Expects `items`: [{subject, predicate, object_val, source_reference, source_wiki, confidence, attributes: {key: value}}, ...].
+    """
+    universe_name = get_current_universe()
+    if not universe_name:
+        return "Error: No active universe context."
+
+    items = args.get("items")
+    if not items:
+        # support single claim for convenience
+        items = [{
+            "subject": args.get("subject", ""),
+            "predicate": args.get("predicate", ""),
+            "object_val": args.get("object_val", ""),
+            "source_reference": args.get("source_reference"),
+            "source_wiki": args.get("wiki_source"),
+            "confidence": args.get("confidence", 0.0),
+            "attributes": args.get("attributes", {})
+        }]
+
+    pred_service = PredicateService()
+
+    with Session(engine) as session:
+        universe = session.exec(select(Universe).where(Universe.name == universe_name)).first()
+        if not universe:
+            return f"Universe {universe_name} not found."
+
+        created, updated, skipped = [], [], []
+
+        def get_or_create_entity(name: str, e_type: str = "Unknown"):
+            entity = session.exec(select(Entity).where(Entity.universe_id == universe.id, Entity.name == name)).first()
+            if not entity:
+                alias = session.exec(select(EntityAlias).where(EntityAlias.universe_id == universe.id, EntityAlias.alias == name)).first()
+                if alias:
+                    entity = session.get(Entity, alias.entity_id)
+            
+            if not entity:
+                entity = Entity(name=name, entity_type=e_type, universe_id=universe.id)
+                session.add(entity)
+                session.flush()
+            return entity
+
+        for item in items:
+            s_name = item.get("subject", "")
+            raw_pred = item.get("predicate", "")
+            o_val = item.get("object_val", "")
+            if not all([s_name, raw_pred, o_val]):
+                skipped.append(f"Missing fields: {item}")
+                continue
+
+            # Normalization
+            predicate = pred_service.normalize(raw_pred)
+            
+            s_ent = get_or_create_entity(s_name)
+            
+            # Determine if object is an entity or literal
+            # In a real system, we might check if o_val is an existing entity or use an LLM
+            # For now, we'll check if it exists as an entity in this universe.
+            o_ent = session.exec(select(Entity).where(Entity.universe_id == universe.id, Entity.name == o_val)).first()
+            
+            o_entity_id = o_ent.id if o_ent else None
+            o_literal = None if o_ent else o_val
+
+            existing = session.exec(
+                select(Claim).where(
+                    Claim.subject_id == s_ent.id,
+                    Claim.predicate == predicate,
+                    (Claim.object_entity_id == o_entity_id) if o_entity_id else (Claim.object_literal == o_literal)
+                )
+            ).first()
+
+            if existing:
+                existing.source_reference = item.get("source_reference") or existing.source_reference
+                existing.source_wiki = item.get("source_wiki") or existing.source_wiki
+                existing.support_count += 1
+                session.add(existing)
+                updated.append(f"({s_name}, {predicate}, {o_val})")
+                target_claim = existing
+            else:
+                new_claim = Claim(
+                    subject_id=s_ent.id,
+                    predicate=predicate,
+                    object_entity_id=o_entity_id,
+                    object_literal=o_literal,
+                    source_reference=item.get("source_reference"),
+                    source_wiki=item.get("source_wiki"),
+                    support_count=1,
+                    universe_scope=universe.id,
+                    status="VERIFIED"
+                )
+                session.add(new_claim)
+                session.flush() # get ID
+                created.append(f"({s_name}, {predicate}, {o_val})")
+                target_claim = new_claim
+
+            # Handle attributes
+            attrs = item.get("attributes", {})
+            if isinstance(attrs, dict):
+                for k, v in attrs.items():
+                    # Use a composite key check or just append
+                    # For now, we overwrite if key exists for this claim
+                    existing_attr = session.exec(select(ClaimAttribute).where(
+                        ClaimAttribute.claim_id == target_claim.id, 
+                        ClaimAttribute.key == k
+                    )).first()
+                    if existing_attr:
+                        existing_attr.value = str(v)
+                        session.add(existing_attr)
+                    else:
+                        session.add(ClaimAttribute(claim_id=target_claim.id, key=k, value=str(v)))
+
+        session.commit()
+
+        parts = []
+        if created: parts.append(f"Created: {len(created)} claims")
+        if updated: parts.append(f"Updated: {len(updated)} claims")
+        if skipped: parts.append(f"Skipped: {len(skipped)} items")
+        return f"Integrated claims for {universe_name}: " + ("; ".join(parts) if parts else "no changes.")
+
+
 async def tool_query_unconfirmed_traits(args: Dict[str, Any]) -> str:
     universe_name = get_current_universe()
     if not universe_name:
@@ -262,6 +386,165 @@ async def tool_delete_unconfirmed_trait(args: Dict[str, Any]) -> str:
         result += " Errors: " + "; ".join(errors)
     return result
 
+
+async def tool_save_unconfirmed_claim(args: Dict[str, Any]) -> str:
+    """
+    Save unconfirmed claims for the active universe. 
+    Claims are atomic statements: (subject, predicate, object).
+    Prefer batching via `items`: [{subject, predicate, object_val, reference, wiki_source, confidence}, ...].
+    """
+    universe_name = get_current_universe()
+    if not universe_name:
+        return "Error: No active universe context."
+
+    items = args.get("items")
+    if not items:
+        single = {
+            "subject": args.get("subject", ""),
+            "predicate": args.get("predicate", ""),
+            "object_val": args.get("object_val", ""),
+            "reference": args.get("reference"),
+            "wiki_source": args.get("wiki_source"),
+            "confidence": args.get("confidence"),
+        }
+        items = [single]
+
+    saved, errors = [], []
+    with Session(unconfirmed_engine) as session:
+        universe = session.exec(select(UnconfirmedUniverse).where(UnconfirmedUniverse.name == universe_name)).first()
+        if not universe:
+            universe = UnconfirmedUniverse(name=universe_name)
+            session.add(universe)
+            session.flush()
+
+        for item in items:
+            subject = item.get("subject", "")
+            predicate = item.get("predicate", "")
+            object_val = item.get("object_val", "")
+            if not all([subject, predicate, object_val]):
+                errors.append(f"Skipped claim with missing required fields: {item}")
+                continue
+            session.add(UnconfirmedClaim(
+                universe_id=universe.id,
+                subject=subject,
+                predicate=predicate,
+                object_val=object_val,
+                reference=item.get("reference"),
+                wiki_source=item.get("wiki_source"),
+                confidence=item.get("confidence"),
+            ))
+            saved.append(f"({subject}, {predicate}, {object_val})")
+        session.commit()
+
+    result = f"Saved {len(saved)} unconfirmed claim(s) for {universe_name}."
+    if errors:
+        result += " Errors: " + "; ".join(errors)
+    return result
+
+
+async def tool_query_unconfirmed_claims(args: Dict[str, Any]) -> str:
+    universe_name = get_current_universe()
+    if not universe_name:
+        return "Error: No active universe context."
+
+    with Session(unconfirmed_engine) as session:
+        universe = session.exec(select(UnconfirmedUniverse).where(UnconfirmedUniverse.name == universe_name)).first()
+        if not universe:
+            return f"No unconfirmed data for {universe_name}."
+
+        claims = session.exec(
+            select(UnconfirmedClaim).where(UnconfirmedClaim.universe_id == universe.id)
+        ).all()
+        if not claims:
+            return f"No unconfirmed claims for {universe_name}."
+
+        return "\n".join([
+            f"ID: {c.id} | {c.subject} --{c.predicate}--> {c.object_val} | ref: {c.reference or 'N/A'} | conf: {c.confidence or 'N/A'}"
+            for c in claims
+        ])
+
+
+async def tool_delete_unconfirmed_claim(args: Dict[str, Any]) -> str:
+    """Accepts either a single `claim_id`, or a batch via `claim_ids`: [id, ...]."""
+    claim_ids = args.get("claim_ids")
+    if not claim_ids:
+        single_id = args.get("claim_id")
+        if not single_id:
+            return "Error: Missing claim_id or claim_ids."
+        claim_ids = [single_id]
+
+    universe_name = get_current_universe()
+    if not universe_name:
+        return "Error: No active universe context."
+
+    deleted, errors = [], []
+    with Session(unconfirmed_engine) as session:
+        universe = session.exec(select(UnconfirmedUniverse).where(UnconfirmedUniverse.name == universe_name)).first()
+        for claim_id in claim_ids:
+            claim = session.get(UnconfirmedClaim, claim_id)
+            if not claim:
+                errors.append(f"{claim_id} not found")
+                continue
+            if not universe or claim.universe_id != universe.id:
+                errors.append(f"{claim_id} does not belong to current universe")
+                continue
+            session.delete(claim)
+            deleted.append(str(claim_id))
+        session.commit()
+
+    result = f"Deleted {len(deleted)} unconfirmed claim(s): {', '.join(deleted) if deleted else 'none'}."
+    if errors:
+        result += " Errors: " + "; ".join(errors)
+    return result
+
+
+async def tool_query_claims(args: Dict[str, Any]) -> str:
+    universe_name = get_current_universe()
+    if not universe_name:
+        return "Error: No active universe context."
+
+    predicate_filter = args.get("predicate")
+
+    with Session(engine) as session:
+        universe = session.exec(select(Universe).where(Universe.name == universe_name)).first()
+        if not universe:
+            return f"Universe {universe_name} not found."
+
+        query = select(Claim).where(Claim.universe_scope == universe.id)
+        if predicate_filter:
+            query = query.where(Claim.predicate == predicate_filter)
+        
+        claims = session.exec(query).all()
+        if not claims:
+            return f"No verified claims found for {universe_name}."
+
+        return "\n".join([
+            f"ID: {c.id} | subj: {c.subject_id} | pred: {c.predicate} | obj: {c.object_entity_id or c.object_literal} | support: {c.support_count}"
+            for c in claims
+        ])
+
+
+async def tool_query_unconfirmed_claims(args: Dict[str, Any]) -> str:
+    universe_name = get_current_universe()
+    if not universe_name:
+        return "Error: No active universe context."
+
+    with Session(unconfirmed_engine) as session:
+        universe = session.exec(select(UnconfirmedUniverse).where(UnconfirmedUniverse.name == universe_name)).first()
+        if not universe:
+            return f"No unconfirmed data for {universe_name}."
+
+        claims = session.exec(
+            select(UnconfirmedClaim).where(UnconfirmedClaim.universe_id == universe.id)
+        ).all()
+        if not claims:
+            return f"No unconfirmed claims for {universe_name}."
+
+        return "\n".join([
+            f"ID: {c.id} | subj: {c.subject} | pred: {c.predicate} | obj: {c.object_val} | ref: {c.reference or 'N/A'} | conf: {c.confidence or 'N/A'}"
+            for c in claims
+        ])
+
 AGENT_TOOLS: Dict[str, Dict[str, Any]] = {
     "webSearch": {
         "func": tool_web_search,
@@ -332,9 +615,61 @@ AGENT_TOOLS: Dict[str, Dict[str, Any]] = {
             "required": []
         }
     },
+    "upsertClaims": {
+        "func": tool_upsert_claims,
+        "description": "Integrate atomic claims (Subject, Predicate, Object) into the permanent records. Use this to promote verified findings from the researcher. Prefer batching via `items`.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "subject": {"type": "string", "description": "The entity the claim is about."},
+                "predicate": {"type": "string", "description": "The relationship or property (e.g. 'is_a', 'located_in')."},
+                "object_val": {"type": "string", "description": "The target entity or value."},
+                "source_reference": {"type": "string", "description": "URL and section reference."},
+                "source_wiki": {"type": "string", "description": "Wiki page name or URL."},
+                "confidence": {"type": "number", "description": "Confidence score (0.0 to 1.0)."},
+                "items": {
+                    "type": "array",
+                    "description": "Batch mode (preferred): a list of claims to integrate.",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "subject": {"type": "string"},
+                            "predicate": {"type": "string"},
+                            "object_val": {"type": "string"},
+                            "source_reference": {"type": "string"},
+                            "source_wiki": {"type": "string"},
+                            "confidence": {"type": "number"}
+                        },
+                        "required": ["subject", "predicate", "object_val"]
+                    }
+                }
+            },
+            "required": []
+        }
+    },
     "queryUnconfirmedTraits": {
         "func": tool_query_unconfirmed_traits,
         "description": "Retrieve all unconfirmed traits for the active universe from the database.",
+        "parameters": {
+            "type": "object",
+            "properties": {},
+            "required": []
+        }
+    },
+    "queryClaims": {
+        "func": tool_query_claims,
+        "description": "Query verified claims from the main database for the current universe. Optionally filter by a specific predicate.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "predicate": {"type": "string", "description": "The predicate to filter by."}
+            },
+            "required": []
+        }
+    },
+    "queryUnconfirmedClaims": {
+        "func": tool_query_unconfirmed_claims,
+        "description": "Retrieve all unconfirmed atomic claims (S-P-O) for the active universe.",
         "parameters": {
             "type": "object",
             "properties": {},
@@ -375,6 +710,38 @@ AGENT_TOOLS: Dict[str, Dict[str, Any]] = {
             "required": []
         }
     },
+    "saveUnconfirmedClaim": {
+        "func": tool_save_unconfirmed_claim,
+        "description": "Save unconfirmed atomic claims (S-P-O) for the active universe. This is the primary way to persist granular knowledge. Prefer batching via `items`.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "subject": {"type": "string", "description": "The entity the claim is about."},
+                "predicate": {"type": "string", "description": "The relationship or property (e.g. 'is_a', 'located_in', 'has_power')."},
+                "object_val": {"type": "string", "description": "The value or target entity of the claim."},
+                "reference": {"type": "string", "description": "URL and section reference."},
+                "wiki_source": {"type": "string", "description": "Wiki page name or URL."},
+                "confidence": {"type": "string", "description": "Confidence level (high, medium, low)."},
+                "items": {
+                    "type": "array",
+                    "description": "Batch mode (preferred): a list of claims to save in one call.",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "subject": {"type": "string"},
+                            "predicate": {"type": "string"},
+                            "object_val": {"type": "string"},
+                            "reference": {"type": "string"},
+                            "wiki_source": {"type": "string"},
+                            "confidence": {"type": "string"}
+                        },
+                        "required": ["subject", "predicate", "object_val"]
+                    }
+                }
+            },
+            "required": []
+        }
+    },
     "deleteUnconfirmedTrait": {
         "func": tool_delete_unconfirmed_trait,
         "description": "Delete unconfirmed trait(s) by ID for the active universe. Prefer batching: pass `trait_ids` with every ID you're removing in one call rather than calling this once per ID.",
@@ -383,6 +750,18 @@ AGENT_TOOLS: Dict[str, Dict[str, Any]] = {
             "properties": {
                 "trait_id": {"type": "integer", "description": "Single-item mode: the ID of the unconfirmed trait to delete."},
                 "trait_ids": {"type": "array", "items": {"type": "integer"}, "description": "Batch mode (preferred): all IDs to delete in one call."}
+            },
+            "required": []
+        }
+    },
+    "deleteUnconfirmedClaim": {
+        "func": tool_delete_unconfirmed_claim,
+        "description": "Delete unconfirmed claim(s) by ID for the active universe.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "claim_id": {"type": "integer", "description": "Single-item mode: the ID of the unconfirmed claim to delete."},
+                "claim_ids": {"type": "array", "items": {"type": "integer"}, "description": "Batch mode (preferred): all IDs to delete in one call."}
             },
             "required": []
         }

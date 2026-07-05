@@ -12,6 +12,20 @@ def get_traits(universe_ids: Optional[str] = None):
     service = UniverseService()
     return service.get_traits(universe_ids)
 
+@router.get("/claims")
+def get_claims(universe_ids: Optional[str] = None):
+    from sqlmodel import Session, select
+    from app.db.schema import Claim, Universe
+    
+    with Session() as session:
+        query = select(Claim).join(Universe)
+        if universe_ids:
+            ids = [int(i) for i in universe_ids.split(",") if i.strip().isdigit()]
+            query = query.where(Claim.universe_scope.in_(ids))
+        
+        results = session.exec(query).all()
+        return [c.model_dump() for c in results]
+
 @router.get("/traits/unconfirmed")
 def get_unconfirmed_traits(universe_ids: Optional[str] = None):
     from sqlmodel import Session, select
@@ -30,6 +44,27 @@ def get_unconfirmed_traits(universe_ids: Optional[str] = None):
             trait_dict = trait.model_dump()
             trait_dict["universe_name"] = name
             output.append(trait_dict)
+            
+        return output
+
+@router.get("/claims/unconfirmed")
+def get_unconfirmed_claims(universe_ids: Optional[str] = None):
+    from sqlmodel import Session, select
+    from app.db.unconfirmed_session import engine as unconfirmed_engine
+    from app.db.unconfirmed_schema import UnconfirmedClaim, UnconfirmedUniverse
+    
+    with Session(unconfirmed_engine) as session:
+        query = select(UnconfirmedClaim, UnconfirmedUniverse.name).join(UnconfirmedUniverse)
+        if universe_ids:
+            names = [n.strip() for n in universe_ids.split(",") if n.strip()]
+            query = query.where(UnconfirmedUniverse.name.in_(names))
+        
+        results = session.exec(query).all()
+        output = []
+        for claim, name in results:
+            claim_dict = claim.model_dump()
+            claim_dict["universe_name"] = name
+            output.append(claim_dict)
             
         return output
 

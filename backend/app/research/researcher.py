@@ -75,8 +75,8 @@ async def research_single_world(world_name: str, run_id: str, focus: str | None 
     exec_service = ExecutionService()
     exec_service.log_transition(run_id, "Research Unit", f"Initiating incremental research for world: {stage_label}", "IN_PROGRESS", {})
 
-    researcher_tools = ["webSearch", "fetchPage", "compareSourceFreshness", "queryTraits", "queryUnconfirmedTraits", "saveUnconfirmedTrait"]
-    auditor_tools = ["fetchPage", "compareSourceFreshness", "queryTraits", "queryUnconfirmedTraits"]
+    researcher_tools = ["webSearch", "fetchPage", "compareSourceFreshness", "queryClaims", "queryUnconfirmedClaims", "saveUnconfirmedClaim"]
+    auditor_tools = ["fetchPage", "compareSourceFreshness", "queryClaims", "queryUnconfirmedClaims"]
 
     retry_handler = RetryHandler(max_iterations=3)
 

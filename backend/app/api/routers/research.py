@@ -39,7 +39,7 @@ def get_results():
     tier_service = TieringService()
     theory_service = TheoryService()
     
-    universes = uni_service.repo.get_all()
+    universes = uni_service.get_all_universes()
     tier_system = tier_service.repo.get_latest_rubric()
     
     universe_ids = [u.id for u in universes]

@@ -150,8 +150,8 @@ def real_server():
          "--log-level", "debug"],
         cwd=str(BACKEND_DIR),
         env=subprocess_env,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
         text=True,
     )
 

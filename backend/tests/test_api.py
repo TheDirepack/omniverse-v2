@@ -20,7 +20,7 @@ def test_get_traits_all():
         session.add(t)
         session.commit()
 
-    response = client.get("/api/traits")
+    response = client.get("/api/research/traits")
     assert response.status_code == 200
     data = response.json()
     assert isinstance(data, list)
@@ -45,14 +45,15 @@ def test_get_traits_filtered():
         session.add_all([t1, t2])
         session.commit()
 
-    response = client.get(f"/api/traits?universe_ids={u1_id}")
+    response = client.get(f"/api/research/traits?universe_ids={u1_id}")
     assert response.status_code == 200
     data = response.json()
     assert any(item["name"] == "Trait1" for item in data)
     assert not any(item["name"] == "Trait2" for item in data)
 
 def test_get_traits_empty():
-    response = client.get("/api/traits?universe_ids=999999")
+    response = client.get("/api/research/traits?universe_ids=999999")
     assert response.status_code == 200
     assert response.json() == []
+
 

@@ -36,13 +36,14 @@ def add_world(payload: AddWorldPayload, background_tasks: BackgroundTasks):
 @router.get("/")
 def get_worlds():
     service = UniverseService()
-    worlds = service.repo.get_all()
+    worlds = service.get_all_universes()
     return [{"id": w.id, "name": w.name, "summary": w.summary, "is_explored": w.is_explored} for w in worlds]
 
 @router.post("/{world_id}/reset-explored")
 def reset_world_explored(world_id: int):
     service = UniverseService()
-    service.reset_explored(world_id)
+    if not service.reset_explored(world_id):
+        raise HTTPException(status_code=404, detail="Universe not found")
     return {"status": "success"}
 
 @router.post("/reset-all-explored")

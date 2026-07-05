@@ -22,17 +22,17 @@ def test_get_traits_filtering(client):
         session.commit()
 
     # Test all traits
-    r_all = client.get("/api/traits")
+    r_all = client.get("/api/research/traits")
     assert r_all.status_code == 200
     assert len(r_all.json()) == 2
-
+    
     # Test filtered traits (only World 1)
-    r_filtered = client.get(f"/api/traits?universe_ids={u1_id}")
+    r_filtered = client.get(f"/api/research/traits?universe_ids={u1_id}")
     assert r_filtered.status_code == 200
     assert len(r_filtered.json()) == 2
-
+    
     # Test filtered traits (only World 2 - empty)
-    r_empty = client.get(f"/api/traits?universe_ids={u2_id}")
+    r_empty = client.get(f"/api/research/traits?universe_ids={u2_id}")
     assert r_empty.status_code == 200
     assert len(r_empty.json()) == 0
 
@@ -55,18 +55,20 @@ def test_get_unconfirmed_traits_filtering(client):
         session.commit()
 
     # Test all unconfirmed
-    r_all = client.get("/api/traits/unconfirmed")
+    r_all = client.get("/api/research/traits/unconfirmed")
     assert r_all.status_code == 200
     assert len(r_all.json()) == 3
-
+    
     # Test filtered (only World 1)
-    r_filtered = client.get("/api/traits/unconfirmed?universe_ids=World1")
+    r_filtered = client.get("/api/research/traits/unconfirmed?universe_ids=World1")
     assert r_filtered.status_code == 200
     assert len(r_filtered.json()) == 2
     assert all(t["universe_name"] == "World1" for t in r_filtered.json()) # This will fail because the API returns UnconfirmedTrait objects which might not have universe_name
-
+    
     # Test filtered (only World 2)
-    r_filtered2 = client.get("/api/traits/unconfirmed?universe_ids=World2")
+    r_filtered2 = client.get("/api/research/traits/unconfirmed?universe_ids=World2")
     assert r_filtered2.status_code == 200
     assert len(r_filtered2.json()) == 1
     assert r_filtered2.json()[0]["universe_name"] == "World2"
+
+

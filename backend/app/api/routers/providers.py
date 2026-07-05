@@ -33,11 +33,14 @@ async def get_provider_models(provider_id: int):
     from app.core.provider_models import fetch_live_models
     from app.services.settings_service import SettingsService
     service = SettingsService()
-    provider = service.repo.get_provider_by_id(provider_id)
-    if not provider:
-        return {"models": []}
-    models = await fetch_live_models(provider)
-    return {"models": models}
+    with Session(engine) as session:
+        from app.repositories.settings import SettingsRepository
+        repo = SettingsRepository(session)
+        provider = repo.get_provider_by_id(provider_id)
+        if not provider:
+            return {"models": []}
+        models = await fetch_live_models(provider)
+        return {"models": models}
 
 @router.post("/keys")
 def upsert_provider_key(payload: ProviderKeyPayload):

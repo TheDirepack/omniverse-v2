@@ -1,12 +1,16 @@
 import pytest
 import asyncio
 from unittest.mock import AsyncMock, patch
-from app.agents.nodes import log_transition, check_abort, audit_success, db_integrator_node
-from app.core.runtime_state import ABORTED_RUNS
+from app.agents.nodes import db_integrator_node
+from app.core.runtime_state import check_abort, ABORTED_RUNS
+from app.services.execution_service import ExecutionService
+from app.research.researcher import audit_success
 
 class TestLogTransition:
-    def test_writes_execution_state(self, ephemeral_db):
-        log_transition("test-run", "TestNode", "test thought", "IN_PROGRESS", {"key": "val"})
+    @pytest.mark.asyncio
+    async def test_writes_execution_state(self, ephemeral_db):
+        exec_service = ExecutionService()
+        exec_service.log_transition("test-run", "TestNode", "test thought", "IN_PROGRESS", {"key": "val"})
         from app.db.schema import ExecutionState
         from sqlmodel import select
         rows = ephemeral_db.exec(select(ExecutionState).where(ExecutionState.run_id == "test-run")).all()
@@ -15,9 +19,11 @@ class TestLogTransition:
         assert rows[0].thought == "test thought"
         assert rows[0].status == "IN_PROGRESS"
 
-    def test_multi_log(self):
-        log_transition("multi", "A", "t1", "IN_PROGRESS", {})
-        log_transition("multi", "B", "t2", "COMPLETED", {})
+    @pytest.mark.asyncio
+    async def test_multi_log(self):
+        exec_service = ExecutionService()
+        exec_service.log_transition("multi", "A", "t1", "IN_PROGRESS", {})
+        exec_service.log_transition("multi", "B", "t2", "COMPLETED", {})
         from app.db.schema import ExecutionState
         from sqlmodel import select, Session
         from app.db.session import engine
@@ -25,11 +31,15 @@ class TestLogTransition:
             rows = session.exec(select(ExecutionState).where(ExecutionState.run_id == "multi")).all()
             assert len(rows) == 2
 
-    def test_empty_run_id(self):
-        log_transition("", "EmptyRun", "thought", "OK", {})
+    @pytest.mark.asyncio
+    async def test_empty_run_id(self):
+        exec_service = ExecutionService()
+        exec_service.log_transition("", "EmptyRun", "thought", "OK", {})
 
-    def test_special_chars_in_thought(self):
-        log_transition("sp", "Node", "<script>alert(1)</script> & ' \"", "OK", {})
+    @pytest.mark.asyncio
+    async def test_special_chars_in_thought(self):
+        exec_service = ExecutionService()
+        exec_service.log_transition("sp", "Node", "<script>alert(1)</script> & ' \"", "OK", {})
 
 class TestCheckAbort:
     def setup_method(self):
@@ -103,11 +113,11 @@ class TestDBIntegratorNode:
             if call_count == 1:
                 return "Integrated U1", integration_history
             return "Cleaned U1", cleanup_history
-
+        
         with patch("app.agents.nodes.run_agent", side_effect=mock_run_agent), \
              patch("app.agents.nodes.set_current_universe"), \
-             patch("app.agents.nodes.log_transition"), \
-             patch("app.agents.nodes.Session"):
+             patch("app.services.execution_service.ExecutionService.log_transition"), \
+             patch("app.db.session.Session"):
             
             result = await db_integrator_node(state)
             

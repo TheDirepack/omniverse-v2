@@ -1,4 +1,6 @@
 from fastapi import APIRouter, HTTPException, BackgroundTasks
+import json
+import asyncio
 from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, Field
 import uuid
@@ -104,7 +106,7 @@ async def run_tiering_in_background(run_id: str):
     settings_service = SettingsService()
     
     await add_active_run(run_id)
-    verified_worlds = [u.name for u in uni_service.repo.get_all() if u.is_explored]
+    verified_worlds = [u.name for u in uni_service.get_all_universes() if u.is_explored]
     
     setting = settings_service.repo.get_setting("CONSOLIDATED_DATASET")
     dataset = setting.value if setting else ""
@@ -169,7 +171,7 @@ def trigger_extrapolation(payload: ExtrapolatePayload, background_tasks: Backgro
     uni_service = UniverseService()
     
     if payload.scope == "all":
-        target_worlds = [u.name for u in uni_service.repo.get_all() if u.is_explored]
+        target_worlds = [u.name for u in uni_service.get_all_universes() if u.is_explored]
     elif payload.scope == "worlds":
         if not payload.worlds:
             raise HTTPException(status_code=400, detail="worlds list required for 'worlds' scope")

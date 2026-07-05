@@ -66,6 +66,10 @@ async def abort_run(run_id: str):
 async def is_aborted(run_id: str) -> bool:
     return await _manager.is_aborted(run_id)
 
+def check_abort(run_id: str):
+    if run_id in ABORTED_RUNS:
+        raise RuntimeError(f"Run {run_id} was aborted by user.")
+
 async def get_active_runs() -> List[str]:
     return await _manager.get_active_runs()
 

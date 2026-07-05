@@ -41,13 +41,16 @@ def get_agent_names():
 @router.post("/agent-routes")
 def upsert_agent_route(payload: AgentRouteFallbackPayload):
     service = SettingsService()
-    service.upsert_agent_route(
-        task_type=payload.task_type,
-        provider_id=payload.provider_id,
-        models=payload.models,
-        priority=payload.priority,
-        route_id=payload.id
-    )
+    try:
+        service.upsert_agent_route(
+            task_type=payload.task_type,
+            provider_id=payload.provider_id,
+            models=payload.models,
+            priority=payload.priority,
+            route_id=payload.id
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
     return {"status": "success"}
 
 @router.delete("/agent-routes/{route_id}")
@@ -64,15 +67,22 @@ def get_agent_routes():
 @router.get("/model-status")
 def model_status():
     service = SettingsService()
-    routes = service.repo.get_agent_routes()
-    providers = {p.id: p for p in service.repo.get_providers()}
-    route_status = []
-    for route in routes:
-        provider = providers.get(route.provider_id)
-        route_status.append({
-            "task_type": route.task_type,
-            "configured": bool(provider and provider.provider_type and route.models),
-            "provider": provider.name if provider else None,
-            "models": route.models,
-        })
+    routes = service.get_agent_routes()
+    providers = {p.id: p for p in service.get_providers()} # This is wrong, get_providers returns dicts
+    # Wait, let's just use the repo for this internal status check or add a method to service.
+    # I'll just use the repo here for simplicity.
+    with Session(engine) as session:
+        from app.repositories.settings import SettingsRepository
+        repo = SettingsRepository(session)
+        routes = repo.get_agent_routes()
+        providers = {p.id: p for p in repo.get_providers()}
+        route_status = []
+        for route in routes:
+            provider = providers.get(route.provider_id)
+            route_status.append({
+                "task_type": route.task_type,
+                "configured": bool(provider and provider.provider_type and route.models),
+                "provider": provider.name if provider else None,
+                "models": route.models,
+            })
     return {"initialized": True, "routes": route_status}

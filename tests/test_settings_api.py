@@ -260,7 +260,7 @@ class TestProviderKeys:
 
 
 class TestAgentRouting:
-    ENDPOINT = "/api/agent-routes"
+    ENDPOINT = "/api/settings/agent-routes"
     PROVIDER_ENDPOINT = "/api/providers"
 
     def _create_provider(self, api_client) -> int:

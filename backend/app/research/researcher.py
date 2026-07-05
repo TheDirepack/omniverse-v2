@@ -32,31 +32,27 @@ def audit_success(audit_result: str) -> bool:
             
     return False
 
-async def research_single_world(world_name: str, run_id: str, focus: str | None = None, fetch_cache: FetchCache | None = None) -> Dict[str, Any]:
-    from app.core.runtime_state import is_aborted
-    if await is_aborted(run_id):
-        raise RuntimeError(f"Run {run_id} was aborted by user.")
+async def save_audit_artifacts(world_name: str, retry_handler: RetryHandler, final_result: str):
+    from app.core.tools import tool_save_unconfirmed_trait
     
-    from app.services.universe_service import UniverseService
-    from app.services.tiering_service import TieringService
+    # Save audit history
+    await tool_save_unconfirmed_trait({
+        "name": "Audit History",
+        "value": json.dumps(retry_handler.feedback_history, indent=2),
+        "category": "Audit",
+        "confidence": "high"
+    })
     
-    uni_service = UniverseService()
-    tier_service = TieringService()
-    
-    universe = uni_service.get_universe(world_name)
-    if universe:
-        tier_service.clear_world_tier(universe.id)
-    
-    stage_label = f"{world_name} focused on {focus}" if focus else world_name
-    set_current_universe(world_name)
-    
-    exec_service = ExecutionService()
-    exec_service.log_transition(run_id, "Research Unit", f"Initiating incremental research for world: {stage_label}", "IN_PROGRESS", {})
-
-    researcher_tools = ["webSearch", "fetchPage", "compareSourceFreshness", "queryTraits", "queryUnconfirmedTraits", "saveUnconfirmedTrait"]
-    auditor_tools = ["fetchPage", "compareSourceFreshness", "queryTraits", "queryUnconfirmedTraits"]
+    # Save final knowledge graph
+    await tool_save_unconfirmed_trait({
+        "name": "Final Knowledge Graph",
+        "value": final_result,
+        "category": "Research",
+        "confidence": "high"
+    })
 
 async def research_single_world(world_name: str, run_id: str, focus: str | None = None, fetch_cache: FetchCache | None = None) -> Dict[str, Any]:
+
     from app.core.runtime_state import is_aborted
     if await is_aborted(run_id):
         raise RuntimeError(f"Run {run_id} was aborted by user.")
@@ -137,6 +133,7 @@ async def research_single_world(world_name: str, run_id: str, focus: str | None 
                         if retry_handler.is_final_attempt():
                             sifted = retry_handler.handle_final_attempt(deterministic_critique)
                             if sifted:
+                                await save_audit_artifacts(world_name, retry_handler, sifted)
                                 return {"name": world_name, "summary": sifted, "status": "PARTIAL"}
                         continue 
             except json.JSONDecodeError:
@@ -148,6 +145,7 @@ async def research_single_world(world_name: str, run_id: str, focus: str | None 
                 if retry_handler.is_final_attempt():
                     sifted = retry_handler.handle_final_attempt(deterministic_critique)
                     if sifted:
+                        await save_audit_artifacts(world_name, retry_handler, sifted)
                         return {"name": world_name, "summary": sifted, "status": "PARTIAL"}
                 continue
 
@@ -170,6 +168,7 @@ async def research_single_world(world_name: str, run_id: str, focus: str | None 
             )
             
             if audit_success(critique):
+                await save_audit_artifacts(world_name, retry_handler, result)
                 return {"name": world_name, "summary": result, "status": "VERIFIED"}
             
             retry_handler.update_state(result, critique, turn_history)
@@ -177,8 +176,10 @@ async def research_single_world(world_name: str, run_id: str, focus: str | None 
             if retry_handler.is_final_attempt():
                 sifted = retry_handler.handle_final_attempt(critique)
                 if sifted:
+                    await save_audit_artifacts(world_name, retry_handler, sifted)
                     return {"name": world_name, "summary": sifted, "status": "PARTIAL"}
             
+        await save_audit_artifacts(world_name, retry_handler, retry_handler.last_result or "")
         return {"name": world_name, "summary": retry_handler.last_result, "status": "PARTIAL"}
         
     except Exception as e:

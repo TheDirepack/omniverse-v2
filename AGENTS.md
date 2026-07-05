@@ -21,18 +21,25 @@ cd frontend && npx vitest run
 ```
 
 Tests use ephemeral SQLite at `/tmp/omniverse_test.db`. Autouse fixture drops/recreates tables per test. `conftest.py` sets `DATABASE_URL` before importing app.
+- Backend tests: root `tests/` (Python).
+- Frontend tests: root `tests/` and `frontend/src/__tests__/` (Vitest).
 
 ## Architecture
 
 ### Backend Layered Structure
-- `app/api/` — FastAPI routers (entrypoints).
-- `app/services/` — Business logic (orchestrates repositories and workflows).
-- `app/repositories/` — Data access layer (SQLModel operations).
-- `app/agents/` — LangGraph node implementations and agent prompts.
-- `app/workflow/` — Specialized LangGraph state machines (Consolidation, Extrapolation, Tiering).
-- `app/research/` — High-level research agent logic.
-- `app/core/` — Low-level utilities (agent engine, tools, browser, router).
-- `app/db/` — Database schemas and session management.
+- `backend/app/api/` — FastAPI routers (entrypoints).
+- `backend/app/services/` — Business logic (orchestrates repositories and workflows).
+- `backend/app/repositories/` — Data access layer (SQLModel operations).
+- `backend/app/agents/` — LangGraph node implementations and agent prompts.
+- `backend/app/workflow/` — Specialized LangGraph state machines (Consolidation, Extrapolation, Tiering).
+- `backend/app/research/` — High-level research agent logic.
+- `backend/app/core/` — Low-level utilities (agent engine, tools, browser, router).
+- `backend/app/db/` — Database schemas and session management.
+
+### Inference System
+- **Rule Discovery**: Scans for frequent predicate pairs $\rightarrow$ Proposer/Critic LLM loop $\rightarrow$ Human approval $\rightarrow$ `InferenceRule`.
+- **Materialization**: Applies approved rules to Claims to create `InferredClaim`s. Supports multi-hop composition up to `max_composition_depth`.
+- **Contradictions**: Flags inferences that contradict asserted claims for manual review.
 
 ### Frontend
 - `frontend/src/` — React 18, Vite, vitest (node environment)
@@ -101,10 +108,16 @@ src/
   components/
     DashboardPanel.tsx
     DatabasePanel.tsx
+    InferenceRulesPanel.tsx
+    LogViewerPanel.tsx
     TheoriesPanel.tsx
+    TraitViewerPanel.tsx
     settings/
       SettingsPanel.tsx    # tabs: providers, routing, general
       ProviderCard.tsx     # per-provider: type, base_url, models, API keys
       RoutingCard.tsx      # per-agent fallback chain, model select
       SettingItem.tsx      # key/value setting
 ```
+
+## Maintenance Scripts
+- `cleanup_worlds_general.py`: Strips trailing parentheses from universe names in Main and Unconfirmed DBs.

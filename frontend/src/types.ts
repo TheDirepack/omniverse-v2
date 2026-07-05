@@ -1,4 +1,4 @@
-export type Tab = "dashboard" | "database" | "traits" | "logs" | "theories" | "settings";
+export type Tab = "dashboard" | "database" | "traits" | "logs" | "theories" | "inference" | "settings";
 export type SettingsTab = "providers" | "routing" | "general";
 
 export type World = {
@@ -60,16 +60,15 @@ export type Trait = {
   reference: string | null;
   wiki_source: string | null;
 };
-+
-+export type UnconfirmedTrait = {
-+  id: number;
-+  universe_name: string;
-+  category: string | null;
-+  name: string;
-+  value: string;
-+  confidence: number;
-+  source: string | null;
-+};
+export type UnconfirmedTrait = {
+  id: number;
+  universe_name: string;
+  category: string | null;
+  name: string;
+  value: string;
+  confidence: number;
+  source: string | null;
+};
 
 
 export type WorldRecord = {
@@ -77,4 +76,20 @@ export type WorldRecord = {
   name: string;
   summary: string | null;
   is_explored: boolean;
+};
+
+export type InferenceRule = {
+  id: number;
+  predicate_1: string;
+  predicate_2: string;
+  implied_predicate: string;
+  rule_type: string;
+  status: string;
+  proposer_model: string | null;
+  proposer_rationale: string | null;
+  critic_model: string | null;
+  critic_verdict: string | null;
+  critic_rationale: string | null;
+  human_approved: boolean;
+  created_at: string;
 };

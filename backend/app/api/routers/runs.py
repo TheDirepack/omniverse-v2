@@ -108,7 +108,7 @@ async def run_tiering_in_background(run_id: str):
     await add_active_run(run_id)
     verified_worlds = [u.name for u in uni_service.get_all_universes() if u.is_explored]
     
-    setting = settings_service.repo.get_setting("CONSOLIDATED_DATASET")
+    setting = settings_service.get_setting("CONSOLIDATED_DATASET")
     dataset = setting.value if setting else ""
     
     state: OmniverseState = {

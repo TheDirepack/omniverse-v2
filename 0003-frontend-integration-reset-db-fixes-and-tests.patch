@@ -1,0 +1,1869 @@
+diff --git a/backend/app/agents/nodes.py b/backend/app/agents/nodes.py
+index cbdd9f3..59a027e 100644
+--- a/backend/app/agents/nodes.py
++++ b/backend/app/agents/nodes.py
+@@ -28,7 +28,7 @@ async def research_node(state: OmniverseState) -> Dict[str, Any]:
+     cache = FetchCache()
+     
+     settings_service = SettingsService()
+-    setting = settings_service.repo.get_setting("MAX_PARALLEL_AGENTS")
++    setting = settings_service.get_setting("MAX_PARALLEL_AGENTS")
+     batch_size = int(setting.value) if setting and setting.value else 5
+     
+     focus_str = ", ".join(focused_features) if focused_features else None
+diff --git a/backend/app/api/routers/runs.py b/backend/app/api/routers/runs.py
+index 0662273..ada4aba 100644
+--- a/backend/app/api/routers/runs.py
++++ b/backend/app/api/routers/runs.py
+@@ -108,7 +108,7 @@ async def run_tiering_in_background(run_id: str):
+     await add_active_run(run_id)
+     verified_worlds = [u.name for u in uni_service.get_all_universes() if u.is_explored]
+     
+-    setting = settings_service.repo.get_setting("CONSOLIDATED_DATASET")
++    setting = settings_service.get_setting("CONSOLIDATED_DATASET")
+     dataset = setting.value if setting else ""
+     
+     state: OmniverseState = {
+diff --git a/backend/app/api/routers/worlds.py b/backend/app/api/routers/worlds.py
+index 29c8a3c..61feb5d 100644
+--- a/backend/app/api/routers/worlds.py
++++ b/backend/app/api/routers/worlds.py
+@@ -4,7 +4,10 @@ from pydantic import BaseModel
+ from app.services.universe_service import UniverseService
+ from sqlmodel import Session, select
+ from app.db.session import engine
+-from app.db.schema import ExecutionState, Trait, WorldTier, TierSystem, Anomaly, ModelConfig, Universe
++from app.db.schema import (
++    ExecutionState, Trait, WorldTier, TierSystem, Anomaly, ModelConfig, Universe,
++    Entity, EntityAlias, Claim, InferenceRule, InferredClaim,
++)
+ from app.db.unconfirmed_session import engine as unconfirmed_engine
+ from app.db.unconfirmed_schema import UnconfirmedUniverse, UnconfirmedTrait
+ from app.db.extrapolation_session import engine as extrapolation_engine
+@@ -73,7 +76,19 @@ def delete_world(world_id: int):
+ @router.post("/reset-database")
+ def reset_database():
+     with Session(engine) as session:
+-        for table in [ExecutionState, Trait, WorldTier, TierSystem, Anomaly, ModelConfig]:
++        # Deletion order matters: PRAGMA foreign_keys=ON is enabled on this
++        # engine (see db/session.py), so any table must be deleted AFTER
++        # every table that references it via a foreign key, or SQLite raises
++        # an IntegrityError. InferredClaim references Entity/Claim/
++        # InferenceRule; Claim and EntityAlias reference Entity -- so those
++        # go first, then Entity, then the independent InferenceRule.
++        # WorldTier references TierSystem, so it must precede it too
++        # (already correct below).
++        for table in [
++            ExecutionState,
++            InferredClaim, Claim, EntityAlias, Entity, InferenceRule,
++            Trait, WorldTier, TierSystem, Anomaly, ModelConfig,
++        ]:
+             session.exec(table.__table__.delete())
+         
+         with Session(extrapolation_engine) as extra_session:
+@@ -96,7 +111,14 @@ def reset_database():
+         session.commit()
+     
+     with Session(unconfirmed_engine) as session:
+-        for table in [UnconfirmedUniverse, UnconfirmedTrait]:
++        # Same FK-ordering issue as above: unconfirmed.db also enables
++        # PRAGMA foreign_keys=ON (unconfirmed_session.py), and
++        # UnconfirmedTrait.universe_id references unconfirmed_universe.id.
++        # Deleting UnconfirmedUniverse before UnconfirmedTrait raises an
++        # IntegrityError the moment any trait rows exist -- this was the
++        # actual cause of "reset has issues with Unconfirmed.db". Child
++        # table must be deleted first.
++        for table in [UnconfirmedTrait, UnconfirmedUniverse]:
+             session.exec(table.__table__.delete())
+         session.commit()
+ 
+diff --git a/backend/app/services/settings_service.py b/backend/app/services/settings_service.py
+index 13dd51f..3d114aa 100644
+--- a/backend/app/services/settings_service.py
++++ b/backend/app/services/settings_service.py
+@@ -8,6 +8,10 @@ class SettingsService:
+     def __init__(self, session: Optional[Session] = None):
+         self.session = session
+ 
++    def get_setting(self, key: str) -> Optional[Setting]:
++        with Session(engine) if not self.session else self.session as session:
++            return SettingsRepository(session).get_setting(key)
++
+     def get_all_settings(self) -> Dict[str, Any]:
+         with Session(engine) if not self.session else self.session as session:
+             repo = SettingsRepository(session)
+diff --git a/backend/app/workflow/tiering_workflow.py b/backend/app/workflow/tiering_workflow.py
+index f86fbb6..7d92e06 100644
+--- a/backend/app/workflow/tiering_workflow.py
++++ b/backend/app/workflow/tiering_workflow.py
+@@ -117,8 +117,7 @@ async def architecture_node(state: Dict[str, Any]) -> Dict[str, Any]:
+ 
+     dataset = ""
+     with Session(engine) as session:
+-        settings_repo = settings_service.repo
+-        setting = settings_repo.get_setting("CONSOLIDATED_DATASET")
++        setting = settings_service.get_setting("CONSOLIDATED_DATASET")
+         if setting:
+             dataset = setting.value
+         active_rubric = tier_service.repo.get_active_rubric()
+diff --git a/frontend/src/App.tsx b/frontend/src/App.tsx
+index 3b1cb67..c49d831 100644
+--- a/frontend/src/App.tsx
++++ b/frontend/src/App.tsx
+@@ -1,5 +1,5 @@
+ import { useState } from "react";
+-import { Layers, Lightbulb, Settings, Terminal } from "lucide-react";
++import { GitBranch, Layers, Lightbulb, Settings, Terminal } from "lucide-react";
+ import type { LucideIcon } from "lucide-react";
+ import type { Tab } from "./types";
+ 
+@@ -8,6 +8,7 @@ import DatabasePanel from "./components/DatabasePanel";
+ import TraitViewerPanel from "./components/TraitViewerPanel";
+ import LogViewerPanel from "./components/LogViewerPanel";
+ import TheoriesPanel from "./components/TheoriesPanel";
++import InferenceRulesPanel from "./components/InferenceRulesPanel";
+ import SettingsPanel from "./components/settings/SettingsPanel";
+ 
+ const navItems: Array<{ id: Tab; label: string; Icon: LucideIcon }> = [
+@@ -16,6 +17,7 @@ const navItems: Array<{ id: Tab; label: string; Icon: LucideIcon }> = [
+   { id: "traits", label: "Main DB", Icon: Layers },
+   { id: "logs", label: "System Logs", Icon: Terminal },
+   { id: "theories", label: "Theories", Icon: Lightbulb },
++  { id: "inference", label: "Inference Rules", Icon: GitBranch },
+   { id: "settings", label: "Settings", Icon: Settings },
+ ];
+ 
+@@ -47,6 +49,7 @@ export default function App() {
+         {tab === "traits" && <TraitViewerPanel />}
+         {tab === "logs" && <LogViewerPanel />}
+         {tab === "theories" && <TheoriesPanel />}
++        {tab === "inference" && <InferenceRulesPanel />}
+         {tab === "settings" && <SettingsPanel />}
+       </main>
+     </div>
+diff --git a/frontend/src/api.ts b/frontend/src/api.ts
+index ae9e675..a4d6cbd 100644
+--- a/frontend/src/api.ts
++++ b/frontend/src/api.ts
+@@ -169,3 +169,41 @@ export async function fetchFileLogs(filter?: string): Promise<string[]> {
+ export function createEventSource(runId: string): EventSource {
+   return new EventSource(`${apiBase}/api/runs/logs/${runId}`);
+ }
++
++// --- Inference rules / path materialization ---
++
++export async function fetchInferenceRules(status?: string): Promise<any> {
++  const query = status ? `?status=${encodeURIComponent(status)}` : "";
++  return apiFetch(`/api/inference/rules${query}`);
++}
++
++export async function triggerRuleProposal(): Promise<{ run_id: string; status: string }> {
++  return apiFetch("/api/inference/rules/propose", { method: "POST" });
++}
++
++export async function approveInferenceRule(ruleId: number): Promise<any> {
++  return apiFetch(`/api/inference/rules/${ruleId}/approve`, { method: "POST" });
++}
++
++export async function rejectInferenceRule(ruleId: number): Promise<any> {
++  return apiFetch(`/api/inference/rules/${ruleId}/reject`, { method: "POST" });
++}
++
++export async function triggerMaterialization(): Promise<{ status: string; created_count: number }> {
++  return apiFetch("/api/inference/materialize", { method: "POST" });
++}
++
++export async function fetchContradictions(): Promise<any[]> {
++  return apiFetch("/api/inference/contradictions");
++}
++
++export async function fetchCompositionDepth(): Promise<{ max_composition_depth: number }> {
++  return apiFetch("/api/inference/depth");
++}
++
++export async function setCompositionDepth(depth: number): Promise<{ max_composition_depth: number }> {
++  return apiFetch("/api/inference/depth", {
++    method: "PUT",
++    body: JSON.stringify({ max_composition_depth: depth }),
++  });
++}
+diff --git a/frontend/src/components/InferenceRulesPanel.tsx b/frontend/src/components/InferenceRulesPanel.tsx
+new file mode 100644
+index 0000000..2a142ec
+--- /dev/null
++++ b/frontend/src/components/InferenceRulesPanel.tsx
+@@ -0,0 +1,219 @@
++import { useState, useEffect } from "react";
++import type { InferenceRule } from "../types";
++import * as api from "../api";
++
++type RulesByStatus = {
++  proposed: InferenceRule[];
++  critiqued: InferenceRule[];
++  approved: InferenceRule[];
++  rejected: InferenceRule[];
++};
++
++const EMPTY_RULES: RulesByStatus = { proposed: [], critiqued: [], approved: [], rejected: [] };
++
++function RuleCard({ rule, onApprove, onReject }: { rule: InferenceRule; onApprove?: (id: number) => void; onReject?: (id: number) => void }) {
++  return (
++    <div className="theory-card" style={{ marginBottom: 16 }}>
++      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
++        <h3 style={{ fontFamily: "monospace", fontSize: "1rem" }}>
++          {rule.predicate_1} + {rule.predicate_2} → {rule.implied_predicate}
++        </h3>
++        <div className="badge">{rule.rule_type}</div>
++      </div>
++
++      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 12 }}>
++        <div>
++          <div className="audit-label">Proposer ({rule.proposer_model ?? "unknown"})</div>
++          <div className="audit-text">{rule.proposer_rationale ?? "—"}</div>
++        </div>
++        <div>
++          <div className="audit-label">
++            Critic ({rule.critic_model ?? "unknown"})
++            {rule.critic_verdict && <span style={{ marginLeft: 8, opacity: 0.8 }}>[{rule.critic_verdict}]</span>}
++          </div>
++          <div className="audit-text">{rule.critic_rationale ?? "— not yet critiqued —"}</div>
++        </div>
++      </div>
++
++      {(onApprove || onReject) && (
++        <div style={{ display: "flex", gap: 8 }}>
++          {onApprove && (
++            <button onClick={() => onApprove(rule.id)} style={{ padding: "4px 12px", cursor: "pointer" }}>
++              Approve
++            </button>
++          )}
++          {onReject && (
++            <button onClick={() => onReject(rule.id)} style={{ padding: "4px 12px", cursor: "pointer", opacity: 0.7 }}>
++              Reject
++            </button>
++          )}
++        </div>
++      )}
++    </div>
++  );
++}
++
++function InferenceRulesPanel() {
++  const [rules, setRules] = useState<RulesByStatus>(EMPTY_RULES);
++  const [contradictions, setContradictions] = useState<any[]>([]);
++  const [depth, setDepth] = useState<number>(2);
++  const [depthInput, setDepthInput] = useState<string>("2");
++  const [proposing, setProposing] = useState(false);
++  const [materializing, setMaterializing] = useState(false);
++
++  useEffect(() => {
++    void refresh();
++  }, []);
++
++  const refresh = async () => {
++    try {
++      const [rulesData, depthData, contradictionsData] = await Promise.all([
++        api.fetchInferenceRules(),
++        api.fetchCompositionDepth(),
++        api.fetchContradictions(),
++      ]);
++      setRules(rulesData);
++      setDepth(depthData.max_composition_depth);
++      setDepthInput(String(depthData.max_composition_depth));
++      setContradictions(contradictionsData);
++    } catch (e) {
++      console.error(e);
++    }
++  };
++
++  const handlePropose = async () => {
++    // Manual trigger only, per design: a bad composition rule has
++    // universe-wide blast radius, so this never runs automatically.
++    setProposing(true);
++    try {
++      await api.triggerRuleProposal();
++      alert("Rule proposal pass started. Refresh in a moment to see results — this calls two separate models (proposer + independent critic) per candidate pair.");
++    } catch (e) {
++      alert("Error starting rule proposal: " + (e as Error).message);
++    } finally {
++      setProposing(false);
++    }
++  };
++
++  const handleMaterialize = async () => {
++    setMaterializing(true);
++    try {
++      const result = await api.triggerMaterialization();
++      alert(`Materialization complete. ${result.created_count} new inferred claim(s) created.`);
++      await refresh();
++    } catch (e) {
++      alert("Error materializing: " + (e as Error).message);
++    } finally {
++      setMaterializing(false);
++    }
++  };
++
++  const handleApprove = async (id: number) => {
++    await api.approveInferenceRule(id);
++    await refresh();
++  };
++
++  const handleReject = async (id: number) => {
++    await api.rejectInferenceRule(id);
++    await refresh();
++  };
++
++  const handleSaveDepth = async () => {
++    const parsed = parseInt(depthInput, 10);
++    if (!Number.isFinite(parsed) || parsed < 1) {
++      alert("Depth must be a positive integer.");
++      return;
++    }
++    await api.setCompositionDepth(parsed);
++    await refresh();
++  };
++
++  return (
++    <section className="panel-grid single">
++      <div className="panel">
++        <h1>Inference Rules</h1>
++        <p className="help-text">
++          Path-level composition rules, proposed by one model and independently critiqued by another. Nothing here is
++          ever auto-approved — a bad composition rule silently corrupts every inference derived from it, so a human
++          must approve before it's used. Nothing here runs automatically either; every pass below is manually triggered.
++        </p>
++
++        <div style={{ display: "flex", gap: 12, alignItems: "flex-end", marginBottom: 24, padding: 16, background: "var(--bg-alt)", borderRadius: 8, border: "1px solid var(--border)", flexWrap: "wrap" }}>
++          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
++            <label style={{ fontSize: "0.8rem", opacity: 0.8 }}>Max composition depth</label>
++            <div style={{ display: "flex", gap: 4 }}>
++              <input
++                type="number"
++                min={1}
++                value={depthInput}
++                onChange={e => setDepthInput(e.target.value)}
++                style={{ padding: 4, width: 60 }}
++              />
++              <button onClick={handleSaveDepth} style={{ padding: "4px 8px", cursor: "pointer" }}>Save</button>
++            </div>
++          </div>
++
++          <button onClick={handlePropose} disabled={proposing} style={{ padding: "4px 12px", cursor: proposing ? "not-allowed" : "pointer" }}>
++            {proposing ? "Proposing..." : "Propose New Rules"}
++          </button>
++          <button onClick={handleMaterialize} disabled={materializing} style={{ padding: "4px 12px", cursor: materializing ? "not-allowed" : "pointer" }}>
++            {materializing ? "Materializing..." : `Materialize Paths (depth ${depth})`}
++          </button>
++          <button onClick={refresh} style={{ padding: "4px 12px", opacity: 0.7 }}>Refresh</button>
++        </div>
++
++        {contradictions.length > 0 && (
++          <div style={{ marginBottom: 24, padding: 16, background: "var(--bg-alt)", borderRadius: 8, border: "1px solid #b45309" }}>
++            <h3 style={{ color: "#b45309", marginBottom: 8 }}>
++              {contradictions.length} Unreviewed Contradiction{contradictions.length === 1 ? "" : "s"}
++            </h3>
++            <p className="help-text" style={{ marginBottom: 8 }}>
++              An inferred claim conflicts with a directly asserted one. This may mean the asserted claim is a legitimate
++              exception, not an error — these are flagged for review, never auto-resolved.
++            </p>
++            {contradictions.map((c: any) => (
++              <div key={c.id} style={{ fontFamily: "monospace", fontSize: "0.85rem", marginBottom: 4 }}>
++                Inferred claim #{c.id}: {c.predicate} — conflicts with claim #{c.contradicts_claim_id}
++              </div>
++            ))}
++          </div>
++        )}
++
++        <h2 style={{ fontSize: "1rem", marginBottom: 8 }}>Awaiting Human Approval</h2>
++        {rules.critiqued.length === 0 && <p className="muted">Nothing awaiting review.</p>}
++        {rules.critiqued.map(rule => (
++          <RuleCard key={rule.id} rule={rule} onApprove={handleApprove} onReject={handleReject} />
++        ))}
++
++        {rules.proposed.length > 0 && (
++          <>
++            <h2 style={{ fontSize: "1rem", marginBottom: 8, marginTop: 24 }}>Proposed (critique in progress)</h2>
++            {rules.proposed.map(rule => (
++              <RuleCard key={rule.id} rule={rule} />
++            ))}
++          </>
++        )}
++
++        {rules.approved.length > 0 && (
++          <>
++            <h2 style={{ fontSize: "1rem", marginBottom: 8, marginTop: 24 }}>Approved</h2>
++            {rules.approved.map(rule => (
++              <RuleCard key={rule.id} rule={rule} />
++            ))}
++          </>
++        )}
++
++        {rules.rejected.length > 0 && (
++          <>
++            <h2 style={{ fontSize: "1rem", marginBottom: 8, marginTop: 24, opacity: 0.6 }}>Rejected</h2>
++            {rules.rejected.map(rule => (
++              <RuleCard key={rule.id} rule={rule} />
++            ))}
++          </>
++        )}
++      </div>
++    </section>
++  );
++}
++
++export default InferenceRulesPanel;
+diff --git a/frontend/src/types.ts b/frontend/src/types.ts
+index 88f5747..3b62c98 100644
+--- a/frontend/src/types.ts
++++ b/frontend/src/types.ts
+@@ -1,4 +1,4 @@
+-export type Tab = "dashboard" | "database" | "traits" | "logs" | "theories" | "settings";
++export type Tab = "dashboard" | "database" | "traits" | "logs" | "theories" | "inference" | "settings";
+ export type SettingsTab = "providers" | "routing" | "general";
+ 
+ export type World = {
+@@ -60,16 +60,15 @@ export type Trait = {
+   reference: string | null;
+   wiki_source: string | null;
+ };
+-+
+-+export type UnconfirmedTrait = {
+-+  id: number;
+-+  universe_name: string;
+-+  category: string | null;
+-+  name: string;
+-+  value: string;
+-+  confidence: number;
+-+  source: string | null;
+-+};
++export type UnconfirmedTrait = {
++  id: number;
++  universe_name: string;
++  category: string | null;
++  name: string;
++  value: string;
++  confidence: number;
++  source: string | null;
++};
+ 
+ 
+ export type WorldRecord = {
+@@ -78,3 +77,19 @@ export type WorldRecord = {
+   summary: string | null;
+   is_explored: boolean;
+ };
++
++export type InferenceRule = {
++  id: number;
++  predicate_1: string;
++  predicate_2: string;
++  implied_predicate: string;
++  rule_type: string;
++  status: string;
++  proposer_model: string | null;
++  proposer_rationale: string | null;
++  critic_model: string | null;
++  critic_verdict: string | null;
++  critic_rationale: string | null;
++  human_approved: boolean;
++  created_at: string;
++};
+diff --git a/tests/conftest.py b/tests/conftest.py
+index b05a2af..fea0e2f 100644
+--- a/tests/conftest.py
++++ b/tests/conftest.py
+@@ -31,16 +31,19 @@ TEST_DB_PATH = "/tmp/omniverse_test.db"
+ 
+ @atexit.register
+ def _cleanup():
+-    for p in [TEST_DB_PATH, "/tmp/omniverse_test_unconfirmed.db"]:
++    for p in [TEST_DB_PATH, "/tmp/omniverse_test_unconfirmed.db", "/tmp/omniverse_test_extrapolation.db"]:
+         if os.path.exists(p):
+             os.remove(p)
+ 
+ os.environ["DATABASE_URL"] = f"sqlite:///{TEST_DB_PATH}"
+ os.environ["UNCONFIRMED_DB_URL"] = "sqlite:////tmp/omniverse_test_unconfirmed.db"
++os.environ["EXTRAPOLATION_DB_URL"] = "sqlite:////tmp/omniverse_test_extrapolation.db"
+ 
+ from app.db.session import engine
+ from app.db.unconfirmed_session import engine as unconfirmed_engine, init_unconfirmed_db
+ from app.db.unconfirmed_schema import unconfirmed_metadata
++from app.db.extrapolation_session import engine as extrapolation_engine, init_extrapolation_db
++from app.db.extrapolation_schema import extrapolation_metadata
+ from app.main import app
+ 
+ 
+@@ -51,9 +54,11 @@ def auto_create_db():
+     """Autouse: create tables before each test, drop after. Ensures clean slate."""
+     SQLModel.metadata.create_all(engine)
+     init_unconfirmed_db()
++    init_extrapolation_db()
+     yield
+     SQLModel.metadata.drop_all(engine)
+     unconfirmed_metadata.drop_all(unconfirmed_engine)
++    extrapolation_metadata.drop_all(extrapolation_engine)
+ 
+     # We don't explicitly drop unconfirmed tables here to avoid complexity, 
+     # but since we use a temp file that is cleaned up at atexit, it's okay.
+@@ -195,3 +200,92 @@ def api_client(real_server):
+     import httpx
+     with httpx.Client(base_url=real_server) as c:
+         yield c
++
++
++# ── Real llama-server fixture for full-cycle inference-rule tests ──────
++#
++# Assumes `llama-server` (llama.cpp) is installed as a distro/system package
++# and reachable on PATH -- this fixture does not attempt to build or fetch
++# it. It also assumes the model file below is a REAL gguf, not the git-lfs
++# pointer stub -- LFS blobs for this repo are hosted on
++# github-cloud.githubusercontent.com, which is unreachable from some sandboxed
++# CI environments even when github.com itself is reachable. In that case
++# this fixture skips (not fails) so the rest of the suite still runs.
++
++MODEL_PATH = Path(__file__).parent / "model" / "Qwen_Qwen3-0.6B-Q5_K_L.gguf"
++MODEL_MIN_REAL_BYTES = 10 * 1024 * 1024  # LFS pointer stubs are ~130 bytes; real gguf is ~600MB
++
++
++def _llama_server_available() -> tuple[bool, str]:
++    if shutil.which("llama-server") is None:
++        return False, "llama-server binary not found on PATH"
++    if not MODEL_PATH.exists():
++        return False, f"model file not found at {MODEL_PATH}"
++    if MODEL_PATH.stat().st_size < MODEL_MIN_REAL_BYTES:
++        return False, (
++            f"{MODEL_PATH} is only {MODEL_PATH.stat().st_size} bytes -- looks like an "
++            "unresolved git-lfs pointer, not the real model weights"
++        )
++    return True, ""
++
++
++@pytest.fixture(scope="module")
++def llama_server():
++    """
++    Launches a real llama-server subprocess against the Qwen3-0.6B model
++    checked into tests/model/, exposing the OpenAI-compatible
++    /v1/chat/completions endpoint the app's router already expects for
++    provider_type="custom". Module-scoped since model load takes a few
++    seconds and nothing in these tests needs a fresh process per test.
++
++    Skips (rather than fails) if llama-server or a real model file isn't
++    available, so `pytest -m "not slow"` runs (the default in CI) are
++    unaffected either way.
++    """
++    available, reason = _llama_server_available()
++    if not available:
++        pytest.skip(f"Skipping real-model tests: {reason}")
++
++    port = _find_free_port()
++    base_url = f"http://127.0.0.1:{port}"
++
++    proc = subprocess.Popen(
++        [
++            "llama-server",
++            "-m", str(MODEL_PATH),
++            "-c", "4096",
++            "--host", "127.0.0.1",
++            "--port", str(port),
++            "--temp", "0",
++            "-ngl", "0",
++        ],
++        stdout=subprocess.PIPE,
++        stderr=subprocess.STDOUT,
++        text=True,
++    )
++
++    import httpx
++    for _ in range(120):  # up to 60s for cold model load on CPU
++        if proc.poll() is not None:
++            output = proc.stdout.read() if proc.stdout else ""
++            raise RuntimeError(f"llama-server exited early (code {proc.returncode}):\n{output}")
++        try:
++            with httpx.Client() as c:
++                r = c.get(f"{base_url}/health", timeout=1)
++                if r.status_code == 200:
++                    break
++        except Exception:
++            time.sleep(0.5)
++    else:
++        proc.kill()
++        output = proc.stdout.read() if proc.stdout else ""
++        raise RuntimeError(f"llama-server did not become healthy in time:\n{output}")
++
++    yield base_url
++
++    proc.terminate()
++    try:
++        proc.wait(timeout=10)
++    except subprocess.TimeoutExpired:
++        proc.kill()
++        proc.wait(timeout=5)
+diff --git a/tests/test_inference_api.py b/tests/test_inference_api.py
+new file mode 100644
+index 0000000..b4a2e8e
+--- /dev/null
++++ b/tests/test_inference_api.py
+@@ -0,0 +1,157 @@
++import pytest
++from unittest.mock import AsyncMock, patch
++from app.db.schema import InferenceRule
++
++
++class TestDepthEndpoints:
++    def test_get_depth_default(self, client):
++        r = client.get("/api/inference/depth")
++        assert r.status_code == 200
++        assert r.json()["max_composition_depth"] == 2
++
++    def test_set_depth(self, client):
++        r = client.put("/api/inference/depth", json={"max_composition_depth": 4})
++        assert r.status_code == 200
++        assert r.json()["max_composition_depth"] == 4
++        r2 = client.get("/api/inference/depth")
++        assert r2.json()["max_composition_depth"] == 4
++
++    def test_set_depth_rejects_zero(self, client):
++        r = client.put("/api/inference/depth", json={"max_composition_depth": 0})
++        assert r.status_code == 422  # pydantic ge=1 validation
++
++    def test_set_depth_rejects_negative(self, client):
++        r = client.put("/api/inference/depth", json={"max_composition_depth": -3})
++        assert r.status_code == 422
++
++    def test_set_depth_rejects_above_max(self, client):
++        r = client.put("/api/inference/depth", json={"max_composition_depth": 11})
++        assert r.status_code == 422  # pydantic le=10 validation
++
++    def test_set_depth_rejects_non_integer(self, client):
++        r = client.put("/api/inference/depth", json={"max_composition_depth": "three"})
++        assert r.status_code == 422
++
++
++class TestRuleProposalTrigger:
++    def test_propose_endpoint_returns_run_id(self, client):
++        with patch("app.api.routers.inference.run_rule_proposal_in_background", new=AsyncMock()) as mock_task:
++            r = client.post("/api/inference/rules/propose")
++            assert r.status_code == 200
++            data = r.json()
++            assert data["status"] == "started"
++            assert "run_id" in data
++            mock_task.assert_called_once()
++
++
++class TestRuleListingAndApproval:
++    def test_list_rules_empty(self, client):
++        r = client.get("/api/inference/rules")
++        assert r.status_code == 200
++        data = r.json()
++        assert data["proposed"] == []
++        assert data["approved"] == []
++
++    def test_list_rules_by_status(self, ephemeral_db, client):
++        rule = InferenceRule(predicate_1="USES", predicate_2="GENERATES", implied_predicate="PRODUCES", status="CRITIQUED")
++        ephemeral_db.add(rule)
++        ephemeral_db.commit()
++        r = client.get("/api/inference/rules?status=CRITIQUED")
++        assert r.status_code == 200
++        data = r.json()
++        assert len(data) == 1
++        assert data[0]["predicate_1"] == "USES"
++
++    def test_approve_rule_endpoint(self, ephemeral_db, client):
++        rule = InferenceRule(predicate_1="USES", predicate_2="GENERATES", implied_predicate="PRODUCES", status="CRITIQUED")
++        ephemeral_db.add(rule)
++        ephemeral_db.commit()
++        ephemeral_db.refresh(rule)
++
++        r = client.post(f"/api/inference/rules/{rule.id}/approve")
++        assert r.status_code == 200
++        assert r.json()["human_approved"] is True
++        assert r.json()["status"] == "APPROVED"
++
++    def test_approve_nonexistent_rule_404(self, client):
++        r = client.post("/api/inference/rules/99999/approve")
++        assert r.status_code == 404
++
++    def test_list_rules_unknown_status_returns_empty(self, ephemeral_db, client):
++        rule = InferenceRule(predicate_1="USES", predicate_2="GENERATES", implied_predicate="PRODUCES", status="CRITIQUED")
++        ephemeral_db.add(rule)
++        ephemeral_db.commit()
++        r = client.get("/api/inference/rules?status=NOT_A_REAL_STATUS")
++        assert r.status_code == 200
++        assert r.json() == []
++
++    def test_approve_then_reject_overwrites_state(self, ephemeral_db, client):
++        """Approving then rejecting the same rule should leave it in the
++        rejected state, not some inconsistent hybrid."""
++        rule = InferenceRule(predicate_1="USES", predicate_2="GENERATES", implied_predicate="PRODUCES", status="CRITIQUED")
++        ephemeral_db.add(rule)
++        ephemeral_db.commit()
++        ephemeral_db.refresh(rule)
++
++        client.post(f"/api/inference/rules/{rule.id}/approve")
++        r = client.post(f"/api/inference/rules/{rule.id}/reject")
++        assert r.status_code == 200
++        assert r.json()["status"] == "REJECTED"
++        assert r.json()["human_approved"] is False
++
++    def test_reject_rule_endpoint(self, ephemeral_db, client):
++        rule = InferenceRule(predicate_1="USES", predicate_2="GENERATES", implied_predicate="PRODUCES", status="CRITIQUED")
++        ephemeral_db.add(rule)
++        ephemeral_db.commit()
++        ephemeral_db.refresh(rule)
++
++        r = client.post(f"/api/inference/rules/{rule.id}/reject")
++        assert r.status_code == 200
++        assert r.json()["status"] == "REJECTED"
++        assert r.json()["human_approved"] is False
++
++
++class TestMaterializationEndpoint:
++    def test_materialize_with_no_rules_creates_nothing(self, client):
++        r = client.post("/api/inference/materialize")
++        assert r.status_code == 200
++        data = r.json()
++        assert data["status"] == "completed"
++        assert data["created_count"] == 0
++
++    def test_materialize_with_approved_rule(self, ephemeral_db, client):
++        from app.db.schema import Universe, Entity, Claim
++        u = Universe(name="TestUniverse", is_explored=True)
++        ephemeral_db.add(u)
++        ephemeral_db.commit()
++        ephemeral_db.refresh(u)
++
++        a = Entity(name="A", entity_type="X", universe_id=u.id)
++        b = Entity(name="B", entity_type="X", universe_id=u.id)
++        c = Entity(name="C", entity_type="X", universe_id=u.id)
++        ephemeral_db.add_all([a, b, c])
++        ephemeral_db.commit()
++        for e in [a, b, c]:
++            ephemeral_db.refresh(e)
++
++        ephemeral_db.add_all([
++            Claim(subject_id=a.id, predicate="USES", object_id=b.id),
++            Claim(subject_id=b.id, predicate="GENERATES", object_id=c.id),
++        ])
++        ephemeral_db.commit()
++
++        rule = InferenceRule(predicate_1="USES", predicate_2="GENERATES", implied_predicate="PRODUCES",
++                              status="APPROVED", human_approved=True)
++        ephemeral_db.add(rule)
++        ephemeral_db.commit()
++
++        r = client.post("/api/inference/materialize")
++        assert r.status_code == 200
++        assert r.json()["created_count"] == 1
++
++
++class TestContradictionsEndpoint:
++    def test_list_contradictions_empty(self, client):
++        r = client.get("/api/inference/contradictions")
++        assert r.status_code == 200
++        assert r.json() == []
+diff --git a/tests/test_inference_engine.py b/tests/test_inference_engine.py
+new file mode 100644
+index 0000000..c74443f
+--- /dev/null
++++ b/tests/test_inference_engine.py
+@@ -0,0 +1,397 @@
++import json
++import pytest
++from app.db.schema import Universe, Entity, Claim, InferenceRule, InferredClaim, Setting
++from app.repositories.inference import InferenceRepository
++from app.services.inference_engine_service import InferenceEngineService
++
++
++def _make_universe(db, name="TestUniverse"):
++    u = Universe(name=name, is_explored=True)
++    db.add(u)
++    db.commit()
++    db.refresh(u)
++    return u
++
++
++def _make_entity(db, universe_id, name, entity_type="Thing"):
++    e = Entity(name=name, entity_type=entity_type, universe_id=universe_id)
++    db.add(e)
++    db.commit()
++    db.refresh(e)
++    return e
++
++
++def _make_claim(db, subject_id, predicate, object_id, **kwargs):
++    c = Claim(subject_id=subject_id, predicate=predicate, object_id=object_id, **kwargs)
++    db.add(c)
++    db.commit()
++    db.refresh(c)
++    return c
++
++
++def _make_rule(db, p1, p2, implied, approved=True):
++    r = InferenceRule(
++        predicate_1=p1, predicate_2=p2, implied_predicate=implied,
++        status="APPROVED" if approved else "PROPOSED", human_approved=approved,
++    )
++    db.add(r)
++    db.commit()
++    db.refresh(r)
++    return r
++
++
++class TestInferenceRepository:
++    def test_frequent_predicate_pairs_detects_chain(self, ephemeral_db):
++        u = _make_universe(ephemeral_db)
++        a = _make_entity(ephemeral_db, u.id, "A")
++        b = _make_entity(ephemeral_db, u.id, "B")
++        c = _make_entity(ephemeral_db, u.id, "C")
++        d = _make_entity(ephemeral_db, u.id, "D")
++        e = _make_entity(ephemeral_db, u.id, "E")
++        f = _make_entity(ephemeral_db, u.id, "F")
++        # 3 occurrences of USES -> GENERATES chain
++        _make_claim(ephemeral_db, a.id, "USES", b.id)
++        _make_claim(ephemeral_db, b.id, "GENERATES", c.id)
++        _make_claim(ephemeral_db, c.id, "USES", d.id)
++        _make_claim(ephemeral_db, d.id, "GENERATES", e.id)
++        _make_claim(ephemeral_db, e.id, "USES", f.id)
++        _make_claim(ephemeral_db, f.id, "GENERATES", a.id)
++
++        repo = InferenceRepository(ephemeral_db)
++        pairs = repo.frequent_predicate_pairs(min_count=3)
++        pair_tuples = [(p1, p2) for (p1, p2, cnt) in pairs]
++        assert ("USES", "GENERATES") in pair_tuples
++
++    def test_frequent_predicate_pairs_below_threshold_excluded(self, ephemeral_db):
++        u = _make_universe(ephemeral_db)
++        a = _make_entity(ephemeral_db, u.id, "A")
++        b = _make_entity(ephemeral_db, u.id, "B")
++        c = _make_entity(ephemeral_db, u.id, "C")
++        # Only 1 occurrence -- below default min_count of 3
++        _make_claim(ephemeral_db, a.id, "RARE_PRED", b.id)
++        _make_claim(ephemeral_db, b.id, "OTHER_PRED", c.id)
++
++        repo = InferenceRepository(ephemeral_db)
++        pairs = repo.frequent_predicate_pairs(min_count=3)
++        pair_tuples = [(p1, p2) for (p1, p2, cnt) in pairs]
++        assert ("RARE_PRED", "OTHER_PRED") not in pair_tuples
++
++    def test_existing_rule_for_pair(self, ephemeral_db):
++        _make_rule(ephemeral_db, "USES", "GENERATES", "PRODUCES")
++        repo = InferenceRepository(ephemeral_db)
++        assert repo.existing_rule_for_pair("USES", "GENERATES") is not None
++        assert repo.existing_rule_for_pair("FOO", "BAR") is None
++
++    def test_frequent_predicate_pairs_handles_self_loop_chain(self, ephemeral_db):
++        """A cycle (F -> A via GENERATES, closing the loop back to the start)
++        must not crash the self-join query or double count incorrectly."""
++        u = _make_universe(ephemeral_db)
++        a = _make_entity(ephemeral_db, u.id, "A")
++        b = _make_entity(ephemeral_db, u.id, "B")
++        # Self-referential: A USES A (degenerate but should not crash)
++        _make_claim(ephemeral_db, a.id, "USES", a.id)
++        _make_claim(ephemeral_db, a.id, "GENERATES", b.id)
++
++        repo = InferenceRepository(ephemeral_db)
++        # Should not raise, even with a self-loop in the graph.
++        pairs = repo.frequent_predicate_pairs(min_count=1)
++        pair_tuples = [(p1, p2) for (p1, p2, cnt) in pairs]
++        assert ("USES", "GENERATES") in pair_tuples
++
++    def test_get_approved_rules_excludes_unapproved(self, ephemeral_db):
++        _make_rule(ephemeral_db, "USES", "GENERATES", "PRODUCES", approved=True)
++        _make_rule(ephemeral_db, "FOO", "BAR", "BAZ", approved=False)
++        repo = InferenceRepository(ephemeral_db)
++        approved = repo.get_approved_rules()
++        assert len(approved) == 1
++        assert approved[0].predicate_1 == "USES"
++
++    def test_get_approved_rules_excludes_block_type(self, ephemeral_db):
++        approved_compose = InferenceRule(predicate_1="USES", predicate_2="GENERATES", implied_predicate="PRODUCES",
++                                          rule_type="compose", status="APPROVED", human_approved=True)
++        approved_block = InferenceRule(predicate_1="FOO", predicate_2="BAR", implied_predicate="BAZ",
++                                        rule_type="block", status="APPROVED", human_approved=True)
++        ephemeral_db.add_all([approved_compose, approved_block])
++        ephemeral_db.commit()
++        repo = InferenceRepository(ephemeral_db)
++        approved = repo.get_approved_rules()
++        assert len(approved) == 1
++        assert approved[0].rule_type == "compose"
++
++
++class TestInferenceEngineDepth:
++    def test_depth_2_composition(self, ephemeral_db):
++        u = _make_universe(ephemeral_db)
++        a = _make_entity(ephemeral_db, u.id, "A")
++        b = _make_entity(ephemeral_db, u.id, "B")
++        c = _make_entity(ephemeral_db, u.id, "C")
++        c1 = _make_claim(ephemeral_db, a.id, "USES", b.id)
++        c2 = _make_claim(ephemeral_db, b.id, "GENERATES", c.id)
++        _make_rule(ephemeral_db, "USES", "GENERATES", "PRODUCES")
++
++        svc = InferenceEngineService()
++        svc.set_max_depth(2)
++        created = svc.materialize_inferred_claims()
++
++        assert len(created) == 1
++        ic = created[0]
++        assert ic.subject_id == a.id
++        assert ic.predicate == "PRODUCES"
++        assert ic.object_id == c.id
++        assert json.loads(ic.path_claim_ids) == [c1.id, c2.id]
++
++    def test_depth_3_composition_requires_second_rule(self, ephemeral_db):
++        u = _make_universe(ephemeral_db)
++        a = _make_entity(ephemeral_db, u.id, "A")
++        b = _make_entity(ephemeral_db, u.id, "B")
++        c = _make_entity(ephemeral_db, u.id, "C")
++        d = _make_entity(ephemeral_db, u.id, "D")
++        _make_claim(ephemeral_db, a.id, "USES", b.id)
++        _make_claim(ephemeral_db, b.id, "GENERATES", c.id)
++        _make_claim(ephemeral_db, c.id, "MITIGATED_BY", d.id)
++        _make_rule(ephemeral_db, "USES", "GENERATES", "PRODUCES")
++        _make_rule(ephemeral_db, "PRODUCES", "MITIGATED_BY", "REQUIRES_MITIGATION_VIA")
++
++        svc = InferenceEngineService()
++        svc.set_max_depth(3)
++        created = svc.materialize_inferred_claims()
++
++        predicates = {(ic.subject_id, ic.predicate, ic.object_id) for ic in created}
++        assert (a.id, "PRODUCES", c.id) in predicates
++        assert (a.id, "REQUIRES_MITIGATION_VIA", d.id) in predicates
++
++    def test_depth_limit_prevents_third_hop(self, ephemeral_db):
++        """With max_composition_depth=2, a 3-hop chain must NOT be composed,
++        even though the rules exist to do it."""
++        u = _make_universe(ephemeral_db)
++        a = _make_entity(ephemeral_db, u.id, "A")
++        b = _make_entity(ephemeral_db, u.id, "B")
++        c = _make_entity(ephemeral_db, u.id, "C")
++        d = _make_entity(ephemeral_db, u.id, "D")
++        _make_claim(ephemeral_db, a.id, "USES", b.id)
++        _make_claim(ephemeral_db, b.id, "GENERATES", c.id)
++        _make_claim(ephemeral_db, c.id, "MITIGATED_BY", d.id)
++        _make_rule(ephemeral_db, "USES", "GENERATES", "PRODUCES")
++        _make_rule(ephemeral_db, "PRODUCES", "MITIGATED_BY", "REQUIRES_MITIGATION_VIA")
++
++        svc = InferenceEngineService()
++        svc.set_max_depth(2)
++        created = svc.materialize_inferred_claims()
++
++        predicates = {(ic.subject_id, ic.predicate, ic.object_id) for ic in created}
++        assert (a.id, "PRODUCES", c.id) in predicates
++        assert (a.id, "REQUIRES_MITIGATION_VIA", d.id) not in predicates
++
++    def test_rerun_does_not_duplicate(self, ephemeral_db):
++        u = _make_universe(ephemeral_db)
++        a = _make_entity(ephemeral_db, u.id, "A")
++        b = _make_entity(ephemeral_db, u.id, "B")
++        c = _make_entity(ephemeral_db, u.id, "C")
++        _make_claim(ephemeral_db, a.id, "USES", b.id)
++        _make_claim(ephemeral_db, b.id, "GENERATES", c.id)
++        _make_rule(ephemeral_db, "USES", "GENERATES", "PRODUCES")
++
++        svc = InferenceEngineService()
++        first = svc.materialize_inferred_claims()
++        second = svc.materialize_inferred_claims()
++
++        assert len(first) == 1
++        assert len(second) == 0  # already materialized, no duplicate
++
++    def test_depth_setting_persists_and_validates(self, ephemeral_db):
++        svc = InferenceEngineService()
++        assert svc.get_max_depth() == 2  # default
++        svc.set_max_depth(5)
++        assert svc.get_max_depth() == 5
++        with pytest.raises(ValueError):
++            svc.set_max_depth(0)
++
++    def test_depth_1_produces_no_inferences(self, ephemeral_db):
++        """depth=1 means 'no composition at all' -- a single asserted claim
++        isn't an inference. Even with a perfectly valid rule and matching
++        claims present, nothing should be materialized."""
++        u = _make_universe(ephemeral_db)
++        a = _make_entity(ephemeral_db, u.id, "A")
++        b = _make_entity(ephemeral_db, u.id, "B")
++        c = _make_entity(ephemeral_db, u.id, "C")
++        _make_claim(ephemeral_db, a.id, "USES", b.id)
++        _make_claim(ephemeral_db, b.id, "GENERATES", c.id)
++        _make_rule(ephemeral_db, "USES", "GENERATES", "PRODUCES")
++
++        svc = InferenceEngineService()
++        svc.set_max_depth(1)
++        created = svc.materialize_inferred_claims()
++        assert created == []
++
++    def test_block_rule_type_excluded_from_materialization(self, ephemeral_db):
++        """A rule explicitly marked rule_type='block' represents a
++        composition the proposer/critic considered and rejected as
++        generally invalid -- it must never be used to materialize
++        inferences, even if human_approved happens to be True."""
++        u = _make_universe(ephemeral_db)
++        a = _make_entity(ephemeral_db, u.id, "A")
++        b = _make_entity(ephemeral_db, u.id, "B")
++        c = _make_entity(ephemeral_db, u.id, "C")
++        _make_claim(ephemeral_db, a.id, "USES", b.id)
++        _make_claim(ephemeral_db, b.id, "GENERATES", c.id)
++        r = InferenceRule(predicate_1="USES", predicate_2="GENERATES", implied_predicate="PRODUCES",
++                           rule_type="block", status="APPROVED", human_approved=True)
++        ephemeral_db.add(r)
++        ephemeral_db.commit()
++
++        svc = InferenceEngineService()
++        created = svc.materialize_inferred_claims()
++        assert created == []
++
++    def test_unapproved_rule_not_used_even_if_critiqued_approve(self, ephemeral_db):
++        """A rule the critic marked APPROVE but that a human hasn't yet
++        flipped human_approved=True on must not be used -- two-model
++        agreement is never sufficient on its own."""
++        u = _make_universe(ephemeral_db)
++        a = _make_entity(ephemeral_db, u.id, "A")
++        b = _make_entity(ephemeral_db, u.id, "B")
++        c = _make_entity(ephemeral_db, u.id, "C")
++        _make_claim(ephemeral_db, a.id, "USES", b.id)
++        _make_claim(ephemeral_db, b.id, "GENERATES", c.id)
++        r = InferenceRule(predicate_1="USES", predicate_2="GENERATES", implied_predicate="PRODUCES",
++                           rule_type="compose", status="CRITIQUED", critic_verdict="APPROVE",
++                           human_approved=False)
++        ephemeral_db.add(r)
++        ephemeral_db.commit()
++
++        svc = InferenceEngineService()
++        created = svc.materialize_inferred_claims()
++        assert created == []
++
++    def test_depth_4_chain_with_three_rules(self, ephemeral_db):
++        """Extends the depth-3 case one hop further to confirm the
++        incremental-frontier composition loop generalizes past a single
++        extra hop, not just exactly 3."""
++        u = _make_universe(ephemeral_db)
++        a = _make_entity(ephemeral_db, u.id, "A")
++        b = _make_entity(ephemeral_db, u.id, "B")
++        c = _make_entity(ephemeral_db, u.id, "C")
++        d = _make_entity(ephemeral_db, u.id, "D")
++        e = _make_entity(ephemeral_db, u.id, "E")
++        _make_claim(ephemeral_db, a.id, "P1", b.id)
++        _make_claim(ephemeral_db, b.id, "P2", c.id)
++        _make_claim(ephemeral_db, c.id, "P3", d.id)
++        _make_claim(ephemeral_db, d.id, "P4", e.id)
++        _make_rule(ephemeral_db, "P1", "P2", "Q1")
++        _make_rule(ephemeral_db, "Q1", "P3", "Q2")
++        _make_rule(ephemeral_db, "Q2", "P4", "Q3")
++
++        svc = InferenceEngineService()
++        svc.set_max_depth(4)
++        created = svc.materialize_inferred_claims()
++
++        results = {(ic.subject_id, ic.predicate, ic.object_id) for ic in created}
++        assert (a.id, "Q1", c.id) in results
++        assert (a.id, "Q2", d.id) in results
++        assert (a.id, "Q3", e.id) in results
++
++    def test_depth_3_setting_caps_before_4th_hop(self, ephemeral_db):
++        u = _make_universe(ephemeral_db)
++        a = _make_entity(ephemeral_db, u.id, "A")
++        b = _make_entity(ephemeral_db, u.id, "B")
++        c = _make_entity(ephemeral_db, u.id, "C")
++        d = _make_entity(ephemeral_db, u.id, "D")
++        e = _make_entity(ephemeral_db, u.id, "E")
++        _make_claim(ephemeral_db, a.id, "P1", b.id)
++        _make_claim(ephemeral_db, b.id, "P2", c.id)
++        _make_claim(ephemeral_db, c.id, "P3", d.id)
++        _make_claim(ephemeral_db, d.id, "P4", e.id)
++        _make_rule(ephemeral_db, "P1", "P2", "Q1")
++        _make_rule(ephemeral_db, "Q1", "P3", "Q2")
++        _make_rule(ephemeral_db, "Q2", "P4", "Q3")
++
++        svc = InferenceEngineService()
++        svc.set_max_depth(3)
++        created = svc.materialize_inferred_claims()
++
++        results = {(ic.subject_id, ic.predicate, ic.object_id) for ic in created}
++        assert (a.id, "Q2", d.id) in results  # depth 3, allowed
++        assert (a.id, "Q3", e.id) not in results  # depth 4, blocked by cap
++
++
++class TestContradictionDetection:
++    def test_contradiction_flagged_not_resolved(self, ephemeral_db):
++        u = _make_universe(ephemeral_db)
++        a = _make_entity(ephemeral_db, u.id, "A")
++        b = _make_entity(ephemeral_db, u.id, "B")
++        c = _make_entity(ephemeral_db, u.id, "C")
++        conflicting = _make_entity(ephemeral_db, u.id, "Conflicting")
++        _make_claim(ephemeral_db, a.id, "USES", b.id)
++        _make_claim(ephemeral_db, b.id, "GENERATES", c.id)
++        # Directly asserted, conflicting claim: A PRODUCES something else
++        conflict_claim = _make_claim(ephemeral_db, a.id, "PRODUCES", conflicting.id)
++        _make_rule(ephemeral_db, "USES", "GENERATES", "PRODUCES")
++
++        svc = InferenceEngineService()
++        created = svc.materialize_inferred_claims()
++
++        assert len(created) == 1
++        ic = created[0]
++        assert ic.contradicts_claim_id == conflict_claim.id
++        assert ic.reviewed is False
++
++        unreviewed = svc.get_unreviewed_contradictions()
++        assert len(unreviewed) == 1
++        assert unreviewed[0].id == ic.id
++
++    def test_no_contradiction_when_objects_agree(self, ephemeral_db):
++        u = _make_universe(ephemeral_db)
++        a = _make_entity(ephemeral_db, u.id, "A")
++        b = _make_entity(ephemeral_db, u.id, "B")
++        c = _make_entity(ephemeral_db, u.id, "C")
++        _make_claim(ephemeral_db, a.id, "USES", b.id)
++        _make_claim(ephemeral_db, b.id, "GENERATES", c.id)
++        # Asserted claim agrees with what will be inferred
++        _make_claim(ephemeral_db, a.id, "PRODUCES", c.id)
++        _make_rule(ephemeral_db, "USES", "GENERATES", "PRODUCES")
++
++        svc = InferenceEngineService()
++        created = svc.materialize_inferred_claims()
++
++        assert len(created) == 1
++        assert created[0].contradicts_claim_id is None
++
++
++class TestCrossUniverseGenericity:
++    def test_same_rule_applies_across_unrelated_universes(self, ephemeral_db):
++        """The engine has no concept of 'setting' -- a rule fires wherever
++        its predicates match, regardless of which fictional universe the
++        entities belong to."""
++        battletech = _make_universe(ephemeral_db, "Battletech")
++        halo = _make_universe(ephemeral_db, "Halo")
++        lotr = _make_universe(ephemeral_db, "LOTR")
++
++        mech = _make_entity(ephemeral_db, battletech.id, "BattleMech")
++        engine_e = _make_entity(ephemeral_db, battletech.id, "Fusion Engine")
++        heat = _make_entity(ephemeral_db, battletech.id, "Heat")
++
++        spartan = _make_entity(ephemeral_db, halo.id, "Master Chief")
++        mjolnir = _make_entity(ephemeral_db, halo.id, "MJOLNIR Armor")
++        shields = _make_entity(ephemeral_db, halo.id, "Energy Shields")
++
++        ring = _make_entity(ephemeral_db, lotr.id, "The One Ring")
++        will = _make_entity(ephemeral_db, lotr.id, "Sauron's Will")
++        corruption = _make_entity(ephemeral_db, lotr.id, "Corruption")
++
++        _make_claim(ephemeral_db, mech.id, "USES", engine_e.id)
++        _make_claim(ephemeral_db, engine_e.id, "GENERATES", heat.id)
++        _make_claim(ephemeral_db, spartan.id, "USES", mjolnir.id)
++        _make_claim(ephemeral_db, mjolnir.id, "GENERATES", shields.id)
++        # LOTR uses an entirely different predicate vocabulary
++        _make_claim(ephemeral_db, ring.id, "EMBODIES", will.id)
++        _make_claim(ephemeral_db, will.id, "CAUSES", corruption.id)
++
++        _make_rule(ephemeral_db, "USES", "GENERATES", "PRODUCES")
++
++        svc = InferenceEngineService()
++        created = svc.materialize_inferred_claims()
++
++        results = {(ic.subject_id, ic.predicate, ic.object_id) for ic in created}
++        assert (mech.id, "PRODUCES", heat.id) in results
++        assert (spartan.id, "PRODUCES", shields.id) in results
++        assert len(created) == 2  # nothing derived for LOTR's unrelated predicates
+diff --git a/tests/test_inference_full_cycle.py b/tests/test_inference_full_cycle.py
+new file mode 100644
+index 0000000..fb0626b
+--- /dev/null
++++ b/tests/test_inference_full_cycle.py
+@@ -0,0 +1,200 @@
++"""
++Full-cycle integration tests against a real llama-server process.
++
++These make real HTTP calls through litellm to an actual local model (no
++call_llm mocking), exercising: real prompt formatting, real JSON parsing of
++a real (imperfect) model's output, the real independence guard at the
++routing layer, and the full propose -> critique -> approve -> materialize
++pipeline end to end.
++
++Marked `slow` and `network` (declared in pytest.ini) since they spawn a
++subprocess and depend on model inference latency -- excluded from the
++default `-m "not slow"` CI run, opt-in via `pytest -m slow`.
++
++Skips gracefully (see tests/conftest.py::llama_server) if llama-server or
++the real model weights aren't available in the current environment.
++"""
++import json
++import pytest
++from app.db.schema import Universe, Entity, Claim, InferenceRule, ProviderConfig, AgentRouteFallback
++from app.services.inference_rule_service import InferenceRuleService
++from app.services.inference_engine_service import InferenceEngineService
++
++
++def _register_provider(db, base_url: str, name: str, model: str = "qwen3-0.6b"):
++    provider = ProviderConfig(
++        name=name,
++        provider_type="custom",
++        base_url=base_url,
++        models=model,
++    )
++    db.add(provider)
++    db.commit()
++    db.refresh(provider)
++    return provider
++
++
++def _register_route(db, task_type: str, provider_id: int, models: str = "qwen3-0.6b", priority: int = 0):
++    route = AgentRouteFallback(task_type=task_type, provider_id=provider_id, models=models, priority=priority)
++    db.add(route)
++    db.commit()
++    db.refresh(route)
++    return route
++
++
++@pytest.mark.slow
++@pytest.mark.network
++@pytest.mark.asyncio
++class TestFullCycleAgainstRealModel:
++    async def test_propose_and_critique_real_model(self, ephemeral_db, llama_server):
++        """
++        Real proposer + real critic calls against the actual model. Since a
++        small quantized model's exact wording/JSON validity isn't
++        guaranteed, this asserts STRUCTURE (rule created, both models
++        recorded, rationale present, status is one of the valid terminal
++        states) rather than exact predicate text.
++        """
++        u = Universe(name="TEST_FullCycle", is_explored=True)
++        ephemeral_db.add(u)
++        ephemeral_db.commit()
++        ephemeral_db.refresh(u)
++
++        a = Entity(name="BattleMech", entity_type="Unit", universe_id=u.id)
++        b = Entity(name="Fusion Engine", entity_type="Component", universe_id=u.id)
++        c = Entity(name="Heat", entity_type="Concept", universe_id=u.id)
++        ephemeral_db.add_all([a, b, c])
++        ephemeral_db.commit()
++        for e in [a, b, c]:
++            ephemeral_db.refresh(e)
++
++        ephemeral_db.add_all([
++            Claim(subject_id=a.id, predicate="USES", object_id=b.id),
++            Claim(subject_id=b.id, predicate="GENERATES", object_id=c.id),
++        ])
++        ephemeral_db.commit()
++
++        # Single real server backs two distinct ProviderConfig rows so the
++        # independence guard has a genuine "alternative provider" to pick,
++        # even though physically the same process answers both -- the guard
++        # operates on provider_id, not on which process is behind it.
++        provider_a = _register_provider(ephemeral_db, f"{llama_server}/v1", "llama-proposer")
++        provider_b = _register_provider(ephemeral_db, f"{llama_server}/v1", "llama-critic")
++        _register_route(ephemeral_db, "Rule Proposer", provider_a.id)
++        _register_route(ephemeral_db, "Rule Critic", provider_b.id)
++
++        svc = InferenceRuleService()
++        rule = await svc.propose_and_critique("USES", "GENERATES", run_id="full-cycle-test")
++
++        assert rule.id is not None
++        assert rule.predicate_1 == "USES"
++        assert rule.predicate_2 == "GENERATES"
++        assert rule.status in {"CRITIQUED", "REJECTED"}
++        assert rule.proposer_model is not None
++        assert rule.critic_model is not None
++        assert rule.proposer_rationale  # non-empty
++        assert rule.critic_rationale  # non-empty
++        assert rule.human_approved is False  # never auto-approved, regardless of model output
++        # implied_predicate may be empty string if the small model produced
++        # malformed JSON that _safe_json partially recovered -- log it for
++        # visibility rather than asserting an exact value.
++        print(f"\n[full-cycle] proposer={rule.proposer_model} critic={rule.critic_model} "
++              f"implied_predicate={rule.implied_predicate!r} verdict={rule.critic_verdict!r} status={rule.status}")
++
++    async def test_full_pipeline_propose_approve_materialize(self, ephemeral_db, llama_server):
++        """
++        End-to-end: real propose+critique, then human approval (never
++        automatic), then real path materialization using whatever
++        implied_predicate the real model actually proposed.
++        """
++        u = Universe(name="TEST_FullPipeline", is_explored=True)
++        ephemeral_db.add(u)
++        ephemeral_db.commit()
++        ephemeral_db.refresh(u)
++
++        a = Entity(name="Reactor", entity_type="Component", universe_id=u.id)
++        b = Entity(name="Coolant System", entity_type="Component", universe_id=u.id)
++        c = Entity(name="Waste Heat", entity_type="Concept", universe_id=u.id)
++        ephemeral_db.add_all([a, b, c])
++        ephemeral_db.commit()
++        for e in [a, b, c]:
++            ephemeral_db.refresh(e)
++
++        ephemeral_db.add_all([
++            Claim(subject_id=a.id, predicate="POWERS", object_id=b.id),
++            Claim(subject_id=b.id, predicate="EMITS", object_id=c.id),
++        ])
++        ephemeral_db.commit()
++
++        provider = _register_provider(ephemeral_db, f"{llama_server}/v1", "llama-single")
++        _register_route(ephemeral_db, "Rule Proposer", provider.id)
++        _register_route(ephemeral_db, "Rule Critic", provider.id)  # only one provider configured on purpose:
++        # exercises the "independence guard could not be honored, logs a
++        # warning and proceeds anyway" path for real, rather than mocking it.
++
++        rule_svc = InferenceRuleService()
++        rule = await rule_svc.propose_and_critique("POWERS", "EMITS", run_id="full-pipeline-test")
++
++        if rule.status == "REJECTED":
++            pytest.skip(
++                f"Real model rejected this composition (critic_rationale={rule.critic_rationale!r}); "
++                "nothing to materialize. This is a valid model output, not a test failure -- "
++                "rerun or adjust the example pair if this is consistently rejected."
++            )
++
++        # Human approval step -- required regardless of critic verdict.
++        approved = rule_svc.approve_rule(rule.id)
++        assert approved.human_approved is True
++        assert approved.status == "APPROVED"
++
++        if not approved.implied_predicate:
++            pytest.skip("Real model produced an empty implied_predicate (malformed JSON); nothing to materialize.")
++
++        engine_svc = InferenceEngineService()
++        created = engine_svc.materialize_inferred_claims()
++
++        matching = [ic for ic in created if ic.subject_id == a.id and ic.object_id == c.id]
++        assert len(matching) == 1, (
++            f"Expected exactly one InferredClaim from Reactor to Waste Heat via rule "
++            f"'{approved.implied_predicate}', got: {[(ic.subject_id, ic.predicate, ic.object_id) for ic in created]}"
++        )
++        ic = matching[0]
++        assert ic.predicate == approved.implied_predicate
++        assert json.loads(ic.path_claim_ids)  # non-empty path, traceable to source claims
++        print(f"\n[full-pipeline] materialized: Reactor --{ic.predicate}--> Waste Heat "
++              f"(rule implied_predicate={approved.implied_predicate!r})")
++
++    async def test_candidate_discovery_against_real_data(self, ephemeral_db, llama_server):
++        """Confirms the frequent-pair scan + full pass work end to end
++        without any mocking, using run_rule_proposal_pass (the actual
++        manual-trigger entrypoint), not propose_and_critique directly."""
++        u = Universe(name="TEST_Discovery", is_explored=True)
++        ephemeral_db.add(u)
++        ephemeral_db.commit()
++        ephemeral_db.refresh(u)
++
++        entities = [Entity(name=f"E{i}", entity_type="X", universe_id=u.id) for i in range(6)]
++        ephemeral_db.add_all(entities)
++        ephemeral_db.commit()
++        for e in entities:
++            ephemeral_db.refresh(e)
++
++        # 3 occurrences of USES -> GENERATES, above the min_count threshold
++        pairs = [(0, 1), (1, 2), (2, 3), (3, 4), (4, 5), (5, 0)]
++        claims = []
++        for i, (s, o) in enumerate(pairs):
++            predicate = "USES" if i % 2 == 0 else "GENERATES"
++            claims.append(Claim(subject_id=entities[s].id, predicate=predicate, object_id=entities[o].id))
++        ephemeral_db.add_all(claims)
++        ephemeral_db.commit()
++
++        provider = _register_provider(ephemeral_db, f"{llama_server}/v1", "llama-discovery")
++        _register_route(ephemeral_db, "Rule Proposer", provider.id)
++        _register_route(ephemeral_db, "Rule Critic", provider.id)
++
++        svc = InferenceRuleService()
++        results = await svc.run_rule_proposal_pass(run_id="discovery-test")
++
++        assert len(results) >= 1
++        for rule in results:
++            assert rule.status in {"CRITIQUED", "REJECTED"}
++            assert rule.human_approved is False
+diff --git a/tests/test_inference_rule_service.py b/tests/test_inference_rule_service.py
+new file mode 100644
+index 0000000..4008c91
+--- /dev/null
++++ b/tests/test_inference_rule_service.py
+@@ -0,0 +1,238 @@
++import json
++import pytest
++from unittest.mock import AsyncMock, patch, MagicMock
++from app.db.schema import Universe, Entity, Claim, InferenceRule, ProviderConfig, AgentRouteFallback
++from app.services.inference_rule_service import InferenceRuleService
++
++
++def _make_universe(db, name="TestUniverse"):
++    u = Universe(name=name, is_explored=True)
++    db.add(u)
++    db.commit()
++    db.refresh(u)
++    return u
++
++
++def _make_entity(db, universe_id, name, entity_type="Thing"):
++    e = Entity(name=name, entity_type=entity_type, universe_id=universe_id)
++    db.add(e)
++    db.commit()
++    db.refresh(e)
++    return e
++
++
++def _make_claim(db, subject_id, predicate, object_id):
++    c = Claim(subject_id=subject_id, predicate=predicate, object_id=object_id)
++    db.add(c)
++    db.commit()
++    db.refresh(c)
++    return c
++
++
++def _fake_llm_response(content: dict):
++    """Mimics the (response, model_name, key_id) tuple call_llm returns."""
++    msg = MagicMock()
++    msg.content = json.dumps(content)
++    choice = MagicMock()
++    choice.message = msg
++    resp = MagicMock()
++    resp.choices = [choice]
++    return resp
++
++
++@pytest.mark.asyncio
++class TestProposeAndCritique:
++    async def test_approve_path_produces_critiqued_rule(self, ephemeral_db):
++        u = _make_universe(ephemeral_db)
++        a = _make_entity(ephemeral_db, u.id, "A")
++        b = _make_entity(ephemeral_db, u.id, "B")
++        c = _make_entity(ephemeral_db, u.id, "C")
++        _make_claim(ephemeral_db, a.id, "USES", b.id)
++        _make_claim(ephemeral_db, b.id, "GENERATES", c.id)
++
++        proposer_reply = _fake_llm_response({
++            "predicate_1": "USES", "predicate_2": "GENERATES",
++            "implied_predicate": "PRODUCES", "rule_type": "compose",
++            "rationale": "USES then GENERATES composes to a direct production relationship."
++        })
++        critic_blind_reply = _fake_llm_response({
++            "verdict": "APPROVE", "revised_implied_predicate": None,
++            "revised_rule_type": None, "rationale": "Composition looks structurally sound."
++        })
++        critic_final_reply = _fake_llm_response({
++            "verdict": "APPROVE", "revised_implied_predicate": None,
++            "revised_rule_type": None, "rationale": "Rationale confirms my independent judgment."
++        })
++
++        call_sequence = [
++            (proposer_reply, "proposer-model", None),
++            (critic_blind_reply, "critic-model", None),
++            (critic_final_reply, "critic-model", None),
++        ]
++
++        with patch("app.services.inference_rule_service.model_router.call_llm", new=AsyncMock(side_effect=call_sequence)):
++            svc = InferenceRuleService()
++            rule = await svc.propose_and_critique("USES", "GENERATES", run_id="test-run")
++
++        assert rule.status == "CRITIQUED"
++        assert rule.implied_predicate == "PRODUCES"
++        assert rule.proposer_model == "proposer-model"
++        assert rule.critic_model == "critic-model"
++        assert rule.critic_verdict == "APPROVE"
++        assert rule.human_approved is False  # never auto-approved
++
++    async def test_reject_path_marks_rule_rejected(self, ephemeral_db):
++        u = _make_universe(ephemeral_db)
++        a = _make_entity(ephemeral_db, u.id, "A")
++        b = _make_entity(ephemeral_db, u.id, "B")
++        c = _make_entity(ephemeral_db, u.id, "C")
++        _make_claim(ephemeral_db, a.id, "USES", b.id)
++        _make_claim(ephemeral_db, b.id, "GENERATES", c.id)
++
++        proposer_reply = _fake_llm_response({
++            "predicate_1": "USES", "predicate_2": "GENERATES",
++            "implied_predicate": "PRODUCES", "rule_type": "compose",
++            "rationale": "Seems plausible."
++        })
++        critic_blind_reply = _fake_llm_response({
++            "verdict": "REJECT", "revised_implied_predicate": None,
++            "revised_rule_type": None, "rationale": "Counterexample: USES does not always imply causal generation."
++        })
++        critic_final_reply = _fake_llm_response({
++            "verdict": "REJECT", "revised_implied_predicate": None,
++            "revised_rule_type": None, "rationale": "Rationale does not address the counterexample."
++        })
++        call_sequence = [
++            (proposer_reply, "proposer-model", None),
++            (critic_blind_reply, "critic-model", None),
++            (critic_final_reply, "critic-model", None),
++        ]
++
++        with patch("app.services.inference_rule_service.model_router.call_llm", new=AsyncMock(side_effect=call_sequence)):
++            svc = InferenceRuleService()
++            rule = await svc.propose_and_critique("USES", "GENERATES", run_id="test-run")
++
++        assert rule.status == "REJECTED"
++
++    async def test_revise_path_applies_critic_correction(self, ephemeral_db):
++        u = _make_universe(ephemeral_db)
++        a = _make_entity(ephemeral_db, u.id, "A")
++        b = _make_entity(ephemeral_db, u.id, "B")
++        c = _make_entity(ephemeral_db, u.id, "C")
++        _make_claim(ephemeral_db, a.id, "USES", b.id)
++        _make_claim(ephemeral_db, b.id, "GENERATES", c.id)
++
++        proposer_reply = _fake_llm_response({
++            "predicate_1": "USES", "predicate_2": "GENERATES",
++            "implied_predicate": "MAKES", "rule_type": "compose",
++            "rationale": "initial guess"
++        })
++        critic_blind_reply = _fake_llm_response({
++            "verdict": "REVISE", "revised_implied_predicate": "PRODUCES",
++            "revised_rule_type": "compose", "rationale": "MAKES is imprecise, PRODUCES is clearer."
++        })
++        critic_final_reply = _fake_llm_response({
++            "verdict": "REVISE", "revised_implied_predicate": "PRODUCES",
++            "revised_rule_type": "compose", "rationale": "Sticking with my revision."
++        })
++        call_sequence = [
++            (proposer_reply, "proposer-model", None),
++            (critic_blind_reply, "critic-model", None),
++            (critic_final_reply, "critic-model", None),
++        ]
++
++        with patch("app.services.inference_rule_service.model_router.call_llm", new=AsyncMock(side_effect=call_sequence)):
++            svc = InferenceRuleService()
++            rule = await svc.propose_and_critique("USES", "GENERATES", run_id="test-run")
++
++        assert rule.status == "CRITIQUED"
++        assert rule.implied_predicate == "PRODUCES"  # revised value applied
++
++    async def test_critic_call_excludes_proposer_provider(self, ephemeral_db):
++        """Independence guard: the critic's call_llm invocation must pass
++        exclude_provider_id matching the proposer's resolved provider."""
++        u = _make_universe(ephemeral_db)
++        a = _make_entity(ephemeral_db, u.id, "A")
++        b = _make_entity(ephemeral_db, u.id, "B")
++        c = _make_entity(ephemeral_db, u.id, "C")
++        _make_claim(ephemeral_db, a.id, "USES", b.id)
++        _make_claim(ephemeral_db, b.id, "GENERATES", c.id)
++
++        provider_a = ProviderConfig(name="provider-a", provider_type="custom")
++        ephemeral_db.add(provider_a)
++        ephemeral_db.commit()
++        ephemeral_db.refresh(provider_a)
++
++        route = AgentRouteFallback(task_type="Rule Proposer", priority=0, provider_id=provider_a.id, models="fake")
++        ephemeral_db.add(route)
++        ephemeral_db.commit()
++
++        proposer_reply = _fake_llm_response({
++            "predicate_1": "USES", "predicate_2": "GENERATES",
++            "implied_predicate": "PRODUCES", "rule_type": "compose", "rationale": "ok"
++        })
++        critic_reply = _fake_llm_response({
++            "verdict": "APPROVE", "revised_implied_predicate": None,
++            "revised_rule_type": None, "rationale": "ok"
++        })
++
++        mock_call_llm = AsyncMock(side_effect=[
++            (proposer_reply, "proposer-model", None),
++            (critic_reply, "critic-model", None),
++            (critic_reply, "critic-model", None),
++        ])
++        with patch("app.services.inference_rule_service.model_router.call_llm", new=mock_call_llm):
++            svc = InferenceRuleService()
++            await svc.propose_and_critique("USES", "GENERATES", run_id="test-run")
++
++        # First call = proposer (no exclude), second+third = critic calls
++        critic_calls = mock_call_llm.await_args_list[1:]
++        for call in critic_calls:
++            assert call.kwargs.get("exclude_provider_id") == provider_a.id
++
++
++class TestCandidateDiscovery:
++    def test_find_candidate_pairs_excludes_existing_rules(self, ephemeral_db):
++        u = _make_universe(ephemeral_db)
++        a = _make_entity(ephemeral_db, u.id, "A")
++        b = _make_entity(ephemeral_db, u.id, "B")
++        c = _make_entity(ephemeral_db, u.id, "C")
++        d = _make_entity(ephemeral_db, u.id, "D")
++        e = _make_entity(ephemeral_db, u.id, "E")
++        f = _make_entity(ephemeral_db, u.id, "F")
++        for (s, p, o) in [
++            (a.id, "USES", b.id), (b.id, "GENERATES", c.id),
++            (c.id, "USES", d.id), (d.id, "GENERATES", e.id),
++            (e.id, "USES", f.id), (f.id, "GENERATES", a.id),
++        ]:
++            _make_claim(ephemeral_db, s, p, o)
++
++        existing_rule = InferenceRule(predicate_1="USES", predicate_2="GENERATES", implied_predicate="PRODUCES", status="APPROVED", human_approved=True)
++        ephemeral_db.add(existing_rule)
++        ephemeral_db.commit()
++
++        svc = InferenceRuleService()
++        candidates = svc.find_candidate_pairs()
++        pair_tuples = [(p1, p2) for (p1, p2, cnt) in candidates]
++        assert ("USES", "GENERATES") not in pair_tuples  # already has a rule
++
++
++class TestRuleApprovalLifecycle:
++    def test_approve_and_reject(self, ephemeral_db):
++        rule = InferenceRule(predicate_1="USES", predicate_2="GENERATES", implied_predicate="PRODUCES", status="CRITIQUED")
++        ephemeral_db.add(rule)
++        ephemeral_db.commit()
++        ephemeral_db.refresh(rule)
++
++        svc = InferenceRuleService()
++        approved = svc.approve_rule(rule.id)
++        assert approved.human_approved is True
++        assert approved.status == "APPROVED"
++
++        rejected = svc.reject_rule(rule.id)
++        assert rejected.human_approved is False
++        assert rejected.status == "REJECTED"
++
++    def test_approve_nonexistent_rule_returns_none(self, ephemeral_db):
++        svc = InferenceRuleService()
++        assert svc.approve_rule(99999) is None
+diff --git a/tests/test_reset_database.py b/tests/test_reset_database.py
+new file mode 100644
+index 0000000..cc05862
+--- /dev/null
++++ b/tests/test_reset_database.py
+@@ -0,0 +1,155 @@
++import pytest
++from sqlmodel import Session, select
++from app.db.session import engine
++from app.db.unconfirmed_session import engine as unconfirmed_engine
++from app.db.unconfirmed_schema import UnconfirmedUniverse, UnconfirmedTrait
++from app.db.schema import Universe, Entity, EntityAlias, Claim, InferenceRule, InferredClaim
++
++
++class TestResetDatabaseUnconfirmedFKOrdering:
++    """Regression test for the actual bug reported: resetting the database
++    raised a foreign-key IntegrityError against unconfirmed.db whenever any
++    UnconfirmedTrait rows existed, because the reset deleted the parent
++    (UnconfirmedUniverse) before the child (UnconfirmedTrait) while
++    PRAGMA foreign_keys=ON is enabled on that engine."""
++
++    ENDPOINT = "/api/worlds/reset-database"
++
++    def test_reset_with_unconfirmed_trait_rows_does_not_raise(self, client):
++        with Session(unconfirmed_engine) as session:
++            u = UnconfirmedUniverse(name="TEST_Unconfirmed")
++            session.add(u)
++            session.commit()
++            session.refresh(u)
++            session.add(UnconfirmedTrait(universe_id=u.id, name="SomeTrait", value="SomeValue"))
++            session.commit()
++
++        # Before the fix, this raised sqlalchemy.exc.IntegrityError
++        # (FOREIGN KEY constraint failed) instead of returning 200.
++        r = client.post(self.ENDPOINT)
++        assert r.status_code == 200
++        assert r.json()["status"] == "success"
++
++    def test_reset_actually_clears_unconfirmed_tables(self, client):
++        with Session(unconfirmed_engine) as session:
++            u = UnconfirmedUniverse(name="TEST_ClearMe")
++            session.add(u)
++            session.commit()
++            session.refresh(u)
++            session.add(UnconfirmedTrait(universe_id=u.id, name="T", value="V"))
++            session.commit()
++
++        r = client.post(self.ENDPOINT)
++        assert r.status_code == 200
++
++        with Session(unconfirmed_engine) as session:
++            assert session.exec(select(UnconfirmedUniverse)).all() == []
++            assert session.exec(select(UnconfirmedTrait)).all() == []
++
++    def test_reset_with_multiple_traits_per_universe(self, client):
++        """Multiple children referencing the same parent -- the exact shape
++        that would have failed most reliably under the old ordering."""
++        with Session(unconfirmed_engine) as session:
++            u1 = UnconfirmedUniverse(name="TEST_MultiA")
++            u2 = UnconfirmedUniverse(name="TEST_MultiB")
++            session.add_all([u1, u2])
++            session.commit()
++            for u in [u1, u2]:
++                session.refresh(u)
++            session.add_all([
++                UnconfirmedTrait(universe_id=u1.id, name="T1", value="V1"),
++                UnconfirmedTrait(universe_id=u1.id, name="T2", value="V2"),
++                UnconfirmedTrait(universe_id=u2.id, name="T3", value="V3"),
++            ])
++            session.commit()
++
++        r = client.post(self.ENDPOINT)
++        assert r.status_code == 200
++        with Session(unconfirmed_engine) as session:
++            assert session.exec(select(UnconfirmedUniverse)).all() == []
++            assert session.exec(select(UnconfirmedTrait)).all() == []
++
++
++class TestResetDatabaseInferenceTables:
++    """Regression test: Entity/EntityAlias/Claim/InferenceRule/InferredClaim
++    were missing entirely from the main-db reset pass, so they'd survive a
++    'reset database' as orphaned rows pointing at deleted/reset universes."""
++
++    ENDPOINT = "/api/worlds/reset-database"
++
++    def _seed_full_inference_graph(self, db):
++        u = Universe(name="TEST_ResetInference", is_explored=True)
++        db.add(u)
++        db.commit()
++        db.refresh(u)
++
++        a = Entity(name="A", entity_type="X", universe_id=u.id)
++        b = Entity(name="B", entity_type="X", universe_id=u.id)
++        c = Entity(name="C", entity_type="X", universe_id=u.id)
++        db.add_all([a, b, c])
++        db.commit()
++        for e in [a, b, c]:
++            db.refresh(e)
++
++        alias = EntityAlias(entity_id=a.id, alias="Alt Name", universe_id=u.id)
++        db.add(alias)
++        db.commit()
++
++        c1 = Claim(subject_id=a.id, predicate="USES", object_id=b.id)
++        c2 = Claim(subject_id=b.id, predicate="GENERATES", object_id=c.id)
++        db.add_all([c1, c2])
++        db.commit()
++        for c_ in [c1, c2]:
++            db.refresh(c_)
++
++        rule = InferenceRule(predicate_1="USES", predicate_2="GENERATES", implied_predicate="PRODUCES",
++                              status="APPROVED", human_approved=True)
++        db.add(rule)
++        db.commit()
++        db.refresh(rule)
++
++        inferred = InferredClaim(
++            subject_id=a.id, predicate="PRODUCES", object_id=c.id,
++            derived_from_rule_id=rule.id, path_claim_ids="[1, 2]",
++        )
++        db.add(inferred)
++        db.commit()
++        return u
++
++    def test_reset_with_full_inference_graph_does_not_raise(self, ephemeral_db, client):
++        """Before the fix, these tables weren't touched at all by reset, so
++        this specifically checks the endpoint still succeeds (no FK issue
++        surfaces here since nothing deletes them) -- the real assertion is
++        in the next test, that they're actually gone afterward."""
++        self._seed_full_inference_graph(ephemeral_db)
++        r = client.post(self.ENDPOINT)
++        assert r.status_code == 200
++
++    def test_reset_actually_clears_all_new_inference_tables(self, ephemeral_db, client):
++        self._seed_full_inference_graph(ephemeral_db)
++
++        r = client.post(self.ENDPOINT)
++        assert r.status_code == 200
++
++        with Session(engine) as session:
++            assert session.exec(select(Entity)).all() == [], "Entity rows survived reset"
++            assert session.exec(select(EntityAlias)).all() == [], "EntityAlias rows survived reset"
++            assert session.exec(select(Claim)).all() == [], "Claim rows survived reset"
++            assert session.exec(select(InferenceRule)).all() == [], "InferenceRule rows survived reset"
++            assert session.exec(select(InferredClaim)).all() == [], "InferredClaim rows survived reset"
++
++    def test_reset_does_not_orphan_entities_pointing_at_reset_universe(self, ephemeral_db, client):
++        """Universes aren't deleted by reset (only cleared in place), but
++        Entity rows referencing them must not be left dangling either way --
++        confirms the fix clears the dependent graph regardless of what
++        happens to the parent Universe row."""
++        u = self._seed_full_inference_graph(ephemeral_db)
++
++        r = client.post(self.ENDPOINT)
++        assert r.status_code == 200
++
++        with Session(engine) as session:
++            # Universe itself persists (reset clears summary/explored flags,
++            # doesn't delete the row) -- but nothing should still reference it.
++            remaining_entities = session.exec(select(Entity).where(Entity.universe_id == u.id)).all()
++            assert remaining_entities == []
+diff --git a/tests/test_settings_service_repo_crash.py b/tests/test_settings_service_repo_crash.py
+new file mode 100644
+index 0000000..ee1f689
+--- /dev/null
++++ b/tests/test_settings_service_repo_crash.py
+@@ -0,0 +1,86 @@
++import pytest
++from unittest.mock import AsyncMock, patch
++from app.db.schema import Setting
++from app.services.settings_service import SettingsService
++
++
++class TestSettingsServiceGetSetting:
++    """The actual root-cause fix: SettingsService lost its eager .repo
++    attribute in the session-leak refactor, but three call sites elsewhere
++    still reached into settings_service.repo.get_setting(...) directly,
++    crashing with AttributeError the moment they ran (as seen in production:
++    'Critical Execution Failure: SettingsService object has no attribute
++    repo'). This adds a proper session-scoped passthrough method instead of
++    re-exposing .repo."""
++
++    def test_get_setting_returns_none_when_missing(self, ephemeral_db):
++        svc = SettingsService()
++        assert svc.get_setting("DOES_NOT_EXIST") is None
++
++    def test_get_setting_returns_value(self, ephemeral_db):
++        ephemeral_db.add(Setting(key="MAX_PARALLEL_AGENTS", value="7"))
++        ephemeral_db.commit()
++
++        svc = SettingsService()
++        setting = svc.get_setting("MAX_PARALLEL_AGENTS")
++        assert setting is not None
++        assert setting.value == "7"
++
++    def test_settings_service_has_no_repo_attribute(self):
++        """Documents the actual API shape post-refactor -- .repo is gone on
++        purpose (it was the eager-session-leak pattern), so any future call
++        site must use get_setting() or another proper method, not .repo."""
++        svc = SettingsService()
++        assert not hasattr(svc, "repo")
++
++
++@pytest.mark.asyncio
++class TestResearchNodeSettingsLookup:
++    """Reproduces the exact crash from the production log: 'Manager
++    [IN_PROGRESS] Starting parallel research phase' immediately followed by
++    'Critical Execution Failure: SettingsService object has no attribute
++    repo', which happened at the MAX_PARALLEL_AGENTS lookup in research_node
++    before any actual research/network call occurred."""
++
++    async def test_research_node_reads_batch_size_without_crashing(self, ephemeral_db):
++        from app.agents.nodes import research_node
++
++        ephemeral_db.add(Setting(key="MAX_PARALLEL_AGENTS", value="2"))
++        ephemeral_db.commit()
++
++        state = {
++            "run_id": "test-run-settings-crash",
++            "target_worlds": ["TestWorldA", "TestWorldB"],
++            "focused_features": None,
++            "research_results": [],
++            "verified_worlds": [],
++            "errors": [],
++        }
++
++        fake_result = {"name": "TestWorldA", "summary": "stub summary", "status": "VERIFIED"}
++        with patch("app.agents.nodes.research_single_world", new=AsyncMock(return_value=fake_result)):
++            # Before the fix, this raised AttributeError before even reaching
++            # research_single_world -- the crash happened at the settings
++            # lookup, not in the research call itself.
++            result = await research_node(state)
++
++        assert "research_results" in result
++        assert len(result["research_results"]) == 2
++
++    async def test_research_node_defaults_batch_size_when_setting_absent(self, ephemeral_db):
++        """No MAX_PARALLEL_AGENTS row at all -- must default to 5, not crash."""
++        from app.agents.nodes import research_node
++
++        state = {
++            "run_id": "test-run-no-setting",
++            "target_worlds": ["SoloWorld"],
++            "focused_features": None,
++            "research_results": [],
++            "verified_worlds": [],
++            "errors": [],
++        }
++
++        with patch("app.agents.nodes.research_single_world", new=AsyncMock(return_value={"name": "SoloWorld", "summary": "s", "status": "VERIFIED"})):
++            result = await research_node(state)
++
++        assert len(result["research_results"]) == 1

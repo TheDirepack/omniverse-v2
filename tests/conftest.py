@@ -31,16 +31,19 @@ TEST_DB_PATH = "/tmp/omniverse_test.db"
 
 @atexit.register
 def _cleanup():
-    for p in [TEST_DB_PATH, "/tmp/omniverse_test_unconfirmed.db"]:
+    for p in [TEST_DB_PATH, "/tmp/omniverse_test_unconfirmed.db", "/tmp/omniverse_test_extrapolation.db"]:
         if os.path.exists(p):
             os.remove(p)
 
 os.environ["DATABASE_URL"] = f"sqlite:///{TEST_DB_PATH}"
 os.environ["UNCONFIRMED_DB_URL"] = "sqlite:////tmp/omniverse_test_unconfirmed.db"
+os.environ["EXTRAPOLATION_DB_URL"] = "sqlite:////tmp/omniverse_test_extrapolation.db"
 
 from app.db.session import engine
 from app.db.unconfirmed_session import engine as unconfirmed_engine, init_unconfirmed_db
 from app.db.unconfirmed_schema import unconfirmed_metadata
+from app.db.extrapolation_session import engine as extrapolation_engine, init_extrapolation_db
+from app.db.extrapolation_schema import extrapolation_metadata
 from app.main import app
 
 
@@ -51,9 +54,11 @@ def auto_create_db():
     """Autouse: create tables before each test, drop after. Ensures clean slate."""
     SQLModel.metadata.create_all(engine)
     init_unconfirmed_db()
+    init_extrapolation_db()
     yield
     SQLModel.metadata.drop_all(engine)
     unconfirmed_metadata.drop_all(unconfirmed_engine)
+    extrapolation_metadata.drop_all(extrapolation_engine)
 
     # We don't explicitly drop unconfirmed tables here to avoid complexity, 
     # but since we use a temp file that is cleaned up at atexit, it's okay.
@@ -195,3 +200,92 @@ def api_client(real_server):
     import httpx
     with httpx.Client(base_url=real_server) as c:
         yield c
+
+
+# ── Real llama-server fixture for full-cycle inference-rule tests ──────
+#
+# Assumes `llama-server` (llama.cpp) is installed as a distro/system package
+# and reachable on PATH -- this fixture does not attempt to build or fetch
+# it. It also assumes the model file below is a REAL gguf, not the git-lfs
+# pointer stub -- LFS blobs for this repo are hosted on
+# github-cloud.githubusercontent.com, which is unreachable from some sandboxed
+# CI environments even when github.com itself is reachable. In that case
+# this fixture skips (not fails) so the rest of the suite still runs.
+
+MODEL_PATH = Path(__file__).parent / "model" / "Qwen_Qwen3-0.6B-Q5_K_L.gguf"
+MODEL_MIN_REAL_BYTES = 10 * 1024 * 1024  # LFS pointer stubs are ~130 bytes; real gguf is ~600MB
+
+
+def _llama_server_available() -> tuple[bool, str]:
+    if shutil.which("llama-server") is None:
+        return False, "llama-server binary not found on PATH"
+    if not MODEL_PATH.exists():
+        return False, f"model file not found at {MODEL_PATH}"
+    if MODEL_PATH.stat().st_size < MODEL_MIN_REAL_BYTES:
+        return False, (
+            f"{MODEL_PATH} is only {MODEL_PATH.stat().st_size} bytes -- looks like an "
+            "unresolved git-lfs pointer, not the real model weights"
+        )
+    return True, ""
+
+
+@pytest.fixture(scope="module")
+def llama_server():
+    """
+    Launches a real llama-server subprocess against the Qwen3-0.6B model
+    checked into tests/model/, exposing the OpenAI-compatible
+    /v1/chat/completions endpoint the app's router already expects for
+    provider_type="custom". Module-scoped since model load takes a few
+    seconds and nothing in these tests needs a fresh process per test.
+
+    Skips (rather than fails) if llama-server or a real model file isn't
+    available, so `pytest -m "not slow"` runs (the default in CI) are
+    unaffected either way.
+    """
+    available, reason = _llama_server_available()
+    if not available:
+        pytest.skip(f"Skipping real-model tests: {reason}")
+
+    port = _find_free_port()
+    base_url = f"http://127.0.0.1:{port}"
+
+    proc = subprocess.Popen(
+        [
+            "llama-server",
+            "-m", str(MODEL_PATH),
+            "-c", "4096",
+            "--host", "127.0.0.1",
+            "--port", str(port),
+            "--temp", "0",
+            "-ngl", "0",
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+
+    import httpx
+    for _ in range(120):  # up to 60s for cold model load on CPU
+        if proc.poll() is not None:
+            output = proc.stdout.read() if proc.stdout else ""
+            raise RuntimeError(f"llama-server exited early (code {proc.returncode}):\n{output}")
+        try:
+            with httpx.Client() as c:
+                r = c.get(f"{base_url}/health", timeout=1)
+                if r.status_code == 200:
+                    break
+        except Exception:
+            time.sleep(0.5)
+    else:
+        proc.kill()
+        output = proc.stdout.read() if proc.stdout else ""
+        raise RuntimeError(f"llama-server did not become healthy in time:\n{output}")
+
+    yield base_url
+
+    proc.terminate()
+    try:
+        proc.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.wait(timeout=5)

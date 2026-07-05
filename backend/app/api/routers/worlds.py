@@ -4,7 +4,10 @@ from pydantic import BaseModel
 from app.services.universe_service import UniverseService
 from sqlmodel import Session, select
 from app.db.session import engine
-from app.db.schema import ExecutionState, Trait, WorldTier, TierSystem, Anomaly, ModelConfig, Universe
+from app.db.schema import (
+    ExecutionState, Trait, WorldTier, TierSystem, Anomaly, ModelConfig, Universe,
+    Entity, EntityAlias, Claim, InferenceRule, InferredClaim,
+)
 from app.db.unconfirmed_session import engine as unconfirmed_engine
 from app.db.unconfirmed_schema import UnconfirmedUniverse, UnconfirmedTrait
 from app.db.extrapolation_session import engine as extrapolation_engine
@@ -73,7 +76,19 @@ def delete_world(world_id: int):
 @router.post("/reset-database")
 def reset_database():
     with Session(engine) as session:
-        for table in [ExecutionState, Trait, WorldTier, TierSystem, Anomaly, ModelConfig]:
+        # Deletion order matters: PRAGMA foreign_keys=ON is enabled on this
+        # engine (see db/session.py), so any table must be deleted AFTER
+        # every table that references it via a foreign key, or SQLite raises
+        # an IntegrityError. InferredClaim references Entity/Claim/
+        # InferenceRule; Claim and EntityAlias reference Entity -- so those
+        # go first, then Entity, then the independent InferenceRule.
+        # WorldTier references TierSystem, so it must precede it too
+        # (already correct below).
+        for table in [
+            ExecutionState,
+            InferredClaim, Claim, EntityAlias, Entity, InferenceRule,
+            Trait, WorldTier, TierSystem, Anomaly, ModelConfig,
+        ]:
             session.exec(table.__table__.delete())
         
         with Session(extrapolation_engine) as extra_session:
@@ -96,7 +111,14 @@ def reset_database():
         session.commit()
     
     with Session(unconfirmed_engine) as session:
-        for table in [UnconfirmedUniverse, UnconfirmedTrait]:
+        # Same FK-ordering issue as above: unconfirmed.db also enables
+        # PRAGMA foreign_keys=ON (unconfirmed_session.py), and
+        # UnconfirmedTrait.universe_id references unconfirmed_universe.id.
+        # Deleting UnconfirmedUniverse before UnconfirmedTrait raises an
+        # IntegrityError the moment any trait rows exist -- this was the
+        # actual cause of "reset has issues with Unconfirmed.db". Child
+        # table must be deleted first.
+        for table in [UnconfirmedTrait, UnconfirmedUniverse]:
             session.exec(table.__table__.delete())
         session.commit()
 

@@ -28,7 +28,7 @@ async def research_node(state: OmniverseState) -> Dict[str, Any]:
     cache = FetchCache()
     
     settings_service = SettingsService()
-    setting = settings_service.repo.get_setting("MAX_PARALLEL_AGENTS")
+    setting = settings_service.get_setting("MAX_PARALLEL_AGENTS")
     batch_size = int(setting.value) if setting and setting.value else 5
     
     focus_str = ", ".join(focused_features) if focused_features else None

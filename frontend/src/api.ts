@@ -169,3 +169,41 @@ export async function fetchFileLogs(filter?: string): Promise<string[]> {
 export function createEventSource(runId: string): EventSource {
   return new EventSource(`${apiBase}/api/runs/logs/${runId}`);
 }
+
+// --- Inference rules / path materialization ---
+
+export async function fetchInferenceRules(status?: string): Promise<any> {
+  const query = status ? `?status=${encodeURIComponent(status)}` : "";
+  return apiFetch(`/api/inference/rules${query}`);
+}
+
+export async function triggerRuleProposal(): Promise<{ run_id: string; status: string }> {
+  return apiFetch("/api/inference/rules/propose", { method: "POST" });
+}
+
+export async function approveInferenceRule(ruleId: number): Promise<any> {
+  return apiFetch(`/api/inference/rules/${ruleId}/approve`, { method: "POST" });
+}
+
+export async function rejectInferenceRule(ruleId: number): Promise<any> {
+  return apiFetch(`/api/inference/rules/${ruleId}/reject`, { method: "POST" });
+}
+
+export async function triggerMaterialization(): Promise<{ status: string; created_count: number }> {
+  return apiFetch("/api/inference/materialize", { method: "POST" });
+}
+
+export async function fetchContradictions(): Promise<any[]> {
+  return apiFetch("/api/inference/contradictions");
+}
+
+export async function fetchCompositionDepth(): Promise<{ max_composition_depth: number }> {
+  return apiFetch("/api/inference/depth");
+}
+
+export async function setCompositionDepth(depth: number): Promise<{ max_composition_depth: number }> {
+  return apiFetch("/api/inference/depth", {
+    method: "PUT",
+    body: JSON.stringify({ max_composition_depth: depth }),
+  });
+}

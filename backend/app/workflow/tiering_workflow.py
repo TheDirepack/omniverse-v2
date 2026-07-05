@@ -117,8 +117,7 @@ async def architecture_node(state: Dict[str, Any]) -> Dict[str, Any]:
 
     dataset = ""
     with Session(engine) as session:
-        settings_repo = settings_service.repo
-        setting = settings_repo.get_setting("CONSOLIDATED_DATASET")
+        setting = settings_service.get_setting("CONSOLIDATED_DATASET")
         if setting:
             dataset = setting.value
         active_rubric = tier_service.repo.get_active_rubric()

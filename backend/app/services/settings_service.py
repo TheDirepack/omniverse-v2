@@ -8,6 +8,10 @@ class SettingsService:
     def __init__(self, session: Optional[Session] = None):
         self.session = session
 
+    def get_setting(self, key: str) -> Optional[Setting]:
+        with Session(engine) if not self.session else self.session as session:
+            return SettingsRepository(session).get_setting(key)
+
     def get_all_settings(self) -> Dict[str, Any]:
         with Session(engine) if not self.session else self.session as session:
             repo = SettingsRepository(session)

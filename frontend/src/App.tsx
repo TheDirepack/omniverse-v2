@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Layers, Lightbulb, Settings, Terminal } from "lucide-react";
+import { GitBranch, Layers, Lightbulb, Settings, Terminal } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { Tab } from "./types";
 
@@ -8,6 +8,7 @@ import DatabasePanel from "./components/DatabasePanel";
 import TraitViewerPanel from "./components/TraitViewerPanel";
 import LogViewerPanel from "./components/LogViewerPanel";
 import TheoriesPanel from "./components/TheoriesPanel";
+import InferenceRulesPanel from "./components/InferenceRulesPanel";
 import SettingsPanel from "./components/settings/SettingsPanel";
 
 const navItems: Array<{ id: Tab; label: string; Icon: LucideIcon }> = [
@@ -16,6 +17,7 @@ const navItems: Array<{ id: Tab; label: string; Icon: LucideIcon }> = [
   { id: "traits", label: "Main DB", Icon: Layers },
   { id: "logs", label: "System Logs", Icon: Terminal },
   { id: "theories", label: "Theories", Icon: Lightbulb },
+  { id: "inference", label: "Inference Rules", Icon: GitBranch },
   { id: "settings", label: "Settings", Icon: Settings },
 ];
 
@@ -47,6 +49,7 @@ export default function App() {
         {tab === "traits" && <TraitViewerPanel />}
         {tab === "logs" && <LogViewerPanel />}
         {tab === "theories" && <TheoriesPanel />}
+        {tab === "inference" && <InferenceRulesPanel />}
         {tab === "settings" && <SettingsPanel />}
       </main>
     </div>

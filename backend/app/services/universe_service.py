@@ -7,13 +7,45 @@ from app.repositories.universe import UniverseRepository
 class UniverseService:
     def __init__(self, session: Optional[Session] = None):
         self.session = session
+        self._repo: Optional[UniverseRepository] = None
+
+    @property
+    def repo(self) -> UniverseRepository:
+        """
+        Lazily-created, cached repo bound to a dedicated session held for
+        this UniverseService instance's lifetime. Restores the .repo access
+        pattern that several call sites across the pipeline (nodes.py,
+        summarizer.py, runs.py, and the workflow modules) depend on to make
+        multiple sequential repo calls within one execution -- this was
+        removed in an earlier session-leak refactor without updating those
+        call sites, causing "'UniverseService' object has no attribute
+        'repo'" crashes at runtime.
+
+        Deliberately independent from self.session/the `with Session(engine)
+        if not self.session else self.session as session:` pattern used by
+        every method below -- those open and close a short-lived session per
+        call, so sharing a session with .repo would close it out from under
+        callers still using .repo afterward. All current .repo call sites
+        instantiate UniverseService() with no session argument, so this
+        stays fully decoupled from that path.
+
+        NOTE: this does re-introduce a held-open session for the object's
+        lifetime (same tradeoff TieringService already has) rather than the
+        fully session-scoped pattern used elsewhere in this class. A fuller
+        rewrite of all 10 call sites to short-lived, purpose-built service
+        methods (matching get_universe/get_all_universes/etc. below) would
+        be the cleaner long-term fix, but touches 6 files across the whole
+        pipeline and is out of scope for this crash fix.
+        """
+        if self._repo is None:
+            self._repo = UniverseRepository(self.session or Session(engine))
+        return self._repo
 
     def _get_repo(self) -> UniverseRepository:
-        if self.session:
-            return UniverseRepository(self.session)
-        # For simplicity in this fix, we'll use a new session. 
-        # In a real app, this should be handled by a dependency.
-        return UniverseRepository(Session(engine))
+        # Kept for backward compatibility with any existing callers;
+        # delegates to the same cached instance as the .repo property so
+        # there's only ever one repo/session per UniverseService instance.
+        return self.repo
 
     def get_universe(self, name: str) -> Optional[Universe]:
         with Session(engine) if not self.session else self.session as session:

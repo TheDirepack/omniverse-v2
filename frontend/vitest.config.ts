@@ -22,9 +22,9 @@ export default defineConfig({
   },
   test: {
     environment: "jsdom",
-    include: ["tests/**/*.test.ts", "tests/**/*.test.tsx"],
+    include: ["frontend/src/__tests__/**/*.test.{ts,tsx}"],
     root: projectRoot,
-    setupFiles: [resolve(projectRoot, "tests/setup.ts")],
+    setupFiles: [resolve(projectRoot, "frontend/src/__tests__/setup.ts")],
     coverage: {
       provider: "v8",
       reporter: ["text", "json", "html"],

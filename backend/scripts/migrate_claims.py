@@ -1,12 +1,29 @@
 import os
 from sqlmodel import Session, select
+from sqlalchemy import text
 from app.db.session import engine
 from app.db.schema import Claim, Predicate
 
 def migrate_predicates():
     with Session(engine) as session:
+        # 0. Ensure required columns exist
+        try:
+            session.execute(text("ALTER TABLE claim ADD COLUMN predicate_id INTEGER REFERENCES predicate(id)"))
+            session.commit()
+            print("Added predicate_id column to claim table.")
+        except Exception as e:
+            print(f"Note: Could not add predicate_id column (it may already exist): {e}")
+
+        try:
+            session.execute(text("ALTER TABLE claim ADD COLUMN evidence_chunk_id INTEGER REFERENCES evidencechunk(id)"))
+            session.commit()
+            print("Added evidence_chunk_id column to claim table.")
+        except Exception as e:
+            print(f"Note: Could not add evidence_chunk_id column (it may already exist): {e}")
+
         # 1. Ensure all currently used predicates are in the Predicate table
         claims = session.exec(select(Claim)).all()
+
         for claim in claims:
             if claim.predicate:
                 pred = session.exec(select(Predicate).where(Predicate.canonical_name == claim.predicate)).first()

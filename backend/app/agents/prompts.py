@@ -47,7 +47,7 @@ Treat the unconfirmed staging database as your persistent research notes workspa
 - Staged claims promoted to main DB are deleted by cleanup; all other research notes must persist.
 """
 
-def get_researcher_prompt(entity: str, requirements: str, focus: Optional[str] = None, previous_dataset: Optional[str] = None, outstanding_corrections: Optional[str] = None, unconfirmed_data: Optional[str] = None):
+def get_researcher_prompt(entity: str, requirements: str, focus: Optional[str] = None, previous_dataset: Optional[str] = None, outstanding_corrections: Optional[str] = None, unconfirmed_data: Optional[str] = None, verified_claims: Optional[str] = None, knowledge_graph: Optional[str] = None):
     focus_block = ""
     if focus:
         focus_block = f"""
@@ -65,28 +65,46 @@ The following atomic claims were previously found but not yet verified:
 {unconfirmed_data}
 """
 
+    verified_block = ""
+    if verified_claims and verified_claims.strip():
+        verified_block = f"""
+VERIFIED KNOWLEDGE BASE:
+The following facts are already confirmed in the main database:
+{verified_claims}
+"""
+
+    graph_block = ""
+    if knowledge_graph and knowledge_graph.strip():
+        graph_block = f"""
+EXISTING KNOWLEDGE GRAPH:
+Current semantic mapping of the universe:
+{knowledge_graph}
+"""
+    
     mode_block = "INITIAL RESEARCH"
     if previous_dataset:
         mode_block = f"""PATCH & REFINE MODE
 You are updating an existing dataset. 
 PREVIOUS DATASET:
 {previous_dataset}
-
+ 
 OUTSTANDING CORRECTIONS:
 {outstanding_corrections or "None"}
-
+ 
 INSTRUCTIONS:
 1. ABSOLUTE PRIORITY: Outstanding Corrections take precedence over all other leads. Resolve them first before proceeding to new research.
 2. TARGETED FIXES: Identify exactly which entries are affected by the Outstanding Corrections and fix them.
 3. STABILITY: Keep all unaffected verified data exactly as it is.
 4. PATCHING: Update the JSON by patching only the necessary fields.
 """
-
+    
     return {
         "system": f"""### ROLE
 Deep-Dive Wiki Investigator & Archivist for {entity}. You are a forensic researcher. You operate in a phased workflow to ensure maximum precision and zero hallucination.
   
 MODE: {mode_block}
+{verified_block}
+{graph_block}
 {unconfirmed_block}
   
 PHASED WORKFLOW
@@ -95,6 +113,7 @@ PHASED WORKFLOW
 3. SYNTHESIS: Build the `Knowledge_Graph` (leads for next turns) and `Missing_Info` (unresolved gaps). 
     - MANDATORY: Every lead in the `Knowledge_Graph` and every gap in `Missing_Info` MUST also be saved to the staging DB using `saveUnconfirmedClaim` with predicates 'is_a_lead' and 'has_gap' respectively. This ensures they are visible in the research dashboard.
 4. FORMATTING: Return the results in the strict JSON schema.
+
   
 CORE DIRECTIVES
 - KNOWLEDGE BOUNDARY: Distinguish between Universe Lore (internal facts) and Production Trivia (writing/censorship/meta). Record ONLY Universe Lore.
@@ -105,6 +124,7 @@ CORE DIRECTIVES
 - SOURCE RIGOR: If a source shows a staleness warning or redirect, re-source from the active wiki.
 - DIRECT FETCHES: If a specific URL is provided in the correction queue, fetch it directly before searching.
 - WIKI LEVERAGING: Once a wiki is identified, attempt to derive predictable URLs for specific articles before performing new searches.
+- MULTIVERSE AWARENESS: Proactively identify relationships between this universe and others (e.g., timelines, alternate realities). Use `linkUniverses` to record these relations and `linkEntityToCanonical` to link entities to their versions across different universes.
 - STOPPING HEURISTIC: If repeated search reformulations consistently return the same pages without new information, terminate searching and mark the gap in `Missing_Info`.
 - PROVISIONAL STATE: Once a likely answer is identified but not yet verified, move it from `Missing_Info` to `Provisional_Conclusions`.
   

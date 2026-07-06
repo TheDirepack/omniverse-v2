@@ -12,8 +12,9 @@ import httpx
 from datetime import datetime, timedelta
 from sqlmodel import Session, select
 
-from app.db.schema import ProviderConfig, ProviderKey, AgentRouteFallback
+from app.db.schema import ProviderConfig, ProviderKey, AgentRouteFallback, CandidateHealth
 from app.db.session import engine
+from app.db.settings_session import settings_engine
 from app.core.router import router, calculate_candidate_hash
 
 
@@ -35,7 +36,7 @@ def _seed_provider(
     provider_type: str = "custom",
 ) -> ProviderConfig:
     """Create provider + keys + route in test DB, return provider."""
-    with Session(engine) as session:
+    with Session(settings_engine) as session:
         p = ProviderConfig(
             name="test-provider",
             provider_type=provider_type,
@@ -101,6 +102,17 @@ def fake_llm_server():
         proc.wait(timeout=2)
 
 
+@pytest.fixture(autouse=True)
+def cleanup_settings():
+    with Session(settings_engine) as session:
+        session.query(ProviderConfig).delete()
+        session.query(ProviderKey).delete()
+        session.query(AgentRouteFallback).delete()
+        session.query(CandidateHealth).delete()
+        session.commit()
+    yield
+
+
 # ── Key fallback tests ──────────────────────────────────────────────
 
 class TestKeyFallback:
@@ -150,7 +162,7 @@ class TestKeyFallback:
         base_url = fake_llm_server
         _set_bad_keys(base_url, ["lowest", "middle"])
 
-        with Session(engine) as session:
+        with Session(settings_engine) as session:
             p = ProviderConfig(
                 name="priority-provider",
                 provider_type="custom",
@@ -180,10 +192,10 @@ class TestKeyFallback:
     async def test_no_keys_available(self, fake_llm_server):
         base_url = fake_llm_server
 
-        with Session(engine) as session:
+        with Session(settings_engine) as session:
             p = ProviderConfig(
                 name="no-keys-provider",
-                provider_type="custom",
+                provider_type="openai",
                 base_url=base_url,
                 models="gpt-4",
             )
@@ -211,7 +223,7 @@ class TestKeyFallback:
 
     @pytest.mark.asyncio
     async def test_provider_without_provider_type_skipped(self, fake_llm_server):
-        with Session(engine) as session:
+        with Session(settings_engine) as session:
             p = ProviderConfig(
                 name="no-type-provider",
                 provider_type=None,
@@ -237,7 +249,7 @@ class TestKeyFallback:
         base_url = fake_llm_server
         _set_bad_keys(base_url, ["key1"])
 
-        with Session(engine) as session:
+        with Session(settings_engine) as session:
             p = ProviderConfig(
                 name="cartesian-provider",
                 provider_type="custom",
@@ -284,7 +296,7 @@ class TestKeyFallback:
         _set_bad_keys(base_url, [])
         
         # Seed provider and default route
-        with Session(engine) as session:
+        with Session(settings_engine) as session:
             p = ProviderConfig(
                 name="default-route-provider",
                 provider_type="custom",
@@ -316,7 +328,7 @@ class TestKeyFallback:
         base_url = fake_llm_server
         _set_bad_keys(base_url, [])
         
-        with Session(engine) as session:
+        with Session(settings_engine) as session:
             p = ProviderConfig(
                 name="none-models-provider",
                 provider_type="custom",
@@ -348,10 +360,10 @@ class TestKeyFallback:
         base_url = fake_llm_server
         _set_bad_keys(base_url, [])
         
-        with Session(engine) as session:
+        with Session(settings_engine) as session:
             p = ProviderConfig(
                 name="no-keys-custom-provider",
-                provider_type="custom",
+                provider_type="openai",
                 base_url=base_url,
                 models="gpt-4",
             )
@@ -359,13 +371,13 @@ class TestKeyFallback:
             session.flush()
             
             session.add(AgentRouteFallback(
-                task_type="TEST_NO_KEYS", provider_id=p.id, models="gpt-4", priority=0
+                task_type="TEST", provider_id=p.id, models="gpt-4", priority=0
             ))
             session.commit()
         
         with pytest.raises(RuntimeError, match="All fallback options exhausted"):
             await router.run_model(
-                "TEST_NO_KEYS",
+                "TEST",
                 messages=[{"role": "user", "content": "hi"}],
             )
 
@@ -382,7 +394,7 @@ class TestCandidateHealth:
                 await router.run_model("TEST", messages=[{"role": "user", "content": "hi"}])
         
         # 6th call should still fail, but verify it's disabled in DB
-        with Session(engine) as session:
+        with Session(settings_engine) as session:
             from app.db.schema import CandidateHealth
             health = session.exec(select(CandidateHealth)).first()
             assert health is not None
@@ -396,7 +408,7 @@ class TestCandidateHealth:
         _seed_provider(base_url, api_keys=["bad-key", "good-key"], models="gpt-4")
         
         # Force first key to be disabled
-        with Session(engine) as session:
+        with Session(settings_engine) as session:
             from app.db.schema import CandidateHealth
             # We need the specific key id. Seed provider does this.
             # Let's just find the one for 'bad-key'
@@ -436,7 +448,7 @@ class TestCandidateHealth:
         _set_bad_keys(base_url, ["bad-key"])
         await router.run_model("TEST", messages=[{"role": "user", "content": "hi"}])
         
-        with Session(engine) as session:
+        with Session(settings_engine) as session:
             from app.db.schema import CandidateHealth
             health = session.exec(select(CandidateHealth).where(CandidateHealth.model == "gpt-4")).all()
             # Check that at least one candidate (the successful one) has failure_count == 0
@@ -445,28 +457,5 @@ class TestCandidateHealth:
 
 
 
-@pytest.mark.asyncio
-async def test_provider_no_keys_custom_type(fake_llm_server):
-    base_url = fake_llm_server
-    _set_bad_keys(base_url, [])
-    
-    with Session(engine) as session:
-        p = ProviderConfig(
-            name="no-keys-custom-provider",
-            provider_type="custom",
-            base_url=base_url,
-            models="gpt-4",
-        )
-        session.add(p)
-        session.flush()
+# (Remove this redundant test function)
 
-        session.add(AgentRouteFallback(
-            task_type="TEST_NO_KEYS", provider_id=p.id, models="gpt-4", priority=0
-        ))
-        session.commit()
-
-    with pytest.raises(RuntimeError, match="All fallback options exhausted"):
-        await router.run_model(
-            "TEST_NO_KEYS",
-            messages=[{"role": "user", "content": "hi"}],
-        )

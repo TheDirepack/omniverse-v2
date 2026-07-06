@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import ProviderCard from "../frontend/src/components/settings/ProviderCard";
+import ProviderCard from "../components/settings/ProviderCard";
 import * as api from "../frontend/src/api";
 
 vi.mock("../frontend/src/api", () => ({

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
-import TheoriesPanel from "../frontend/src/components/TheoriesPanel";
-import * as api from "../frontend/src/api";
+import TheoriesPanel from "../components/TheoriesPanel";
+import * as api from "../api";
 
 vi.mock("../frontend/src/api", () => ({
   fetchResults: vi.fn(),

@@ -13,12 +13,30 @@ class InferenceRepository:
     # --- Claim graph ---
 
     def get_claims_by_predicate(self, predicate: str) -> Sequence[Claim]:
+        # Try finding by predicate_id first if it's been migrated
+        from app.db.schema import Predicate
+        stmt = select(Claim).join(Predicate, Claim.predicate_id == Predicate.id).where(Predicate.canonical_name == predicate)
+        results = self.session.exec(stmt).all()
+        if results:
+            return results
+        # Fallback to deprecated string predicate column
         return self.session.exec(select(Claim).where(Claim.predicate == predicate)).all()
 
     def get_claims_for_subject(self, subject_id: int) -> Sequence[Claim]:
         return self.session.exec(select(Claim).where(Claim.subject_id == subject_id)).all()
 
     def find_claim(self, subject_id: int, predicate: str, object_id: int) -> Optional[Claim]:
+        from app.db.schema import Predicate
+        # Try migrated path
+        stmt = select(Claim).join(Predicate, Claim.predicate_id == Predicate.id).where(
+            Claim.subject_id == subject_id,
+            Predicate.canonical_name == predicate,
+            Claim.object_id == object_id,
+        )
+        res = self.session.exec(stmt).first()
+        if res:
+            return res
+        # Fallback
         return self.session.exec(
             select(Claim).where(
                 Claim.subject_id == subject_id,
@@ -28,6 +46,14 @@ class InferenceRepository:
         ).first()
 
     def find_claims_with_subject_predicate(self, subject_id: int, predicate: str) -> Sequence[Claim]:
+        from app.db.schema import Predicate
+        stmt = select(Claim).join(Predicate, Claim.predicate_id == Predicate.id).where(
+            Claim.subject_id == subject_id, 
+            Predicate.canonical_name == predicate
+        )
+        res = self.session.exec(stmt).all()
+        if res:
+            return res
         return self.session.exec(
             select(Claim).where(Claim.subject_id == subject_id, Claim.predicate == predicate)
         ).all()
@@ -38,25 +64,47 @@ class InferenceRepository:
         intermediate entity: subject --p1--> mid --p2--> object.
         Used to surface candidates worth proposing an InferenceRule for.
         """
-        c1 = Claim
-        results = self.session.exec(
-            select(Claim.predicate).distinct()
-        ).all()
-        # Build pair counts by joining Claim to itself on object_id == subject_id
         from sqlalchemy import alias
-        c2 = alias(Claim.__table__, name="c2")
+        from app.db.schema import Predicate
+        
+        # We need to resolve canonical names via Predicate table because Claim.predicate is deprecated
+        P1 = alias(Predicate.__table__, name="p1")
+        P2 = alias(Predicate.__table__, name="p2")
+        C1 = Claim.__table__
+        C2 = alias(Claim.__table__, name="c2")
+
         stmt = (
             select(
-                Claim.predicate,
-                c2.c.predicate,
+                P1.c.canonical_name,
+                P2.c.canonical_name,
                 func.count().label("cnt"),
             )
-            .select_from(Claim.__table__.join(c2, Claim.__table__.c.object_id == c2.c.subject_id))
-            .group_by(Claim.predicate, c2.c.predicate)
+            .select_from(
+                C1.join(C2, C1.c.object_entity_id == C2.c.subject_id)
+                  .join(P1, C1.c.predicate_id == P1.c.id)
+                  .join(P2, C2.c.predicate_id == P2.c.id)
+            )
+            .group_by(P1.c.canonical_name, P2.c.canonical_name)
             .having(func.count() >= min_count)
         )
         rows = self.session.exec(stmt).all()
-        return [(r[0], r[1], r[2]) for r in rows]
+        if rows:
+            return [(r[0], r[1], r[2]) for r in rows]
+            
+        # Fallback for unmigrated data
+        c2_deprecated = alias(Claim.__table__, name="c2_deprecated")
+        stmt_fallback = (
+            select(
+                Claim.predicate,
+                c2_deprecated.c.predicate,
+                func.count().label("cnt"),
+            )
+            .select_from(Claim.__table__.join(c2_deprecated, Claim.__table__.c.object_entity_id == c2_deprecated.c.subject_id))
+            .group_by(Claim.predicate, c2_deprecated.c.predicate)
+            .having(func.count() >= min_count)
+        )
+        rows_fallback = self.session.exec(stmt_fallback).all()
+        return [(r[0], r[1], r[2]) for r in rows_fallback]
 
     # --- InferenceRule lifecycle ---
 

@@ -5,7 +5,7 @@ Multi-agent fictional power-tiering platform. FastAPI + LangGraph + React.
 ## Quick start
 
 ```sh
-./setup.sh          # create venv, install deps, seed .env.local template
+./setup.sh          # create venv, install deps, seed .env.local
 ./run.sh            # uvicorn backend :8000 + vite frontend :5173
 ./test.sh           # backend pytest + frontend vitest
 ```
@@ -99,7 +99,7 @@ Global `ACTIVE_RUNS` / `ABORTED_RUNS` sets in `core/state.py`. Abort checked bet
 - **pytest markers**: `slow` for LLM/network tests. `asyncio_mode = auto`.
 - **Log Format**: `[Timestamp] [Agent] [Model] [KeyID] [WorldName] [Type] Content` (used for structured filtering in LogViewer).
 - **No lint/typecheck/format scripts** in repo.
-- **Frontend tests**: in `src/__tests__/`. Vitest with `node` environment.
+- **Frontend tests**: in `src/__tests__/`.
 - **Backend entry**: `app/main.py`.
 - **Frontend entry**: `src/main.tsx`.
 - **Vite proxy**: none (direct fetch to `localhost:8000` configured via `VITE_API_URL` env).

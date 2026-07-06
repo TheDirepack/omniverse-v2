@@ -1,7 +1,8 @@
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Union
+from app.core.agent_event_types import AgentEventType
 from app.core.context import get_current_universe
 
 # Define log file path relative to this file: backend/app/core/agent_logger.py -> backend/logs/agents.log
@@ -37,21 +38,25 @@ class AgentLogger:
     @staticmethod
     def log(
         agent: str,
-        event_type: str,
+        event_type: Union[AgentEventType, str],
         content: str,
         model: Optional[str] = "unknown",
         key_id: Optional[str] = "unknown",
     ):
         if not AgentLogger._is_logging_enabled():
             return
+        
+        # Ensure event_type is a string for formatting
+        event_type_str = str(event_type)
 
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         world_name = get_current_universe() or "unknown"
         
         # [Timestamp] [Agent] [Model] [KeyID] [WorldName] [Type] Content
-        log_line = f"[{timestamp}] [{agent}] [{model}] [{key_id}] [{world_name}] [{event_type}] {content}"
+        log_line = f"[{timestamp}] [{agent}] [{model}] [{key_id}] [{world_name}] [{event_type_str}] {content}"
         
         # Use the configured logger instead of direct file writing
         agent_sys_logger.info(log_line)
 
 agent_logger = AgentLogger()
+

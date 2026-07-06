@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import SettingItem from "../frontend/src/components/settings/SettingItem";
+import SettingItem from "../components/settings/SettingItem";
 
 describe("SettingItem", () => {
   const onSave = vi.fn().mockResolvedValue(undefined);

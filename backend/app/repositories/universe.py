@@ -1,6 +1,6 @@
 from typing import List, Optional, Sequence
 from sqlmodel import Session, select, delete
-from app.db.schema import Universe, Trait, Claim
+from app.db.schema import Universe, Trait, Claim, UniverseRelation, Entity
 
 class UniverseRepository:
     def __init__(self, session: Session):
@@ -63,3 +63,37 @@ class UniverseRepository:
                 Claim.status == "VERIFIED"
             )
         ).all()
+
+    def create_relation(self, relation: UniverseRelation) -> UniverseRelation:
+        self.session.add(relation)
+        self.session.commit()
+        self.session.refresh(relation)
+        return relation
+
+    def get_relations(self, universe_id: Optional[int] = None, direction: str = "both") -> Sequence[UniverseRelation]:
+        query = select(UniverseRelation)
+        if universe_id:
+            if direction == "out":
+                query = query.where(UniverseRelation.from_universe_id == universe_id)
+            elif direction == "in":
+                query = query.where(UniverseRelation.to_universe_id == universe_id)
+            else:
+                query = query.where((UniverseRelation.from_universe_id == universe_id) | (UniverseRelation.to_universe_id == universe_id))
+        return self.session.exec(query).all()
+
+    def get_related_universes(self, universe_id: int) -> Sequence[Universe]:
+        relations = self.get_relations(universe_id)
+        related_ids = set()
+        for r in relations:
+            related_ids.add(r.to_universe_id if r.from_universe_id == universe_id else r.from_universe_id)
+        return self.session.exec(select(Universe).where(Universe.id.in_(list(related_ids)))).all()
+
+    def set_entity_canonical(self, entity_id: int, canonical_id: Optional[int] = None):
+        entity = self.session.get(Entity, entity_id)
+        if entity:
+            entity.canonical_entity_id = canonical_id
+            entity.canonical = (canonical_id is None)
+            self.session.add(entity)
+            self.session.commit()
+            self.session.refresh(entity)
+        return entity

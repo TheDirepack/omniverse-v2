@@ -192,6 +192,14 @@ export default function LogViewerPanel() {
               <option value="THOUGHT">Thought</option>
               <option value="TOOL_REQ">Tool Request</option>
               <option value="TOOL_RES">Tool Response</option>
+              <option value="PROMPT">Prompt</option>
+              <option value="MODEL_CALL">Model Call</option>
+              <option value="ERROR">Error</option>
+              <option value="FAILED">Failed</option>
+              <option value="INFO">Info</option>
+              <option value="WARNING">Warning</option>
+              <option value="COMPLETED">Completed</option>
+              <option value="IN_PROGRESS">In Progress</option>
             </select>
           </div>
           <div className="filter-group" style={{ display: "flex", flexDirection: "column", gap: 4 }}>

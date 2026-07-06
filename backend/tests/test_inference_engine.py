@@ -1,5 +1,6 @@
 import json
 import pytest
+from sqlmodel import Session, select
 from app.db.schema import Universe, Entity, Claim, InferenceRule, InferredClaim, Setting
 from app.repositories.inference import InferenceRepository
 from app.services.inference_engine_service import InferenceEngineService
@@ -22,7 +23,13 @@ def _make_entity(db, universe_id, name, entity_type="Thing"):
 
 
 def _make_claim(db, subject_id, predicate, object_id, **kwargs):
-    c = Claim(subject_id=subject_id, predicate=predicate, object_id=object_id, **kwargs)
+    from app.db.schema import Predicate
+    pred_obj = db.exec(select(Predicate).where(Predicate.canonical_name == predicate)).first()
+    if not pred_obj:
+        pred_obj = Predicate(canonical_name=predicate)
+        db.add(pred_obj)
+        db.flush()
+    c = Claim(subject_id=subject_id, predicate_id=pred_obj.id, predicate=predicate, object_entity_id=object_id, **kwargs)
     db.add(c)
     db.commit()
     db.refresh(c)

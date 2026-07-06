@@ -41,14 +41,14 @@ AI_CONTAINER_SELECTORS = [
 
 class WebSearcher:
     async def perform_search(
-        self, query: str, engine: str = "google", site_filter: Optional[str] = None
-    ) -> str:
+        self, query: str, engine: str = "google", site_filter: Optional[str] = None, max_results: int = 10
+    ) -> Dict[str, Any]:
         if site_filter:
             query = f"site:{site_filter} {query}"
 
         url_template = SEARCH_URLS.get(engine)
         if not url_template:
-            return f"Unsupported engine: {engine}. Supported: {', '.join(SEARCH_URLS)}."
+            return {"status": "ERROR", "message": f"Unsupported engine: {engine}. Supported: {', '.join(SEARCH_URLS)}."}
 
         search_url = url_template.format(q=urllib.parse.quote(query))
 
@@ -58,20 +58,20 @@ class WebSearcher:
                 await page.goto(search_url, wait_until="networkidle", timeout=20000)
             except Exception as e:
                 logging.warning(f"Search page load failed, retrying: {e}")
-                # Retry with a looser wait condition rather than failing outright —
-                # some search result pages never go fully idle (ads, telemetry).
                 await page.goto(search_url, wait_until="domcontentloaded", timeout=15000)
             html = await page.content()
 
             lower_html = html.lower()
             if any(pattern in lower_html for pattern in BOT_CHECK_PATTERNS):
-                return (
-                    f"[BLOCKED] {engine} appears to have shown a bot-verification "
-                    f"page instead of search results for this query. This does NOT "
-                    f"mean there are no results — try a different engine (the other "
-                    f"options are: {', '.join(e for e in SEARCH_URLS if e != engine)}), "
-                    f"or a fetchPage on a known relevant URL directly."
-                )
+                return {
+                    "status": "BLOCKED",
+                    "engine": engine,
+                    "message": (
+                        f"Search engine {engine} appears to have shown a bot-verification "
+                        f"page instead of search results for this query. Try a different engine "
+                        f"({', '.join(e for e in SEARCH_URLS if e != engine)}) or a fetchPage on a known relevant URL."
+                    )
+                }
 
             soup = BeautifulSoup(html, "html.parser")
 
@@ -85,12 +85,18 @@ class WebSearcher:
                 results = []
 
             if results:
-                return "\n".join(results[:MAX_RESULTS_PER_ENGINE])
-            return (
-                f"No results found for {query} on {engine}. If this is unexpected, "
-                f"try a different engine — a page layout change or soft block can "
-                f"also produce zero parsed results without an explicit bot-check page."
-            )
+                return {
+                    "status": "SUCCESS",
+                    "engine": engine,
+                    "query": query,
+                    "results": results[:max_results]
+                }
+            return {
+                "status": "NO_RESULTS",
+                "engine": engine,
+                "query": query,
+                "message": f"No results found for {query} on {engine}. Try a different engine."
+            }
         finally:
             await page.close()
             await context.close()
@@ -103,9 +109,6 @@ class WebSearcher:
             if parent and parent.select_one(selector) == element:
                 return True
         return False
-
-    def _format_result(self, title: str, url: str, snippet: str, index: int) -> str:
-        return f"### {index}. [{title}]({url})\n{snippet}\n"
 
     def _parse_google(self, soup: BeautifulSoup) -> list:
         results = []
@@ -138,7 +141,7 @@ class WebSearcher:
             snippet = snippet_el.get_text(" ", strip=True) if snippet_el else ""
 
             idx += 1
-            results.append(self._format_result(title, href, snippet, idx))
+            results.append({"title": title, "url": href, "snippet": snippet})
 
         return results
 
@@ -162,7 +165,7 @@ class WebSearcher:
                 snippet = snip_el.get_text(" ", strip=True) if snip_el else ""
 
             idx += 1
-            results.append(self._format_result(title, href, snippet, idx))
+            results.append({"title": title, "url": href, "snippet": snippet})
 
         return results
 
@@ -189,7 +192,7 @@ class WebSearcher:
             desc = desc_el.get_text(" ", strip=True) if desc_el else ""
 
             idx += 1
-            results.append(self._format_result(title, href, desc, idx))
+            results.append({"title": title, "url": href, "snippet": desc})
 
         if not results:
             for a in soup.select("a[href^='http']"):
@@ -205,7 +208,7 @@ class WebSearcher:
                 desc_el = parent.select_one("p")
                 desc = desc_el.get_text(" ", strip=True) if desc_el else ""
                 idx += 1
-                results.append(self._format_result(title, href, desc, idx))
+                results.append({"title": title, "url": href, "snippet": desc})
                 if idx >= 10:
                     break
 

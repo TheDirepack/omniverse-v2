@@ -1,7 +1,7 @@
 from typing import List, Optional, Sequence, Dict, Any
 from sqlmodel import Session
 from app.db.session import engine
-from app.db.schema import Universe, Trait, Claim
+from app.db.schema import Universe, Trait, Claim, UniverseRelation
 from app.repositories.universe import UniverseRepository
 
 class UniverseService:
@@ -48,33 +48,54 @@ class UniverseService:
         return self.repo
 
     def get_universe(self, name: str) -> Optional[Universe]:
-        with Session(engine) if not self.session else self.session as session:
+        session = self.session or Session(engine)
+        try:
             return UniverseRepository(session).get_by_name(name)
+        finally:
+            if not self.session:
+                session.close()
 
     def get_universe_by_id(self, universe_id: int) -> Optional[Universe]:
-        with Session(engine) if not self.session else self.session as session:
+        session = self.session or Session(engine)
+        try:
             return UniverseRepository(session).get_by_id(universe_id)
+        finally:
+            if not self.session:
+                session.close()
 
     def get_all_universes(self) -> Sequence[Universe]:
-        with Session(engine) if not self.session else self.session as session:
+        session = self.session or Session(engine)
+        try:
             return UniverseRepository(session).get_all()
+        finally:
+            if not self.session:
+                session.close()
 
     def create_universe(self, name: str) -> Universe:
-        with Session(engine) if not self.session else self.session as session:
+        session = self.session or Session(engine)
+        try:
             universe = Universe(name=name, summary=None, is_explored=False)
             repo = UniverseRepository(session)
             return repo.create(universe)
+        finally:
+            if not self.session:
+                session.close()
 
     def mark_explored(self, universe_id: int):
-        with Session(engine) if not self.session else self.session as session:
+        session = self.session or Session(engine)
+        try:
             repo = UniverseRepository(session)
             universe = repo.get_by_id(universe_id)
             if universe:
                 universe.is_explored = True
                 repo.update(universe)
+        finally:
+            if not self.session:
+                session.close()
 
     def reset_explored(self, universe_id: int) -> bool:
-        with Session(engine) if not self.session else self.session as session:
+        session = self.session or Session(engine)
+        try:
             repo = UniverseRepository(session)
             universe = repo.get_by_id(universe_id)
             if universe:
@@ -82,9 +103,13 @@ class UniverseService:
                 repo.update(universe)
                 return True
             return False
+        finally:
+            if not self.session:
+                session.close()
 
     def reset_all_explored(self) -> int:
-        with Session(engine) if not self.session else self.session as session:
+        session = self.session or Session(engine)
+        try:
             repo = UniverseRepository(session)
             universes = repo.get_all()
             count = 0
@@ -94,9 +119,13 @@ class UniverseService:
                     repo.update(u)
                     count += 1
             return count
+        finally:
+            if not self.session:
+                session.close()
 
     def get_traits(self, universe_ids: Optional[str] = None) -> List[Dict[str, Any]]:
-        with Session(engine) if not self.session else self.session as session:
+        session = self.session or Session(engine)
+        try:
             repo = UniverseRepository(session)
             if universe_ids:
                 ids = [int(id_str) for id_str in universe_ids.split(",") if id_str.strip()]
@@ -107,16 +136,60 @@ class UniverseService:
                 for u in all_universes:
                     traits.extend(repo.get_traits(u.id))
             return [t.model_dump() for t in traits]
+        finally:
+            if not self.session:
+                session.close()
 
     def get_verified_claims(self, universe_id: int) -> Sequence[Claim]:
-        with Session(engine) if not self.session else self.session as session:
+        session = self.session or Session(engine)
+        try:
             return UniverseRepository(session).get_verified_claims(universe_id)
+        finally:
+            if not self.session:
+                session.close()
 
     def update_summary(self, universe_id: int, summary: str):
-        with Session(engine) if not self.session else self.session as session:
+        session = self.session or Session(engine)
+        try:
             repo = UniverseRepository(session)
             universe = repo.get_by_id(universe_id)
             if universe:
                 universe.summary = summary
                 repo.update(universe)
+        finally:
+            if not self.session:
+                session.close()
+
+    def create_universe_relation(self, from_id: int, to_id: int, rel_type: str, description: Optional[str] = None) -> UniverseRelation:
+        session = self.session or Session(engine)
+        try:
+            relation = UniverseRelation(from_universe_id=from_id, to_universe_id=to_id, relation_type=rel_type, description=description)
+            return UniverseRepository(session).create_relation(relation)
+        finally:
+            if not self.session:
+                session.close()
+
+    def get_universe_relations(self, universe_id: int, direction: str = "both") -> Sequence[UniverseRelation]:
+        session = self.session or Session(engine)
+        try:
+            return UniverseRepository(session).get_relations(universe_id, direction)
+        finally:
+            if not self.session:
+                session.close()
+
+    def get_related_universes(self, universe_id: int) -> Sequence[Universe]:
+        session = self.session or Session(engine)
+        try:
+            return UniverseRepository(session).get_related_universes(universe_id)
+        finally:
+            if not self.session:
+                session.close()
+
+    def set_entity_canonical(self, entity_id: int, canonical_id: Optional[int] = None):
+        session = self.session or Session(engine)
+        try:
+            return UniverseRepository(session).set_entity_canonical(entity_id, canonical_id)
+        finally:
+            if not self.session:
+                session.close()
 

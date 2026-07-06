@@ -6,6 +6,7 @@ from urllib.parse import urlparse
 from app.core.router import router
 from app.core.tools import AGENT_TOOLS, build_freshness_comparison_report
 from app.core.agent_logger import agent_logger
+from app.core.agent_event_types import AgentEventType
 
 class FetchCache:
     def __init__(self):
@@ -131,6 +132,17 @@ async def run_agent(
                 t for t in litellm_tools if t["function"]["name"] != submit_tool_name
             ]
 
+            # Log prompts before calling model
+            prompt_content = json.dumps(messages, indent=2)
+            agent_logger.log(
+                agent=agent_name,
+                event_type=AgentEventType.PROMPT,
+                content=prompt_content,
+                model=model if 'model' in locals() else "unknown",
+                key_id=key_id if 'key_id' in locals() else "unknown"
+            )
+
+
             response, model, key_id = await router.run_model(
                 task=agent_name,
                 messages=list(messages),
@@ -148,21 +160,23 @@ async def run_agent(
             if content:
                 agent_logger.log(
                     agent=agent_name,
-                    event_type="THOUGHT",
+                    event_type=AgentEventType.THOUGHT,
                     content=content,
                     model=model,
                     key_id=key_id
                 )
+
             elif tool_calls:
                 # Log that the agent is acting even if it didn't "think" in text
                 tool_names = [tc.function.name for tc in tool_calls]
                 agent_logger.log(
-                    agent=agent_name,
-                    event_type="THOUGHT",
-                    content=f"Agent decided to use tools: {', '.join(tool_names)}",
-                    model=model,
-                    key_id=key_id
-                )
+                     agent=agent_name,
+                     event_type=AgentEventType.THOUGHT,
+                     content=f"Agent decided to use tools: {', '.join(tool_names)}",
+                     model=model,
+                     key_id=key_id
+                 )
+
 
             if tool_calls:
                 # Append assistant message with tool calls to history
@@ -201,12 +215,13 @@ async def run_agent(
                     if name in available_tools:
                         # Log tool request
                         agent_logger.log(
-                            agent=agent_name,
-                            event_type="TOOL_REQ",
-                            content=f"Calling {name} with args {json.dumps(args)}",
-                            model=model,
-                            key_id=key_id
-                        )
+                             agent=agent_name,
+                             event_type=AgentEventType.TOOL_REQ,
+                             content=f"Calling {name} with args {json.dumps(args)}",
+                             model=model,
+                             key_id=key_id
+                         )
+
                         # Handle fetch budget and cache. Any tool that needs full page
                         # content is special-cased here (rather than left to the
                         # generic branch below) so ALL page reads in a run share ONE
@@ -265,12 +280,13 @@ async def run_agent(
                         
                         # Log tool response
                         agent_logger.log(
-                            agent=agent_name,
-                            event_type="TOOL_RES",
-                            content=f"Observation from {name}: {observation}",
-                            model=model,
-                            key_id=key_id
-                        )
+                             agent=agent_name,
+                             event_type=AgentEventType.TOOL_RES,
+                             content=f"Observation from {name}: {observation}",
+                             model=model,
+                             key_id=key_id
+                         )
+
                     else:
                         messages.append({
                             "role": "tool",

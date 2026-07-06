@@ -9,6 +9,7 @@ from app.db.session import engine
 from app.db.settings_session import settings_engine
 from app.db.schema import ProviderConfig, ProviderKey, AgentRouteFallback, Setting, ExecutionState, CandidateHealth
 from app.core.agent_logger import agent_logger
+from app.core.agent_event_types import AgentEventType
 
 def calculate_candidate_hash(provider_id: int, key_id: Optional[int], model: str) -> str:
     payload = f"{provider_id}:{key_id}:{model}"
@@ -164,14 +165,15 @@ class ModelRouter:
                     with Session(settings_engine) as health_session:
                         self._report_success(health_session, candidate["provider"].id, candidate["key"].id if candidate["key"].id != -1 else None, candidate["model"])
                     
-                    # Log agent model call
-                    agent_logger.log(
-                        agent="ModelRouter",
-                        event_type="MODEL_CALL",
-                        content=f"Successful response from {candidate['full_model']}",
-                        model=candidate["full_model"],
-                        key_id=str(candidate["key"].id)
-                    )
+                     # Log agent model call
+                     agent_logger.log(
+                         agent="ModelRouter",
+                         event_type=AgentEventType.MODEL_CALL,
+                         content=f"Successful response from {candidate['full_model']}",
+                         model=candidate["full_model"],
+                         key_id=str(candidate["key"].id)
+                     )
+
                     
                     if run_id:
                         with Session(engine) as log_session:
@@ -191,13 +193,15 @@ class ModelRouter:
                         self._report_failure(health_session, candidate["provider"].id, candidate["key"].id if candidate["key"].id != -1 else None, candidate["model"])
                     
                     clean_e = _clean_error(e)
-                    agent_logger.log(
-                        agent="ModelRouter",
-                        event_type="ERROR",
-                        content=f"Fallback: {candidate['full_model']} failed due to {clean_e}. Trying next candidate.",
-                        model=candidate["full_model"],
-                        key_id=str(candidate["key"].id)
-                    )
+                     agent_logger.log(
+                         agent="ModelRouter",
+                         event_type=AgentEventType.ERROR,
+                         content=f"Fallback: {candidate['full_model']} failed due to {clean_e}. Trying next candidate.",
+                         model=candidate["full_model"],
+                         key_id=str(candidate["key"].id)
+                     )
+
+
 
                     if run_id:
                         with Session(engine) as log_session:

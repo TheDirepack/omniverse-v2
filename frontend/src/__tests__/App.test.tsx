@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import App from "../frontend/src/App";
+import App from "../App";
 
 vi.mock("../frontend/src/components/DashboardPanel", () => ({ default: () => <div data-testid="panel-dashboard" /> }));
 vi.mock("../frontend/src/components/DatabasePanel", () => ({ default: () => <div data-testid="panel-database" /> }));

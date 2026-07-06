@@ -35,6 +35,15 @@ class Universe(SQLModel, table=True):
     raw_data: Optional[str] = None
     is_explored: bool = Field(default=False)
 
+class UniverseRelation(SQLModel, table=True):
+    __table_args__ = (UniqueConstraint("from_universe_id", "to_universe_id", "relation_type"),)
+    id: Optional[int] = Field(default=None, primary_key=True)
+    from_universe_id: int = Field(foreign_key="universe.id")
+    to_universe_id: int = Field(foreign_key="universe.id")
+    relation_type: str = Field(index=True) # e.g., "PRECEDES", "ALTERNATE", "SUBSET", "PARENT"
+    description: Optional[str] = None
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
 class Trait(SQLModel, table=True):
     __table_args__ = (UniqueConstraint("universe_id", "name"),)
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -91,6 +100,7 @@ class Entity(SQLModel, table=True):
     name: str = Field(index=True)
     entity_type: str
     universe_id: int = Field(foreign_key="universe.id")
+    canonical_entity_id: Optional[int] = Field(default=None, foreign_key="entity.id")
     canonical: bool = Field(default=False)
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
@@ -112,13 +122,29 @@ class PredicateAlias(SQLModel, table=True):
     alias: str = Field(primary_key=True)
     predicate_id: Optional[int] = Field(default=None, foreign_key="predicate.id")
 
+class Evidence(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    universe_id: int = Field(foreign_key="universe.id")
+    source_url: str = Field(index=True)
+    source_name: Optional[str] = None
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+class EvidenceChunk(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    evidence_id: int = Field(foreign_key="evidence.id", ondelete="CASCADE")
+    content: str
+    chunk_index: int
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
 class Claim(SQLModel, table=True):
+    __table_args__ = (UniqueConstraint("subject_id", "predicate_id", "object_entity_id"),) # Simplified for brevity in this edit
     id: Optional[int] = Field(default=None, primary_key=True)
     subject_id: int = Field(foreign_key="entity.id")
     predicate_id: Optional[int] = Field(default=None, foreign_key="predicate.id")
     predicate: str = Field(index=True) # Stores canonical predicate (deprecated)
     object_entity_id: Optional[int] = Field(default=None, foreign_key="entity.id")
     object_literal: Optional[str] = None
+    evidence_chunk_id: Optional[int] = Field(default=None, foreign_key="evidencechunk.id")
     source_reference: Optional[str] = None
     source_wiki: Optional[str] = None
     support_count: int = Field(default=1)

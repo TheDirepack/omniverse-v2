@@ -60,7 +60,8 @@ class InferenceEngineService:
             for rule in approved_rules:
                 first_hop = repo.get_claims_by_predicate(rule.predicate_1)
                 for c1 in first_hop:
-                    second_hops = repo.find_claims_with_subject_predicate(c1.object_id, rule.predicate_2)
+                    mid_id = c1.object_entity_id if c1.object_entity_id else c1.subject_id # fallback but should be object_entity_id
+                    second_hops = repo.find_claims_with_subject_predicate(mid_id, rule.predicate_2)
                     for c2 in second_hops:
                         ic = self._materialize_edge(repo, rule.id, rule.implied_predicate, c1, c2)
                         if ic:
@@ -98,14 +99,15 @@ class InferenceEngineService:
             return created
 
     def _materialize_edge(self, repo: InferenceRepository, rule_id: int, implied_predicate: str, c1: Claim, c2: Claim) -> Optional[InferredClaim]:
-        existing = repo.get_inferred_claim(c1.subject_id, implied_predicate, c2.object_id)
+        obj_id = c2.object_entity_id if c2.object_entity_id else c2.subject_id
+        existing = repo.get_inferred_claim(c1.subject_id, implied_predicate, obj_id)
         if existing:
             return None  # already materialized, skip
-        contradicts_id = self._find_contradiction(repo, c1.subject_id, implied_predicate, c2.object_id)
+        contradicts_id = self._find_contradiction(repo, c1.subject_id, implied_predicate, obj_id)
         ic = InferredClaim(
             subject_id=c1.subject_id,
             predicate=implied_predicate,
-            object_id=c2.object_id,
+            object_id=obj_id,
             derived_from_rule_id=rule_id,
             path_claim_ids=json.dumps([c1.id, c2.id]),
             contradicts_claim_id=contradicts_id,
@@ -113,15 +115,16 @@ class InferenceEngineService:
         return repo.create_inferred_claim(ic)
 
     def _materialize_edge_from_inferred(self, repo: InferenceRepository, rule_id: int, implied_predicate: str, ic_prev: InferredClaim, c2: Claim) -> Optional[InferredClaim]:
-        existing = repo.get_inferred_claim(ic_prev.subject_id, implied_predicate, c2.object_id)
+        obj_id = c2.object_entity_id if c2.object_entity_id else c2.subject_id
+        existing = repo.get_inferred_claim(ic_prev.subject_id, implied_predicate, obj_id)
         if existing:
             return None
-        contradicts_id = self._find_contradiction(repo, ic_prev.subject_id, implied_predicate, c2.object_id)
+        contradicts_id = self._find_contradiction(repo, ic_prev.subject_id, implied_predicate, obj_id)
         prev_path = json.loads(ic_prev.path_claim_ids)
         ic = InferredClaim(
             subject_id=ic_prev.subject_id,
             predicate=implied_predicate,
-            object_id=c2.object_id,
+            object_id=obj_id,
             derived_from_rule_id=rule_id,
             path_claim_ids=json.dumps(prev_path + [c2.id]),
             contradicts_claim_id=contradicts_id,
@@ -137,7 +140,8 @@ class InferenceEngineService:
         """
         existing_claims = repo.find_claims_with_subject_predicate(subject_id, predicate)
         for existing in existing_claims:
-            if existing.object_id != object_id:
+            existing_obj_id = existing.object_entity_id if existing.object_entity_id else existing.subject_id
+            if existing_obj_id != object_id:
                 return existing.id
         return None
 

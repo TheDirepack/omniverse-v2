@@ -52,7 +52,6 @@ async def save_audit_artifacts(world_name: str, retry_handler: RetryHandler, fin
     })
 
 async def research_single_world(world_name: str, run_id: str, focus: str | None = None, fetch_cache: FetchCache | None = None) -> Dict[str, Any]:
-
     from app.core.runtime_state import is_aborted
     if await is_aborted(run_id):
         raise RuntimeError(f"Run {run_id} was aborted by user.")
@@ -60,10 +59,12 @@ async def research_single_world(world_name: str, run_id: str, focus: str | None 
     from app.services.universe_service import UniverseService
     from app.services.tiering_service import TieringService
     from app.services.settings_service import SettingsService
+    from app.services.knowledge_retriever import KnowledgeRetrieverService
     
     uni_service = UniverseService()
     tier_service = TieringService()
     settings_service = SettingsService()
+    retriever = KnowledgeRetrieverService()
     
     universe = uni_service.get_universe(world_name)
     if universe:
@@ -74,27 +75,47 @@ async def research_single_world(world_name: str, run_id: str, focus: str | None 
     
     exec_service = ExecutionService()
     exec_service.log_transition(run_id, "Research Unit", f"Initiating incremental research for world: {stage_label}", "IN_PROGRESS", {})
-
+    
     researcher_tools = ["webSearch", "fetchPage", "compareSourceFreshness", "queryClaims", "queryUnconfirmedClaims", "saveUnconfirmedClaim"]
     auditor_tools = ["fetchPage", "compareSourceFreshness", "queryClaims", "queryUnconfirmedClaims"]
+    
+    # Fetch existing knowledge for the first prompt
+    universe_id = universe.id if universe else None
+    verified_claims_str = ""
+    knowledge_graph_str = ""
+    if universe_id:
+        claims = retriever.get_semantic_claims(universe_id)
+        verified_claims_str = "\n".join([
+            f"({c['subject']} --{c['predicate']}--> {c['object']}) | ref: {c['reference'] or 'N/A'}"
+            for c in claims
+        ])
+        knowledge_graph_str = json.dumps(retriever.get_universe_knowledge_graph(universe_id), indent=2)
 
     retry_handler = RetryHandler(max_iterations=3)
-
+    
     try:
         while retry_handler.current_iteration < retry_handler.max_iterations:
             i = retry_handler.iteration_count
             research_queue = retry_handler.get_research_queue()
             feedback_summary = retry_handler.get_feedback_summary()
+            
+            # Also fetch unconfirmed data for the prompt
+            from app.core.tools import tool_query_unconfirmed_claims
+            unconfirmed_data = await tool_query_unconfirmed_claims({})
 
             researcher_prompt = get_researcher_prompt(
                 entity=world_name,
                 requirements="Collect comprehensive canonical wiki data.",
                 focus=focus,
                 previous_dataset=retry_handler.last_result,
-                outstanding_corrections=feedback_summary
+                outstanding_corrections=feedback_summary,
+                unconfirmed_data=unconfirmed_data,
+                verified_claims=verified_claims_str if i == 0 else None,
+                knowledge_graph=knowledge_graph_str if i == 0 else None
             )
             
             user_prompt = researcher_prompt["user"]
+
             if research_queue and feedback_summary == "None":
                 user_prompt += f"\n\n{research_queue}\n\nPrioritize these leads in your tool use."
             elif research_queue:

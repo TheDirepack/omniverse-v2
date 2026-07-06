@@ -7,6 +7,9 @@ afterEach(() => {
   cleanup();
 });
 
+// Mock scrollIntoView for JSDOM
+HTMLElement.prototype.scrollIntoView = vi.fn();
+
 class MockEventSource {
   onmessage: ((event: any) => void) | null = null;
   onerror: ((event: any) => void) | null = null;

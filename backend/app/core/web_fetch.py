@@ -2,7 +2,7 @@ import re
 import logging
 import asyncio
 from bs4 import BeautifulSoup
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urljoin
 import socket
 import trafilatura
 from app.core.browser import browser_manager
@@ -137,7 +137,7 @@ class WebFetcher:
         text = re.sub(r' {2,}', ' ', text)
         return text.strip()
 
-    def _extract_internal_links(self, soup: BeautifulSoup, max_links: int = 20) -> str:
+    def _extract_internal_links(self, soup: BeautifulSoup, base_url: str, max_links: int = 20) -> str:
         """Extract, classify, and score internal links for research discovery."""
         links_data = {} # (url, title) -> {"score": 0, "tier": "Low", "sections": set()}
         
@@ -157,12 +157,13 @@ class WebFetcher:
         
         for a in all_links:
             href = a['href']
+            absolute_url = urljoin(base_url, href)
             title = a.get_text(strip=True)
             if not title or not href:
                 continue
             
             # Only internal links (relative or same domain)
-            if href.startswith("http") and not href.startswith(soup.find("base")["href"] if soup.find("base") else ""):
+            if absolute_url.startswith("http") and not absolute_url.startswith(soup.find("base")["href"] if soup.find("base") else ""):
                 # We keep some external links if they are in references, but for now, keep it simple
                 if not any(sel in str(a.find_parent()) for sel in ["references", "citations"]):
                     continue
@@ -181,7 +182,7 @@ class WebFetcher:
                 tier = "Medium"
                 
             # Scoring and aggregation
-            key = (href, title)
+            key = (absolute_url, title)
             if key not in links_data:
                 links_data[key] = {"score": 0, "tier": tier, "sections": set()}
             
@@ -285,7 +286,7 @@ class WebFetcher:
             return "SEARCH RESULTS"
         return "ARTICLE"
 
-    async def fetch_page(self, url: str, include_freshness: bool = True, max_links: int = 20) -> str:
+    async def fetch_page(self, url: str, include_freshness: bool = True, max_links: int = 20) -> Dict[str, Any]:
         # SSRF Protection
         parsed = urlparse(url)
         if parsed.scheme not in ("http", "https"):
@@ -327,7 +328,7 @@ class WebFetcher:
                 except Exception as e:
                     logger.debug(f"Failed to get last-modified header for {url}: {e}")
                     last_modified_header = None
-
+  
             soup = BeautifulSoup(html, "html.parser")
             
             # 2. Detect if it's still a cookie page
@@ -338,58 +339,47 @@ class WebFetcher:
                 html = await page.content()
                 soup = BeautifulSoup(html, "html.parser")
                 text_for_detection = self._extract_text_from_soup(soup)
-
+  
             # 3. Page Type Detection
             page_type = self._detect_page_type(html, text_for_detection)
             if page_type != "ARTICLE":
-                return f"PAGE_TYPE: {page_type}\n\nContent Summary:\n{text_for_detection[:1000]}"
-
+                return {
+                    "page_type": page_type,
+                    "main_content": text_for_detection[:1000],
+                    "error": f"Page is identified as {page_type}, not a standard article."
+                }
+  
             # 4. Semantic Extraction
             # Main Article via trafilatura
             main_article = trafilatura.extract(html) or ""
             if not main_article:
                 # Fallback to basic extraction if trafilatura fails
                 main_article = text_for_detection
-
+  
             # Internal Links (The Topology)
-            links = self._extract_internal_links(soup, max_links=max_links)
-
+            links = self._extract_internal_links(soup, final_url, max_links=max_links)
+  
             # Research Signals via custom logic
             signals = self._extract_research_signals(soup)
             
-            # 5. Structure the output
-            output_parts = []
+            result = {
+                "metadata": {
+                    "url": final_url,
+                    "word_count": len(main_article.split()),
+                    "page_type": page_type,
+                },
+                "main_content": main_article,
+                "internal_links": links,
+                "research_signals": signals,
+                "freshness": None if not include_freshness else _extract_freshness_signals(url, final_url, html, main_article, last_modified_header)
+            }
             
-            # Metadata / Stats
-            stats = f"Words: {len(main_article.split())} | Noise Stripped: Yes | Type: {page_type}"
-            output_parts.append(f"[EXTRACTION REPORT]\n{stats}")
-            
-            # Main Article
-            output_parts.append("[MAIN ARTICLE]\n" + main_article)
-            
-            # Internal Links
-            if links:
-                output_parts.append("[INTERNAL LINKS]\n" + links)
-            
-            # Research Signals
-            if signals:
-                output_parts.append("[RESEARCH SIGNALS]\n" + signals)
-            
-            full_text = "\n\n".join(output_parts)
-            full_text = self._normalize_whitespace(full_text)
-
-            if len(full_text) > 20000:
-                full_text = full_text[:20000] + "\n... [truncated at 20,000 characters]"
-
-            if not include_freshness:
-                return full_text
-
-            signals_header = _extract_freshness_signals(url, final_url, html, full_text, last_modified_header)
-            return signals_header + "\n" + full_text
+            return result
         finally:
             await page.close()
             await context.close()
             browser_manager.release_page(context)
+
 
 
 

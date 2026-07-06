@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import RoutingCard from "../frontend/src/components/settings/RoutingCard";
+import RoutingCard from "../components/settings/RoutingCard";
 
 const mockOnSave = vi.fn().mockResolvedValue({ id: 99 });
 const mockOnDelete = vi.fn().mockResolvedValue(undefined);

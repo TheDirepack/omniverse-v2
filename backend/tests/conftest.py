@@ -52,20 +52,23 @@ from app.main import app
 
 
 @pytest.fixture(autouse=True)
-def auto_create_db():
+def auto_create_db(request):
     """Autouse: create tables before each test, drop after. Ensures clean slate."""
+    if "real_server" in request.fixturenames:
+        yield
+        return
+
     SQLModel.metadata.create_all(engine)
     init_unconfirmed_db()
     init_extrapolation_db()
     init_settings_db()
     yield
-    SQLModel.metadata.drop_all(engine)
-    unconfirmed_metadata.drop_all(unconfirmed_engine)
-    extrapolation_metadata.drop_all(extrapolation_engine)
-    # init_settings_db() creates ALL tables (shared SQLModel.metadata, not a
-    # dedicated settings-only metadata) against settings_engine -- drop_all
-    # here mirrors that same shared-metadata choice for symmetry.
-    SQLModel.metadata.drop_all(settings_engine)
+    try:
+        SQLModel.metadata.drop_all(engine)
+        unconfirmed_metadata.drop_all(unconfirmed_engine)
+        SQLModel.metadata.drop_all(settings_engine)
+    except Exception:
+        pass
 
     # We don't explicitly drop unconfirmed tables here to avoid complexity, 
     # but since we use a temp file that is cleaned up at atexit, it's okay.

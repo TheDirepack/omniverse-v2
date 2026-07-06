@@ -16,7 +16,7 @@ describe("LogViewerPanel", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(api.fetchFileLogs).mockResolvedValue(mockLogs);
+    vi.mocked(api.fetchFileLogs).mockResolvedValue({ logs: mockLogs, has_more: false });
   });
 
   it("renders loading state and then displays logs", async () => {
@@ -48,7 +48,7 @@ describe("LogViewerPanel", () => {
   });
 
   it("shows empty message when no logs are returned", async () => {
-    vi.mocked(api.fetchFileLogs).mockResolvedValue([]);
+    vi.mocked(api.fetchFileLogs).mockResolvedValue({ logs: [], has_more: false });
     
     render(<LogViewerPanel />);
     

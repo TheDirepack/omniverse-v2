@@ -41,13 +41,15 @@ class UnconfirmedTrait(UnconfirmedModel, table=True):
 
 class UnconfirmedClaim(UnconfirmedModel, table=True):
     __tablename__ = "unconfirmed_claim"
-
+    
     id: Optional[int] = Field(default=None, primary_key=True)
     universe_id: int = Field(foreign_key="unconfirmed_universe.id")
     subject: str
+    context: Optional[str] = None
     predicate: str
     object_val: str
     reference: Optional[str] = None
     wiki_source: Optional[str] = None
     confidence: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
+

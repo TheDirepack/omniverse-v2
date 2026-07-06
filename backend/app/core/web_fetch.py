@@ -36,6 +36,24 @@ NOISE_TAGS = [
     "button", "input", "label"
 ]
 
+# Namespaces and keywords to ignore in links (Infrastructure/Meta)
+IGNORE_LINK_PATTERNS = [
+    r"^Special:", r"^Talk:", r"^User:", r"^File:", r"^Media:", 
+    r"^Template:", r"^Category:", r"^Help:", r"^Project:",
+    r"/History", r"/Edit", r"/WhatLinksHere", r"/Action/edit",
+    r"Special:RecentChanges", r"Special:PermanentLink"
+]
+
+# Priority mapping for link types
+LINK_PRIORITY_MAP = {
+    "ARTICLE": "High",
+    "INFOBOX": "High",
+    "SEE_ALSO": "High",
+    "CATEGORY": "Medium",
+    "REFERENCE": "Medium",
+    "OTHER": "Low"
+}
+
 # CSS selectors for common consent/cookie overlays
 NOISE_SELECTORS = [
     "[id*='cookie']", "[class*='cookie']",
@@ -137,7 +155,7 @@ class WebFetcher:
         text = re.sub(r' {2,}', ' ', text)
         return text.strip()
 
-    def _extract_internal_links(self, soup: BeautifulSoup, base_url: str, max_links: int = 20) -> str:
+    def _extract_internal_links(self, soup: BeautifulSoup, base_url: str, max_links: int = 20) -> List[Dict[str, Any]]:
         """Extract, classify, and score internal links for research discovery."""
         links_data = {} # (url, title) -> {"score": 0, "tier": "Low", "sections": set()}
         
@@ -162,17 +180,21 @@ class WebFetcher:
             if not title or not href:
                 continue
             
+            # 1. FILTER: Infrastructure/Meta links
+            if any(re.search(pat, href, re.IGNORECASE) for pat in IGNORE_LINK_PATTERNS) or \
+               any(re.search(pat, title, re.IGNORECASE) for pat in IGNORE_LINK_PATTERNS):
+                continue
+            
             # Only internal links (relative or same domain)
             if absolute_url.startswith("http") and not absolute_url.startswith(soup.find("base")["href"] if soup.find("base") else ""):
-                # We keep some external links if they are in references, but for now, keep it simple
-                if not any(sel in str(a.find_parent()) for sel in ["references", "citations"]):
+                if not any(sel in str(a.find_parent()).lower() for sel in ["references", "citations"]):
                     continue
             
             # Filter out junk by title/href
             if any(kw in title.lower() or kw in href.lower() for kw in discard_keywords):
                 continue
                 
-            # Determine Tier
+            # 2. CLASSIFY & TIER
             tier = "Low"
             parent_html = str(a.find_parent()).lower()
             
@@ -189,15 +211,11 @@ class WebFetcher:
             links_data[key]["score"] += 1
             
             # Try to find a section heading for this link
-            # Look for the nearest preceding heading
             curr = a
             while curr and curr.name != "body":
-                # If we find a heading, it's the section
                 if curr.name in ["h1", "h2", "h3", "h4", "h5", "h6"]:
                     links_data[key]["sections"].add(curr.get_text(strip=True))
                     break
-                
-                # Or if we are in a sibling of a heading, look back at siblings
                 if curr.name in ["p", "div", "li", "table", "ul", "ol"]:
                     prev = curr.find_previous_sibling()
                     while prev and prev.name != "body":
@@ -205,9 +223,8 @@ class WebFetcher:
                             links_data[key]["sections"].add(prev.get_text(strip=True))
                             break
                         prev = prev.find_previous_sibling()
-                
                 curr = curr.find_parent()
-
+        
         # Sort by tier (High > Medium > Low) and then by score
         tier_priority = {"High": 3, "Medium": 2, "Low": 1}
         sorted_links = sorted(
@@ -218,10 +235,16 @@ class WebFetcher:
         
         results = []
         for (url, title), data in sorted_links[:max_links]:
-            section = ", ".join(list(data["sections"])[:2]) if data["sections"] else "General"
-            results.append(f"- {title} [{data['tier']} Value | {data['score']}x | {section}]({url})")
+            results.append({
+                "url": url,
+                "title": title,
+                "tier": data["tier"],
+                "score": data["score"],
+                "sections": list(data["sections"])[:2]
+            })
             
-        return "\n".join(results)
+        return results
+
 
     def _extract_text_from_soup(self, soup: BeautifulSoup) -> str:
         """Basic text extraction with noise stripping for cookie detection."""
@@ -235,7 +258,11 @@ class WebFetcher:
             for element in temp_soup.select(selector):
                 element.decompose()
                 
-        text = "\n".join(line.strip() for line in temp_soup.get_text().splitlines() if line.strip())
+        text = temp_soup.get_text()
+        # Strip wiki template scaffolding like {{{variable}}}
+        text = re.sub(r'\{\{[^}]*\}\}', '', text)
+        
+        text = "\n".join(line.strip() for line in text.splitlines() if line.strip())
         return self._normalize_whitespace(text)
 
     def _extract_research_signals(self, soup: BeautifulSoup) -> str:
@@ -243,35 +270,36 @@ class WebFetcher:
         signals = []
         
         # 1. Look for 'See Also' or 'Related' sections
-        # This is heuristic and looks for headings that sound like 'See Also'
         for heading in soup.find_all(["h2", "h3", "h4"]):
             h_text = heading.get_text().strip().lower()
             if "see also" in h_text or "related" in h_text or "further reading" in h_text:
-                # Extract the next sibling element (usually a list)
                 sibling = heading.find_next_sibling()
                 if sibling:
-                    signals.append(f"--- {heading.get_text().strip()} ---\n{sibling.get_text(separator='\\n', strip=True)}")
-
+                    signals.append(f"--- {heading.get_text().strip()} ---\n{sibling.get_text(separator='\n', strip=True)}")
+        
         # 2. Extract Categories (common in wikis)
         cat_div = soup.find("div", class_="catlinks") or \
                   soup.find("div", class_="categories") or \
                   soup.find("div", id="mw-category")
         if cat_div:
-            signals.append(f"--- Categories ---\n{cat_div.get_text(separator='\\n', strip=True)}")
-
+            signals.append(f"--- Categories ---\n{cat_div.get_text(separator='\n', strip=True)}")
+        
         # 3. Extract Breadcrumbs
         breadcrumb = soup.find("nav", {"aria-label": "Breadcrumb"}) or \
                      soup.find("div", {"class": "breadcrumbs"})
         if breadcrumb:
             signals.append(f"--- Breadcrumbs ---\n{breadcrumb.get_text(separator=' > ', strip=True)}")
-
+        
         # 4. Extract Infobox links (common in wikis)
         infobox = soup.find("table", {"class": "infobox"})
         if infobox:
-            # Just get the text of the infobox, but keep it concise
-            signals.append(f"--- Infobox Summary ---\n{infobox.get_text(separator='\\n', strip=True)}")
-
+            text = infobox.get_text(separator='\n', strip=True)
+            # Omit hollow infoboxes (containing only placeholders or very little content)
+            if len(text) > 50 and not (text.count('{{{') > text.count('word')):
+                signals.append(f"--- Infobox Summary ---\n{text}")
+        
         return "\n\n".join(signals)
+
 
     def _detect_page_type(self, html: str, text: str) -> str:
         """Detect if the page is a known non-article type."""
@@ -355,12 +383,16 @@ class WebFetcher:
             if not main_article:
                 # Fallback to basic extraction if trafilatura fails
                 main_article = text_for_detection
-  
+            
+            # Clean up literal \n sequences that may have been escaped in source or by extraction
+            main_article = main_article.replace('\\n', '\n')
+            
             # Internal Links (The Topology)
             links = self._extract_internal_links(soup, final_url, max_links=max_links)
-  
+            
             # Research Signals via custom logic
             signals = self._extract_research_signals(soup)
+            signals = signals.replace('\\n', '\n')
             
             result = {
                 "metadata": {

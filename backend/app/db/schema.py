@@ -30,7 +30,13 @@ class AgentRouteFallback(SQLModel, table=True):
 
 class Universe(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
-    name: str = Field(index=True, unique=True)
+    slug: Optional[str] = Field(default=None, index=True, unique=True)
+    name: str = Field(index=True)
+    franchise: Optional[str] = None
+    category: Optional[str] = None
+    continuity: Optional[str] = None
+    era: Optional[str] = None
+    parent_id: Optional[int] = Field(default=None, foreign_key="universe.id")
     summary: Optional[str] = None
     raw_data: Optional[str] = None
     is_explored: bool = Field(default=False)
@@ -140,6 +146,7 @@ class Claim(SQLModel, table=True):
     __table_args__ = (UniqueConstraint("subject_id", "predicate_id", "object_entity_id"),) # Simplified for brevity in this edit
     id: Optional[int] = Field(default=None, primary_key=True)
     subject_id: int = Field(foreign_key="entity.id")
+    context: Optional[str] = Field(default=None, index=True)
     predicate_id: Optional[int] = Field(default=None, foreign_key="predicate.id")
     predicate: str = Field(index=True) # Stores canonical predicate (deprecated)
     object_entity_id: Optional[int] = Field(default=None, foreign_key="entity.id")

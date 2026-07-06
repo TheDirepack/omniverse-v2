@@ -107,7 +107,21 @@ async def tool_fetch_page(args: Dict[str, Any]) -> str:
             output.append("[MAIN ARTICLE]\n" + res["main_content"])
             
             if res["internal_links"]:
-                output.append("[INTERNAL LINKS]\n" + res["internal_links"])
+                links = res["internal_links"]
+                # Separate highly recommended from others
+                recommended = [l for l in links if l["tier"] == "High"]
+                others = [l for l in links if l["tier"] != "High"]
+                
+                links_output = []
+                if recommended:
+                    links_output.append("### RECOMMENDED NEXT STEPS (High Value)")
+                    links_output.extend([f"- {l['title']} [{l['tier']} | {l['score']}x | {', '.join(l['sections']) or 'General'}]({l['url']})" for l in recommended])
+                
+                if others:
+                    links_output.append("\n### OTHER INTERNAL LINKS")
+                    links_output.extend([f"- {l['title']} [{l['tier']} | {l['score']}x | {', '.join(l['sections']) or 'General'}]({l['url']})" for l in others])
+                
+                output.append("[INTERNAL LINKS]\n" + "\n".join(links_output))
                 
             if res["research_signals"]:
                 output.append("[RESEARCH SIGNALS]\n" + res["research_signals"])
@@ -247,18 +261,19 @@ async def tool_upsert_trait(args: Dict[str, Any]) -> str:
 
 async def tool_upsert_claims(args: Dict[str, Any]) -> str:
     """
-    Integrates atomic claims (Subject, Predicate, Object) into the permanent records.
-    Expects `items`: [{subject, predicate, object_val, source_reference, source_wiki, confidence, attributes: {key: value}}, ...].
+    Integrates atomic claims (Subject, Context, Predicate, Object) into the permanent records.
+    Expects `items`: [{subject, context, predicate, object_val, source_reference, source_wiki, confidence, attributes: {key: value}}, ...].
     """
     universe_name = get_current_universe()
     if not universe_name:
         return "Error: No active universe context."
-
+    
     items = args.get("items")
     if not items:
         # support single claim for convenience
         items = [{
             "subject": args.get("subject", ""),
+            "context": args.get("context"),
             "predicate": args.get("predicate", ""),
             "object_val": args.get("object_val", ""),
             "source_reference": args.get("source_reference"),
@@ -266,16 +281,16 @@ async def tool_upsert_claims(args: Dict[str, Any]) -> str:
             "confidence": args.get("confidence", 0.0),
             "attributes": args.get("attributes", {})
         }]
-
+    
     pred_service = PredicateService()
-
+    
     with Session(engine) as session:
         universe = session.exec(select(Universe).where(Universe.name == universe_name)).first()
         if not universe:
             return f"Universe {universe_name} not found."
-
+        
         created, updated, skipped = [], [], []
-
+        
         def get_or_create_entity(name: str, e_type: str = "Unknown"):
             entity = session.exec(select(Entity).where(Entity.universe_id == universe.id, Entity.name == name)).first()
             if not entity:
@@ -288,22 +303,22 @@ async def tool_upsert_claims(args: Dict[str, Any]) -> str:
                 session.add(entity)
                 session.flush()
             return entity
-
+        
         for item in items:
             s_name = item.get("subject", "")
+            context = item.get("context")
             raw_pred = item.get("predicate", "")
             o_val = item.get("object_val", "")
             if not all([s_name, raw_pred, o_val]):
                 skipped.append(f"Missing fields: {item}")
                 continue
-
+            
             # Evidence Layer: Link to structured evidence
             evidence_chunk_id = None
             source_wiki = item.get("source_wiki")
             source_ref = item.get("source_reference")
             
             if source_wiki:
-                # Create evidence chain: Evidence -> EvidenceChunk
                 ev = session.exec(select(Evidence).where(Evidence.source_url == source_wiki)).first()
                 if not ev:
                     ev = Evidence(universe_id=universe.id, source_url=source_wiki, source_name=source_wiki)
@@ -314,7 +329,7 @@ async def tool_upsert_claims(args: Dict[str, Any]) -> str:
                 session.add(chunk)
                 session.flush()
                 evidence_chunk_id = chunk.id
-
+            
             # Normalization
             predicate_name = pred_service.normalize(raw_pred)
             pred_ent = session.exec(select(Predicate).where(Predicate.canonical_name == predicate_name)).first()
@@ -334,6 +349,7 @@ async def tool_upsert_claims(args: Dict[str, Any]) -> str:
             existing = session.exec(
                 select(Claim).where(
                     Claim.subject_id == s_ent.id,
+                    Claim.context == context,
                     Claim.predicate_id == pred_ent.id,
                     (Claim.object_entity_id == o_entity_id) if o_entity_id else (Claim.object_literal == o_literal)
                 )
@@ -350,6 +366,7 @@ async def tool_upsert_claims(args: Dict[str, Any]) -> str:
             else:
                 new_claim = Claim(
                     subject_id=s_ent.id,
+                    context=context,
                     predicate_id=pred_ent.id,
                     predicate=predicate_name,
                     object_entity_id=o_entity_id,
@@ -365,6 +382,7 @@ async def tool_upsert_claims(args: Dict[str, Any]) -> str:
                 session.flush() # get ID
                 created.append(f"({s_name}, {predicate_name}, {o_val})")
                 target_claim = new_claim
+
 
 
             # Handle attributes
@@ -507,17 +525,18 @@ async def tool_delete_unconfirmed_trait(args: Dict[str, Any]) -> str:
 async def tool_save_unconfirmed_claim(args: Dict[str, Any]) -> str:
     """
     Save unconfirmed claims for the active universe. 
-    Claims are atomic statements: (subject, predicate, object).
-    Prefer batching via `items`: [{subject, predicate, object_val, reference, wiki_source, confidence}, ...].
+    Claims are atomic statements: (subject, context, predicate, object).
+    Prefer batching via `items`: [{subject, context, predicate, object_val, reference, wiki_source, confidence}, ...].
     """
     universe_name = get_current_universe()
     if not universe_name:
         return "Error: No active universe context."
-
+    
     items = args.get("items")
     if not items:
         single = {
             "subject": args.get("subject", ""),
+            "context": args.get("context"),
             "predicate": args.get("predicate", ""),
             "object_val": args.get("object_val", ""),
             "reference": args.get("reference"),
@@ -525,7 +544,7 @@ async def tool_save_unconfirmed_claim(args: Dict[str, Any]) -> str:
             "confidence": args.get("confidence"),
         }
         items = [single]
-
+    
     saved, errors = [], []
     with Session(unconfirmed_engine) as session:
         universe = session.exec(select(UnconfirmedUniverse).where(UnconfirmedUniverse.name == universe_name)).first()
@@ -533,9 +552,10 @@ async def tool_save_unconfirmed_claim(args: Dict[str, Any]) -> str:
             universe = UnconfirmedUniverse(name=universe_name)
             session.add(universe)
             session.flush()
-
+        
         for item in items:
             subject = item.get("subject", "")
+            context = item.get("context")
             predicate = item.get("predicate", "")
             object_val = item.get("object_val", "")
             if not all([subject, predicate, object_val]):
@@ -544,6 +564,7 @@ async def tool_save_unconfirmed_claim(args: Dict[str, Any]) -> str:
             session.add(UnconfirmedClaim(
                 universe_id=universe.id,
                 subject=subject,
+                context=context,
                 predicate=predicate,
                 object_val=object_val,
                 reference=item.get("reference"),
@@ -552,11 +573,12 @@ async def tool_save_unconfirmed_claim(args: Dict[str, Any]) -> str:
             ))
             saved.append(f"({subject}, {predicate}, {object_val})")
         session.commit()
-
+    
     result = f"Saved {len(saved)} unconfirmed claim(s) for {universe_name}."
     if errors:
         result += " Errors: " + "; ".join(errors)
     return result
+
 
 
 async def tool_delete_unconfirmed_claim(args: Dict[str, Any]) -> str:
@@ -657,15 +679,47 @@ async def tool_query_claims(args: Dict[str, Any]) -> str:
             return f"Universe {universe_name} not found."
 
         retriever = KnowledgeRetrieverService(session)
-        semantic_claims = retriever.get_semantic_claims(universe.id, predicate_filter)
+        graph = retriever.get_universe_knowledge_graph(universe.id)
         
-        if not semantic_claims:
+        if not graph:
             return f"No verified claims found for {universe_name}."
 
-        return "\n".join([
-            f"({c['subject']} --{c['predicate']}--> {c['object']}) | support: {c['support']} | ref: {c['reference'] or 'N/A'}"
-            for c in semantic_claims
-        ])
+        output_blocks = []
+        for entity, data in graph.items():
+            # Filter facts if predicate_filter is provided
+            filtered_facts = [
+                f for f in data["facts"] 
+                if not predicate_filter or f["predicate"] == predicate_filter
+            ]
+            
+            if not filtered_facts:
+                continue
+                
+            # Reconstruct a Fact Sheet for this entity
+            block = [f"Entity: {entity}"]
+            
+            facts_lines = []
+            total_support = 0
+            for f in filtered_facts:
+                facts_lines.append(f"- {f['predicate'].replace('_', ' ').title()}: {f['object']} (support: {f['support']})")
+                total_support += f['support']
+            
+            block.append("Verified Facts:")
+            block.extend(facts_lines)
+            
+            if data["related_entities"]:
+                block.append("Related Entities:")
+                block.append(", ".join(data["related_entities"]))
+                
+            avg_conf = total_support / len(filtered_facts) if filtered_facts else 0
+            block.append(f"Confidence: {avg_conf:.1f} avg supporting sources")
+            
+            output_blocks.append("\n".join(block))
+
+        if not output_blocks:
+            return f"No verified claims found for {universe_name} matching filter '{predicate_filter}'."
+
+        return "\n\n---\n\n".join(output_blocks)
 
 
 async def tool_query_unconfirmed_claims(args: Dict[str, Any]) -> str:
@@ -936,6 +990,28 @@ AGENT_TOOLS: Dict[str, Dict[str, Any]] = {
                 "claim_ids": {"type": "array", "items": {"type": "integer"}, "description": "Batch mode (preferred): all IDs to delete in one call."}
             },
             "required": []
+        }
+    },
+    "executePlan": {
+        "func": None,
+        "description": "Execute a sequence of deterministic tool calls in a single turn to avoid redundant thinking loops. Use this for common patterns like Search -> Fetch first results -> Compare freshness. The plan should be a list of tool calls. You can reference results of previous steps using placeholders like $result_0, $result_1, etc.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "plan": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "tool": {"type": "string", "description": "The name of the tool to call."},
+                            "args": {"type": "object", "description": "The arguments for the tool. Can use $result_N placeholders."}
+                        },
+                        "required": ["tool", "args"]
+                    },
+                    "description": "The sequence of tool calls to execute."
+                }
+            },
+            "required": ["plan"]
         }
     },
 }

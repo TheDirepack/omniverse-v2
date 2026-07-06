@@ -15,9 +15,9 @@ Venvs: `backend/.venv/` or `backend/venv/` (both exist).
 ## Testing
 
 ```sh
-cd backend && python -m pytest tests/ -v --tb=short -m "not slow"
-python -m pytest tests/ -v --tb=short -m "slow"   # LLM/network tests
-cd frontend && npx vitest run
+./test.sh              # run all tests (standard)
+./test.sh --slow       # run including LLM/network tests
+./test.sh path/to/test.py  # run specific test file
 ```
 
 Tests use ephemeral SQLite at `/tmp/omniverse_test.db`. Autouse fixture drops/recreates tables per test. `conftest.py` sets `DATABASE_URL` before importing app.

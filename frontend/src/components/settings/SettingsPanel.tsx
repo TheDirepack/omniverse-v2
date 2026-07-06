@@ -29,10 +29,13 @@ function SettingsPanel() {
         api.fetchAgentRoutes(),
         api.fetchAgentNames(),
       ]);
-       setSettings({
-         AGENT_LOGGING: "true",
-         ...s.general_settings,
-       });
+        setSettings({
+          AGENT_LOGGING: "true",
+          HIDE_WEBFETCH_CONTENT: "false",
+          HIDE_WEBSEARCH_CONTENT: "false",
+          ...s.general_settings,
+        });
+
       setProviders(p);
       setAgentRoutes(r);
       setAgentNames(n);
@@ -258,18 +261,19 @@ function SettingsPanel() {
             </button>
           </div>
            <div className="settings-list">
-             {Object.entries(settings).map(([key, value]) => {
-               if (key === "AGENT_LOGGING") {
-                 return (
-                   <SettingToggle
-                     key={key}
-                     keyName={key}
-                     value={value ?? "true"}
-                     onSave={handleSaveSetting}
-                   />
-                 );
-               }
-               return (
+              {Object.entries(settings).map(([key, value]) => {
+                if (key === "AGENT_LOGGING" || key === "HIDE_WEBFETCH_CONTENT" || key === "HIDE_WEBSEARCH_CONTENT") {
+                  return (
+                    <SettingToggle
+                      key={key}
+                      keyName={key}
+                      value={value ?? (key === "AGENT_LOGGING" ? "true" : "false")}
+                      onSave={handleSaveSetting}
+                    />
+                  );
+                }
+                return (
+
                  <SettingItem
                    key={key}
                    keyName={key}

@@ -349,47 +349,51 @@ class TestReadPageWithBudget:
         from app.core.agent_engine import _read_page_with_budget
         cache = FetchCache()
         cache.set("http://cached.com", "cached content")
-
+        budget = [0]
         with patch("app.core.web_fetch.web_fetcher.fetch_page", new=AsyncMock(side_effect=AssertionError("should not fetch"))):
-            content, new_count, status = await _read_page_with_budget("http://cached.com", cache, 0, 5)
-
+            content, status = await _read_page_with_budget("http://cached.com", cache, budget, 5)
+        
         assert status == "cached"
         assert content == "cached content"
-        assert new_count == 0
+        assert budget[0] == 0
 
     async def test_fetch_consumes_one_budget_slot_and_populates_cache(self):
         from app.core.agent_engine import _read_page_with_budget
         cache = FetchCache()
-
+        budget = [0]
+        
         with patch("app.core.web_fetch.web_fetcher.fetch_page", new=AsyncMock(return_value="fresh content")):
-            content, new_count, status = await _read_page_with_budget("http://new.com", cache, 0, 5)
-
+            content, status = await _read_page_with_budget("http://new.com", cache, budget, 5)
+        
         assert status == "fetched"
         assert content == "fresh content"
-        assert new_count == 1
+        assert budget[0] == 1
         assert cache.get("http://new.com") == "fresh content"
 
     async def test_budget_exhausted_does_not_fetch(self):
         from app.core.agent_engine import _read_page_with_budget
         cache = FetchCache()
-
+        budget = [1]
+        
         with patch("app.core.web_fetch.web_fetcher.fetch_page", new=AsyncMock(side_effect=AssertionError("should not fetch"))):
-            content, new_count, status = await _read_page_with_budget("http://over-budget.com", cache, 1, 1)
-
+            content, status = await _read_page_with_budget("http://over-budget.com", cache, budget, 1)
+        
         assert status == "budget_exhausted"
         assert content is None
-        assert new_count == 1
+        assert budget[0] == 1
 
     async def test_fetch_error_is_reported_without_consuming_budget(self):
         from app.core.agent_engine import _read_page_with_budget
         cache = FetchCache()
-
+        budget = [0]
+        
         with patch("app.core.web_fetch.web_fetcher.fetch_page", new=AsyncMock(side_effect=RuntimeError("boom"))):
-            content, new_count, status = await _read_page_with_budget("http://broken.com", cache, 0, 5)
-
+            content, status = await _read_page_with_budget("http://broken.com", cache, budget, 5)
+        
         assert status == "error"
         assert "boom" in content
-        assert new_count == 0
+        assert budget[0] == 0
+
 
 class TestRunAgentStateful:
     """Tests for the stateful session capabilities of run_agent."""

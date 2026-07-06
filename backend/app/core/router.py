@@ -165,8 +165,8 @@ class ModelRouter:
                     with Session(settings_engine) as health_session:
                         self._report_success(health_session, candidate["provider"].id, candidate["key"].id if candidate["key"].id != -1 else None, candidate["model"])
                     
-                     # Log agent model call
-                     agent_logger.log(
+                    # Log agent model call
+                    agent_logger.log(
                          agent="ModelRouter",
                          event_type=AgentEventType.MODEL_CALL,
                          content=f"Successful response from {candidate['full_model']}",
@@ -193,7 +193,7 @@ class ModelRouter:
                         self._report_failure(health_session, candidate["provider"].id, candidate["key"].id if candidate["key"].id != -1 else None, candidate["model"])
                     
                     clean_e = _clean_error(e)
-                     agent_logger.log(
+                    agent_logger.log(
                          agent="ModelRouter",
                          event_type=AgentEventType.ERROR,
                          content=f"Fallback: {candidate['full_model']} failed due to {clean_e}. Trying next candidate.",

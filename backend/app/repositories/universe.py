@@ -12,6 +12,9 @@ class UniverseRepository:
     def get_by_name(self, name: str) -> Optional[Universe]:
         return self.session.exec(select(Universe).where(Universe.name == name)).first()
 
+    def get_by_slug(self, slug: str) -> Optional[Universe]:
+        return self.session.exec(select(Universe).where(Universe.slug == slug)).first()
+
     def get_all(self, order_by_name: bool = True) -> Sequence[Universe]:
         if order_by_name:
             return self.session.exec(select(Universe).order_by(Universe.name)).all()

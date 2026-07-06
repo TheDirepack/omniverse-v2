@@ -135,8 +135,8 @@ class TestMaterializationEndpoint:
             ephemeral_db.refresh(e)
 
         ephemeral_db.add_all([
-            Claim(subject_id=a.id, predicate="USES", object_id=b.id),
-            Claim(subject_id=b.id, predicate="GENERATES", object_id=c.id),
+            Claim(subject_id=a.id, predicate="USES", object_entity_id=b.id),
+            Claim(subject_id=b.id, predicate="GENERATES", object_entity_id=c.id),
         ])
         ephemeral_db.commit()
 

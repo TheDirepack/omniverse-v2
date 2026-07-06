@@ -3,7 +3,13 @@ export type SettingsTab = "providers" | "routing" | "general";
 
 export type World = {
   id: number;
+  slug: string | null;
   name: string;
+  franchise: string | null;
+  category: string | null;
+  continuity: string | null;
+  era: string | null;
+  parent_id: number | null;
   summary: string | null;
   is_explored: boolean;
   tier: number | null;

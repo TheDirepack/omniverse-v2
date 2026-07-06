@@ -74,8 +74,15 @@ class UniverseService:
     def create_universe(self, name: str) -> Universe:
         session = self.session or Session(engine)
         try:
-            universe = Universe(name=name, summary=None, is_explored=False)
             repo = UniverseRepository(session)
+            base_slug = name.lower().replace(" ", "_")
+            slug = base_slug
+            counter = 1
+            while repo.get_by_slug(slug):
+                slug = f"{base_slug}_{counter}"
+                counter += 1
+            
+            universe = Universe(name=name, slug=slug, summary=None, is_explored=False)
             return repo.create(universe)
         finally:
             if not self.session:

@@ -3,6 +3,7 @@ import re
 import json
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urlparse
+from sqlalchemy.exc import ProgrammingError, OperationalError
 from app.core.router import router
 from app.core.tools import AGENT_TOOLS, build_freshness_comparison_report
 from app.core.agent_logger import agent_logger
@@ -30,28 +31,74 @@ class FetchCache:
 run_fetch_cache = FetchCache()
 
 
-async def _read_page_with_budget(url: str, cache: FetchCache, fetched_count: int, max_fetches: int):
+async def _read_page_with_budget(url: str, cache: FetchCache, fetched_count: List[int], max_fetches: int):
     """
     Single choke point for reading full page content during an agent run.
-    Every tool that needs page content (fetchPage, compareSourceFreshness,
-    and any future one) MUST go through this so they all draw from the same
-    cache and the same per-run fetch budget, instead of a tool fetching
-    pages on its own and silently exceeding the budget.
-    Returns (content_or_error_message, updated_fetched_count, status) where
-    status is one of "cached", "fetched", "budget_exhausted", "error".
+    Returns (content_or_error_message, status). fetched_count[0] is updated in-place.
     """
     cached = cache.get(url)
     if cached:
-        return cached, fetched_count, "cached"
-    if fetched_count >= max_fetches:
-        return None, fetched_count, "budget_exhausted"
+        return cached, "cached"
+    if fetched_count[0] >= max_fetches:
+        return None, "budget_exhausted"
     try:
         from app.core.web_fetch import web_fetcher
         page_content = await web_fetcher.fetch_page(url)
         cache.set(url, page_content)
-        return page_content, fetched_count + 1, "fetched"
+        fetched_count[0] += 1
+        return page_content, "fetched"
     except Exception as e:
-        return str(e), fetched_count, "error"
+        return str(e), "error"
+
+def _classify_failure(e: Exception) -> str:
+    """Classify failure as RECOVERABLE or INFRASTRUCTURE_FAILURE."""
+    if isinstance(e, (ProgrammingError, OperationalError)):
+        return "INFRASTRUCTURE_FAILURE"
+    
+    err_msg = str(e).lower()
+    infra_keywords = ["no such column", "no such table", "missing column", "undefined column", "column does not exist"]
+    if any(kw in err_msg for kw in infra_keywords):
+        return "INFRASTRUCTURE_FAILURE"
+    
+    return "RECOVERABLE"
+
+async def _execute_tool(name: str, args: Dict[str, Any], cache: FetchCache, fetched_count: List[int], max_fetches: int) -> str:
+    """Executes a tool and handles budget/cache for fetchPage."""
+    if name == "fetchPage":
+        urls = args.get("urls", []) if isinstance(args.get("urls"), list) else [args.get("url")]
+        urls = [u for u in urls if u]
+        results = []
+        for url in urls:
+            content, status = await _read_page_with_budget(url, cache, fetched_count, max_fetches)
+            if status == "cached":
+                results.append(f"Cached content for {url}:\n{content}")
+            elif status == "fetched":
+                results.append(f"Fetched content for {url}:\n{content}")
+            elif status == "budget_exhausted":
+                results.append(f"Fetch budget exhausted for {url}.")
+            else:
+                results.append(f"Error fetching {url}: {content}")
+        return "\n\n".join(results)
+    
+    elif name == "compareSourceFreshness":
+        urls = args.get("urls", [])
+        if not urls or not isinstance(urls, list):
+            return "Error: Missing or invalid urls argument (expected a list of at least 2 URLs)."
+        
+        url_content_map = {}
+        for url in urls:
+            content, status = await _read_page_with_budget(url, cache, fetched_count, max_fetches)
+            url_content_map[url] = content if status in ("cached", "fetched") else None
+        
+        from app.core.tools import build_freshness_comparison_report
+        return build_freshness_comparison_report(url_content_map)
+    
+    else:
+        # Generic tool execution
+        if name in AGENT_TOOLS:
+            func = AGENT_TOOLS[name]["func"]
+            return await func(args)
+        return f"Error: Tool {name} not found."
 
 async def run_agent(
     agent_name: str,
@@ -64,7 +111,6 @@ async def run_agent(
     max_turns: int = 50,
     max_retries: int = 1,
     max_fetches: int = 5,
-    min_turns: int = 0,
     provider_id: Optional[int] = None,
     fetch_cache: Optional[FetchCache] = None,
     history: Optional[List[Dict[str, str]]] = None
@@ -95,7 +141,8 @@ async def run_agent(
         cache = fetch_cache or run_fetch_cache
         
         # Filter tools and prepare litellm-compatible tool definitions
-        available_tools = {k: v for k, v in AGENT_TOOLS.items() if k in tools_names}
+        disabled_tools = set()
+        available_tools = {k: v for k, v in AGENT_TOOLS.items() if k in tools_names and k not in disabled_tools}
         litellm_tools = []
         for name, info in available_tools.items():
             litellm_tools.append({
@@ -120,17 +167,14 @@ async def run_agent(
             }
         })
         
-        fetched_count = 0
+        fetched_count = [0]
         
         for turn in range(max_turns):
             from app.core.runtime_state import is_aborted
             if await is_aborted(run_id):
                 raise RuntimeError(f"Run {run_id} was aborted by user.")
 
-            gated = turn < min_turns
-            active_tools = litellm_tools if not gated else [
-                t for t in litellm_tools if t["function"]["name"] != submit_tool_name
-            ]
+            active_tools = litellm_tools
 
             # Log prompts before calling model
             prompt_content = json.dumps(messages, indent=2)
@@ -197,17 +241,37 @@ async def run_agent(
                 for tool_call in tool_calls:
                     name = tool_call.function.name
                     args = json.loads(tool_call.function.arguments)
-
+                    
                     if name == submit_tool_name:
-                        if gated:
-                            messages.append({
-                                "role": "tool", "tool_call_id": tool_call.id, "name": name,
-                                "content": f"Error: cannot submit yet — minimum {min_turns} research turns required, currently at turn {turn}. Continue investigating."
-                            })
-                            continue
-                        # If the tool provides a dataset, use it; otherwise, fallback to content
-                        args_dataset = args.get("dataset")
-                        return args_dataset or content or "Findings submitted.", messages
+
+                         args_dataset = args.get("dataset")
+                         if args_dataset:
+                             try:
+                                 dataset = json.loads(args_dataset) if isinstance(args_dataset, str) else args_dataset
+                                 claims = dataset.get("Verified_Claims", [])
+                                 graph = dataset.get("Knowledge_Graph", [])
+                                 
+                                 pending_leads = [l for l in graph if l.get("Status") == "Pending" and int(l.get("Priority", 0)) >= 7]
+                                 
+                                 if len(claims) < 5 and pending_leads:
+                                     messages.append({
+                                         "role": "tool", "tool_call_id": tool_call.id, "name": name,
+                                         "content": f"Coverage Gap Detected: You have only {len(claims)} verified claims and {len(pending_leads)} high-priority pending leads. Why are you concluding now? Please address the priority leads before submitting."
+                                     })
+                                     continue
+                                 elif len(claims) < 3:
+                                     messages.append({
+                                         "role": "tool", "tool_call_id": tool_call.id, "name": name,
+                                         "content": "Coverage too low: Less than 3 verified claims found. Please continue researching to ensure a minimal knowledge base."
+                                     })
+                                     continue
+                             except Exception:
+                                 pass # Fallback to submitting if dataset is malformed
+                         
+                         # If the tool provides a dataset, use it; otherwise, fallback to content
+                         args_dataset = args.get("dataset")
+                         return args_dataset or content or "Findings submitted.", messages
+
 
 
 
@@ -228,48 +292,57 @@ async def run_agent(
                         # cache and ONE fetch budget — otherwise a tool that fetches
                         # pages internally (e.g. compareSourceFreshness) could bypass
                         # the budget entirely.
-                        if name == "fetchPage":
-                            urls = args.get("urls", []) if isinstance(args.get("urls"), list) else [args.get("url")]
-                            urls = [u for u in urls if u]
-
-                            results = []
-                            for url in urls:
-                                content, fetched_count, status = await _read_page_with_budget(url, cache, fetched_count, max_fetches)
-                                if status == "cached":
-                                    results.append(f"Cached content for {url}:\n{content}")
-                                elif status == "fetched":
-                                    results.append(f"Fetched content for {url}:\n{content}")
-                                elif status == "budget_exhausted":
-                                    results.append(f"Fetch budget exhausted for {url}.")
-                                else:
-                                    results.append(f"Error fetching {url}: {content}")
-                            observation = "\n\n".join(results)
-                        elif name == "compareSourceFreshness":
-                            urls = args.get("urls", [])
-                            if not urls or not isinstance(urls, list):
-                                observation = "Error: Missing or invalid urls argument (expected a list of at least 2 URLs)."
-                            else:
-                                url_content_map = {}
-                                for url in urls:
-                                    content, fetched_count, status = await _read_page_with_budget(url, cache, fetched_count, max_fetches)
-                                    url_content_map[url] = content if status in ("cached", "fetched") else None
-                                observation = build_freshness_comparison_report(url_content_map)
+                        if name == "executePlan":
+                            plan = args.get("plan", [])
+                            plan_observations = []
+                            results_history = []
+                            
+                            for i, step in enumerate(plan):
+                                tool_name = step.get("tool")
+                                tool_args = step.get("args", {}).copy() if isinstance(step.get("args"), dict) else {}
+                                
+                                # Resolve placeholders like $result_0
+                                for k, v in tool_args.items():
+                                    if isinstance(v, str) and v.startswith("$result_"):
+                                        try:
+                                            idx = int(v.split("_")[1])
+                                            if idx < len(results_history):
+                                                tool_args[k] = results_history[idx]
+                                        except (ValueError, IndexError):
+                                            pass
+                                
+                                try:
+                                    obs = await _execute_tool(tool_name, tool_args, cache, fetched_count, max_fetches)
+                                    results_history.append(obs)
+                                    plan_observations.append(f"Step {i} ({tool_name}): {obs}")
+                                except Exception as e:
+                                    err_obs = f"Step {i} ({tool_name}) failed: {str(e)}"
+                                    results_history.append(err_obs)
+                                    plan_observations.append(err_obs)
+                                    
+                            observation = "\n\n".join(plan_observations)
                         else:
-                            # Other tools (e.g. search)
                             try:
-                                func = AGENT_TOOLS[name]["func"]
-                                observation = await func(args)
-                                # Success! Reset failure count for this tool
+                                observation = await _execute_tool(name, args, cache, fetched_count, max_fetches)
                                 tool_failures[name] = 0
                             except Exception as e:
-                                # Track failure
                                 count = tool_failures.get(name, 0) + 1
                                 tool_failures[name] = count
                                 
-                                if count < 3:
-                                    observation = f"Error executing tool {name}: {str(e)}. Please analyze the error, correct your parameters, and try again. (Attempt {count}/3)"
+                                failure_type = _classify_failure(e)
+                                if failure_type == "INFRASTRUCTURE_FAILURE":
+                                    if count == 1:
+                                        observation = f"SYSTEM ERROR in tool {name}: {str(e)}. This is an infrastructure failure. If it fails again, the tool will be disabled for this run."
+                                    else:
+                                        disabled_tools.add(name)
+                                        observation = f"CRITICAL FAILURE in tool {name}: {str(e)}. Tool has been disabled for the remainder of this run due to repeated infrastructure errors."
                                 else:
-                                    observation = f"Tool {name} has failed {count} times consecutively. It may be fundamentally broken or the requested operation is impossible. Please attempt a different approach or use an alternative tool."
+                                    if count < 3:
+                                        observation = f"Error executing tool {name}: {str(e)}. Please analyze the error, correct your parameters, and try again. (Attempt {count}/3)"
+                                    else:
+                                        observation = f"Tool {name} has failed {count} times consecutively. It may be fundamentally broken or the requested operation is impossible. Please attempt a different approach or use an alternative tool."
+
+
 
                         messages.append({
                             "role": "tool",
@@ -299,16 +372,10 @@ async def run_agent(
                 continue
             
             # No tool calls at all.
-            if gated:
-                messages.append({
-                    "role": "user",
-                    "content": f"You're at turn {turn+1} of a required minimum {min_turns}. Keep researching with the available tools before concluding."
-                })
-                continue
-
             if not content:
                 messages.append({"role": "user", "content": "Please use the available tools to research and eventually call the submit tool."})
                 continue
+
             
             return content, messages
             

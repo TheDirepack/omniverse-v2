@@ -40,7 +40,20 @@ def add_world(payload: AddWorldPayload, background_tasks: BackgroundTasks):
 def get_worlds():
     service = UniverseService()
     worlds = service.get_all_universes()
-    return [{"id": w.id, "name": w.name, "summary": w.summary, "is_explored": w.is_explored} for w in worlds]
+    return [
+        {
+            "id": w.id,
+            "slug": w.slug,
+            "name": w.name,
+            "franchise": w.franchise,
+            "category": w.category,
+            "continuity": w.continuity,
+            "era": w.era,
+            "summary": w.summary,
+            "is_explored": w.is_explored
+        }
+        for w in worlds
+    ]
 
 @router.post("/{world_id}/reset-explored")
 def reset_world_explored(world_id: int):
@@ -104,10 +117,21 @@ def reset_database():
         json_path = Path(__file__).parent.parent.parent / "db" / "default_worlds.json"
         if json_path.exists():
             with open(json_path) as f:
-                for name in json.load(f):
-                    exists = session.exec(select(Universe).where(Universe.name == name)).first()
+                default_worlds = json.load(f)
+                for w_data in default_worlds:
+                    slug = w_data.get("id")
+                    exists = session.exec(select(Universe).where(Universe.slug == slug)).first()
                     if not exists:
-                        session.add(Universe(name=name, summary=None, is_explored=False))
+                        session.add(Universe(
+                            slug=slug,
+                            name=w_data.get("name"),
+                            franchise=w_data.get("franchise"),
+                            category=w_data.get("category"),
+                            continuity=w_data.get("continuity"),
+                            era=w_data.get("era"),
+                            summary=None,
+                            is_explored=False
+                        ))
         session.commit()
     
     with Session(unconfirmed_engine) as session:

@@ -35,6 +35,18 @@ def init_db():
             conn.exec_driver_sql("ALTER TABLE universe ADD COLUMN is_explored BOOLEAN NOT NULL DEFAULT 0")
         if "raw_data" not in columns:
             conn.exec_driver_sql("ALTER TABLE universe ADD COLUMN raw_data TEXT")
+        if "slug" not in columns:
+            conn.exec_driver_sql("ALTER TABLE universe ADD COLUMN slug TEXT")
+        if "franchise" not in columns:
+            conn.exec_driver_sql("ALTER TABLE universe ADD COLUMN franchise TEXT")
+        if "category" not in columns:
+            conn.exec_driver_sql("ALTER TABLE universe ADD COLUMN category TEXT")
+        if "continuity" not in columns:
+            conn.exec_driver_sql("ALTER TABLE universe ADD COLUMN continuity TEXT")
+        if "era" not in columns:
+            conn.exec_driver_sql("ALTER TABLE universe ADD COLUMN era TEXT")
+        if "parent_id" not in columns:
+            conn.exec_driver_sql("ALTER TABLE universe ADD COLUMN parent_id INTEGER")
         
         # Migrate AgentRouteFallback: model_name -> models
         route_columns = [row[1] for row in conn.exec_driver_sql("PRAGMA table_info(agentroutefallback)").fetchall()]
@@ -86,11 +98,37 @@ def init_db():
                 default_worlds = json.load(f)
             
             with Session(engine) as session:
-                for name in default_worlds:
-                    # Only add if not already present
-                    exists = session.exec(select(Universe).where(Universe.name == name)).first()
+                # First pass: Create all universes to get IDs
+                slug_to_id = {}
+                for w_data in default_worlds:
+                    slug = w_data.get("id")
+                    exists = session.exec(select(Universe).where(Universe.slug == slug)).first()
                     if not exists:
-                        session.add(Universe(name=name, summary=None, is_explored=False))
+                        u = Universe(
+                            slug=slug,
+                            name=w_data.get("name"),
+                            franchise=w_data.get("franchise"),
+                            category=w_data.get("category"),
+                            continuity=w_data.get("continuity"),
+                            era=w_data.get("era"),
+                            summary=None,
+                            is_explored=False
+                        )
+                        session.add(u)
+                        session.flush()
+                        slug_to_id[slug] = u.id
+                    elif exists:
+                        slug_to_id[slug] = exists.id
+                
+                # Second pass: Set parents
+                for w_data in default_worlds:
+                    slug = w_data.get("id")
+                    parent_slug = w_data.get("parent")
+                    if parent_slug:
+                        u = session.exec(select(Universe).where(Universe.slug == slug)).first()
+                        if u and parent_slug in slug_to_id:
+                            u.parent_id = slug_to_id[parent_slug]
+                
                 session.commit()
     except Exception as e:
         print(f"Error seeding default worlds: {e}")

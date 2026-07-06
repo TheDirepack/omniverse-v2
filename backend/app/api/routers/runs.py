@@ -247,6 +247,7 @@ def get_file_logs(
 ):
     from app.core.agent_logger import LOG_FILE
     from pathlib import Path
+    from app.services.settings_service import SettingsService
     if not LOG_FILE.exists():
         return {"logs": [], "total": 0, "has_more": False}
     try:
@@ -254,6 +255,14 @@ def get_file_logs(
         
         with open(LOG_FILE, "r", encoding="utf-8") as f:
             lines = f.readlines()
+            
+        settings_service = SettingsService()
+        hide_webfetch = settings_service.get_setting("HIDE_WEBFETCH_CONTENT")
+        hide_websearch = settings_service.get_setting("HIDE_WEBSEARCH_CONTENT")
+        
+        # Normalize to boolean
+        hide_webfetch = hide_webfetch.value.lower() == "true" if hide_webfetch else False
+        hide_websearch = hide_websearch.value.lower() == "true" if hide_websearch else False
             
         results = []
         for line in lines:
@@ -272,6 +281,14 @@ def get_file_logs(
             log_world = parts[4].strip("[")
             log_type = parts[5].strip("[")
             log_content = " ".join(parts[6:])
+            
+            if log_type == "TOOL_RES":
+                if hide_webfetch and "Observation from webFetch:" in log_content:
+                    log_content = "Observation from webFetch: [Content Hidden]"
+                    line = "] ".join(parts[:6]) + "] " + log_content
+                elif hide_websearch and "Observation from webSearch:" in log_content:
+                    log_content = "Observation from webSearch: [Content Hidden]"
+                    line = "] ".join(parts[:6]) + "] " + log_content
             
             if agent and agent.lower() not in log_agent.lower(): continue
             if world and world.lower() not in log_world.lower(): continue

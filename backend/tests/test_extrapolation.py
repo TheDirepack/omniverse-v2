@@ -34,11 +34,20 @@ def test_extrapolate_all_scope():
     assert "U3" not in data["worlds"]
 
 def test_extrapolate_worlds_scope():
-    response = client.post("/api/runs/extrapolate", json={"scope": "worlds", "worlds": ["U1", "NonExistent"]})
+    # Setup: Create some verified worlds
+    with Session(engine) as session:
+        u1 = Universe(name="U1", is_explored=True)
+        u2 = Universe(name="U2", is_explored=False)
+        session.add_all([u1, u2])
+        session.commit()
+
+    response = client.post("/api/runs/extrapolate", json={"scope": "worlds", "worlds": ["U1", "U2", "NonExistent"]})
     assert response.status_code == 200
     data = response.json()
+    assert "worlds" in data
     assert "U1" in data["worlds"]
-    assert "NonExistent" in data["worlds"]
+    assert "U2" not in data["worlds"]
+    assert "NonExistent" not in data["worlds"]
 
 def test_extrapolate_worlds_missing_list():
     response = client.post("/api/runs/extrapolate", json={"scope": "worlds"})

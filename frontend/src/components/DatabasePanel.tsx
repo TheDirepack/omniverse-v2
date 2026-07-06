@@ -114,7 +114,26 @@ function WorldDetail({ world, anomalies, traits, unconfirmedTraits, claims, unco
         <div className="detail-label">Tier Justification</div>
         <pre className="detail-content">{world.tier_justification ?? "No tiering data yet."}</pre>
       </div>
-      
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 12, marginTop: 16 }}>
+        <div className="detail-box">
+          <div className="detail-label">Franchise</div>
+          <div className="detail-content">{world.franchise ?? "N/A"}</div>
+        </div>
+        <div className="detail-box">
+          <div className="detail-label">Category</div>
+          <div className="detail-content">{world.category ?? "N/A"}</div>
+        </div>
+        <div className="detail-box">
+          <div className="detail-label">Continuity</div>
+          <div className="detail-content">{world.continuity ?? "N/A"}</div>
+        </div>
+        <div className="detail-box">
+          <div className="detail-label">Era</div>
+          <div className="detail-content">{world.era ?? "N/A"}</div>
+        </div>
+      </div>
+
       <div style={{ marginTop: 24 }}>
         <h3>Verified Knowledge Graph</h3>
         <ClaimSection title="Verified Claims" claims={worldClaims} />
@@ -172,6 +191,8 @@ function DatabasePanel() {
   const [selectedWorldId, setSelectedWorldId] = useState<number | null>(null);
   const [compareIds, setCompareIds] = useState<number[]>([]);
   const [isCompareMode, setIsCompareMode] = useState(false);
+  const [showGlobalUnverified, setShowGlobalUnverified] = useState(false);
+  const [showGlobalTheories, setShowGlobalTheories] = useState(false);
   const [worldFilter, setWorldFilter] = useState("");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
 
@@ -239,12 +260,23 @@ function DatabasePanel() {
           }}>
             {isCompareMode ? "View Details" : "Compare Worlds"}
           </button>
-          <button className="chip" onClick={() => setSortOrder(prev => prev === "asc" ? "desc" : "asc")}>
-            Sort Tiers: {sortOrder === "asc" ? "↑" : "↓"}
-          </button>
-        </div>
-        <input 
-          className="world-filter-input"
+           <button className="chip" onClick={() => setSortOrder(prev => prev === "asc" ? "desc" : "asc")}>
+             Sort Tiers: {sortOrder === "asc" ? "↑" : "↓"}
+           </button>
+         </div>
+         <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+           <label style={{ fontSize: "0.8rem", color: "#94a3b8", display: "flex", alignItems: "center", gap: 4, cursor: "pointer" }}>
+             <input type="checkbox" checked={showGlobalUnverified} onChange={e => setShowGlobalUnverified(e.target.checked)} />
+             Show Unverified
+           </label>
+           <label style={{ fontSize: "0.8rem", color: "#94a3b8", display: "flex", alignItems: "center", gap: 4, cursor: "pointer" }}>
+             <input type="checkbox" checked={showGlobalTheories} onChange={e => setShowGlobalTheories(e.target.checked)} />
+             Show Theories
+           </label>
+         </div>
+         <input 
+           className="world-filter-input"
+
           placeholder="Filter worlds..." 
           value={worldFilter} 
           onChange={e => setWorldFilter(e.target.value)} 
@@ -296,14 +328,56 @@ function DatabasePanel() {
          ) : (
            selectedWorld ? <WorldDetail world={selectedWorld} anomalies={anomalies} traits={traits} unconfirmedTraits={unconfirmedTraits} claims={claims} unconfirmedClaims={unconfirmedClaims} /> : <p className="muted">Select a world to view details.</p>
          )}
-         {anomalies.filter(a => a.world_id === null).length > 0 && (
-          <div className="anomaly-list" style={{ marginTop: 16 }}>
-            <h4>Global Anomalies</h4>
-            {anomalies.filter(a => a.world_id === null).map((a, i) => <div key={i} className="anomaly">{a.description}</div>)}
-          </div>
-        )}
-      </div>
-    </section>
+          {anomalies.filter(a => a.world_id === null).length > 0 && (
+           <div className="anomaly-list" style={{ marginTop: 16 }}>
+             <h4>Global Anomalies</h4>
+             {anomalies.filter(a => a.world_id === null).map((a, i) => <div key={i} className="anomaly">{a.description}</div>)}
+           </div>
+         )}
+         {showGlobalUnverified && (
+           <div style={{ marginTop: 24, borderTop: "1px solid #334155", paddingTop: 16 }}>
+             <h3>Global Unverified Research</h3>
+             <div style={{ display: "grid", gap: 16 }}>
+               <div>
+                 <h4>Unconfirmed Claims</h4>
+                 {unconfirmedClaims.length > 0 ? (
+                   <ClaimSection title="All Staging Claims" claims={unconfirmedClaims} isUnconfirmed />
+                 ) : <p className="muted">No unconfirmed claims.</p>}
+               </div>
+               <div>
+                 <h4>Unconfirmed Traits</h4>
+                 {unconfirmedTraits.length > 0 ? (
+                   <TraitSection category="All Unconfirmed" traits={unconfirmedTraits} isUnconfirmed />
+                 ) : <p className="muted">No unconfirmed traits.</p>}
+               </div>
+             </div>
+           </div>
+         )}
+         {showGlobalTheories && (
+           <div style={{ marginTop: 24, borderTop: "1px solid #334155", paddingTop: 16 }}>
+             <h3>Global Theories</h3>
+             <div style={{ display: "grid", gap: 16 }}>
+               {worlds.filter(w => w.theory).map(w => (
+                 <div key={w.id} style={{ padding: "12px", background: "#1e293b", borderRadius: 8, border: "1px solid #334155" }}>
+                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                     <strong style={{ color: "#f1f5f9" }}>{w.name}</strong>
+                     <div className="badge" style={{ fontSize: "0.7rem" }}>Tier {w.tier ?? "N/A"}</div>
+                   </div>
+                   <pre style={{ fontSize: "0.85rem", color: "#cbd5e1", whiteSpace: "pre-wrap" }}>{w.theory}</pre>
+                   {w.theory_audit && (
+                     <div style={{ marginTop: 8, padding: "8px", background: "#0f172a", borderRadius: 4, fontSize: "0.8rem", color: "#94a3b8", borderLeft: "3px solid #6366f1" }}>
+                       <strong>Auditor:</strong> {w.theory_audit}
+                     </div>
+                   )}
+                 </div>
+               ))}
+               {worlds.filter(w => w.theory).length === 0 && <p className="muted">No theories available.</p>}
+             </div>
+           </div>
+         )}
+       </div>
+     </section>
+
   );
 }
 

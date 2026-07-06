@@ -68,9 +68,9 @@ async def test_tool_query_claims(setup_universe):
     set_current_universe(u.name)
     
     result = await tool_query_claims({})
-    assert "(Entity1 --LIVES_IN--> Entity2)" in result
-    assert "support: 2" in result
-    assert "ref: test.com:1" in result
+    assert "Entity: Entity1" in result
+    assert "- Lives In: Entity2 (support: 2)" in result
+    assert "Confidence: 2.0 avg supporting sources" in result
 
 @pytest.mark.asyncio
 async def test_tool_upsert_claims_evidence(setup_universe):
@@ -141,7 +141,9 @@ async def test_tool_fetch_page_parallel():
         mock_fetch.return_value = {
             "metadata": {"url": "http://test.com", "word_count": 100, "page_type": "ARTICLE"},
             "main_content": "The main content of the page.",
-            "internal_links": "- Link1 (http://test.com/1)",
+            "internal_links": [
+                {"url": "http://test.com/1", "title": "Link1", "tier": "High", "score": 1, "sections": ["Section 1"]}
+            ],
             "research_signals": "Category: Test",
             "freshness": "[SOURCE FRESHNESS SIGNALS]\nFresh"
         }
@@ -154,6 +156,7 @@ async def test_tool_fetch_page_parallel():
         assert "--- Content from http://url2.com ---" in result
         assert "[MAIN ARTICLE]\nThe main content of the page." in result
         assert "Words: 100" in result
+        assert "RECOMMENDED NEXT STEPS" in result
 
 def test_get_researcher_prompt_assembly():
     prompt = get_researcher_prompt(

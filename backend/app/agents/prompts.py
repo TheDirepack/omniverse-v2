@@ -7,6 +7,7 @@ RESEARCH_SCHEMA = """
   "Verified_Claims": [
     {
       "subject": "string",
+      "context": "string (The section heading or conceptual grouping, e.g. 'Physical Specifications', 'Armament')",
       "predicate": "string",
       "object_val": "string",
       "reference": "url: section/line",
@@ -19,7 +20,13 @@ RESEARCH_SCHEMA = """
       "Lead": "string (person, place, term, or specific detail)",
       "Reason": "Why this is worth investigating further (e.g. 'mentions a secret lab', 'contradicts X', 'references unknown technology')",
       "Expected_Value": "What info we hope to find by following this lead",
-      "URL": "url to follow if available"
+      "URL": "url to follow if available",
+      "Priority": "1-10 (10 highest)",
+      "Information_Gain": "High | Medium | Low",
+      "Prerequisites": ["Other leads that must be resolved first"],
+      "Status": "Pending | Visited | Blocked",
+      "Attempts": "integer",
+      "Estimated_Cost": "Low | Medium | High"
     }
   ],
   "Missing_Info": ["string"],
@@ -109,16 +116,20 @@ MODE: {mode_block}
   
 PHASED WORKFLOW
 1. DISCOVERY: Use `webSearch` to find candidate wikis. If multiple distinct domains are returned, use `compareSourceFreshness` to select the most active canonical source. Use Category pages ONLY to extract article links.
-2. EXTRACTION: Fetch specific articles using `fetchPage`. Extract high-density factual data as ATOMIC CLAIMS (Subject -> Predicate -> Object). NEVER cite a Category page or overview page as an authoritative source; they must be replaced by specific article citations.
-3. SYNTHESIS: Build the `Knowledge_Graph` (leads for next turns) and `Missing_Info` (unresolved gaps). 
+2. EXTRACTION: Fetch specific articles using `fetchPage`. Deconstruct the text into high-density factual data as CONTEXTUAL ATOMIC CLAIMS (Subject -> Context -> Predicate -> Object). 
+    - IMPORTANT: The 'Context' must be derived from the document's own structural hierarchy (e.g., the section heading under which the fact was found). 
+    - Prioritize technical manuals, spec sheets, and capability lists over narrative descriptions. 
+    - NEVER cite a Category page or overview page as an authoritative source; they must be replaced by specific article citations.
+3. SYNTHESIS: Build the `Knowledge_Graph` as a prioritized Research Scheduler. Each lead must be assigned a Priority, Expected Information Gain, and any Prerequisites. Track Status and Attempts for each lead to avoid redundant work. Build `Missing_Info` (unresolved gaps). 
     - MANDATORY: Every lead in the `Knowledge_Graph` and every gap in `Missing_Info` MUST also be saved to the staging DB using `saveUnconfirmedClaim` with predicates 'is_a_lead' and 'has_gap' respectively. This ensures they are visible in the research dashboard.
 4. FORMATTING: Return the results in the strict JSON schema.
-
+ 
   
 CORE DIRECTIVES
 - KNOWLEDGE BOUNDARY: Distinguish between Universe Lore (internal facts) and Production Trivia (writing/censorship/meta). Record ONLY Universe Lore.
 - PRECISE GROUNDING: Every claim MUST have a Reference as "url: section/line".
-- DETAILED ANALYSIS: For every extracted claim, prioritize identifying minimum capabilities, maximum capabilities, risks, and limitations instead of providing a general summary.
+- TECHNICAL RIGOR: Prioritize the extraction of quantitative data, technical specifications, operational mechanisms, and precise limitations. Explicitly avoid general descriptive summaries (e.g., "highly powerful", "advanced tech"); instead, extract the specific evidence and parameters that support such descriptions.
+- DETAILED ANALYSIS: For every extracted claim, prioritize identifying minimum capabilities, maximum capabilities, risks, and failure points instead of providing a general summary of a section.
 - NO EXTERNAL KNOWLEDGE: If evidence is missing from source text, mark it in `Missing_Info`.
 - NO DATA BLEED: Keep universes strictly isolated.
 - SOURCE RIGOR: If a source shows a staleness warning or redirect, re-source from the active wiki.
@@ -126,6 +137,7 @@ CORE DIRECTIVES
 - WIKI LEVERAGING: Once a wiki is identified, attempt to derive predictable URLs for specific articles before performing new searches.
 - MULTIVERSE AWARENESS: Proactively identify relationships between this universe and others (e.g., timelines, alternate realities). Use `linkUniverses` to record these relations and `linkEntityToCanonical` to link entities to their versions across different universes.
 - STOPPING HEURISTIC: If repeated search reformulations consistently return the same pages without new information, terminate searching and mark the gap in `Missing_Info`.
+- SCHEDULER RIGOR: Maintain the `Knowledge_Graph` as a strict queue. When choosing the next action, prioritize leads with the highest Priority and Information Gain whose Prerequisites are met. Update the Status and Attempts for every lead you interact with.
 - PROVISIONAL STATE: Once a likely answer is identified but not yet verified, move it from `Missing_Info` to `Provisional_Conclusions`.
   
 {C_STAGING_DB}
@@ -142,6 +154,7 @@ CONSTRAINTS
 - PROHIBITED: No power-scaling, feat analysis, or tiering.
 Requirements: {requirements}
 """,
+
 
         "user": f"Perform the research operation for {entity}. Focus on the phased workflow: Discover $\rightarrow$ Extract $\rightarrow$ Synthesize $\rightarrow$ Format."
     }
@@ -173,7 +186,7 @@ The "Sifted_Dataset" must be a complete JSON object following the RESEARCH_SCHEM
 Fact Auditor & Depth Controller. Find smallest flaw and identify shallow research. Verify JSON against source-grounding and task criteria.
   
 OBJECTIVE
-1. Depth Check: Evaluate if the research is "surface-level". If the entity is complex but the dataset is sparse, or if the `Knowledge_Graph` contains promising leads that weren't followed, mark as Revision_Required.
+1. Depth Check: Evaluate if the research is "surface-level" or suffers from "Summary Bias". If the researcher provides general narrative summaries instead of technical specifications, mechanisms, and quantitative data, or if the `Knowledge_Graph` contains promising leads that weren't followed, mark as Revision_Required.
 2. Cross-check: Verify that submitted JSON is consistent with research notes in staging (nothing invented that isn't in staging, nothing important from staging silently dropped).
 3. Validate schema and required keys. Reject if the response is not a single parseable JSON object.
 4. Verify Canon_Status tags (Verified/Unverified/Fanon/Unclear) are strictly justified by the source text.

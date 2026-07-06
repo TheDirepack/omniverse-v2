@@ -1,23 +1,80 @@
 from typing import Any, Dict, List, Optional
 from sqlmodel import Session, select
 from app.db.session import engine
-from app.db.schema import Universe, Trait, Entity, Claim, ClaimAttribute, EntityAlias
+from app.db.schema import Universe, Trait, Entity, Claim, ClaimAttribute, EntityAlias, UniverseRelation, Evidence, EvidenceChunk, Predicate
 from app.services.predicate_service import PredicateService
+from app.services.universe_service import UniverseService
+from app.services.knowledge_retriever import KnowledgeRetrieverService
 from app.db.unconfirmed_session import engine as unconfirmed_engine
 from app.db.unconfirmed_schema import UnconfirmedUniverse, UnconfirmedTrait, UnconfirmedClaim
 from app.core.web_search import web_searcher
 from app.core.web_fetch import web_fetcher
 from app.core.context import get_current_universe
 
+import asyncio
+
 async def tool_web_search(args: Dict[str, Any]) -> str:
-    query = args.get("search_query", "")
-    if not query:
-        return "Error: Missing search_query argument."
-    engine = args.get("engine", "duckduckgo")
-    if isinstance(engine, str) and "," in engine:
-        engine = engine.split(",")[0].strip().lower()
+    queries = args.get("queries", [])
+    if not queries:
+        single_query = args.get("search_query")
+        if not single_query:
+            return "Error: Missing search_query or queries argument."
+        queries = [single_query]
+    
+    engines_arg = args.get("engine", "duckduckgo")
+    if isinstance(engines_arg, str):
+        engines = [e.strip().lower() for e in engines_arg.split(",")]
+    elif isinstance(engines_arg, list):
+        engines = [e.strip().lower() if isinstance(e, str) else str(e) for e in engines_arg]
+    else:
+        engines = ["duckduckgo"]
+        
     site_filter = args.get("site_filter", None)
-    return await web_searcher.perform_search(query, engine=engine, site_filter=site_filter)
+    max_results = args.get("max_results", 10)
+    
+    async def run_search(q, eng):
+        return (q, eng, await web_searcher.perform_search(q, engine=eng, site_filter=site_filter, max_results=max_results))
+
+    tasks = []
+    for q in queries:
+        for eng in engines:
+            tasks.append(run_search(q, eng))
+
+    results = await asyncio.gather(*tasks)
+    
+    # Group results by query
+    query_results = {q: [] for q in queries}
+    for q, eng, res in results:
+        query_results[q].append((eng, res))
+    
+    output_blocks = []
+    for i, q in enumerate(queries, 1):
+        q_block = [f"### Query {i}: {q}"]
+        
+        engine_outputs = []
+        for eng, res in query_results[q]:
+            if isinstance(res, str):
+                engine_outputs.append(f"**{eng}**: {res}")
+                continue
+                
+            status = res.get("status")
+            if status == "ERROR":
+                engine_outputs.append(f"**{eng}**: Error: {res.get('message')}")
+            elif status == "BLOCKED":
+                engine_outputs.append(f"**{eng}**: [BLOCKED] {res.get('message')}")
+            elif status == "NO_RESULTS":
+                engine_outputs.append(f"**{eng}**: No results found. {res.get('message')}")
+            elif status == "SUCCESS":
+                search_results = res.get("results", [])
+                res_list = [f"{j}. [{r['title']}]({r['url']})\n{r['snippet']}" for j, r in enumerate(search_results, 1)]
+                engine_outputs.append(f"**{eng}**:\n" + ("\n\n".join(res_list) if res_list else "No results parsed."))
+            else:
+                engine_outputs.append(f"**{eng}**: Unexpected status {status}")
+        
+        q_block.append("\n\n".join(engine_outputs))
+        output_blocks.append("\n".join(q_block))
+            
+    return "\n\n---\n\n".join(output_blocks)
 
 async def tool_fetch_page(args: Dict[str, Any]) -> str:
     urls = args.get("urls", [])
@@ -29,14 +86,37 @@ async def tool_fetch_page(args: Dict[str, Any]) -> str:
     
     max_links = args.get("max_links", 20)
     
-    results = []
-    for url in urls:
+    async def run_fetch(url):
         try:
-            content = await web_fetcher.fetch_page(url, max_links=max_links)
-            results.append(f"--- Content from {url} ---\n{content}")
-        except Exception as e:
-            results.append(f"Error fetching {url}: {str(e)}")
+            res = await web_fetcher.fetch_page(url, max_links=max_links)
+            if isinstance(res, str):
+                return f"--- Content from {url} ---\n{res}"
+                
+            if "error" in res:
+                return f"Error fetching {url}: {res['error']}"
 
+            meta = res["metadata"]
+            output = [
+                f"--- Content from {url} ---",
+                f"[EXTRACTION REPORT]\nWords: {meta['word_count']} | Type: {meta['page_type']}",
+            ]
+            
+            if res["freshness"]:
+                output.append(res["freshness"])
+                
+            output.append("[MAIN ARTICLE]\n" + res["main_content"])
+            
+            if res["internal_links"]:
+                output.append("[INTERNAL LINKS]\n" + res["internal_links"])
+                
+            if res["research_signals"]:
+                output.append("[RESEARCH SIGNALS]\n" + res["research_signals"])
+                
+            return "\n\n".join(output)
+        except Exception as e:
+            return f"Error fetching {url}: {str(e)}"
+
+    results = await asyncio.gather(*[run_fetch(url) for url in urls])
     return "\n\n".join(results)
 
 def build_freshness_comparison_report(url_content_map: Dict[str, Optional[str]]) -> str:
@@ -52,10 +132,18 @@ def build_freshness_comparison_report(url_content_map: Dict[str, Optional[str]])
         if content is None:
             reports.append(f"CANDIDATE: {url}\nUnavailable (fetch budget exhausted or fetch failed).")
             continue
+        
+        # Handle cases where content might be a dict instead of a str
+        if isinstance(content, dict):
+            content = content.get("main_content", str(content))
+        
         if "[END SIGNALS]" in content:
             signal_block = content.split("[END SIGNALS]")[0] + "[END SIGNALS]"
         else:
-            signal_block = content[:500]
+            try:
+                signal_block = content[:500]
+            except Exception as e:
+                raise TypeError(f"Failed to slice content for {url}. Content type: {type(content)}. Error: {e}")
         reports.append(f"CANDIDATE: {url}\n{signal_block}")
 
     return (
@@ -64,6 +152,8 @@ def build_freshness_comparison_report(url_content_map: Dict[str, Optional[str]])
         "A source that a redirect or canonical tag points AWAY from is likely the stale one, "
         "even if it ranked first in search results.\n\n" + "\n\n".join(reports)
     )
+
+
 
 
 async def tool_compare_source_freshness(args: Dict[str, Any]) -> str:
@@ -172,7 +262,7 @@ async def tool_upsert_claims(args: Dict[str, Any]) -> str:
             "predicate": args.get("predicate", ""),
             "object_val": args.get("object_val", ""),
             "source_reference": args.get("source_reference"),
-            "source_wiki": args.get("wiki_source"),
+            "source_wiki": args.get("source_wiki"),
             "confidence": args.get("confidence", 0.0),
             "attributes": args.get("attributes", {})
         }]
@@ -207,6 +297,24 @@ async def tool_upsert_claims(args: Dict[str, Any]) -> str:
                 skipped.append(f"Missing fields: {item}")
                 continue
 
+            # Evidence Layer: Link to structured evidence
+            evidence_chunk_id = None
+            source_wiki = item.get("source_wiki")
+            source_ref = item.get("source_reference")
+            
+            if source_wiki:
+                # Create evidence chain: Evidence -> EvidenceChunk
+                ev = session.exec(select(Evidence).where(Evidence.source_url == source_wiki)).first()
+                if not ev:
+                    ev = Evidence(universe_id=universe.id, source_url=source_wiki, source_name=source_wiki)
+                    session.add(ev)
+                    session.flush()
+                
+                chunk = EvidenceChunk(evidence_id=ev.id, content=source_ref or "Full page", chunk_index=0)
+                session.add(chunk)
+                session.flush()
+                evidence_chunk_id = chunk.id
+
             # Normalization
             predicate_name = pred_service.normalize(raw_pred)
             pred_ent = session.exec(select(Predicate).where(Predicate.canonical_name == predicate_name)).first()
@@ -218,13 +326,11 @@ async def tool_upsert_claims(args: Dict[str, Any]) -> str:
             s_ent = get_or_create_entity(s_name)
             
             # Determine if object is an entity or literal
-            # In a real system, we might check if o_val is an existing entity or use an LLM
-            # For now, we'll check if it exists as an entity in this universe.
             o_ent = session.exec(select(Entity).where(Entity.universe_id == universe.id, Entity.name == o_val)).first()
             
             o_entity_id = o_ent.id if o_ent else None
             o_literal = None if o_ent else o_val
-
+            
             existing = session.exec(
                 select(Claim).where(
                     Claim.subject_id == s_ent.id,
@@ -232,10 +338,11 @@ async def tool_upsert_claims(args: Dict[str, Any]) -> str:
                     (Claim.object_entity_id == o_entity_id) if o_entity_id else (Claim.object_literal == o_literal)
                 )
             ).first()
-
+            
             if existing:
-                existing.source_reference = item.get("source_reference") or existing.source_reference
-                existing.source_wiki = item.get("source_wiki") or existing.source_wiki
+                existing.source_reference = source_ref or existing.source_reference
+                existing.source_wiki = source_wiki or existing.source_wiki
+                existing.evidence_chunk_id = evidence_chunk_id or existing.evidence_chunk_id
                 existing.support_count += 1
                 session.add(existing)
                 updated.append(f"({s_name}, {predicate_name}, {o_val})")
@@ -247,8 +354,9 @@ async def tool_upsert_claims(args: Dict[str, Any]) -> str:
                     predicate=predicate_name,
                     object_entity_id=o_entity_id,
                     object_literal=o_literal,
-                    source_reference=item.get("source_reference"),
-                    source_wiki=item.get("source_wiki"),
+                    source_reference=source_ref,
+                    source_wiki=source_wiki,
+                    evidence_chunk_id=evidence_chunk_id,
                     support_count=1,
                     universe_scope=universe.id,
                     status="VERIFIED"
@@ -257,6 +365,7 @@ async def tool_upsert_claims(args: Dict[str, Any]) -> str:
                 session.flush() # get ID
                 created.append(f"({s_name}, {predicate_name}, {o_val})")
                 target_claim = new_claim
+
 
             # Handle attributes
             attrs = item.get("attributes", {})
@@ -450,28 +559,6 @@ async def tool_save_unconfirmed_claim(args: Dict[str, Any]) -> str:
     return result
 
 
-async def tool_query_unconfirmed_claims(args: Dict[str, Any]) -> str:
-    universe_name = get_current_universe()
-    if not universe_name:
-        return "Error: No active universe context."
-
-    with Session(unconfirmed_engine) as session:
-        universe = session.exec(select(UnconfirmedUniverse).where(UnconfirmedUniverse.name == universe_name)).first()
-        if not universe:
-            return f"No unconfirmed data for {universe_name}."
-
-        claims = session.exec(
-            select(UnconfirmedClaim).where(UnconfirmedClaim.universe_id == universe.id)
-        ).all()
-        if not claims:
-            return f"No unconfirmed claims for {universe_name}."
-
-        return "\n".join([
-            f"ID: {c.id} | {c.subject} --{c.predicate}--> {c.object_val} | ref: {c.reference or 'N/A'} | conf: {c.confidence or 'N/A'}"
-            for c in claims
-        ])
-
-
 async def tool_delete_unconfirmed_claim(args: Dict[str, Any]) -> str:
     """Accepts either a single `claim_id`, or a batch via `claim_ids`: [id, ...]."""
     claim_ids = args.get("claim_ids")
@@ -505,6 +592,57 @@ async def tool_delete_unconfirmed_claim(args: Dict[str, Any]) -> str:
         result += " Errors: " + "; ".join(errors)
     return result
 
+async def tool_link_universes(args: Dict[str, Any]) -> str:
+    """
+    Defines a relationship between the active universe and another universe.
+    Expected args: {target_universe_name, relation_type, description}.
+    Relation types: 'PRECEDES' (timeline), 'ALTERNATE' (multiverse), 'SUBSET' (part of), 'PARENT'.
+    """
+    current_name = get_current_universe()
+    target_name = args.get("target_universe_name")
+    rel_type = args.get("relation_type")
+    description = args.get("description")
+
+    if not current_name or not target_name or not rel_type:
+        return "Error: Missing current_universe, target_universe_name, or relation_type."
+
+    service = UniverseService()
+    with Session(engine) as session:
+        u1 = session.exec(select(Universe).where(Universe.name == current_name)).first()
+        u2 = session.exec(select(Universe).where(Universe.name == target_name)).first()
+        
+        if not u1 or not u2:
+            return f"Error: One or both universes ({current_name}, {target_name}) not found."
+        
+        relation = service.create_universe_relation(u1.id, u2.id, rel_type, description)
+        return f"Linked {current_name} --{rel_type}--> {target_name}."
+
+async def tool_link_entity_to_canonical(args: Dict[str, Any]) -> str:
+    """
+    Links an entity in the active universe to a canonical version of that entity.
+    Expected args: {entity_name, canonical_entity_id}. 
+    If canonical_entity_id is null, this entity is marked as the canonical version.
+    """
+    current_name = get_current_universe()
+    entity_name = args.get("entity_name")
+    canonical_id = args.get("canonical_entity_id")
+
+    if not current_name or not entity_name:
+        return "Error: Missing active universe context or entity_name."
+
+    service = UniverseService()
+    with Session(engine) as session:
+        universe = session.exec(select(Universe).where(Universe.name == current_name)).first()
+        if not universe:
+            return f"Universe {current_name} not found."
+        
+        entity = session.exec(select(Entity).where(Entity.universe_id == universe.id, Entity.name == entity_name)).first()
+        if not entity:
+            return f"Entity {entity_name} not found in {current_name}."
+        
+        service.set_entity_canonical(entity.id, canonical_id)
+        status = "marked as canonical" if canonical_id is None else f"linked to canonical ID {canonical_id}"
+        return f"Entity {entity_name} in {current_name} {status}."
 
 async def tool_query_claims(args: Dict[str, Any]) -> str:
     universe_name = get_current_universe()
@@ -518,17 +656,15 @@ async def tool_query_claims(args: Dict[str, Any]) -> str:
         if not universe:
             return f"Universe {universe_name} not found."
 
-        query = select(Claim).where(Claim.universe_scope == universe.id)
-        if predicate_filter:
-            query = query.where(Claim.predicate == predicate_filter)
+        retriever = KnowledgeRetrieverService(session)
+        semantic_claims = retriever.get_semantic_claims(universe.id, predicate_filter)
         
-        claims = session.exec(query).all()
-        if not claims:
+        if not semantic_claims:
             return f"No verified claims found for {universe_name}."
 
         return "\n".join([
-            f"ID: {c.id} | subj: {c.subject_id} | pred: {c.predicate} | obj: {c.object_entity_id or c.object_literal} | support: {c.support_count}"
-            for c in claims
+            f"({c['subject']} --{c['predicate']}--> {c['object']}) | support: {c['support']} | ref: {c['reference'] or 'N/A'}"
+            for c in semantic_claims
         ])
 
 
@@ -556,15 +692,17 @@ async def tool_query_unconfirmed_claims(args: Dict[str, Any]) -> str:
 AGENT_TOOLS: Dict[str, Dict[str, Any]] = {
     "webSearch": {
         "func": tool_web_search,
-        "description": "Search the web for lore, technology, or cosmology. Returns up to 10 results. If a result set looks blocked/bot-checked or comes back empty unexpectedly, try a different engine rather than assuming nothing exists.",
+        "description": "Search the web for lore, technology, or cosmology. Returns results from specified engine. Supports batching via `queries`.",
         "parameters": {
             "type": "object",
             "properties": {
-                "search_query": {"type": "string", "description": "The search query to use."},
+                "search_query": {"type": "string", "description": "The search query to use (single)."},
+                "queries": {"type": "array", "items": {"type": "string"}, "description": "List of search queries to execute in parallel."},
                 "engine": {"type": "string", "description": "Search engine to use (google, duckduckgo, brave).", "default": "google"},
-                "site_filter": {"type": "string", "description": "Restrict search to a specific domain (e.g. 'fandom.com')."}
+                "site_filter": {"type": "string", "description": "Restrict search to a specific domain (e.g. 'fandom.com')."},
+                "max_results": {"type": "integer", "description": "Number of results to return per query.", "default": 10}
             },
-            "required": ["search_query"]
+            "required": []
         }
     },
     "fetchPage": {
@@ -749,6 +887,31 @@ AGENT_TOOLS: Dict[str, Dict[str, Any]] = {
                 }
             },
             "required": []
+        }
+    },
+    "linkUniverses": {
+        "func": tool_link_universes,
+        "description": "Define a relationship between the active universe and another universe. Use this for timelines, alternate realities, or nested cosmologies.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "target_universe_name": {"type": "string", "description": "The name of the related universe."},
+                "relation_type": {"type": "string", "description": "The type of relation: 'PRECEDES' (chronological), 'ALTERNATE' (parallel), 'SUBSET' (contained within), 'PARENT' (source universe)."},
+                "description": {"type": "string", "description": "Optional explanation of the relationship."}
+            },
+            "required": ["target_universe_name", "relation_type"]
+        }
+    },
+    "linkEntityToCanonical": {
+        "func": tool_link_entity_to_canonical,
+        "description": "Link an entity in the current universe to a canonical version of that entity. If canonical_entity_id is omitted or null, the entity is marked as the canonical reference for others.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "entity_name": {"type": "string", "description": "The name of the entity to link."},
+                "canonical_entity_id": {"type": "integer", "description": "The ID of the canonical entity. Pass null to mark this entity as canonical."}
+            },
+            "required": ["entity_name"]
         }
     },
     "deleteUnconfirmedTrait": {

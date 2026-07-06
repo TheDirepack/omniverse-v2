@@ -1,6 +1,8 @@
 from fastapi import APIRouter, HTTPException
 from typing import List, Optional, Dict, Any
 from pydantic import BaseModel
+from sqlmodel import Session
+from app.db.session import engine
 from app.services.settings_service import SettingsService
 
 router = APIRouter(prefix="/settings", tags=["settings"])
@@ -67,10 +69,6 @@ def get_agent_routes():
 @router.get("/model-status")
 def model_status():
     service = SettingsService()
-    routes = service.get_agent_routes()
-    providers = {p.id: p for p in service.get_providers()} # This is wrong, get_providers returns dicts
-    # Wait, let's just use the repo for this internal status check or add a method to service.
-    # I'll just use the repo here for simplicity.
     with Session(engine) as session:
         from app.repositories.settings import SettingsRepository
         repo = SettingsRepository(session)

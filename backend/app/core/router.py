@@ -167,12 +167,12 @@ class ModelRouter:
                     
                     # Log agent model call
                     agent_logger.log(
-                         agent="ModelRouter",
-                         event_type=AgentEventType.MODEL_CALL,
-                         content=f"Successful response from {candidate['full_model']}",
-                         model=candidate["full_model"],
-                         key_id=str(candidate["key"].id)
-                     )
+                        agent="ModelRouter",
+                        event_type=AgentEventType.MODEL_CALL,
+                        content=f"Successful response from {candidate['full_model']}",
+                        model=candidate["full_model"],
+                        key_id=str(candidate["key"].id)
+                    )
 
                     
                     if run_id:
@@ -194,12 +194,12 @@ class ModelRouter:
                     
                     clean_e = _clean_error(e)
                     agent_logger.log(
-                         agent="ModelRouter",
-                         event_type=AgentEventType.ERROR,
-                         content=f"Fallback: {candidate['full_model']} failed due to {clean_e}. Trying next candidate.",
-                         model=candidate["full_model"],
-                         key_id=str(candidate["key"].id)
-                     )
+                        agent="ModelRouter",
+                        event_type=AgentEventType.ERROR,
+                        content=f"Fallback: {candidate['full_model']} failed due to {clean_e}. Trying next candidate.",
+                        model=candidate["full_model"],
+                        key_id=str(candidate["key"].id)
+                    )
 
 
 

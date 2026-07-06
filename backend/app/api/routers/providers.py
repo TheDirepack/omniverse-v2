@@ -1,6 +1,8 @@
 from fastapi import APIRouter, HTTPException
 from typing import List, Optional, Dict, Any
 from pydantic import BaseModel
+from sqlmodel import Session
+from app.db.session import engine
 from app.services.settings_service import SettingsService
 
 router = APIRouter(prefix="/providers", tags=["providers"])

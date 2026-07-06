@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, Dict, Any
 import logging
 import urllib.parse
 from bs4 import BeautifulSoup

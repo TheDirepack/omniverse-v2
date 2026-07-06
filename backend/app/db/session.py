@@ -3,7 +3,7 @@ import json
 from pathlib import Path
 from sqlmodel import SQLModel, create_engine, Session, select
 from sqlalchemy import event
-from app.db.schema import Universe, ProviderConfig, AgentRouteFallback, Setting
+from app.db.schema import Universe, AgentRouteFallback, Setting
 from app.db.unconfirmed_session import init_unconfirmed_db
 from app.db.extrapolation_session import init_extrapolation_db
 

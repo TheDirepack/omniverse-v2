@@ -41,13 +41,17 @@ class InferenceRuleService:
     # different rows in the same table, evaluated identically.
 
     def find_candidate_pairs(self) -> List[tuple]:
-        with Session(engine) if not self.session else self.session as session:
+        session = self.session or Session(engine)
+        try:
             repo = InferenceRepository(session)
             pairs = repo.frequent_predicate_pairs(min_count=MIN_PAIR_OCCURRENCES)
             return [
                 (p1, p2, cnt) for (p1, p2, cnt) in pairs
                 if repo.existing_rule_for_pair(p1, p2) is None
             ]
+        finally:
+            if not self.session:
+                session.close()
 
     def _example_chains(self, session: Session, predicate_1: str, predicate_2: str, limit: int = MAX_EXAMPLES_SHOWN) -> List[dict]:
         repo = InferenceRepository(session)
@@ -81,9 +85,13 @@ class InferenceRuleService:
     # --- Proposal + critique (manual trigger, per pair) ---
 
     async def propose_and_critique(self, predicate_1: str, predicate_2: str, run_id: Optional[str] = None) -> InferenceRule:
-        with Session(engine) if not self.session else self.session as session:
+        session = self.session or Session(engine)
+        try:
             examples = self._example_chains(session, predicate_1, predicate_2)
             proposer_provider_id = self._resolve_provider_id_for_task(session, RULE_PROPOSER_TASK)
+        finally:
+            if not self.session:
+                session.close()
 
         proposer_prompt = (
             f"PREDICATE_1: {predicate_1}\nPREDICATE_2: {predicate_2}\n"
@@ -131,7 +139,7 @@ class InferenceRuleService:
             run_id=run_id, exclude_provider_id=proposer_provider_id
         )
         blind_verdict = _safe_json(critic_resp_1.choices[0].message.content)
-
+        
         critic_prompt_final = (
             critic_prompt_blind
             + f"\n\nYour independent verdict was: {json.dumps(blind_verdict)}\n"
@@ -143,8 +151,9 @@ class InferenceRuleService:
             run_id=run_id, exclude_provider_id=proposer_provider_id
         )
         final_verdict = _safe_json(critic_resp_2.choices[0].message.content)
-
-        with Session(engine) if not self.session else self.session as session:
+        
+        session = self.session or Session(engine)
+        try:
             repo = InferenceRepository(session)
             rule = repo.get_rule(rule_id)
             rule.critic_model = critic_model
@@ -157,6 +166,10 @@ class InferenceRuleService:
                     rule.rule_type = final_verdict["revised_rule_type"]
             rule.status = "CRITIQUED" if final_verdict.get("verdict") != "REJECT" else "REJECTED"
             return repo.update_rule(rule)
+        finally:
+            if not self.session:
+                session.close()
+
 
     # --- Manual-trigger entrypoint ---
 
@@ -179,7 +192,8 @@ class InferenceRuleService:
     # --- Human approval ---
 
     def approve_rule(self, rule_id: int) -> Optional[InferenceRule]:
-        with Session(engine) if not self.session else self.session as session:
+        session = self.session or Session(engine)
+        try:
             repo = InferenceRepository(session)
             rule = repo.get_rule(rule_id)
             if not rule:
@@ -187,9 +201,13 @@ class InferenceRuleService:
             rule.human_approved = True
             rule.status = "APPROVED"
             return repo.update_rule(rule)
+        finally:
+            if not self.session:
+                session.close()
 
     def reject_rule(self, rule_id: int) -> Optional[InferenceRule]:
-        with Session(engine) if not self.session else self.session as session:
+        session = self.session or Session(engine)
+        try:
             repo = InferenceRepository(session)
             rule = repo.get_rule(rule_id)
             if not rule:
@@ -197,7 +215,14 @@ class InferenceRuleService:
             rule.human_approved = False
             rule.status = "REJECTED"
             return repo.update_rule(rule)
+        finally:
+            if not self.session:
+                session.close()
 
     def get_rules_by_status(self, status: str) -> Sequence[InferenceRule]:
-        with Session(engine) if not self.session else self.session as session:
+        session = self.session or Session(engine)
+        try:
             return InferenceRepository(session).get_rules_by_status(status)
+        finally:
+            if not self.session:
+                session.close()

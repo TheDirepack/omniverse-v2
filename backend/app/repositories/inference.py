@@ -1,6 +1,6 @@
 from typing import List, Optional, Sequence, Tuple
 from sqlmodel import Session, select, func
-from app.db.schema import Claim, InferenceRule, InferredClaim, Entity
+from app.db.schema import Claim, InferenceRule, InferredClaim
 
 
 class InferenceRepository:
@@ -67,7 +67,6 @@ class InferenceRepository:
         from sqlalchemy import alias
         from app.db.schema import Predicate
         
-        # We need to resolve canonical names via Predicate table because Claim.predicate is deprecated
         P1 = alias(Predicate.__table__, name="p1")
         P2 = alias(Predicate.__table__, name="p2")
         C1 = Claim.__table__
@@ -75,36 +74,23 @@ class InferenceRepository:
 
         stmt = (
             select(
-                P1.c.canonical_name,
-                P2.c.canonical_name,
+                func.coalesce(P1.c.canonical_name, C1.c.predicate),
+                func.coalesce(P2.c.canonical_name, C2.c.predicate),
                 func.count().label("cnt"),
             )
             .select_from(
                 C1.join(C2, C1.c.object_entity_id == C2.c.subject_id)
-                  .join(P1, C1.c.predicate_id == P1.c.id)
-                  .join(P2, C2.c.predicate_id == P2.c.id)
+                  .outerjoin(P1, C1.c.predicate_id == P1.c.id)
+                  .outerjoin(P2, C2.c.predicate_id == P2.c.id)
             )
-            .group_by(P1.c.canonical_name, P2.c.canonical_name)
+            .group_by(
+                func.coalesce(P1.c.canonical_name, C1.c.predicate),
+                func.coalesce(P2.c.canonical_name, C2.c.predicate)
+            )
             .having(func.count() >= min_count)
         )
         rows = self.session.exec(stmt).all()
-        if rows:
-            return [(r[0], r[1], r[2]) for r in rows]
-            
-        # Fallback for unmigrated data
-        c2_deprecated = alias(Claim.__table__, name="c2_deprecated")
-        stmt_fallback = (
-            select(
-                Claim.predicate,
-                c2_deprecated.c.predicate,
-                func.count().label("cnt"),
-            )
-            .select_from(Claim.__table__.join(c2_deprecated, Claim.__table__.c.object_entity_id == c2_deprecated.c.subject_id))
-            .group_by(Claim.predicate, c2_deprecated.c.predicate)
-            .having(func.count() >= min_count)
-        )
-        rows_fallback = self.session.exec(stmt_fallback).all()
-        return [(r[0], r[1], r[2]) for r in rows_fallback]
+        return [(r[0], r[1], r[2]) for r in rows]
 
     # --- InferenceRule lifecycle ---
 

@@ -98,7 +98,7 @@ Global `ACTIVE_RUNS` / `ABORTED_RUNS` sets in `core/state.py`. Abort checked bet
 - **CORS**: wide open (`*`).
 - **pytest markers**: `slow` for LLM/network tests. `asyncio_mode = auto`.
 - **Log Format**: `[Timestamp] [Agent] [Model] [KeyID] [WorldName] [Type] Content` (used for structured filtering in LogViewer).
-- **No lint/typecheck/format scripts** in repo.
+- **Linting & Typechecking**: biome, tsc, Ruff, Mypy, Bandit, and Pylint are available.
 - **Frontend tests**: in `src/__tests__/`.
 - **Backend entry**: `app/main.py`.
 - **Frontend entry**: `src/main.tsx`.

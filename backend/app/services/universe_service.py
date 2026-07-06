@@ -1,7 +1,7 @@
 from typing import List, Optional, Sequence, Dict, Any
 from sqlmodel import Session
 from app.db.session import engine
-from app.db.schema import Universe, Trait, Claim, UniverseRelation
+from app.db.schema import Universe, Claim, UniverseRelation
 from app.repositories.universe import UniverseRepository
 
 class UniverseService:
@@ -199,4 +199,10 @@ class UniverseService:
         finally:
             if not self.session:
                 session.close()
+
+    def close(self):
+        """Closes the internal session if it was lazily created."""
+        if self._repo and not self.session:
+            self._repo.session.close()
+            self._repo = None
 

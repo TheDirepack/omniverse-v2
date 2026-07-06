@@ -22,18 +22,26 @@ class InferenceEngineService:
         self.session = session
 
     def get_max_depth(self) -> int:
-        with Session(engine) if not self.session else self.session as session:
+        session = self.session or Session(engine)
+        try:
             setting = SettingsRepository(session).get_setting("max_composition_depth")
             try:
                 return int(setting.value) if setting and setting.value else DEFAULT_MAX_DEPTH
             except ValueError:
                 return DEFAULT_MAX_DEPTH
+        finally:
+            if not self.session:
+                session.close()
 
     def set_max_depth(self, depth: int) -> None:
         if depth < 1:
             raise ValueError("max_composition_depth must be at least 1")
-        with Session(engine) if not self.session else self.session as session:
+        session = self.session or Session(engine)
+        try:
             SettingsRepository(session).upsert_setting("max_composition_depth", str(depth))
+        finally:
+            if not self.session:
+                session.close()
 
     def materialize_inferred_claims(self) -> List[InferredClaim]:
         """
@@ -50,12 +58,13 @@ class InferenceEngineService:
             # depth 1 means "no composition at all" -- a single asserted
             # claim isn't an inference, so there is nothing to materialize.
             return []
-
-        with Session(engine) if not self.session else self.session as session:
+        
+        session = self.session or Session(engine)
+        try:
             repo = InferenceRepository(session)
             approved_rules = list(repo.get_approved_rules())
             created: List[InferredClaim] = []
-
+    
             # Depth 2: direct composition over asserted Claims.
             for rule in approved_rules:
                 first_hop = repo.get_claims_by_predicate(rule.predicate_1)
@@ -66,7 +75,7 @@ class InferenceEngineService:
                         ic = self._materialize_edge(repo, rule.id, rule.implied_predicate, c1, c2)
                         if ic:
                             created.append(ic)
-
+    
             # Depth > 2: compose an InferredClaim (as the "first hop") with a
             # further asserted Claim, one additional hop per iteration,
             # bounded by max_depth.
@@ -86,7 +95,7 @@ class InferenceEngineService:
                 created.extend(next_frontier)
                 frontier = next_frontier
                 current_depth += 1
-
+    
             # Each commit() inside the loops above expires ALL previously
             # loaded objects in this session (default SQLAlchemy behavior),
             # not just the row just committed. Re-refresh everything here,
@@ -95,8 +104,12 @@ class InferenceEngineService:
             # instead of hitting DetachedInstanceError.
             for ic in created:
                 session.refresh(ic)
-
+    
             return created
+        finally:
+            if not self.session:
+                session.close()
+
 
     def _materialize_edge(self, repo: InferenceRepository, rule_id: int, implied_predicate: str, c1: Claim, c2: Claim) -> Optional[InferredClaim]:
         obj_id = c2.object_entity_id if c2.object_entity_id else c2.subject_id
@@ -146,5 +159,9 @@ class InferenceEngineService:
         return None
 
     def get_unreviewed_contradictions(self) -> Sequence[InferredClaim]:
-        with Session(engine) if not self.session else self.session as session:
+        session = self.session or Session(engine)
+        try:
             return InferenceRepository(session).get_unreviewed_contradictions()
+        finally:
+            if not self.session:
+                session.close()

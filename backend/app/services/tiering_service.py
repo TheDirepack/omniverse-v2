@@ -1,4 +1,4 @@
-from typing import List, Optional, Sequence, Dict, Any
+from typing import List, Optional, Sequence
 from sqlmodel import Session
 from app.db.session import engine
 from app.db.schema import TierSystem, WorldTier, Anomaly
@@ -6,8 +6,14 @@ from app.repositories.tiering import TieringRepository
 
 class TieringService:
     def __init__(self, session: Optional[Session] = None):
-        self.session = session or Session(engine)
-        self.repo = TieringRepository(self.session)
+        self.session = session
+        self._repo = None
+
+    @property
+    def repo(self) -> TieringRepository:
+        if self._repo is None:
+            self._repo = TieringRepository(self.session or Session(engine))
+        return self._repo
 
     def get_active_rubric(self) -> Optional[TierSystem]:
         return self.repo.get_active_rubric()
@@ -54,3 +60,9 @@ class TieringService:
 
     def get_world_tiers(self, universe_ids: List[int]) -> Sequence[WorldTier]:
         return self.repo.get_world_tiers_by_universe_ids(universe_ids)
+
+    def close(self):
+        """Closes the internal session if it was lazily created."""
+        if self._repo and not self.session:
+            self._repo.session.close()
+            self._repo = None

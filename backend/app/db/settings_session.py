@@ -1,6 +1,5 @@
 import os
 from sqlmodel import SQLModel, create_engine, Session
-from app.db.schema import Setting, ProviderConfig, ProviderKey, AgentRouteFallback, ModelConfig, CandidateHealth
 
 settings_url = os.getenv("SETTINGS_DATABASE_URL", "sqlite:///settings.db")
 connect_args = {"check_same_thread": False} if settings_url.startswith("sqlite") else {}

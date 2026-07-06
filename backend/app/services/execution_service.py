@@ -1,4 +1,4 @@
-from typing import List, Optional, Sequence, Dict, Any
+from typing import Optional, Sequence
 from sqlmodel import Session
 from app.db.session import engine
 from app.db.schema import ExecutionState
@@ -7,8 +7,14 @@ from app.core.agent_logger import agent_logger
 
 class ExecutionService:
     def __init__(self, session: Optional[Session] = None):
-        self.session = session or Session(engine)
-        self.repo = ExecutionRepository(self.session)
+        self.session = session
+        self._repo = None
+
+    @property
+    def repo(self) -> ExecutionRepository:
+        if self._repo is None:
+            self._repo = ExecutionRepository(self.session or Session(engine))
+        return self._repo
 
     def log_transition(self, run_id: str, node_name: str, thought: str, status: str, state: dict):
         import json
@@ -39,4 +45,10 @@ class ExecutionService:
 
     def clear_logs(self):
         self.repo.clear_logs()
+
+    def close(self):
+        """Closes the internal session if it was lazily created."""
+        if self._repo and not self.session:
+            self._repo.session.close()
+            self._repo = None
 

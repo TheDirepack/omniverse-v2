@@ -16,7 +16,8 @@ class PredicateService:
         """
         normalized_raw = raw_predicate.strip().upper()
         
-        with Session(engine) if not self.session else self.session as session:
+        session = self.session or Session(engine)
+        try:
             # 1. Check Aliases -- PredicateAlias links to a Predicate via
             # predicate_id (there is no canonical_name column on
             # PredicateAlias itself), so the actual canonical name has to be
@@ -31,12 +32,18 @@ class PredicateService:
             pred = session.exec(select(Predicate).where(Predicate.canonical_name == normalized_raw)).first()
             if pred:
                 return self.ontology.get_canonical_group(normalized_raw)
+        finally:
+            if not self.session:
+                session.close()
+
+        return normalized_raw
 
         return normalized_raw
 
     def upsert_alias(self, alias: str, canonical_name: str):
         normalized_alias = alias.strip().upper()
-        with Session(engine) if not self.session else self.session as session:
+        session = self.session or Session(engine)
+        try:
             # Ensure canonical predicate exists
             pred = session.exec(select(Predicate).where(Predicate.canonical_name == canonical_name)).first()
             if not pred:
@@ -58,3 +65,6 @@ class PredicateService:
                 session.add(PredicateAlias(alias=normalized_alias, predicate_id=pred.id))
             
             session.commit()
+        finally:
+            if not self.session:
+                session.close()

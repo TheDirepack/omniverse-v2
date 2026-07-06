@@ -1,7 +1,7 @@
-from typing import List, Optional, Sequence, Dict, Any
+from typing import List, Optional, Dict, Any
 from sqlmodel import Session
-from app.db.settings_session import settings_engine, get_settings_session
-from app.db.schema import Setting, ProviderConfig, ProviderKey, AgentRouteFallback
+from app.db.settings_session import settings_engine
+from app.db.schema import Setting
 from app.repositories.settings import SettingsRepository
 
 class SettingsService:
@@ -9,11 +9,16 @@ class SettingsService:
         self.session = session
 
     def get_setting(self, key: str) -> Optional[Setting]:
-        with Session(settings_engine) if not self.session else self.session as session:
+        session = self.session or Session(settings_engine)
+        try:
             return SettingsRepository(session).get_setting(key)
+        finally:
+            if not self.session:
+                session.close()
 
     def get_all_settings(self) -> Dict[str, Any]:
-        with Session(settings_engine) if not self.session else self.session as session:
+        session = self.session or Session(settings_engine)
+        try:
             repo = SettingsRepository(session)
             settings = repo.get_all_settings()
             providers = repo.get_providers()
@@ -44,13 +49,21 @@ class SettingsService:
                     } for r in routes
                 ],
             }
+        finally:
+            if not self.session:
+                session.close()
 
     def update_general_setting(self, key: str, value: Optional[str]) -> Setting:
-        with Session(settings_engine) if not self.session else self.session as session:
+        session = self.session or Session(settings_engine)
+        try:
             return SettingsRepository(session).upsert_setting(key, value)
+        finally:
+            if not self.session:
+                session.close()
 
     def upsert_provider(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        with Session(settings_engine) if not self.session else self.session as session:
+        session = self.session or Session(settings_engine)
+        try:
             repo = SettingsRepository(session)
             provider_id = payload.get("id")
             name = payload.get("name")
@@ -71,9 +84,13 @@ class SettingsService:
             
             updated = repo.upsert_provider(provider)
             return {"status": "success", "provider": {"id": updated.id, "name": updated.name}}
+        finally:
+            if not self.session:
+                session.close()
 
     def upsert_provider_key(self, provider_id: int, api_key: str, priority: int = 0, key_id: Optional[int] = None) -> int:
-        with Session(settings_engine) if not self.session else self.session as session:
+        session = self.session or Session(settings_engine)
+        try:
             repo = SettingsRepository(session)
             from app.db.schema import ProviderKey
             key = repo.session.get(ProviderKey, key_id) if key_id else None
@@ -83,17 +100,29 @@ class SettingsService:
             key.priority = priority
             updated = repo.upsert_key(key)
             return updated.id
+        finally:
+            if not self.session:
+                session.close()
 
     def delete_provider_key(self, key_id: int):
-        with Session(settings_engine) if not self.session else self.session as session:
+        session = self.session or Session(settings_engine)
+        try:
             SettingsRepository(session).delete_key(key_id)
+        finally:
+            if not self.session:
+                session.close()
 
     def delete_provider(self, provider_id: int):
-        with Session(settings_engine) if not self.session else self.session as session:
+        session = self.session or Session(settings_engine)
+        try:
             SettingsRepository(session).delete_provider(provider_id)
+        finally:
+            if not self.session:
+                session.close()
 
     def upsert_agent_route(self, task_type: str, provider_id: Optional[int], models: Optional[str], priority: int = 0, route_id: Optional[int] = None) -> None:
-        with Session(settings_engine) if not self.session else self.session as session:
+        session = self.session or Session(settings_engine)
+        try:
             repo = SettingsRepository(session)
             if provider_id:
                 if not repo.get_provider_by_id(provider_id):
@@ -108,13 +137,21 @@ class SettingsService:
             route.models = models
             route.priority = priority
             repo.upsert_route(route)
+        finally:
+            if not self.session:
+                session.close()
 
     def delete_agent_route(self, route_id: int):
-        with Session(settings_engine) if not self.session else self.session as session:
+        session = self.session or Session(settings_engine)
+        try:
             SettingsRepository(session).delete_route(route_id)
+        finally:
+            if not self.session:
+                session.close()
 
     def get_agent_routes(self) -> List[Dict[str, Any]]:
-        with Session(settings_engine) if not self.session else self.session as session:
+        session = self.session or Session(settings_engine)
+        try:
             routes = SettingsRepository(session).get_agent_routes()
             return [
                 {
@@ -125,9 +162,13 @@ class SettingsService:
                     "priority": r.priority,
                 } for r in routes
             ]
+        finally:
+            if not self.session:
+                session.close()
 
     def get_providers(self) -> List[Dict[str, Any]]:
-        with Session(settings_engine) if not self.session else self.session as session:
+        session = self.session or Session(settings_engine)
+        try:
             repo = SettingsRepository(session)
             providers = repo.get_providers()
             return [
@@ -144,8 +185,21 @@ class SettingsService:
                 }
                 for p in providers
             ]
+        finally:
+            if not self.session:
+                session.close()
 
     def reset_candidate_health(self):
-        with Session(settings_engine) if not self.session else self.session as session:
+        session = self.session or Session(settings_engine)
+        try:
             SettingsRepository(session).reset_candidate_health()
+        finally:
+            if not self.session:
+                session.close()
+
+    def close(self):
+        """Closes the internal session if it was lazily created."""
+        if self.session:
+            self.session.close()
+            self.session = None
 

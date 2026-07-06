@@ -1,5 +1,5 @@
 from typing import List, Optional, Sequence
-from sqlmodel import Session, select, delete
+from sqlmodel import Session, select
 from app.db.schema import Universe, Trait, Claim, UniverseRelation, Entity
 
 class UniverseRepository:

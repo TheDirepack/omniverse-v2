@@ -1,5 +1,5 @@
 import asyncio
-from typing import Set, List, Protocol
+from typing import Set, List
 from abc import ABC, abstractmethod
 
 class StateManager(ABC):

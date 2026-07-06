@@ -1,5 +1,4 @@
 from fastapi import APIRouter, HTTPException, BackgroundTasks
-from typing import List, Optional, Dict, Any
 from pydantic import BaseModel
 from app.services.universe_service import UniverseService
 from sqlmodel import Session, select

@@ -1,5 +1,5 @@
 import asyncio
-from typing import List, Dict, Any
+from typing import Dict, Any
 from app.agents.workflow_state import OmniverseState
 from app.services.execution_service import ExecutionService
 from app.research.researcher import research_single_world
@@ -30,6 +30,8 @@ async def research_node(state: OmniverseState) -> Dict[str, Any]:
     settings_service = SettingsService()
     setting = settings_service.get_setting("MAX_PARALLEL_AGENTS")
     batch_size = int(setting.value) if setting and setting.value else 5
+    if batch_size <= 0:
+        batch_size = 1
     
     focus_str = ", ".join(focused_features) if focused_features else None
 
@@ -142,7 +144,6 @@ async def summary_node(state: OmniverseState) -> Dict[str, Any]:
     universes = uni_service.repo.get_by_names(verified_worlds)
     universe_ids = [u.id for u in universes]
     
-    from app.research.summarizer import summarize_universe
     tasks = [summarize_universe(uid, run_id) for uid in universe_ids]
     await asyncio.gather(*tasks)
     

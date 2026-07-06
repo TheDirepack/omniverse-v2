@@ -1,4 +1,4 @@
-from typing import Optional, List, Dict
+from typing import Optional
 from sqlmodel import Session, select
 from app.db.session import engine
 from app.db.schema import Predicate
@@ -13,7 +13,8 @@ class OntologyService:
         predicate for a given name. This ensures that 'resides_in' and 
         'is_located_in' both map to 'LOCATED_IN' if that's the root.
         """
-        with Session(engine) if not self.session else self.session as session:
+        session = self.session or Session(engine)
+        try:
             # Find the predicate entry
             pred = session.exec(select(Predicate).where(Predicate.canonical_name == predicate_name)).first()
             if not pred:
@@ -28,10 +29,14 @@ class OntologyService:
                 current = parent
             
             return current.canonical_name
+        finally:
+            if not self.session:
+                session.close()
 
     def define_relationship(self, child_name: str, parent_name: str):
         """Defines that child_name is a specific type of parent_name."""
-        with Session(engine) if not self.session else self.session as session:
+        session = self.session or Session(engine)
+        try:
             child = session.exec(select(Predicate).where(Predicate.canonical_name == child_name)).first()
             parent = session.exec(select(Predicate).where(Predicate.canonical_name == parent_name)).first()
             
@@ -48,3 +53,6 @@ class OntologyService:
             child.parent_predicate_id = parent.id
             session.add(child)
             session.commit()
+        finally:
+            if not self.session:
+                session.close()

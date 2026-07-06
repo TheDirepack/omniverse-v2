@@ -1,4 +1,4 @@
-from typing import List, Optional, Sequence
+from typing import List, Sequence
 from sqlmodel import Session, select, delete
 from app.db.extrapolation_schema import Theory
 

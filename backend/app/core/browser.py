@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from typing import Optional, AsyncGenerator
+from typing import AsyncGenerator
 from contextlib import asynccontextmanager
 from cloakbrowser import launch_async
 
@@ -41,7 +41,7 @@ class BrowserManager:
             context = await self.browser.new_context()
             page = await context.new_page()
             return page, context
-        except Exception as e:
+        except Exception:
             logging.exception("Failed to create browser page/context")
             self.semaphore.release()
             raise

@@ -1,6 +1,6 @@
 from sqlmodel import SQLModel, Field, Column, ForeignKey
 from sqlalchemy import UniqueConstraint
-from typing import Optional, List
+from typing import Optional
 from datetime import datetime
 
 class Setting(SQLModel, table=True):
@@ -143,7 +143,10 @@ class EvidenceChunk(SQLModel, table=True):
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 class Claim(SQLModel, table=True):
-    __table_args__ = (UniqueConstraint("subject_id", "predicate_id", "object_entity_id"),) # Simplified for brevity in this edit
+    __table_args__ = (
+        UniqueConstraint("subject_id", "predicate_id", "object_entity_id"),
+        UniqueConstraint("subject_id", "predicate_id", "object_literal"),
+    )
     id: Optional[int] = Field(default=None, primary_key=True)
     subject_id: int = Field(foreign_key="entity.id")
     context: Optional[str] = Field(default=None, index=True)
@@ -197,7 +200,7 @@ class InferredClaim(SQLModel, table=True):
     subject_id: int = Field(foreign_key="entity.id")
     predicate: str
     object_id: int = Field(foreign_key="entity.id")
-    derived_from_rule_id: int = Field(foreign_key="inferencerule.id")
+    derived_from_rule_id: int = Field(sa_column=Column(ForeignKey("inferencerule.id", ondelete="CASCADE")))
     path_claim_ids: str  # JSON list of Claim.id forming this path
     contradicts_claim_id: Optional[int] = Field(default=None, foreign_key="claim.id")
     reviewed: bool = Field(default=False)

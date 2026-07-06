@@ -1,7 +1,7 @@
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 from sqlmodel import Session, select
 from app.db.session import engine
-from app.db.schema import Universe, Trait, Entity, Claim, ClaimAttribute, EntityAlias, UniverseRelation, Evidence, EvidenceChunk, Predicate
+from app.db.schema import Universe, Trait, Entity, Claim, ClaimAttribute, EntityAlias, Evidence, EvidenceChunk, Predicate
 from app.services.predicate_service import PredicateService
 from app.services.universe_service import UniverseService
 from app.services.knowledge_retriever import KnowledgeRetrieverService
@@ -187,7 +187,7 @@ async def tool_compare_source_freshness(args: Dict[str, Any]) -> str:
     for url in urls:
         try:
             url_content_map[url] = await web_fetcher.fetch_page(url, include_freshness=True)
-        except Exception as e:
+        except Exception:
             url_content_map[url] = None
 
     return build_freshness_comparison_report(url_content_map)

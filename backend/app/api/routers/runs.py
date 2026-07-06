@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, BackgroundTasks
 import json
 import asyncio
-from typing import List, Optional, Dict, Any
+from typing import List, Optional
 from pydantic import BaseModel, Field
 import uuid
 from app.core.runtime_state import add_active_run, remove_run, abort_run, get_active_runs
@@ -25,7 +25,6 @@ class FocusedSearchPayload(BaseModel):
 
 async def run_pipeline_in_background(run_id: str, target_worlds: List[str]):
     from app.core.agent_engine import run_fetch_cache
-    from app.services.execution_service import ExecutionService
     from app.services.universe_service import UniverseService
     
     exec_service = ExecutionService()
@@ -65,7 +64,6 @@ async def run_pipeline_in_background(run_id: str, target_worlds: List[str]):
 
 async def run_focused_search_in_background(run_id: str, target_worlds: List[str], focused_features: List[str]):
     from app.core.agent_engine import run_fetch_cache
-    from app.services.execution_service import ExecutionService
     
     exec_service = ExecutionService()
     from app.core.runtime_state import is_aborted
@@ -97,7 +95,6 @@ async def run_focused_search_in_background(run_id: str, target_worlds: List[str]
         await remove_run(run_id)
 
 async def run_tiering_in_background(run_id: str):
-    from app.services.universe_service import UniverseService
     from app.services.settings_service import SettingsService
     from app.agents.nodes import architecture_node
     from app.agents.workflow_state import OmniverseState
@@ -167,7 +164,6 @@ def trigger_tiering(background_tasks: BackgroundTasks):
 
 @router.post("/extrapolate")
 def trigger_extrapolation(payload: ExtrapolatePayload, background_tasks: BackgroundTasks):
-    from app.services.universe_service import UniverseService
     uni_service = UniverseService()
     
     if payload.scope == "all":
@@ -214,14 +210,12 @@ async def abort_run_endpoint(payload: dict):
     if not run_id:
         raise HTTPException(status_code=400, detail="runId required")
     await abort_run(run_id)
-    from app.services.execution_service import ExecutionService
     exec_service = ExecutionService()
     exec_service.log_transition(run_id, "Manager", "Abort requested", "ABORT_REQUESTED", {})
     return {"status": "abort_requested", "run_id": run_id}
 
 @router.get("/agent-activity")
 async def agent_activity():
-    from app.services.execution_service import ExecutionService
     exec_service = ExecutionService()
     logs = exec_service.repo.get_recent_logs()
     active_runs = await get_active_runs()
@@ -229,7 +223,6 @@ async def agent_activity():
 
 @router.post("/reset-activity")
 def reset_activity():
-    from app.services.execution_service import ExecutionService
     exec_service = ExecutionService()
     exec_service.clear_logs()
     return {"status": "success"}
@@ -246,7 +239,6 @@ def get_file_logs(
     tool: Optional[str] = None
 ):
     from app.core.agent_logger import LOG_FILE
-    from pathlib import Path
     from app.services.settings_service import SettingsService
     if not LOG_FILE.exists():
         return {"logs": [], "total": 0, "has_more": False}
@@ -323,7 +315,6 @@ def get_file_logs(
 async def get_realtime_logs(run_id: str):
     from fastapi.responses import StreamingResponse
     async def log_generator():
-        from app.services.execution_service import ExecutionService
         exec_service = ExecutionService()
         last_id = 0
         while True:

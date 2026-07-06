@@ -1,7 +1,7 @@
 from typing import List, Dict, Any, Optional
 from sqlmodel import Session, select
 from app.db.session import engine
-from app.db.schema import Claim, Entity, EntityAlias, Universe
+from app.db.schema import Claim, Entity, EntityAlias
 
 class KnowledgeRetrieverService:
     def __init__(self, session: Optional[Session] = None):
@@ -12,7 +12,8 @@ class KnowledgeRetrieverService:
         Transforms raw relational claims into a semantic graph for LLM consumption.
         Returns a mapping of Entity Name -> {facts: [], related: []}.
         """
-        with Session(engine) if not self.session else self.session as session:
+        session = self.session or Session(engine)
+        try:
             # 1. Get all entities and their aliases for this universe
             entities = session.exec(select(Entity).where(Entity.universe_id == universe_id)).all()
             aliases = session.exec(select(EntityAlias).where(EntityAlias.universe_id == universe_id)).all()
@@ -29,7 +30,7 @@ class KnowledgeRetrieverService:
             for a in aliases:
                 canonical_name = id_to_name.get(a.entity_id, "Unknown")
                 alias_map[a.alias] = canonical_name
-
+    
             # 2. Get all claims for this universe
             claims = session.exec(select(Claim).where(Claim.universe_scope == universe_id)).all()
             
@@ -64,12 +65,16 @@ class KnowledgeRetrieverService:
                 # Add to related entities if object is an entity
                 if c.object_entity_id:
                     graph[subj_name]["related_entities"].add(obj_val)
-
+    
             # Convert sets to lists for JSON serialization
             for entity in graph.values():
                 entity["related_entities"] = list(entity["related_entities"])
                 
             return graph
+        finally:
+            if not self.session:
+                session.close()
+
 
     def get_semantic_claims(self, universe_id: int, predicate_filter: Optional[str] = None) -> List[Dict[str, Any]]:
         """

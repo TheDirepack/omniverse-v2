@@ -1,6 +1,6 @@
-from typing import List, Optional, Sequence
+from typing import Optional, Sequence
 from sqlmodel import Session, select, delete
-from app.db.schema import Setting, ProviderConfig, ProviderKey, AgentRouteFallback, ModelConfig, CandidateHealth
+from app.db.schema import Setting, ProviderConfig, ProviderKey, AgentRouteFallback, CandidateHealth
 
 class SettingsRepository:
     def __init__(self, session: Session):

@@ -1,6 +1,5 @@
-from fastapi import APIRouter, HTTPException
-from typing import List, Optional, Dict, Any
-from pydantic import BaseModel
+from fastapi import APIRouter
+from typing import Optional
 from app.services.universe_service import UniverseService
 from app.services.tiering_service import TieringService
 from app.services.theory_service import TheoryService

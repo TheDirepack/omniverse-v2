@@ -1,4 +1,4 @@
-from typing import List, Optional, Sequence
+from typing import Sequence
 from sqlmodel import Session, select, delete
 from app.db.schema import ExecutionState
 

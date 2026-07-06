@@ -1,6 +1,4 @@
-import json
-import re
-from typing import Dict, Any, List, Tuple, Optional
+from typing import Any, List, Tuple
 
 def validate_research_json(data: Any) -> Tuple[bool, List[str]]:
     """

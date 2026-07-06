@@ -1,8 +1,4 @@
-import asyncio
-from typing import List, Dict, Any
-from sqlmodel import Session
-from app.db.session import engine
-from app.db.schema import Universe
+from typing import Dict, Any
 from app.core.agent_engine import run_agent
 from app.core.context import set_current_universe
 from app.agents.prompts import get_extrapolation_prompt, get_theory_auditor_prompt

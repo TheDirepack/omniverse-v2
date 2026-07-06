@@ -1,13 +1,12 @@
 import litellm
 import re
 import hashlib
-import json
 from typing import Optional, Any, List, Dict
 from datetime import datetime, timedelta
 from sqlmodel import Session, select
 from app.db.session import engine
 from app.db.settings_session import settings_engine
-from app.db.schema import ProviderConfig, ProviderKey, AgentRouteFallback, Setting, ExecutionState, CandidateHealth
+from app.db.schema import ProviderConfig, ProviderKey, AgentRouteFallback, ExecutionState, CandidateHealth
 from app.core.agent_logger import agent_logger
 from app.core.agent_event_types import AgentEventType
 

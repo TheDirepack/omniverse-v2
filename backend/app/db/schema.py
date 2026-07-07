@@ -67,8 +67,8 @@ class UniverseRelation(SQLModel, table=True):
         UniqueConstraint("from_universe_id", "to_universe_id", "relation_type"),
     )
     id: int | None = Field(default=None, primary_key=True)
-    from_universe_id: int = Field(foreign_key="universe.id")
-    to_universe_id: int = Field(foreign_key="universe.id")
+    from_universe_id: int = Field(sa_column=Column(ForeignKey("universe.id", ondelete="CASCADE")))
+    to_universe_id: int = Field(sa_column=Column(ForeignKey("universe.id", ondelete="CASCADE")))
     relation_type: str = Field(index=True)
     description: str | None = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
@@ -87,7 +87,7 @@ class TierSystem(SQLModel, table=True):
 class WorldTier(SQLModel, table=True):
     __table_args__ = (UniqueConstraint("universe_id"),)
     id: int | None = Field(default=None, primary_key=True)
-    universe_id: int = Field(foreign_key="universe.id")
+    universe_id: int = Field(sa_column=Column(ForeignKey("universe.id", ondelete="CASCADE")))
     system_id: int = Field(foreign_key="tiersystem.id")
     tier_number: int
     justification: str
@@ -95,7 +95,7 @@ class WorldTier(SQLModel, table=True):
 
 class Anomaly(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
-    universe_id: int = Field(foreign_key="universe.id")
+    universe_id: int = Field(sa_column=Column(ForeignKey("universe.id", ondelete="CASCADE")))
     description: str
     detected_at: datetime = Field(default_factory=datetime.utcnow)
 
@@ -124,7 +124,7 @@ class Entity(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     name: str = Field(index=True)
     entity_type: str
-    universe_id: int = Field(foreign_key="universe.id")
+    universe_id: int = Field(sa_column=Column(ForeignKey("universe.id", ondelete="CASCADE")))
     canonical_entity_id: int | None = Field(default=None, foreign_key="entity.id")
     canonical: bool = Field(default=False)
     created_at: datetime = Field(default_factory=datetime.utcnow)
@@ -135,7 +135,7 @@ class EntityAlias(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     entity_id: int = Field(foreign_key="entity.id")
     alias: str = Field(index=True)
-    universe_id: int = Field(foreign_key="universe.id")
+    universe_id: int = Field(sa_column=Column(ForeignKey("universe.id", ondelete="CASCADE")))
 
 
 class Predicate(SQLModel, table=True):
@@ -153,7 +153,7 @@ class PredicateAlias(SQLModel, table=True):
 
 class Evidence(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
-    universe_id: int = Field(foreign_key="universe.id")
+    universe_id: int = Field(sa_column=Column(ForeignKey("universe.id", ondelete="CASCADE")))
     source_url: str = Field(index=True)
     source_name: str | None = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
@@ -180,12 +180,14 @@ class Claim(SQLModel, table=True):
     object_entity_id: int | None = Field(default=None, foreign_key="entity.id")
     object_literal: str | None = None
     evidence_chunk_id: int | None = Field(default=None, foreign_key="evidencechunk.id")
+    artifact_id: int | None = Field(default=None)
     source_reference: str | None = None
     source_wiki: str | None = None
     support_count: int = Field(default=1)
     contradiction_count: int = Field(default=0)
     status: str = Field(default="PENDING")
-    universe_scope: int | None = Field(default=None, foreign_key="universe.id")
+    universe_scope: int | None = Field(default=None, sa_column=Column(ForeignKey("universe.id", ondelete="CASCADE")))
+    source_unconfirmed_id: int | None = Field(default=None, index=True)
     superseded_by: int | None = Field(default=None, foreign_key="claim.id")
     created_at: datetime = Field(default_factory=datetime.utcnow)
 

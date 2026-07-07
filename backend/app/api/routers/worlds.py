@@ -292,14 +292,16 @@ def search_duplicates(name: str = Query(...)):
     return {"candidates": service.find_duplicates(name)}
 
 
+from pydantic import BaseModel
+
+class MergeWorldsPayload(BaseModel):
+    keep_id: int
+    merge_id: int
+
 @router.post("/merge")
-def merge_worlds(payload: dict):
-    keep_id = payload.get("keep_id")
-    merge_id = payload.get("merge_id")
-    if not keep_id or not merge_id:
-        raise HTTPException(status_code=400, detail="keep_id and merge_id required")
+def merge_worlds(payload: MergeWorldsPayload):
     service = UniverseService()
-    return service.merge_worlds(keep_id, merge_id)
+    return service.merge_worlds(payload.keep_id, payload.merge_id)
 
 
 @router.get("/by-uuid/{uuid}")

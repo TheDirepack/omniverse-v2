@@ -8,7 +8,6 @@ from app.research.researcher import research_single_world
 from app.research.summarizer import summarize_universe
 from app.services.execution_service import ExecutionService
 from app.services.settings_service import SettingsService
-from app.workflow.consolidation_workflow import consolidation_node as consolidation_impl
 from app.workflow.extrapolation_workflow import extrapolation_node as extrapolation_impl
 from app.workflow.tiering_workflow import architecture_node as architecture_impl
 
@@ -28,7 +27,7 @@ async def research_node(state: OmniverseState) -> dict[str, Any]:
         run_id,
         "Manager",
         f"Starting parallel research phase for {len(target_worlds)} worlds",
-        "IN_PROGRESS",
+        "RESEARCHING",
         state,
     )
 
@@ -55,7 +54,7 @@ async def research_node(state: OmniverseState) -> dict[str, Any]:
         for r in batch_results:
             if isinstance(r, Exception):
                 errors.append(str(r))
-            else:
+            elif isinstance(r, dict):
                 successful_results.append(r)
                 verified_worlds.append(r["name"])
 
@@ -78,7 +77,7 @@ async def research_node(state: OmniverseState) -> dict[str, Any]:
             "active_task": "FINISHED",
         }
 
-    next_task = "DB_INTEGRATION" if state.get("is_focused_search") else "CONSOLIDATION"
+    next_task = "DB_INTEGRATION"
     return {
         "research_results": successful_results,
         "verified_worlds": verified_worlds,
@@ -96,7 +95,7 @@ async def db_integrator_node(state: OmniverseState) -> dict[str, Any]:
         run_id,
         "DB Integrator",
         f"Integrating data for {len(research_results)} worlds",
-        "IN_PROGRESS",
+        "INTEGRATING",
         state,
     )
 
@@ -112,7 +111,7 @@ async def db_integrator_node(state: OmniverseState) -> dict[str, Any]:
 
         set_current_universe(world_name)
 
-        final_ans, history = await run_agent(
+        success, final_ans, history = await run_agent(
             agent_name="DB Architect",
             system_prompt=prompt["system"],
             user_prompt=user_prompt_data,
@@ -121,10 +120,12 @@ async def db_integrator_node(state: OmniverseState) -> dict[str, Any]:
             tools_names=["queryClaims", "upsertClaims"],
             submit_tool_name="submit_integration",
         )
-
+        
         # Only proceed to cleanup if integration was successful
-        if "Error" not in final_ans and "MAX_TURNS_REACHED" not in final_ans:
+        if success:
             cleanup_prompt = get_cleanup_prompt()
+            # Truncate history to only include the last 5 messages to avoid context bloat
+            truncated_history = history[-5:] if history else []
             await run_agent(
                 agent_name="DB Architect",
                 system_prompt=cleanup_prompt["system"],
@@ -137,7 +138,7 @@ async def db_integrator_node(state: OmniverseState) -> dict[str, Any]:
                     "deleteUnconfirmedClaim",
                 ],
                 submit_tool_name="submit_cleanup",
-                history=history,
+                history=truncated_history,
             )
         else:
             exec_service.log_transition(
@@ -152,10 +153,10 @@ async def db_integrator_node(state: OmniverseState) -> dict[str, Any]:
     from app.services.universe_service import UniverseService
 
     uni_service = UniverseService()
-    universes = uni_service.repo.get_by_names([r["name"] for r in research_results])
+    universes = uni_service.get_by_names([r["name"] for r in research_results])
     for u in universes:
         u.is_explored = True
-    uni_service.repo.update_batch(universes)
+    uni_service.update_batch(universes)
 
     exec_service.log_transition(
         run_id,
@@ -176,14 +177,14 @@ async def summary_node(state: OmniverseState) -> dict[str, Any]:
         run_id,
         "Summarizer",
         f"Creating polished summaries for {len(verified_worlds)} worlds",
-        "IN_PROGRESS",
+        "SUMMARIZING",
         state,
     )
 
     from app.services.universe_service import UniverseService
 
     uni_service = UniverseService()
-    universes = uni_service.repo.get_by_names(verified_worlds)
+    universes = uni_service.get_by_names(verified_worlds)
     universe_ids = [u.id for u in universes]
 
     tasks = [summarize_universe(uid, run_id) for uid in universe_ids]
@@ -200,7 +201,7 @@ async def summary_node(state: OmniverseState) -> dict[str, Any]:
     if state.get("is_focused_search"):
         return {"active_task": "ARCHITECTURE"}
 
-    return {"active_task": "CONSOLIDATION"}
+    return {"active_task": "DB_INTEGRATION"}
 
 
 async def manager_node(state: OmniverseState) -> dict[str, Any]:
@@ -210,10 +211,6 @@ async def manager_node(state: OmniverseState) -> dict[str, Any]:
         run_id, "Manager", "Routing pipeline state", "COMPLETED", state
     )
     return {"active_task": state.get("active_task", "RESEARCH")}
-
-
-async def consolidation_node(state: OmniverseState) -> dict[str, Any]:
-    return await consolidation_impl(state)
 
 
 async def architecture_node(state: OmniverseState) -> dict[str, Any]:

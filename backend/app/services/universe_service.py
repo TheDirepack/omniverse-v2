@@ -3,9 +3,9 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
-from sqlmodel import Session, select
+from sqlmodel import Session, select, delete
 
-from app.db.schema import Universe, UniverseRelation
+from app.db.schema import Universe, UniverseRelation, Claim, Entity, EntityAlias, WorldTier, Anomaly, Evidence, EvidenceChunk, InferredClaim
 from app.db.session import engine
 from app.repositories.universe import UniverseRepository
 
@@ -13,44 +13,6 @@ from app.repositories.universe import UniverseRepository
 class UniverseService:
     def __init__(self, session: Session | None = None):
         self.session = session
-        self._repo: UniverseRepository | None = None
-
-    @property
-    def repo(self) -> UniverseRepository:
-        """Lazily-created, cached repo bound to a dedicated session held for
-        this UniverseService instance's lifetime. Restores the .repo access
-        pattern that several call sites across the pipeline (nodes.py,
-        summarizer.py, runs.py, and the workflow modules) depend on to make
-        multiple sequential repo calls within one execution -- this was
-        removed in an earlier session-leak refactor without updating those
-        call sites, causing "'UniverseService' object has no attribute
-        'repo'" crashes at runtime.
-
-        Deliberately independent from self.session/the `with Session(engine)
-        if not self.session else self.session as session:` pattern used by
-        every method below -- those open and close a short-lived session per
-        call, so sharing a session with .repo would close it out from under
-        callers still using .repo afterward. All current .repo call sites
-        instantiate UniverseService() with no session argument, so this
-        stays fully decoupled from that path.
-
-        NOTE: this does re-introduce a held-open session for the object's
-        lifetime (same tradeoff TieringService already has) rather than the
-        fully session-scoped pattern used elsewhere in this class. A fuller
-        rewrite of all 10 call sites to short-lived, purpose-built service
-        methods (matching get_universe/get_all_universes/etc. below) would
-        be the cleaner long-term fix, but touches 6 files across the whole
-        pipeline and is out of scope for this crash fix.
-        """
-        if self._repo is None:
-            self._repo = UniverseRepository(self.session or Session(engine))
-        return self._repo
-
-    def _get_repo(self) -> UniverseRepository:
-        # Kept for backward compatibility with any existing callers;
-        # delegates to the same cached instance as the .repo property so
-        # there's only ever one repo/session per UniverseService instance.
-        return self.repo
 
     def get_universe(self, name: str) -> Universe | None:
         session = self.session or Session(engine)
@@ -76,6 +38,14 @@ class UniverseService:
             if not self.session:
                 session.close()
 
+    def get_children(self, universe_id: int) -> Sequence[Universe]:
+        session = self.session or Session(engine)
+        try:
+            return UniverseRepository(session).get_children(universe_id)
+        finally:
+            if not self.session:
+                session.close()
+
     def get_all_universes(
         self, limit: int = 100, offset: int = 0, fields: list[str] | None = None
     ) -> Sequence[Any]:
@@ -84,6 +54,23 @@ class UniverseService:
             return UniverseRepository(session).get_all(
                 limit=limit, offset=offset, fields=fields
             )
+        finally:
+            if not self.session:
+                session.close()
+
+    def get_by_names(self, names: list[str]) -> Sequence[Universe]:
+        session = self.session or Session(engine)
+        try:
+            return UniverseRepository(session).get_by_names(names)
+        finally:
+            if not self.session:
+                session.close()
+
+    def update_batch(self, universes: Sequence[Universe]):
+        session = self.session or Session(engine)
+        try:
+            UniverseRepository(session).update_batch(universes)
+            session.commit()
         finally:
             if not self.session:
                 session.close()
@@ -122,7 +109,6 @@ class UniverseService:
                 is_explored=False,
             )
             res = repo.create(universe)
-            session.commit()
             return res
         finally:
             if not self.session:
@@ -276,8 +262,8 @@ class UniverseService:
             if not keep or not merge:
                 return {"status": "error", "message": "One or both worlds not found"}
 
-            from app.db.schema import Claim, Entity
-
+            # 1. Map entities and reassign them
+            entity_map = {}  # merge_ent_id -> keep_ent_id
             entities = session.exec(
                 select(Entity).where(Entity.universe_id == merge_id)
             ).all()
@@ -288,27 +274,89 @@ class UniverseService:
                         Entity.name == e.name,
                     )
                 ).first()
-                if not existing:
+                if existing:
+                    entity_map[e.id] = existing.id
+                else:
                     e.universe_id = keep_id
                     session.add(e)
+                    session.flush()
+                    entity_map[e.id] = e.id
 
+            # 2. Reassign claims and deduplicate
             claims = session.exec(
                 select(Claim).where(Claim.universe_scope == merge_id)
             ).all()
             for c in claims:
-                existing = session.exec(
-                    select(Claim).where(
-                        Claim.subject_id.in_(
-                            select(Entity.id).where(Entity.universe_id == keep_id)
-                        ),
+                new_sub_id = entity_map.get(c.subject_id, c.subject_id)
+                new_obj_ent_id = entity_map.get(c.object_entity_id, c.object_entity_id) if c.object_entity_id else None
+                
+                if c.object_entity_id:
+                    dup_query = select(Claim).where(
+                        Claim.universe_scope == keep_id,
+                        Claim.subject_id == new_sub_id,
+                        Claim.predicate == c.predicate,
+                        Claim.object_entity_id == new_obj_ent_id,
+                        Claim.object_literal.is_(None)
+                    )
+                else:
+                    dup_query = select(Claim).where(
+                        Claim.universe_scope == keep_id,
+                        Claim.subject_id == new_sub_id,
                         Claim.predicate == c.predicate,
                         Claim.object_literal == c.object_literal,
+                        Claim.object_entity_id.is_(None)
                     )
-                ).first()
+                
+                existing = session.exec(dup_query).first()
                 if not existing:
+                    c.subject_id = new_sub_id
+                    c.object_entity_id = new_obj_ent_id
                     c.universe_scope = keep_id
                     session.add(c)
+                else:
+                    c.superseded_by = existing.id
+                    session.add(c)
 
+            # 3. Reassign other child records
+            # EntityAlias
+            aliases = session.exec(select(EntityAlias).where(EntityAlias.universe_id == merge_id)).all()
+            for a in aliases:
+                a.universe_id = keep_id
+                session.add(a)
+            
+            # WorldTier
+            tiers = session.exec(select(WorldTier).where(WorldTier.universe_id == merge_id)).all()
+            for t in tiers:
+                t.universe_id = keep_id
+                session.add(t)
+            
+            # Anomaly
+            anoms = session.exec(select(Anomaly).where(Anomaly.universe_id == merge_id)).all()
+            for an in anoms:
+                an.universe_id = keep_id
+                session.add(an)
+            
+            # Evidence
+            evs = session.exec(select(Evidence).where(Evidence.universe_id == merge_id)).all()
+            for ev in evs:
+                ev.universe_id = keep_id
+                session.add(ev)
+
+            # UniverseRelation
+            rels = session.exec(
+                select(UniverseRelation).where(
+                    (UniverseRelation.from_universe_id == merge_id) | 
+                    (UniverseRelation.to_universe_id == merge_id)
+                )
+            ).all()
+            for r in rels:
+                if r.from_universe_id == merge_id:
+                    r.from_universe_id = keep_id
+                if r.to_universe_id == merge_id:
+                    r.to_universe_id = keep_id
+                session.add(r)
+
+            # 4. Delete the merged universe
             repo.delete(merge)
             session.commit()
             return {"status": "success", "keep_id": keep_id, "merge_id": merge_id}
@@ -495,11 +543,59 @@ class UniverseService:
     def delete_universe(self, universe_id: int):
         session = self.session or Session(engine)
         try:
+            # Cascading cleanup to prevent IntegrityError
+            # Order: InferredClaim -> Claim -> EntityAlias -> Entity -> WorldTier -> Anomaly -> Relation -> EvidenceChunk -> Evidence -> Universe
+            
+            # 1. InferredClaims referencing entities of this universe
+            entities = session.exec(select(Entity).where(Entity.universe_id == universe_id)).all()
+            entity_ids = [e.id for e in entities]
+            if entity_ids:
+                session.exec(
+                    delete(InferredClaim).where(
+                        (InferredClaim.subject_id.in_(entity_ids)) | 
+                        (InferredClaim.object_id.in_(entity_ids))
+                    )
+                )
+            
+            # 2. Claims
+            session.exec(delete(Claim).where(Claim.universe_scope == universe_id))
+            
+            # 3. EntityAlias
+            session.exec(delete(EntityAlias).where(EntityAlias.universe_id == universe_id))
+            
+            # 4. Entities
+            session.exec(delete(Entity).where(Entity.universe_id == universe_id))
+            
+            # 5. WorldTiers
+            session.exec(delete(WorldTier).where(WorldTier.universe_id == universe_id))
+            
+            # 6. Anomalies
+            session.exec(delete(Anomaly).where(Anomaly.universe_id == universe_id))
+            
+            # 7. UniverseRelations
+            session.exec(
+                delete(UniverseRelation).where(
+                    (UniverseRelation.from_universe_id == universe_id) | 
+                    (UniverseRelation.to_universe_id == universe_id)
+                )
+            )
+            
+            # 8. EvidenceChunks (via Evidence)
+            evidence = session.exec(select(Evidence).where(Evidence.universe_id == universe_id)).all()
+            evidence_ids = [ev.id for ev in evidence]
+            if evidence_ids:
+                session.exec(delete(EvidenceChunk).where(EvidenceChunk.evidence_id.in_(evidence_ids)))
+            
+            # 9. Evidence
+            session.exec(delete(Evidence).where(Evidence.universe_id == universe_id))
+            
+            # 10. Finally, the Universe
             repo = UniverseRepository(session)
             universe = repo.get_by_id(universe_id)
             if universe:
                 repo.delete(universe)
-                session.commit()
+                
+            session.commit()
         finally:
             if not self.session:
                 session.close()

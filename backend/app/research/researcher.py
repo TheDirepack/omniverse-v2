@@ -6,35 +6,12 @@ from app.core.agent_engine import run_agent
 from app.core.context import set_current_universe
 from app.core.retry_handler import RetryHandler
 from app.core.validators import validate_research_json
+from app.core.validation import audit_success
 from app.services.execution_service import ExecutionService
 
 
-def audit_success(audit_result: str) -> bool:
-    try:
-        parsed = json.loads(audit_result)
-        status = str(parsed.get("Verification_Status", "")).strip().upper()
-        if status:
-            return status == "SUCCESS"
-    except (json.JSONDecodeError, AttributeError, TypeError):
-        pass
-
-    upper = audit_result.upper()
-    if "REVISION_REQUIRED" in upper:
-        return False
-
-    lines = upper.splitlines()
-    for line in lines:
-        line = line.strip()
-        if (
-            "SUCCESS" in line
-            or "VERIFIED" in line
-            or line.startswith("STATUS: SUCCESS")
-            or line.startswith("STATUS: VERIFIED")
-        ):
-            return True
-
-    return False
-
+from app.core.validation import audit_success
+from app.services.execution_service import ExecutionService
 
 async def save_audit_artifacts(
     _world_name: str, retry_handler: RetryHandler, final_result: str
@@ -61,9 +38,19 @@ async def save_audit_artifacts(
         }
     )
 
+    # Save final knowledge graph
+    await tool_save_unconfirmed_claim(
+        {
+            "subject": _world_name,
+            "predicate": "HAS_FINAL_KNOWLEDGE_GRAPH",
+            "object_val": final_result,
+            "confidence": "high",
+        }
+    )
+
 
 async def research_single_world(
-    world_name: str,
+    universe_uuid: str,
     run_id: str,
     focus: str | None = None,
 ) -> dict[str, Any]:
@@ -82,10 +69,14 @@ async def research_single_world(
     settings_service = SettingsService()
     retriever = KnowledgeRetrieverService()
 
-    universe = uni_service.get_universe(world_name)
+    universe = uni_service.get_universe_by_uuid(universe_uuid)
+    if not universe:
+        raise ValueError(f"Universe with UUID {universe_uuid} not found.")
+
     if universe:
         tier_service.clear_world_tier(universe.id)
 
+    world_name = universe.name
     stage_label = f"{world_name} focused on {focus}" if focus else world_name
     set_current_universe(world_name)
 
@@ -94,7 +85,7 @@ async def research_single_world(
         run_id,
         "Research Unit",
         f"Initiating incremental research for world: {stage_label}",
-        "IN_PROGRESS",
+        "RESEARCHING",
         {},
     )
 
@@ -118,7 +109,11 @@ async def research_single_world(
     universe_id = universe.id if universe else None
     verified_claims_str = ""
     knowledge_graph_str = ""
+    multiverse_leads_str = ""
+    multiverse_kg_str = ""
+
     if universe_id:
+        # Current universe context
         claims = retriever.get_semantic_claims(universe_id)
         verified_claims_str = "\n".join(
             [
@@ -130,6 +125,32 @@ async def research_single_world(
         knowledge_graph_str = json.dumps(
             retriever.get_universe_knowledge_graph(universe_id), indent=2
         )
+
+        # Multiverse context: Parent and Children
+        related_ids = []
+        if universe.parent_id:
+            related_ids.append(universe.parent_id)
+        
+        children = uni_service.get_children(universe.id)
+        related_ids.extend([c.id for c in children])
+
+        if related_ids:
+            rel_claims = []
+            rel_kgs = []
+            for rid in related_ids:
+                rel_u = uni_service.get_universe_by_id(rid)
+                if rel_u:
+                    c = retriever.get_semantic_claims(rid)
+                    if c:
+                        rel_claims.append(f"--- {rel_u.name} ---\n" + "\n".join(
+                            [f"({cl['subject']} --{cl['predicate']}--> {cl['object']}) | ref: {cl['reference'] or 'N/A'}" for cl in c]
+                        ))
+                    kg = retriever.get_universe_knowledge_graph(rid)
+                    if kg:
+                        rel_kgs.append(f"--- {rel_u.name} ---\n{json.dumps(kg, indent=2)}")
+            
+            multiverse_leads_str = "\n\n".join(rel_claims)
+            multiverse_kg_str = "\n\n".join(rel_kgs)
 
     retry_handler = RetryHandler(max_iterations=3)
 
@@ -153,6 +174,8 @@ async def research_single_world(
                 unconfirmed_data=unconfirmed_data,
                 verified_claims=verified_claims_str if i == 0 else None,
                 knowledge_graph=knowledge_graph_str if i == 0 else None,
+                multiverse_leads=multiverse_leads_str if i == 0 else None,
+                multiverse_kg=multiverse_kg_str if i == 0 else None,
             )
 
             user_prompt = researcher_prompt["user"]
@@ -175,17 +198,17 @@ async def research_single_world(
                 else 6
             )
 
-            result, turn_history = await run_agent(
+            success, result, turn_history = await run_agent(
                 agent_name="Researcher",
                 system_prompt=researcher_prompt["system"],
                 user_prompt=user_prompt,
                 step=f"Research (Attempt {i})",
                 run_id=run_id,
                 tools_names=researcher_tools,
-                submit_tool_name="submit_research",
-                min_turns=min_turns,
-                history=retry_handler.agent_history,
+                max_turns=min_turns,
             )
+
+
 
             # Deterministic Validation
             try:
@@ -255,7 +278,7 @@ async def research_single_world(
                 is_final_attempt=retry_handler.is_final_attempt(),
             )
 
-            critique, _ = await run_agent(
+            success, critique, _ = await run_agent(
                 agent_name="Logic Auditor",
                 system_prompt=critic_prompt["system"],
                 user_prompt=critic_prompt["user"],
@@ -266,9 +289,12 @@ async def research_single_world(
             )
 
             if audit_success(critique):
+                import logging
+                logging.getLogger(__name__).debug(f"audit_success(critique) is True for {critique}")
                 await save_audit_artifacts(world_name, retry_handler, result)
                 return {"name": world_name, "summary": result, "status": "VERIFIED"}
-
+            import logging
+            logging.getLogger(__name__).debug(f"audit_success(critique) is False for {critique}")
             retry_handler.update_state(result, critique, turn_history)
 
             if retry_handler.is_final_attempt():

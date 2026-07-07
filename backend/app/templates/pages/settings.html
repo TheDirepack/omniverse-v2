@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+
+{% block title %}Settings - Omniverse{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <div class="flex justify-between items-center">
+        <h1 class="text-3xl font-bold">Settings</h1>
+    </div>
+
+    <div class="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
+        <div class="flex border-b border-gray-200 dark:border-gray-700">
+            <button class="tab-btn px-6 py-3 text-sm font-medium border-b-2 border-blue-600 text-blue-600"
+                    hx-get="/settings/tab/general"
+                    hx-target="#settings-content"
+                    hx-swap="innerHTML"
+                    hx-indicator="#settings-indicator">
+                General
+            </button>
+            <button class="tab-btn px-6 py-3 text-sm font-medium text-gray-500 hover:text-gray-700 border-b-2 border-transparent hover:border-gray-300"
+                    hx-get="/settings/tab/providers"
+                    hx-target="#settings-content"
+                    hx-swap="innerHTML"
+                    hx-indicator="#settings-indicator">
+                Providers
+            </button>
+            <button class="tab-btn px-6 py-3 text-sm font-medium text-gray-500 hover:text-gray-700 border-b-2 border-transparent hover:border-gray-300"
+                    hx-get="/settings/tab/routes"
+                    hx-target="#settings-content"
+                    hx-swap="innerHTML"
+                    hx-indicator="#settings-indicator">
+                Agent Routes
+            </button>
+            <button class="tab-btn px-6 py-3 text-sm font-medium text-gray-500 hover:text-gray-700 border-b-2 border-transparent hover:border-gray-300"
+                    hx-get="/settings/tab/health"
+                    hx-target="#settings-content"
+                    hx-swap="innerHTML"
+                    hx-indicator="#settings-indicator">
+                Health
+            </button>
+            <div id="settings-indicator" class="htmx-indicator flex items-center ml-auto px-4">
+                <span class="animate-spin inline-block">⌛</span>
+            </div>
+        </div>
+
+        <div id="settings-content" class="p-6"
+             hx-get="/settings/tab/general"
+             hx-trigger="load"
+             hx-swap="innerHTML">
+            <p class="text-gray-500 dark:text-gray-400 italic">Loading...</p>
+        </div>
+    </div>
+</div>
+{% endblock %}

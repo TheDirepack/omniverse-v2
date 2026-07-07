@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+
+{% block title %}Welcome - Omniverse{% endblock %}
+
+{% block content %}
+<div class="flex flex-col items-center justify-center py-20 text-center">
+    <h1 class="text-5xl font-extrabold text-blue-600 mb-6">Omniverse V2</h1>
+    <p class="text-xl text-gray-600 max-w-2xl mb-12">
+        The definitive multi-agent fictional power-tiering platform. 
+        Harness the power of LangGraph and Knowledge Graphs to analyze, 
+        verify, and tier universes from across the multiverse.
+    </p>
+    
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-8 w-full max-w-5xl">
+        <div class="bg-white dark:bg-gray-800 p-8 rounded-2xl shadow-lg border border-gray-100 dark:border-gray-700 hover:shadow-xl transition">
+            <div class="text-4xl mb-4">🔍</div>
+            <h2 class="text-2xl font-bold mb-3">Research</h2>
+            <p class="text-gray-500 dark:text-gray-400 mb-6">Launch autonomous agents to collect and verify facts about new universes.</p>
+            <a href="/research" class="inline-block bg-blue-600 text-white px-6 py-2 rounded-full font-semibold hover:bg-blue-700 transition">Start Research</a>
+        </div>
+        
+        <div class="bg-white dark:bg-gray-800 p-8 rounded-2xl shadow-lg border border-gray-100 dark:border-gray-700 hover:shadow-xl transition">
+            <div class="text-4xl mb-4">🕸️</div>
+            <h2 class="text-2xl font-bold mb-3">Knowledge</h2>
+            <p class="text-gray-500 dark:text-gray-400 mb-6">Explore the canonical Knowledge Graph and trace the flow of verified claims.</p>
+            <a href="/knowledge" class="inline-block bg-blue-600 text-white px-6 py-2 rounded-full font-semibold hover:bg-blue-700 transition">Explore Graph</a>
+        </div>
+        
+        <div class="bg-white dark:bg-gray-800 p-8 rounded-2xl shadow-lg border border-gray-100 dark:border-gray-700 hover:shadow-xl transition">
+            <div class="text-4xl mb-4">⚖️</div>
+            <h2 class="text-2xl font-bold mb-3">Tiering</h2>
+            <p class="text-gray-500 dark:text-gray-400 mb-6">Apply rigorous logic and rules to slot universes into the global power rubric.</p>
+            <a href="/inference" class="inline-block bg-blue-600 text-white px-6 py-2 rounded-full font-semibold hover:bg-blue-700 transition">View Rules</a>
+        </div>
+    </div>
+    
+    <div class="mt-20 p-6 bg-blue-50 dark:bg-blue-900/30 rounded-xl border border-blue-100 dark:border-blue-800 max-w-3xl">
+        <h3 class="text-lg font-semibold text-blue-800 dark:text-blue-300 mb-2">Current Status</h3>
+        <p class="text-blue-600 dark:text-blue-400">The system is operational. Use the navigation bar to access the Research, Knowledge, and Inference modules.</p>
+    </div>
+</div>
+{% endblock %}

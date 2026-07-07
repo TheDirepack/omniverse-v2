@@ -13,3 +13,11 @@ httpx
 pytest
 pytest-asyncio
 trafilatura
+jinja2
+python-multipart
+pillow
+pytesseract
+easyocr
+docling
+# Optional: paddleocr and paddlepaddle (~500MB) for PaddleOCR engine.
+# Install manually: pip install paddlepaddle paddleocr

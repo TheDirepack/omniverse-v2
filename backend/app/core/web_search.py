@@ -1,7 +1,9 @@
-from typing import Optional, Dict, Any
 import logging
 import urllib.parse
+from typing import Any
+
 from bs4 import BeautifulSoup
+
 from app.core.browser import browser_manager
 
 SEARCH_URLS = {
@@ -39,16 +41,24 @@ AI_CONTAINER_SELECTORS = [
     "[id*='answer']",
 ]
 
+
 class WebSearcher:
     async def perform_search(
-        self, query: str, engine: str = "google", site_filter: Optional[str] = None, max_results: int = 10
-    ) -> Dict[str, Any]:
+        self,
+        query: str,
+        engine: str = "google",
+        site_filter: str | None = None,
+        max_results: int = 10,
+    ) -> dict[str, Any]:
         if site_filter:
             query = f"site:{site_filter} {query}"
 
         url_template = SEARCH_URLS.get(engine)
         if not url_template:
-            return {"status": "ERROR", "message": f"Unsupported engine: {engine}. Supported: {', '.join(SEARCH_URLS)}."}
+            return {
+                "status": "ERROR",
+                "message": f"Unsupported engine: {engine}. Supported: {', '.join(SEARCH_URLS)}.",
+            }
 
         search_url = url_template.format(q=urllib.parse.quote(query))
 
@@ -58,7 +68,9 @@ class WebSearcher:
                 await page.goto(search_url, wait_until="networkidle", timeout=20000)
             except Exception as e:
                 logging.warning(f"Search page load failed, retrying: {e}")
-                await page.goto(search_url, wait_until="domcontentloaded", timeout=15000)
+                await page.goto(
+                    search_url, wait_until="domcontentloaded", timeout=15000
+                )
             html = await page.content()
 
             lower_html = html.lower()
@@ -70,7 +82,7 @@ class WebSearcher:
                         f"Search engine {engine} appears to have shown a bot-verification "
                         f"page instead of search results for this query. Try a different engine "
                         f"({', '.join(e for e in SEARCH_URLS if e != engine)}) or a fetchPage on a known relevant URL."
-                    )
+                    ),
                 }
 
             soup = BeautifulSoup(html, "html.parser")
@@ -89,13 +101,13 @@ class WebSearcher:
                     "status": "SUCCESS",
                     "engine": engine,
                     "query": query,
-                    "results": results[:max_results]
+                    "results": results[:max_results],
                 }
             return {
                 "status": "NO_RESULTS",
                 "engine": engine,
                 "query": query,
-                "message": f"No results found for {query} on {engine}. Try a different engine."
+                "message": f"No results found for {query} on {engine}. Try a different engine.",
             }
         finally:
             await page.close()
@@ -131,9 +143,9 @@ class WebSearcher:
                 continue
             href = link_el.get("href", "")
             if href.startswith("/url?q="):
-                href = urllib.parse.parse_qs(
-                    urllib.parse.urlparse(href).query
-                ).get("q", [""])[0]
+                href = urllib.parse.parse_qs(urllib.parse.urlparse(href).query).get(
+                    "q", [""]
+                )[0]
             if not href or not href.startswith("http"):
                 continue
 

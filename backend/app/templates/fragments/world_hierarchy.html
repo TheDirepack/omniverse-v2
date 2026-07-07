@@ -1,0 +1,50 @@
+<div class="space-y-4">
+    <h2 class="text-xl font-semibold">World Graph</h2>
+
+    {% if worlds %}
+    <div class="space-y-1">
+        {% for world in worlds %}
+        {% if not world.parent_id %}
+        <div class="py-1">
+            <div class="flex items-center gap-2 p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded group">
+                <span class="font-medium text-sm">{{ world.name }}</span>
+                <span class="text-[10px] px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300">{{ world.franchise or '?' }}</span>
+                {% if world.continuity %}
+                <span class="text-[10px] text-gray-400">{{ world.continuity }}</span>
+                {% endif %}
+                <a href="/worlds/{{ world.uuid }}/neighborhood"
+                   class="text-xs text-blue-500 hover:text-blue-700 ml-auto opacity-0 group-hover:opacity-100 transition"
+                   hx-get="/worlds/{{ world.uuid }}/neighborhood"
+                   hx-target="#worlds-content"
+                   hx-swap="innerHTML">
+                    View Neighborhood
+                </a>
+            </div>
+            {% for child in worlds %}
+            {% if child.parent_id == world.id %}
+            <div class="ml-6 py-1">
+                <div class="flex items-center gap-2 p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded group">
+                    <span class="text-xs text-gray-400">└─</span>
+                    <span class="text-sm">{{ child.name }}</span>
+                    {% if child.continuity %}
+                    <span class="text-[10px] text-gray-400">{{ child.continuity }}</span>
+                    {% endif %}
+                    <a href="/worlds/{{ child.uuid }}/neighborhood"
+                       class="text-xs text-blue-500 hover:text-blue-700 ml-auto opacity-0 group-hover:opacity-100 transition"
+                       hx-get="/worlds/{{ child.uuid }}/neighborhood"
+                       hx-target="#worlds-content"
+                       hx-swap="innerHTML">
+                        View Neighborhood
+                    </a>
+                </div>
+            </div>
+            {% endif %}
+            {% endfor %}
+        </div>
+        {% endif %}
+        {% endfor %}
+    </div>
+    {% else %}
+    <p class="text-gray-500 dark:text-gray-400 italic">No worlds in database.</p>
+    {% endif %}
+</div>

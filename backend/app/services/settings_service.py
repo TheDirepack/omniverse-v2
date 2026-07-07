@@ -1,14 +1,56 @@
-from typing import List, Optional, Dict, Any
+from typing import Any
+
 from sqlmodel import Session
+
+from app.db.schema import Setting, ProviderConfig
 from app.db.settings_session import settings_engine
-from app.db.schema import Setting
+from app.db.operational_session import operational_engine
 from app.repositories.settings import SettingsRepository
 
+PROVIDER_PRESETS = {
+    "openai": {
+        "provider_type": "openai",
+        "base_url": "https://api.openai.com/v1",
+        "models": "gpt-4o,gpt-4o-mini,gpt-4-turbo,gpt-3.5-turbo",
+    },
+    "anthropic": {
+        "provider_type": "anthropic",
+        "base_url": "https://api.anthropic.com/v1",
+        "models": "claude-3-5-sonnet-20241022,claude-3-5-haiku-20241022,claude-3-opus-20240229",
+    },
+    "google": {
+        "provider_type": "gemini",
+        "base_url": "https://generativelanguage.googleapis.com/v1beta",
+        "models": "gemini-2.0-flash,gemini-1.5-pro,gemini-1.5-flash",
+    },
+    "ollama": {
+        "provider_type": "ollama",
+        "base_url": "http://localhost:11434",
+        "models": "",
+    },
+    "groq": {
+        "provider_type": "groq",
+        "base_url": "https://api.groq.com/openai/v1",
+        "models": "mixtral-8x7b-32768,llama3-70b-8192,llama3-8b-8192,deepseek-r1-distill-llama-70b",
+    },
+    "openrouter": {
+        "provider_type": "openrouter",
+        "base_url": "https://openrouter.ai/api/v1",
+        "models": "openai/gpt-4o,anthropic/claude-3.5-sonnet,google/gemini-2.0-flash",
+    },
+    "custom": {
+        "provider_type": "custom",
+        "base_url": "",
+        "models": "",
+    },
+}
+
+
 class SettingsService:
-    def __init__(self, session: Optional[Session] = None):
+    def __init__(self, session: Session | None = None):
         self.session = session
 
-    def get_setting(self, key: str) -> Optional[Setting]:
+    def get_setting(self, key: str) -> Setting | None:
         session = self.session or Session(settings_engine)
         try:
             return SettingsRepository(session).get_setting(key)
@@ -16,26 +58,45 @@ class SettingsService:
             if not self.session:
                 session.close()
 
-    def get_all_settings(self) -> Dict[str, Any]:
+    def get_provider_by_id(self, provider_id: int) -> ProviderConfig | None:
+        session = self.session or Session(settings_engine)
+        try:
+            return SettingsRepository(session).get_provider_by_id(provider_id)
+        finally:
+            if not self.session:
+                session.close()
+
+    def get_all_settings(self) -> dict[str, Any]:
         session = self.session or Session(settings_engine)
         try:
             repo = SettingsRepository(session)
             settings = repo.get_all_settings()
             providers = repo.get_providers()
+            all_keys = repo.get_all_keys()
             routes = repo.get_agent_routes()
-            
+
+            keys_by_provider = {}
+            for k in all_keys:
+                keys_by_provider.setdefault(k.provider_id, []).append(k)
+
             provider_details = []
             for p in providers:
-                keys = repo.get_keys_for_provider(p.id)
-                provider_details.append({
-                    "id": p.id,
-                    "name": p.name,
-                    "provider_type": p.provider_type,
-                    "base_url": p.base_url,
-                    "models": p.models,
-                    "keys": [{"id": k.id, "api_key": k.api_key, "priority": k.priority} for k in keys]
-                })
-            
+                assert p.id is not None
+                keys = keys_by_provider.get(p.id, [])
+                provider_details.append(
+                    {
+                        "id": p.id,
+                        "name": p.name,
+                        "provider_type": p.provider_type,
+                        "base_url": p.base_url,
+                        "models": p.models,
+                        "keys": [
+                            {"id": k.id, "api_key": k.api_key, "priority": k.priority}
+                            for k in keys
+                        ],
+                    }
+                )
+
             return {
                 "general_settings": {s.key: s.value for s in settings},
                 "providers": provider_details,
@@ -46,110 +107,187 @@ class SettingsService:
                         "provider_id": r.provider_id,
                         "models": r.models,
                         "priority": r.priority,
-                    } for r in routes
+                    }
+                    for r in routes
                 ],
             }
         finally:
             if not self.session:
                 session.close()
 
-    def update_general_setting(self, key: str, value: Optional[str]) -> Setting:
+    def update_general_setting(self, key: str, value: str | None) -> Setting:
         session = self.session or Session(settings_engine)
         try:
-            return SettingsRepository(session).upsert_setting(key, value)
+            res = SettingsRepository(session).upsert_setting(key, value)
+            session.commit()
+            return res
         finally:
             if not self.session:
                 session.close()
 
-    def upsert_provider(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+    def upsert_provider(self, payload: dict[str, Any]) -> dict[str, Any]:
         session = self.session or Session(settings_engine)
         try:
             repo = SettingsRepository(session)
             provider_id = payload.get("id")
             name = payload.get("name")
-            
+
             provider = None
             if provider_id:
                 provider = repo.get_provider_by_id(provider_id)
             elif name:
                 provider = repo.get_provider_by_name(name)
-                
+
             if not provider:
                 from app.db.schema import ProviderConfig
+
                 provider = ProviderConfig(name=name)
-            
-            for field in ["provider_type", "base_url", "models"]:
+
+            for field in ["name", "provider_type", "base_url", "models"]:
                 if field in payload:
                     setattr(provider, field, payload[field])
-            
+
             updated = repo.upsert_provider(provider)
-            return {"status": "success", "provider": {"id": updated.id, "name": updated.name}}
+            session.commit()
+            return {
+                "status": "success",
+                "provider": {"id": updated.id, "name": updated.name},
+            }
         finally:
             if not self.session:
                 session.close()
 
-    def upsert_provider_key(self, provider_id: int, api_key: str, priority: int = 0, key_id: Optional[int] = None) -> int:
+    def upsert_provider_key(
+        self,
+        provider_id: int,
+        api_key: str,
+        priority: int = 0,
+        key_id: int | None = None,
+    ) -> int:
         session = self.session or Session(settings_engine)
         try:
             repo = SettingsRepository(session)
             from app.db.schema import ProviderKey
+
             key = repo.session.get(ProviderKey, key_id) if key_id else None
             if not key:
                 key = ProviderKey(provider_id=provider_id)
             key.api_key = api_key
             key.priority = priority
             updated = repo.upsert_key(key)
+            session.commit()
+            assert updated.id is not None
             return updated.id
         finally:
             if not self.session:
                 session.close()
 
-    def delete_provider_key(self, key_id: int):
+    def delete_provider_key(self, key_id: int) -> bool:
         session = self.session or Session(settings_engine)
         try:
-            SettingsRepository(session).delete_key(key_id)
+            res = SettingsRepository(session).delete_key(key_id)
+            session.commit()
+            return res
         finally:
             if not self.session:
                 session.close()
 
-    def delete_provider(self, provider_id: int):
+    def delete_provider(self, provider_id: int) -> bool:
         session = self.session or Session(settings_engine)
         try:
-            SettingsRepository(session).delete_provider(provider_id)
+            res = SettingsRepository(session).delete_provider(provider_id)
+            session.commit()
+            return res
         finally:
             if not self.session:
                 session.close()
 
-    def upsert_agent_route(self, task_type: str, provider_id: Optional[int], models: Optional[str], priority: int = 0, route_id: Optional[int] = None) -> None:
+    def upsert_agent_route(
+        self,
+        task_type: str,
+        provider_id: int | None,
+        models: str | None,
+        priority: int = 0,
+        route_id: int | None = None,
+    ) -> None:
         session = self.session or Session(settings_engine)
         try:
             repo = SettingsRepository(session)
-            if provider_id:
-                if not repo.get_provider_by_id(provider_id):
-                    raise ValueError("Invalid provider_id")
-            
+            if provider_id is not None and not repo.get_provider_by_id(provider_id):
+                raise ValueError("Invalid provider_id")
+
             from app.db.schema import AgentRouteFallback
+
             route = repo.get_route_by_id(route_id) if route_id else None
             if not route:
                 route = AgentRouteFallback(task_type=task_type)
-            
+
             route.provider_id = provider_id
             route.models = models
             route.priority = priority
             repo.upsert_route(route)
+            session.commit()
         finally:
             if not self.session:
                 session.close()
 
-    def delete_agent_route(self, route_id: int):
+    def delete_agent_route(self, route_id: int) -> bool:
         session = self.session or Session(settings_engine)
         try:
-            SettingsRepository(session).delete_route(route_id)
+            res = SettingsRepository(session).delete_route(route_id)
+            session.commit()
+            return res
         finally:
             if not self.session:
                 session.close()
 
-    def get_agent_routes(self) -> List[Dict[str, Any]]:
+    def copy_default_routes_to_agent(self, agent_name: str) -> list[dict[str, Any]]:
+        session = self.session or Session(settings_engine)
+        try:
+            repo = SettingsRepository(session)
+            default_routes = repo.get_agent_routes_by_task_type("DEFAULT")
+            new_routes = []
+            for dr in default_routes:
+                from app.db.schema import AgentRouteFallback
+
+                route = AgentRouteFallback(
+                    task_type=agent_name,
+                    provider_id=dr.provider_id,
+                    models=dr.models,
+                    priority=dr.priority,
+                )
+                repo.upsert_route(route)
+                session.flush()
+                new_routes.append(
+                    {
+                        "id": route.id,
+                        "task_type": route.task_type,
+                        "provider_id": route.provider_id,
+                        "models": route.models,
+                        "priority": route.priority,
+                    }
+                )
+            session.commit()
+            return new_routes
+        finally:
+            if not self.session:
+                session.close()
+
+    def reorder_routes(self, route_ids: list[int]) -> None:
+        session = self.session or Session(settings_engine)
+        try:
+            repo = SettingsRepository(session)
+            for idx, rid in enumerate(route_ids):
+                route = repo.get_route_by_id(rid)
+                if route:
+                    route.priority = idx
+                    session.add(route)
+            session.commit()
+        finally:
+            if not self.session:
+                session.close()
+
+    def get_agent_routes(self) -> list[dict[str, Any]]:
         session = self.session or Session(settings_engine)
         try:
             routes = SettingsRepository(session).get_agent_routes()
@@ -160,46 +298,48 @@ class SettingsService:
                     "provider_id": r.provider_id,
                     "models": r.models,
                     "priority": r.priority,
-                } for r in routes
+                }
+                for r in routes
             ]
         finally:
             if not self.session:
                 session.close()
 
-    def get_providers(self) -> List[Dict[str, Any]]:
+    def get_providers(self) -> list[dict[str, Any]]:
         session = self.session or Session(settings_engine)
         try:
             repo = SettingsRepository(session)
             providers = repo.get_providers()
-            return [
-                {
-                    "id": p.id,
-                    "name": p.name,
-                    "provider_type": p.provider_type,
-                    "base_url": p.base_url,
-                    "models": p.models,
-                    "keys": [
-                        {"id": k.id, "api_key": k.api_key, "priority": k.priority}
-                        for k in repo.get_keys_for_provider(p.id)
-                    ]
-                }
-                for p in providers
-            ]
+            provider_list = []
+            for p in providers:
+                assert p.id is not None
+                keys = repo.get_keys_for_provider(p.id)
+                provider_list.append(
+                    {
+                        "id": p.id,
+                        "name": p.name,
+                        "provider_type": p.provider_type,
+                        "base_url": p.base_url,
+                        "models": p.models,
+                        "keys": [
+                            {"id": k.id, "api_key": k.api_key, "priority": k.priority}
+                            for k in keys
+                        ],
+                    }
+                )
+            return provider_list
         finally:
             if not self.session:
                 session.close()
 
     def reset_candidate_health(self):
-        session = self.session or Session(settings_engine)
+        session = self.session or Session(operational_engine)
         try:
             SettingsRepository(session).reset_candidate_health()
+            session.commit()
         finally:
             if not self.session:
                 session.close()
 
     def close(self):
-        """Closes the internal session if it was lazily created."""
-        if self.session:
-            self.session.close()
-            self.session = None
-
+        """No-op. Internal sessions are closed per-method-call."""

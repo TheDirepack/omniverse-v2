@@ -1,0 +1,37 @@
+<div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow">
+    <h2 class="text-xl font-semibold mb-4">Focused Search</h2>
+    <p class="text-sm text-gray-500 dark:text-gray-400 mb-3">
+        Prove or disprove specific features about worlds.
+    </p>
+    <form hx-post="/research/focused-search"
+          hx-target="#focused-search-results"
+          hx-swap="innerHTML"
+          hx-indicator="#focus-indicator">
+        <div class="mb-3">
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">World Names</label>
+            <textarea name="worlds" rows="2"
+                      class="w-full border rounded px-3 py-2 text-sm bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      placeholder="Warhammer 40k, Star Wars, Harry Potter"></textarea>
+        </div>
+        <div class="mb-3">
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Features to Prove/Disprove</label>
+            <textarea name="features" rows="2"
+                      class="w-full border rounded px-3 py-2 text-sm bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      placeholder="speed of light, teleportation, multiverse travel"></textarea>
+        </div>
+        <div class="flex items-center gap-2">
+            <button type="submit"
+                    class="bg-purple-600 text-white px-4 py-2 rounded text-sm hover:bg-purple-700 transition">
+                Focused Search
+            </button>
+            <div id="focus-indicator" class="htmx-indicator animate-spin inline-block">⌛</div>
+        </div>
+    </form>
+    <div id="focused-search-results" class="mt-3 text-sm">
+        {% if results %}
+        {% for r in results %}
+        <p class="text-green-600 dark:text-green-400">{{ r }}</p>
+        {% endfor %}
+        {% endif %}
+    </div>
+</div>

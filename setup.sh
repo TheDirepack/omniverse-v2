@@ -43,12 +43,12 @@ else
     echo ".env.local already exists."
 fi
 
-if [ ! -f "$BASE_DIR/tests/provider_config.py" ]; then
+if [ ! -f "$BASE_DIR/backend/tests/provider_config.py" ]; then
     echo "Creating test provider configuration..."
-    cp "$BASE_DIR/tests/provider_config.py.example" "$BASE_DIR/tests/provider_config.py"
-    echo "⚠️  PLEASE EDIT tests/provider_config.py and add your API keys for live provider tests"
+    cp "$BASE_DIR/backend/tests/provider_config.py.example" "$BASE_DIR/backend/tests/provider_config.py"
+    echo "⚠️  PLEASE EDIT backend/tests/provider_config.py and add your API keys for live provider tests"
 else
-    echo "tests/provider_config.py already exists."
+    echo "backend/tests/provider_config.py already exists."
 fi
 
 echo "✅ Setup complete!"

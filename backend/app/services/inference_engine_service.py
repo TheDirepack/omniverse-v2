@@ -1,8 +1,9 @@
-import json
-from typing import List, Optional, Sequence
+from collections.abc import Sequence
+
 from sqlmodel import Session
+
+from app.db.schema import Claim, InferredClaim
 from app.db.session import engine
-from app.db.schema import InferredClaim, Claim
 from app.repositories.inference import InferenceRepository
 from app.repositories.settings import SettingsRepository
 
@@ -17,7 +18,7 @@ class InferenceEngineService:
     # predicates actually connect. Universe-specific meaning lives only in
     # the data (Entity.name, Entity.universe_id), never in this code.
 
-    def __init__(self, session: Optional[Session] = None):
+    def __init__(self, session: Session | None = None):
         # Per 5f45596: no eager session at construction time.
         self.session = session
 
@@ -25,10 +26,12 @@ class InferenceEngineService:
         session = self.session or Session(engine)
         try:
             setting = SettingsRepository(session).get_setting("max_composition_depth")
-            try:
-                return int(setting.value) if setting and setting.value else DEFAULT_MAX_DEPTH
-            except ValueError:
-                return DEFAULT_MAX_DEPTH
+            if setting and setting.value:
+                try:
+                    return int(setting.value)
+                except ValueError:
+                    return DEFAULT_MAX_DEPTH
+            return DEFAULT_MAX_DEPTH
         finally:
             if not self.session:
                 session.close()
@@ -38,12 +41,15 @@ class InferenceEngineService:
             raise ValueError("max_composition_depth must be at least 1")
         session = self.session or Session(engine)
         try:
-            SettingsRepository(session).upsert_setting("max_composition_depth", str(depth))
+            SettingsRepository(session).upsert_setting(
+                "max_composition_depth", str(depth)
+            )
+            session.commit()
         finally:
             if not self.session:
                 session.close()
 
-    def materialize_inferred_claims(self) -> List[InferredClaim]:
+    def materialize_inferred_claims(self) -> list[InferredClaim]:
         """
         Manual-trigger pass: for each APPROVED+human_approved compose rule,
         walk 2-hop chains (subject -p1-> mid -p2-> object) and materialize the
@@ -58,24 +64,30 @@ class InferenceEngineService:
             # depth 1 means "no composition at all" -- a single asserted
             # claim isn't an inference, so there is nothing to materialize.
             return []
-        
+
         session = self.session or Session(engine)
         try:
             repo = InferenceRepository(session)
             approved_rules = list(repo.get_approved_rules())
-            created: List[InferredClaim] = []
-    
+            created: list[InferredClaim] = []
+
             # Depth 2: direct composition over asserted Claims.
             for rule in approved_rules:
                 first_hop = repo.get_claims_by_predicate(rule.predicate_1)
                 for c1 in first_hop:
-                    mid_id = c1.object_entity_id if c1.object_entity_id else c1.subject_id # fallback but should be object_entity_id
-                    second_hops = repo.find_claims_with_subject_predicate(mid_id, rule.predicate_2)
+                    mid_id = (
+                        c1.object_entity_id if c1.object_entity_id else c1.subject_id
+                    )  # fallback but should be object_entity_id
+                    second_hops = repo.find_claims_with_subject_predicate(
+                        mid_id, rule.predicate_2
+                    )
                     for c2 in second_hops:
-                        ic = self._materialize_edge(repo, rule.id, rule.implied_predicate, c1, c2)
+                        ic = self._materialize_edge(
+                            repo, rule.id, rule.implied_predicate, c1, c2
+                        )
                         if ic:
                             created.append(ic)
-    
+
             # Depth > 2: compose an InferredClaim (as the "first hop") with a
             # further asserted Claim, one additional hop per iteration,
             # bounded by max_depth.
@@ -87,64 +99,97 @@ class InferenceEngineService:
                     for ic in frontier:
                         if ic.predicate != rule.predicate_1:
                             continue
-                        second_hops = repo.find_claims_with_subject_predicate(ic.object_id, rule.predicate_2)
+                        second_hops = repo.find_claims_with_subject_predicate(
+                            ic.object_id, rule.predicate_2
+                        )
                         for c2 in second_hops:
-                            new_ic = self._materialize_edge_from_inferred(repo, rule.id, rule.implied_predicate, ic, c2)
+                            new_ic = self._materialize_edge_from_inferred(
+                                repo, rule.id, rule.implied_predicate, ic, c2
+                            )
                             if new_ic:
                                 next_frontier.append(new_ic)
                 created.extend(next_frontier)
                 frontier = next_frontier
                 current_depth += 1
-    
-            # Each commit() inside the loops above expires ALL previously
-            # loaded objects in this session (default SQLAlchemy behavior),
-            # not just the row just committed. Re-refresh everything here,
-            # as the last thing done before the session closes, so callers
-            # can safely read attributes off the returned objects afterward
-            # instead of hitting DetachedInstanceError.
+
+            # Refresh all created objects so callers can safely read
+            # attributes without hitting DetachedInstanceError.
             for ic in created:
                 session.refresh(ic)
-    
+
+            session.commit()
             return created
         finally:
             if not self.session:
                 session.close()
 
-
-    def _materialize_edge(self, repo: InferenceRepository, rule_id: int, implied_predicate: str, c1: Claim, c2: Claim) -> Optional[InferredClaim]:
+    def _materialize_edge(
+        self,
+        repo: InferenceRepository,
+        rule_id: int,
+        implied_predicate: str,
+        c1: Claim,
+        c2: Claim,
+    ) -> InferredClaim | None:
         obj_id = c2.object_entity_id if c2.object_entity_id else c2.subject_id
+        assert obj_id is not None
         existing = repo.get_inferred_claim(c1.subject_id, implied_predicate, obj_id)
         if existing:
             return None  # already materialized, skip
-        contradicts_id = self._find_contradiction(repo, c1.subject_id, implied_predicate, obj_id)
+        contradicts_id = self._find_contradiction(
+            repo, c1.subject_id, implied_predicate, obj_id
+        )
         ic = InferredClaim(
             subject_id=c1.subject_id,
             predicate=implied_predicate,
             object_id=obj_id,
             derived_from_rule_id=rule_id,
-            path_claim_ids=json.dumps([c1.id, c2.id]),
             contradicts_claim_id=contradicts_id,
         )
-        return repo.create_inferred_claim(ic)
+        res = repo.create_inferred_claim(ic)
+        repo.session.flush()  # Need ID
+        repo.add_inferred_claim_paths(res.id, [c1.id, c2.id])
+        return res
 
-    def _materialize_edge_from_inferred(self, repo: InferenceRepository, rule_id: int, implied_predicate: str, ic_prev: InferredClaim, c2: Claim) -> Optional[InferredClaim]:
+    def _materialize_edge_from_inferred(
+        self,
+        repo: InferenceRepository,
+        rule_id: int,
+        implied_predicate: str,
+        ic_prev: InferredClaim,
+        c2: Claim,
+    ) -> InferredClaim | None:
         obj_id = c2.object_entity_id if c2.object_entity_id else c2.subject_id
-        existing = repo.get_inferred_claim(ic_prev.subject_id, implied_predicate, obj_id)
+        assert obj_id is not None
+        existing = repo.get_inferred_claim(
+            ic_prev.subject_id, implied_predicate, obj_id
+        )
         if existing:
             return None
-        contradicts_id = self._find_contradiction(repo, ic_prev.subject_id, implied_predicate, obj_id)
-        prev_path = json.loads(ic_prev.path_claim_ids)
+        contradicts_id = self._find_contradiction(
+            repo, ic_prev.subject_id, implied_predicate, obj_id
+        )
+        prev_path = repo.get_inferred_claim_paths(ic_prev.id)
         ic = InferredClaim(
             subject_id=ic_prev.subject_id,
             predicate=implied_predicate,
             object_id=obj_id,
             derived_from_rule_id=rule_id,
-            path_claim_ids=json.dumps(prev_path + [c2.id]),
             contradicts_claim_id=contradicts_id,
         )
-        return repo.create_inferred_claim(ic)
+        res = repo.create_inferred_claim(ic)
+        session = repo.session
+        session.flush()  # Need ID
+        repo.add_inferred_claim_paths(res.id, [*prev_path, c2.id])
+        return res
 
-    def _find_contradiction(self, repo: InferenceRepository, subject_id: int, predicate: str, object_id: int) -> Optional[int]:
+    def _find_contradiction(
+        self,
+        repo: InferenceRepository,
+        subject_id: int,
+        predicate: str,
+        object_id: int,
+    ) -> int | None:
         """
         Structural check only: same subject+predicate, different object.
         This is a FLAG for semantic review, never an auto-resolution — a
@@ -153,7 +198,11 @@ class InferenceEngineService:
         """
         existing_claims = repo.find_claims_with_subject_predicate(subject_id, predicate)
         for existing in existing_claims:
-            existing_obj_id = existing.object_entity_id if existing.object_entity_id else existing.subject_id
+            existing_obj_id = (
+                existing.object_entity_id
+                if existing.object_entity_id
+                else existing.subject_id
+            )
             if existing_obj_id != object_id:
                 return existing.id
         return None

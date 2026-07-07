@@ -1,0 +1,59 @@
+<div class="route-slot flex items-center gap-2 p-2 rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800"
+     draggable="true"
+     data-route-id="{{ route.id }}">
+    <span class="drag-handle cursor-grab text-gray-400 hover:text-gray-600 text-sm select-none" title="Drag to reorder">⠿</span>
+
+    <input type="hidden" name="route_id" value="{{ route.id }}">
+    <input type="hidden" name="task_type" value="{{ route.task_type }}">
+
+    <select name="provider_id" class="provider-select text-xs border rounded px-2 py-1 bg-white dark:bg-gray-800 w-40">
+        <option value="">Select Provider</option>
+        {% for prov in providers %}
+        <option value="{{ prov.id }}" data-models="{{ prov.models or '' }}"
+                {{ 'selected' if route.provider_id == prov.id else '' }}>
+            {{ prov.name }}
+        </option>
+        {% endfor %}
+    </select>
+
+    <div class="flex-1 flex items-center gap-1 flex-wrap min-w-0">
+        <div class="model-tags flex items-center gap-1 flex-wrap">
+            {% if route.models %}
+            {% for m in route.models.split(',') %}
+            {% set model = m.strip() %}
+            {% if model %}
+            <span class="model-tag inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200"
+                  data-model="{{ model }}">
+                {{ model }}
+                <button type="button" class="tag-remove text-blue-500 hover:text-red-500 font-bold leading-none" onclick="removeModelTag(this)">×</button>
+            </span>
+            {% endif %}
+            {% endfor %}
+            {% endif %}
+        </div>
+        <select class="model-selector text-xs border rounded px-1 py-1 bg-white dark:bg-gray-800"
+                onchange="addModelTag(this)">
+            <option value="">+ Add Model</option>
+        </select>
+    </div>
+
+    <input type="hidden" name="models" class="models-input" value="{{ route.models or '' }}">
+    <input type="hidden" name="priority" value="{{ route.priority or 0 }}">
+
+    <div class="flex items-center gap-1 shrink-0">
+        <button type="button" class="text-xs px-2 py-1 rounded bg-green-100 text-green-700 hover:bg-green-200 dark:bg-green-900 dark:text-green-300"
+                hx-post="/settings/routes/upsert"
+                hx-target="#settings-content"
+                hx-swap="innerHTML"
+                hx-include="closest .route-slot">
+            Save
+        </button>
+        <button type="button" class="text-xs px-2 py-1 rounded bg-red-100 text-red-700 hover:bg-red-200 dark:bg-red-900 dark:text-red-300"
+                hx-post="/settings/routes/{{ route.id }}/delete"
+                hx-target="#settings-content"
+                hx-swap="innerHTML"
+                hx-confirm="Delete this route step?">
+            ×
+        </button>
+    </div>
+</div>

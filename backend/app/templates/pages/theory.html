@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+
+{% block title %}Theories - Omniverse{% endblock %}
+
+{% block content %}
+<div class="space-y-8">
+    <h1 class="text-3xl font-bold">Theories</h1>
+
+    <div class="grid grid-cols-1 gap-6">
+        {% for theory in theories %}
+            {% include "fragments/theory_card.html" %}
+        {% else %}
+            <p class="text-gray-500 italic">No theories found.</p>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,28 @@
+# Fill in API keys or base URLs to enable live provider model tests.
+# Unconfigured providers are skipped with a warning.
+# Run: python -m pytest backend/tests/ -v --tb=short -m "slow" -rs
+#
+# Copy to provider_config.py (same directory) and fill out credentials.
+# provider_config.py is in .gitignore — your keys stay local.
+
+PROVIDER_CREDENTIALS = {
+    "openai": {"api_key": "", "base_url": None, "model": ""},
+    "anthropic": {"api_key": "", "base_url": None, "model": ""},
+    "gemini": {"api_key": "", "base_url": None, "model": "Gemma-4-26B"},
+    "ollama": {
+        "api_key": None,
+        "base_url": "",
+        "model": "",
+    },
+    "groq": {
+        "api_key": "",
+        "base_url": None,
+        "model": "mixtral-8x7b-32768",
+    },
+    "openrouter": {"api_key": "", "base_url": None, "model": ""},
+    "custom": {
+        "api_key": None,
+        "base_url": "http://localhost:8000/v1",
+        "model": "bartowski/Llama-3.2-1B-Instruct-GGUF:Q4_K_M",
+    },
+}

@@ -1,0 +1,58 @@
+<div class="space-y-4">
+    <h2 class="text-xl font-semibold">Create Custom World</h2>
+
+    {% if created %}
+    <div class="bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300 px-4 py-2 rounded text-sm">
+        ✅ Created "{{ created }}" successfully.
+    </div>
+    {% endif %}
+
+    <form hx-post="/worlds/create"
+          hx-target="#worlds-content"
+          hx-swap="innerHTML"
+          class="grid grid-cols-2 gap-4">
+        <div class="col-span-2">
+            <label class="block text-sm font-medium mb-1">Name *</label>
+            <input type="text" name="name" required
+                   class="w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+        </div>
+        <div>
+            <label class="block text-sm font-medium mb-1">Franchise</label>
+            <input type="text" name="franchise"
+                   class="w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+        </div>
+        <div>
+            <label class="block text-sm font-medium mb-1">Category</label>
+            <input type="text" name="category"
+                   class="w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                   placeholder="Science Fantasy, Space Opera...">
+        </div>
+        <div>
+            <label class="block text-sm font-medium mb-1">Continuity</label>
+            <input type="text" name="continuity"
+                   class="w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                   placeholder="Games, Anime, Movies...">
+        </div>
+        <div>
+            <label class="block text-sm font-medium mb-1">Era</label>
+            <input type="text" name="era"
+                   class="w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+        </div>
+        <div>
+            <label class="block text-sm font-medium mb-1">Parent World</label>
+            <select name="parent_id"
+                    class="w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <option value="">None (top-level)</option>
+                {% for parent in parents %}
+                <option value="{{ parent.id }}">{{ parent.name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-span-2">
+            <button type="submit"
+                    class="bg-blue-600 text-white px-6 py-2 rounded text-sm hover:bg-blue-700 transition">
+                Create World
+            </button>
+        </div>
+    </form>
+</div>

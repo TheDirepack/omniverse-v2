@@ -1,0 +1,310 @@
+<div class="space-y-4" id="routes-container">
+    <h2 class="text-xl font-semibold">Agent Route Fallback Chain</h2>
+    <p class="text-sm text-gray-500 dark:text-gray-400">
+        Each agent tries its fallback chain top to bottom: provider → its keys in order → its models in order.
+        If everything fails, the run fails that step. Agents without their own chain use the DEFAULT chain.
+    </p>
+
+    {% set default_routes = agent_routes|selectattr("task_type", "equalto", "DEFAULT")|list|sort(attribute="priority") %}
+    {% set default_count = default_routes|length %}
+
+    <div class="routing-card border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 overflow-hidden"
+         data-agent-name="DEFAULT" data-expanded="true">
+        <div class="routing-card-header flex items-center justify-between px-4 py-3 bg-gray-50 dark:bg-gray-900 cursor-pointer select-none"
+             onclick="toggleCard(this)">
+            <div class="flex items-center gap-3">
+                <span class="font-semibold text-sm">DEFAULT</span>
+                <span class="text-xs text-gray-500">{{ default_count }} step(s)</span>
+            </div>
+            <span class="expand-icon text-xs text-gray-400">▲</span>
+        </div>
+        <div class="routing-card-body px-4 py-3 space-y-3"
+             style="display:block">
+            {% if default_routes %}
+            <div class="route-slots space-y-2">
+                {% for route in default_routes %}
+                {% include "fragments/_route_slot.html" %}
+                {% endfor %}
+            </div>
+            {% else %}
+            <p class="text-xs text-gray-400 italic">No DEFAULT routes configured. Add one below.</p>
+            {% endif %}
+
+            <button class="text-xs text-blue-600 hover:text-blue-800 font-medium"
+                    onclick="addRouteSlot(this, 'DEFAULT', {{ default_count }})">
+                + Add Provider Step
+            </button>
+
+            {% if default_routes %}
+            <hr class="border-gray-200 dark:border-gray-700">
+            {% set resolved = compute_resolved_fallback(default_routes, providers) %}
+            <details class="text-xs">
+                <summary class="cursor-pointer text-gray-500 hover:text-gray-700 font-medium">Resolved Fallback Order ({{ resolved|length }})</summary>
+                <ol class="mt-2 space-y-1 list-decimal list-inside text-gray-600 dark:text-gray-400">
+                    {% for item in resolved %}
+                    <li>{{ item.provider }} → {{ item.key_label }} → {{ item.model }}</li>
+                    {% endfor %}
+                </ol>
+            </details>
+            {% endif %}
+        </div>
+    </div>
+
+    <hr class="border-gray-200 dark:border-gray-700">
+
+    {% for name in agent_names %}
+    {% set agent_routes_for = agent_routes|selectattr("task_type", "equalto", name)|list|sort(attribute="priority") %}
+    {% set has_custom = agent_routes_for|length > 0 %}
+    {% set status_text = has_custom and agent_routes_for|length ~ " custom step(s)" or "Using DEFAULT (" ~ default_count ~ " step(s))" %}
+
+    <div class="routing-card border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 overflow-hidden"
+         data-agent-name="{{ name }}">
+        <div class="routing-card-header flex items-center justify-between px-4 py-3 bg-gray-50 dark:bg-gray-900 cursor-pointer select-none"
+             onclick="toggleCard(this)">
+            <div class="flex items-center gap-3">
+                <span class="font-semibold text-sm">{{ name }}</span>
+                <span class="text-xs text-gray-500">{{ status_text }}</span>
+            </div>
+            <div class="flex items-center gap-2">
+                {% if not has_custom and default_count > 0 %}
+                <button class="text-xs px-2 py-1 rounded bg-blue-100 text-blue-700 hover:bg-blue-200 dark:bg-blue-900 dark:text-blue-300"
+                        hx-post="/settings/routes/{{ name }}/override"
+                        hx-target="#settings-content"
+                        hx-swap="innerHTML"
+                        onclick="event.stopPropagation()">
+                    Override
+                </button>
+                {% endif %}
+                <span class="expand-icon text-xs text-gray-400">▼</span>
+            </div>
+        </div>
+        <div class="routing-card-body px-4 py-3 space-y-3" style="display:none">
+            {% if has_custom %}
+            <div class="route-slots space-y-2">
+                {% for route in agent_routes_for %}
+                {% include "fragments/_route_slot.html" %}
+                {% endfor %}
+            </div>
+            {% endif %}
+
+            <button class="text-xs text-blue-600 hover:text-blue-800 font-medium"
+                    onclick="addRouteSlot(this, '{{ name }}', {{ agent_routes_for|length }})">
+                + Add Provider Step
+            </button>
+
+            {% set resolved_routes = has_custom and agent_routes_for or default_routes %}
+            {% if resolved_routes %}
+            <hr class="border-gray-200 dark:border-gray-700">
+            {% set resolved = compute_resolved_fallback(resolved_routes, providers) %}
+            <details class="text-xs">
+                <summary class="cursor-pointer text-gray-500 hover:text-gray-700 font-medium">Resolved Fallback Order ({{ resolved|length }})</summary>
+                <ol class="mt-2 space-y-1 list-decimal list-inside text-gray-600 dark:text-gray-400">
+                    {% for item in resolved %}
+                    <li>{{ item.provider }} → {{ item.key_label }} → {{ item.model }}</li>
+                    {% endfor %}
+                </ol>
+            </details>
+            {% endif %}
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+<script>
+(function() {
+    // Restore expanded card states after HTMX swap
+    function restoreCardStates() {
+        var expanded = JSON.parse(sessionStorage.getItem('routingExpanded') || '[]');
+        document.querySelectorAll('#routes-container .routing-card').forEach(function(card) {
+            var name = card.dataset.agentName;
+            var body = card.querySelector('.routing-card-body');
+            var icon = card.querySelector('.expand-icon');
+            if (!body || !icon) return;
+            if (name === 'DEFAULT') {
+                body.style.display = 'block';
+                icon.textContent = '\u25b2';
+            } else if (name && expanded.indexOf(name) !== -1) {
+                body.style.display = 'block';
+                icon.textContent = '\u25b2';
+            }
+        });
+        initDragDrop();
+        initModelSelectors();
+    }
+
+    // Card toggle
+    window.toggleCard = function(header) {
+        var card = header.closest('.routing-card');
+        var body = card.querySelector('.routing-card-body');
+        var icon = header.querySelector('.expand-icon');
+        if (!body || !icon) return;
+        var isOpen = body.style.display !== 'none';
+        body.style.display = isOpen ? 'none' : 'block';
+        icon.textContent = isOpen ? '\u25bc' : '\u25b2';
+        var name = card.dataset.agentName;
+        if (name && name !== 'DEFAULT') {
+            var expanded = JSON.parse(sessionStorage.getItem('routingExpanded') || '[]');
+            if (isOpen) {
+                expanded = expanded.filter(function(n) { return n !== name; });
+            } else {
+                if (expanded.indexOf(name) === -1) expanded.push(name);
+            }
+            sessionStorage.setItem('routingExpanded', JSON.stringify(expanded));
+        }
+    };
+
+    // Drag-drop
+    function initDragDrop() {
+        document.querySelectorAll('#routes-container .route-slot[draggable="true"]').forEach(function(slot) {
+            slot.addEventListener('dragstart', handleDragStart);
+            slot.addEventListener('dragover', handleDragOver);
+            slot.addEventListener('drop', handleDrop);
+            slot.addEventListener('dragend', handleDragEnd);
+        });
+    }
+
+    function handleDragStart(e) {
+        e.dataTransfer.setData('text/plain', e.target.dataset.routeId || '');
+        e.target.classList.add('opacity-50', 'border-blue-400');
+    }
+
+    function handleDragOver(e) {
+        e.preventDefault();
+        var slot = e.target.closest('.route-slot');
+        if (!slot || slot.classList.contains('opacity-50')) return;
+        var rect = slot.getBoundingClientRect();
+        var mid = rect.top + rect.height / 2;
+        var parent = slot.parentElement;
+        var dragged = parent.querySelector('.opacity-50');
+        if (!dragged) return;
+        if (e.clientY < mid) {
+            parent.insertBefore(dragged, slot);
+        } else {
+            parent.insertBefore(dragged, slot.nextSibling);
+        }
+    }
+
+    function handleDrop(e) {
+        e.preventDefault();
+        var card = e.target.closest('.routing-card');
+        if (!card) return;
+        var routeIds = [];
+        card.querySelectorAll('.route-slot').forEach(function(slot) {
+            var id = parseInt(slot.dataset.routeId);
+            if (!isNaN(id)) routeIds.push(id);
+        });
+        if (routeIds.length > 0 && typeof htmx !== 'undefined') {
+            htmx.ajax('POST', '/settings/routes/reorder', {
+                values: { route_ids: JSON.stringify(routeIds) },
+                target: '#settings-content',
+                swap: 'innerHTML'
+            });
+        }
+    }
+
+    function handleDragEnd(e) {
+        e.target.classList.remove('opacity-50', 'border-blue-400');
+    }
+
+    // Model tag management
+    function initModelSelectors() {
+        document.querySelectorAll('#routes-container .provider-select').forEach(function(sel) {
+            sel.addEventListener('change', function() {
+                updateModelOptions(this);
+            });
+            updateModelOptions(sel);
+        });
+    }
+
+    function updateModelOptions(select) {
+        var slot = select.closest('.route-slot');
+        var modelSelect = slot.querySelector('.model-selector');
+        if (!modelSelect) return;
+        var providerId = select.value;
+        modelSelect.innerHTML = '<option value="">+ Add Model</option>';
+        if (!providerId) return;
+        var option = select.querySelector('option[value="' + providerId + '"]');
+        if (!option) return;
+        var modelsStr = option.dataset.models || '';
+        modelsStr.split(',').forEach(function(m) {
+            m = m.trim();
+            if (m) {
+                var opt = document.createElement('option');
+                opt.value = m;
+                opt.textContent = m;
+                modelSelect.appendChild(opt);
+            }
+        });
+    }
+
+    window.addModelTag = function(select) {
+        var model = select.value;
+        if (!model) return;
+        var slot = select.closest('.route-slot');
+        var hiddenInput = slot.querySelector('.models-input');
+        var tagsContainer = slot.querySelector('.model-tags');
+        if (!hiddenInput || !tagsContainer) return;
+        var models = hiddenInput.value ? hiddenInput.value.split(',').map(function(m) { return m.trim(); }).filter(Boolean) : [];
+        if (models.indexOf(model) === -1) {
+            models.push(model);
+            hiddenInput.value = models.join(',');
+            renderModelTags(tagsContainer, models, hiddenInput);
+        }
+        select.value = '';
+    };
+
+    window.removeModelTag = function(btn) {
+        var tag = btn.closest('.model-tag');
+        if (!tag) return;
+        var model = tag.dataset.model;
+        var slot = tag.closest('.route-slot');
+        var hiddenInput = slot.querySelector('.models-input');
+        var tagsContainer = slot.querySelector('.model-tags');
+        if (!hiddenInput || !tagsContainer) return;
+        var models = hiddenInput.value ? hiddenInput.value.split(',').map(function(m) { return m.trim(); }).filter(Boolean) : [];
+        models = models.filter(function(m) { return m !== model; });
+        hiddenInput.value = models.join(',');
+        renderModelTags(tagsContainer, models, hiddenInput);
+    };
+
+    function renderModelTags(container, models, hiddenInput) {
+        container.innerHTML = '';
+        models.forEach(function(m) {
+            var span = document.createElement('span');
+            span.className = 'model-tag inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200';
+            span.dataset.model = m;
+            span.innerHTML = m + ' <button type="button" class="tag-remove text-blue-500 hover:text-red-500 font-bold leading-none" onclick="removeModelTag(this)">\u00d7</button>';
+            container.appendChild(span);
+        });
+    }
+
+    window.addRouteSlot = function(btn, taskType, nextPriority) {
+        var card = btn.closest('.routing-card');
+        var slotsContainer = card.querySelector('.route-slots');
+        if (typeof htmx === 'undefined') return;
+        htmx.ajax('POST', '/settings/routes/upsert', {
+            values: {
+                task_type: taskType,
+                provider_id: '',
+                models: '',
+                priority: nextPriority,
+                route_id: ''
+            },
+            target: '#settings-content',
+            swap: 'innerHTML'
+        });
+    };
+
+    // Restore on load and after HTMX swaps
+    document.addEventListener('htmx:afterSwap', function(evt) {
+        if (evt.detail.target && evt.detail.target.id === 'settings-content') {
+            restoreCardStates();
+        }
+    });
+
+    // Initial load
+    if (document.getElementById('settings-content')) {
+        restoreCardStates();
+    }
+})();
+</script>

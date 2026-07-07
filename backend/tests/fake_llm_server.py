@@ -1,6 +1,7 @@
 import os
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Header, Request
+
+from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
@@ -13,6 +14,7 @@ async def lifespan(app: FastAPI):
     if env_bad:
         _bad_keys.update(k for k in env_bad.split(",") if k)
     yield
+
 
 app = FastAPI(lifespan=lifespan)
 
@@ -48,24 +50,31 @@ async def chat_completions(path: str, request: Request):
         pass
 
     if key in _bad_keys:
-        return JSONResponse({
-            "error": "simulated auth failure",
-            "key_preview": key[:12],
-            "requested_model": model_hint,
-        }, status_code=401)
+        return JSONResponse(
+            {
+                "error": "simulated auth failure",
+                "key_preview": key[:12],
+                "requested_model": model_hint,
+            },
+            status_code=401,
+        )
 
-    return JSONResponse({
-        "id": "fake-cmpl",
-        "object": "chat.completion",
-        "created": 1234567890,
-        "model": model_hint or "unknown",
-        "choices": [{
-            "index": 0,
-            "message": {"role": "assistant", "content": f"ok:{key[:12]}"},
-            "finish_reason": "stop",
-        }],
-        "usage": {"prompt_tokens": 5, "completion_tokens": 5, "total_tokens": 10},
-    })
+    return JSONResponse(
+        {
+            "id": "fake-cmpl",
+            "object": "chat.completion",
+            "created": 1234567890,
+            "model": model_hint or "unknown",
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {"role": "assistant", "content": f"ok:{key[:12]}"},
+                    "finish_reason": "stop",
+                }
+            ],
+            "usage": {"prompt_tokens": 5, "completion_tokens": 5, "total_tokens": 10},
+        }
+    )
 
 
 @app.get("/health")

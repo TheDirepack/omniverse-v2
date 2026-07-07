@@ -1,6 +1,7 @@
-from typing import Any, List, Tuple
+from typing import Any
 
-def validate_research_json(data: Any) -> Tuple[bool, List[str]]:
+
+def validate_research_json(data: Any) -> tuple[bool, list[str]]:
     """
     Validates research JSON against the expected schema and checks for required fields and citations.
     Returns (is_valid, errors).
@@ -11,7 +12,14 @@ def validate_research_json(data: Any) -> Tuple[bool, List[str]]:
     errors = []
 
     # Required root keys
-    required_root = ["Universe_Name", "Source_Wikis", "Data_Categories", "Knowledge_Graph", "Missing_Info", "Provisional_Conclusions"]
+    required_root = [
+        "Universe_Name",
+        "Source_Wikis",
+        "Data_Categories",
+        "Knowledge_Graph",
+        "Missing_Info",
+        "Provisional_Conclusions",
+    ]
     for key in required_root:
         if key not in data:
             errors.append(f"Missing root key: {key}")
@@ -25,10 +33,18 @@ def validate_research_json(data: Any) -> Tuple[bool, List[str]]:
             if not isinstance(cat, dict):
                 errors.append(f"Category {i} must be an object")
                 continue
-            
-            if "Category" not in cat or cat["Category"] not in ["Hard Tech", "Soft Tech", "Magic System", "Cosmology", "Other"]:
-                errors.append(f"Category {i} must have a valid 'Category' (Hard Tech | Soft Tech | Magic System | Cosmology | Other)")
-            
+
+            if "Category" not in cat or cat["Category"] not in [
+                "Hard Tech",
+                "Soft Tech",
+                "Magic System",
+                "Cosmology",
+                "Other",
+            ]:
+                errors.append(
+                    f"Category {i} must have a valid 'Category' (Hard Tech | Soft Tech | Magic System | Cosmology | Other)"
+                )
+
             items = cat.get("Items", [])
             if not isinstance(items, list):
                 errors.append(f"Items in category {i} must be a list")
@@ -37,22 +53,39 @@ def validate_research_json(data: Any) -> Tuple[bool, List[str]]:
                     if not isinstance(item, dict):
                         errors.append(f"Item {j} in category {i} must be an object")
                         continue
-                    
+
                     # Required item keys
-                    required_item = ["Name", "Detail", "Canon_Status", "Reference", "Wiki_Source"]
+                    required_item = [
+                        "Name",
+                        "Detail",
+                        "Canon_Status",
+                        "Reference",
+                        "Wiki_Source",
+                    ]
                     for r_key in required_item:
                         if r_key not in item:
-                            errors.append(f"Item {j} in category {i} missing key: {r_key}")
-                    
+                            errors.append(
+                                f"Item {j} in category {i} missing key: {r_key}"
+                            )
+
                     # Canon_Status validation
                     status = item.get("Canon_Status")
-                    if status and status not in ["Verified", "Unverified", "Fanon", "Unclear"]:
-                        errors.append(f"Item {j} in category {i} has invalid Canon_Status: {status}")
-                    
+                    if status and status not in [
+                        "Verified",
+                        "Unverified",
+                        "Fanon",
+                        "Unclear",
+                    ]:
+                        errors.append(
+                            f"Item {j} in category {i} has invalid Canon_Status: {status}"
+                        )
+
                     # Reference validation: "url: section/line"
                     ref = item.get("Reference", "")
                     if not ref or not isinstance(ref, str) or ":" not in ref:
-                        errors.append(f"Item {j} in category {i} has invalid Reference format. Expected 'url: section/line'")
+                        errors.append(
+                            f"Item {j} in category {i} has invalid Reference format. Expected 'url: section/line'"
+                        )
 
     # Validate Knowledge_Graph
     graph = data.get("Knowledge_Graph", [])
@@ -74,14 +107,20 @@ def validate_research_json(data: Any) -> Tuple[bool, List[str]]:
     else:
         for i, conc in enumerate(conclusions):
             if not isinstance(conc, dict):
-                errors.append(f"Conclusion {i} in Provisional_Conclusions must be an object")
+                errors.append(
+                    f"Conclusion {i} in Provisional_Conclusions must be an object"
+                )
                 continue
             for r_key in ["Conclusion", "Reasoning", "Confidence", "Verification_Need"]:
                 if r_key not in conc:
-                    errors.append(f"Conclusion {i} in Provisional_Conclusions missing key: {r_key}")
-            
+                    errors.append(
+                        f"Conclusion {i} in Provisional_Conclusions missing key: {r_key}"
+                    )
+
             conf = conc.get("Confidence")
             if conf and conf not in ["Low", "Medium", "High"]:
-                errors.append(f"Conclusion {i} in Provisional_Conclusions has invalid Confidence: {conf}")
+                errors.append(
+                    f"Conclusion {i} in Provisional_Conclusions has invalid Confidence: {conf}"
+                )
 
     return len(errors) == 0, errors

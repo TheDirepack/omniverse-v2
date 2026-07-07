@@ -1,10 +1,11 @@
 import uuid
-from fastapi import APIRouter, HTTPException, BackgroundTasks
-from typing import Optional
+
+from fastapi import APIRouter, BackgroundTasks, HTTPException
 from pydantic import BaseModel, Field
+
 from app.core.runtime_state import add_active_run, remove_run
-from app.services.inference_rule_service import InferenceRuleService
 from app.services.inference_engine_service import InferenceEngineService
+from app.services.inference_rule_service import InferenceRuleService
 
 router = APIRouter(prefix="/inference", tags=["inference"])
 
@@ -35,7 +36,7 @@ def trigger_rule_proposal(background_tasks: BackgroundTasks):
 
 
 @router.get("/rules")
-def list_rules(status: Optional[str] = None):
+def list_rules(status: str | None = None):
     service = InferenceRuleService()
     if status:
         return service.get_rules_by_status(status)

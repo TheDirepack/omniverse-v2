@@ -1,11 +1,12 @@
 """
 Offline, mocked unit tests for core/provider_models.py
 """
-import pytest
-from unittest.mock import AsyncMock, patch, MagicMock
 
-from app.db.schema import ProviderConfig, ProviderKey
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 from app.core.provider_models import fetch_live_models
+from app.db.schema import ProviderConfig
 
 
 @pytest.fixture
@@ -24,16 +25,15 @@ class TestFetchLiveModelsMocked:
         """Test parser for standard OpenAI compat JSON format."""
         mock_response = MagicMock()
         mock_response.json.return_value = {
-            "data": [
-                {"id": "gpt-4"},
-                {"id": "gpt-3.5-turbo"}
-            ]
+            "data": [{"id": "gpt-4"}, {"id": "gpt-3.5-turbo"}]
         }
         mock_response.raise_for_status = MagicMock()
 
         # Mock both _get_api_key and httpx.AsyncClient.get
-        with patch("app.core.provider_models._get_api_key", return_value="sk-test-key"), \
-             patch("httpx.AsyncClient.get", new_callable=AsyncMock) as mock_get:
+        with (
+            patch("app.core.provider_models._get_api_key", return_value="sk-test-key"),
+            patch("httpx.AsyncClient.get", new_callable=AsyncMock) as mock_get,
+        ):
             mock_get.return_value = mock_response
 
             models = await fetch_live_models(provider)
@@ -57,13 +57,15 @@ class TestFetchLiveModelsMocked:
             "models": [
                 {"name": "llama3:latest"},
                 {"name": "mistral:latest"},
-                {"name": "phi3"}
+                {"name": "phi3"},
             ]
         }
         mock_response.raise_for_status = MagicMock()
 
-        with patch("app.core.provider_models._get_api_key", return_value=None), \
-             patch("httpx.AsyncClient.get", new_callable=AsyncMock) as mock_get:
+        with (
+            patch("app.core.provider_models._get_api_key", return_value=None),
+            patch("httpx.AsyncClient.get", new_callable=AsyncMock) as mock_get,
+        ):
             mock_get.return_value = mock_response
 
             models = await fetch_live_models(ollama_provider)
@@ -83,13 +85,15 @@ class TestFetchLiveModelsMocked:
             "data": [
                 {"id": "claude-3-opus", "type": "model"},
                 {"id": "claude-3-sonnet", "type": "model"},
-                {"id": "some-other-thing", "type": "not-model"}
+                {"id": "some-other-thing", "type": "not-model"},
             ]
         }
         mock_response.raise_for_status = MagicMock()
 
-        with patch("app.core.provider_models._get_api_key", return_value="ant-key"), \
-             patch("httpx.AsyncClient.get", new_callable=AsyncMock) as mock_get:
+        with (
+            patch("app.core.provider_models._get_api_key", return_value="ant-key"),
+            patch("httpx.AsyncClient.get", new_callable=AsyncMock) as mock_get,
+        ):
             mock_get.return_value = mock_response
 
             models = await fetch_live_models(anthropic_provider)
@@ -110,13 +114,15 @@ class TestFetchLiveModelsMocked:
         mock_response.json.return_value = {
             "models": [
                 {"name": "models/gemini-1.5-flash"},
-                {"name": "models/gemini-1.5-pro"}
+                {"name": "models/gemini-1.5-pro"},
             ]
         }
         mock_response.raise_for_status = MagicMock()
 
-        with patch("app.core.provider_models._get_api_key", return_value="gem-key"), \
-             patch("httpx.AsyncClient.get", new_callable=AsyncMock) as mock_get:
+        with (
+            patch("app.core.provider_models._get_api_key", return_value="gem-key"),
+            patch("httpx.AsyncClient.get", new_callable=AsyncMock) as mock_get,
+        ):
             mock_get.return_value = mock_response
 
             models = await fetch_live_models(gemini_provider)
@@ -125,23 +131,31 @@ class TestFetchLiveModelsMocked:
             assert headers["x-goog-api-key"] == "gem-key"
 
     @pytest.mark.asyncio
-    async def test_missing_api_key_for_key_required_provider_returns_empty(self, provider):
-        with patch("app.core.provider_models._get_api_key", return_value=None), \
-             patch("httpx.AsyncClient.get", new_callable=AsyncMock) as mock_get:
+    async def test_missing_api_key_for_key_required_provider_returns_empty(
+        self, provider
+    ):
+        with (
+            patch("app.core.provider_models._get_api_key", return_value=None),
+            patch("httpx.AsyncClient.get", new_callable=AsyncMock) as mock_get,
+        ):
             models = await fetch_live_models(provider)
             assert models == []
             mock_get.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_invalid_provider_type_returns_empty(self):
-        invalid_provider = ProviderConfig(id=99, name="Bad", provider_type="nonexistent")
+        invalid_provider = ProviderConfig(
+            id=99, name="Bad", provider_type="nonexistent"
+        )
         models = await fetch_live_models(invalid_provider)
         assert models == []
 
     @pytest.mark.asyncio
     async def test_http_error_returns_empty(self, provider):
-        with patch("app.core.provider_models._get_api_key", return_value="key"), \
-             patch("httpx.AsyncClient.get", new_callable=AsyncMock) as mock_get:
+        with (
+            patch("app.core.provider_models._get_api_key", return_value="key"),
+            patch("httpx.AsyncClient.get", new_callable=AsyncMock) as mock_get,
+        ):
             mock_get.side_effect = Exception("Connection timeout")
             models = await fetch_live_models(provider)
             assert models == []

@@ -1,7 +1,15 @@
 import json
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
-from unittest.mock import AsyncMock, patch, MagicMock
-from app.db.schema import Universe, Entity, Claim, InferenceRule, ProviderConfig, AgentRouteFallback
+from app.db.schema import (
+    AgentRouteFallback,
+    Claim,
+    Entity,
+    InferenceRule,
+    ProviderConfig,
+    Universe,
+)
 from app.services.inference_rule_service import InferenceRuleService
 
 
@@ -22,7 +30,7 @@ def _make_entity(db, universe_id, name, entity_type="Thing"):
 
 
 def _make_claim(db, subject_id, predicate, object_id):
-    c = Claim(subject_id=subject_id, predicate=predicate, object_id=object_id)
+    c = Claim(subject_id=subject_id, predicate=predicate, object_entity_id=object_id)
     db.add(c)
     db.commit()
     db.refresh(c)
@@ -50,19 +58,31 @@ class TestProposeAndCritique:
         _make_claim(ephemeral_db, a.id, "USES", b.id)
         _make_claim(ephemeral_db, b.id, "GENERATES", c.id)
 
-        proposer_reply = _fake_llm_response({
-            "predicate_1": "USES", "predicate_2": "GENERATES",
-            "implied_predicate": "PRODUCES", "rule_type": "compose",
-            "rationale": "USES then GENERATES composes to a direct production relationship."
-        })
-        critic_blind_reply = _fake_llm_response({
-            "verdict": "APPROVE", "revised_implied_predicate": None,
-            "revised_rule_type": None, "rationale": "Composition looks structurally sound."
-        })
-        critic_final_reply = _fake_llm_response({
-            "verdict": "APPROVE", "revised_implied_predicate": None,
-            "revised_rule_type": None, "rationale": "Rationale confirms my independent judgment."
-        })
+        proposer_reply = _fake_llm_response(
+            {
+                "predicate_1": "USES",
+                "predicate_2": "GENERATES",
+                "implied_predicate": "PRODUCES",
+                "rule_type": "compose",
+                "rationale": "USES then GENERATES composes to a direct production relationship.",
+            }
+        )
+        critic_blind_reply = _fake_llm_response(
+            {
+                "verdict": "APPROVE",
+                "revised_implied_predicate": None,
+                "revised_rule_type": None,
+                "rationale": "Composition looks structurally sound.",
+            }
+        )
+        critic_final_reply = _fake_llm_response(
+            {
+                "verdict": "APPROVE",
+                "revised_implied_predicate": None,
+                "revised_rule_type": None,
+                "rationale": "Rationale confirms my independent judgment.",
+            }
+        )
 
         call_sequence = [
             (proposer_reply, "proposer-model", None),
@@ -70,9 +90,14 @@ class TestProposeAndCritique:
             (critic_final_reply, "critic-model", None),
         ]
 
-        with patch("app.services.inference_rule_service.model_router.call_llm", new=AsyncMock(side_effect=call_sequence)):
-            svc = InferenceRuleService()
-            rule = await svc.propose_and_critique("USES", "GENERATES", run_id="test-run")
+        with patch(
+            "app.services.inference_rule_service.model_router.call_llm",
+            new=AsyncMock(side_effect=call_sequence),
+        ):
+            svc = InferenceRuleService(session=ephemeral_db)
+            rule = await svc.propose_and_critique(
+                "USES", "GENERATES", run_id="test-run"
+            )
 
         assert rule.status == "CRITIQUED"
         assert rule.implied_predicate == "PRODUCES"
@@ -89,28 +114,45 @@ class TestProposeAndCritique:
         _make_claim(ephemeral_db, a.id, "USES", b.id)
         _make_claim(ephemeral_db, b.id, "GENERATES", c.id)
 
-        proposer_reply = _fake_llm_response({
-            "predicate_1": "USES", "predicate_2": "GENERATES",
-            "implied_predicate": "PRODUCES", "rule_type": "compose",
-            "rationale": "Seems plausible."
-        })
-        critic_blind_reply = _fake_llm_response({
-            "verdict": "REJECT", "revised_implied_predicate": None,
-            "revised_rule_type": None, "rationale": "Counterexample: USES does not always imply causal generation."
-        })
-        critic_final_reply = _fake_llm_response({
-            "verdict": "REJECT", "revised_implied_predicate": None,
-            "revised_rule_type": None, "rationale": "Rationale does not address the counterexample."
-        })
+        proposer_reply = _fake_llm_response(
+            {
+                "predicate_1": "USES",
+                "predicate_2": "GENERATES",
+                "implied_predicate": "PRODUCES",
+                "rule_type": "compose",
+                "rationale": "Seems plausible.",
+            }
+        )
+        critic_blind_reply = _fake_llm_response(
+            {
+                "verdict": "REJECT",
+                "revised_implied_predicate": None,
+                "revised_rule_type": None,
+                "rationale": "Counterexample: USES does not always imply causal generation.",
+            }
+        )
+        critic_final_reply = _fake_llm_response(
+            {
+                "verdict": "REJECT",
+                "revised_implied_predicate": None,
+                "revised_rule_type": None,
+                "rationale": "Rationale does not address the counterexample.",
+            }
+        )
         call_sequence = [
             (proposer_reply, "proposer-model", None),
             (critic_blind_reply, "critic-model", None),
             (critic_final_reply, "critic-model", None),
         ]
 
-        with patch("app.services.inference_rule_service.model_router.call_llm", new=AsyncMock(side_effect=call_sequence)):
-            svc = InferenceRuleService()
-            rule = await svc.propose_and_critique("USES", "GENERATES", run_id="test-run")
+        with patch(
+            "app.services.inference_rule_service.model_router.call_llm",
+            new=AsyncMock(side_effect=call_sequence),
+        ):
+            svc = InferenceRuleService(session=ephemeral_db)
+            rule = await svc.propose_and_critique(
+                "USES", "GENERATES", run_id="test-run"
+            )
 
         assert rule.status == "REJECTED"
 
@@ -122,28 +164,45 @@ class TestProposeAndCritique:
         _make_claim(ephemeral_db, a.id, "USES", b.id)
         _make_claim(ephemeral_db, b.id, "GENERATES", c.id)
 
-        proposer_reply = _fake_llm_response({
-            "predicate_1": "USES", "predicate_2": "GENERATES",
-            "implied_predicate": "MAKES", "rule_type": "compose",
-            "rationale": "initial guess"
-        })
-        critic_blind_reply = _fake_llm_response({
-            "verdict": "REVISE", "revised_implied_predicate": "PRODUCES",
-            "revised_rule_type": "compose", "rationale": "MAKES is imprecise, PRODUCES is clearer."
-        })
-        critic_final_reply = _fake_llm_response({
-            "verdict": "REVISE", "revised_implied_predicate": "PRODUCES",
-            "revised_rule_type": "compose", "rationale": "Sticking with my revision."
-        })
+        proposer_reply = _fake_llm_response(
+            {
+                "predicate_1": "USES",
+                "predicate_2": "GENERATES",
+                "implied_predicate": "MAKES",
+                "rule_type": "compose",
+                "rationale": "initial guess",
+            }
+        )
+        critic_blind_reply = _fake_llm_response(
+            {
+                "verdict": "REVISE",
+                "revised_implied_predicate": "PRODUCES",
+                "revised_rule_type": "compose",
+                "rationale": "MAKES is imprecise, PRODUCES is clearer.",
+            }
+        )
+        critic_final_reply = _fake_llm_response(
+            {
+                "verdict": "REVISE",
+                "revised_implied_predicate": "PRODUCES",
+                "revised_rule_type": "compose",
+                "rationale": "Sticking with my revision.",
+            }
+        )
         call_sequence = [
             (proposer_reply, "proposer-model", None),
             (critic_blind_reply, "critic-model", None),
             (critic_final_reply, "critic-model", None),
         ]
 
-        with patch("app.services.inference_rule_service.model_router.call_llm", new=AsyncMock(side_effect=call_sequence)):
-            svc = InferenceRuleService()
-            rule = await svc.propose_and_critique("USES", "GENERATES", run_id="test-run")
+        with patch(
+            "app.services.inference_rule_service.model_router.call_llm",
+            new=AsyncMock(side_effect=call_sequence),
+        ):
+            svc = InferenceRuleService(session=ephemeral_db)
+            rule = await svc.propose_and_critique(
+                "USES", "GENERATES", run_id="test-run"
+            )
 
         assert rule.status == "CRITIQUED"
         assert rule.implied_predicate == "PRODUCES"  # revised value applied
@@ -163,27 +222,47 @@ class TestProposeAndCritique:
         ephemeral_db.commit()
         ephemeral_db.refresh(provider_a)
 
-        route = AgentRouteFallback(task_type="Rule Proposer", priority=0, provider_id=provider_a.id, models="fake")
+        route = AgentRouteFallback(
+            task_type="Rule Proposer",
+            priority=0,
+            provider_id=provider_a.id,
+            models="fake",
+        )
         ephemeral_db.add(route)
         ephemeral_db.commit()
 
-        proposer_reply = _fake_llm_response({
-            "predicate_1": "USES", "predicate_2": "GENERATES",
-            "implied_predicate": "PRODUCES", "rule_type": "compose", "rationale": "ok"
-        })
-        critic_reply = _fake_llm_response({
-            "verdict": "APPROVE", "revised_implied_predicate": None,
-            "revised_rule_type": None, "rationale": "ok"
-        })
+        proposer_reply = _fake_llm_response(
+            {
+                "predicate_1": "USES",
+                "predicate_2": "GENERATES",
+                "implied_predicate": "PRODUCES",
+                "rule_type": "compose",
+                "rationale": "ok",
+            }
+        )
+        critic_reply = _fake_llm_response(
+            {
+                "verdict": "APPROVE",
+                "revised_implied_predicate": None,
+                "revised_rule_type": None,
+                "rationale": "ok",
+            }
+        )
 
-        mock_call_llm = AsyncMock(side_effect=[
-            (proposer_reply, "proposer-model", None),
-            (critic_reply, "critic-model", None),
-            (critic_reply, "critic-model", None),
-        ])
-        with patch("app.services.inference_rule_service.model_router.call_llm", new=mock_call_llm):
-            svc = InferenceRuleService()
+        mock_call_llm = AsyncMock(
+            side_effect=[
+                (proposer_reply, "proposer-model", None),
+                (critic_reply, "critic-model", None),
+                (critic_reply, "critic-model", None),
+            ]
+        )
+        with patch(
+            "app.services.inference_rule_service.model_router.call_llm",
+            new=mock_call_llm,
+        ):
+            svc = InferenceRuleService(session=ephemeral_db)
             await svc.propose_and_critique("USES", "GENERATES", run_id="test-run")
+
 
         # First call = proposer (no exclude), second+third = critic calls
         critic_calls = mock_call_llm.await_args_list[1:]
@@ -200,14 +279,23 @@ class TestCandidateDiscovery:
         d = _make_entity(ephemeral_db, u.id, "D")
         e = _make_entity(ephemeral_db, u.id, "E")
         f = _make_entity(ephemeral_db, u.id, "F")
-        for (s, p, o) in [
-            (a.id, "USES", b.id), (b.id, "GENERATES", c.id),
-            (c.id, "USES", d.id), (d.id, "GENERATES", e.id),
-            (e.id, "USES", f.id), (f.id, "GENERATES", a.id),
+        for s, p, o in [
+            (a.id, "USES", b.id),
+            (b.id, "GENERATES", c.id),
+            (c.id, "USES", d.id),
+            (d.id, "GENERATES", e.id),
+            (e.id, "USES", f.id),
+            (f.id, "GENERATES", a.id),
         ]:
             _make_claim(ephemeral_db, s, p, o)
 
-        existing_rule = InferenceRule(predicate_1="USES", predicate_2="GENERATES", implied_predicate="PRODUCES", status="APPROVED", human_approved=True)
+        existing_rule = InferenceRule(
+            predicate_1="USES",
+            predicate_2="GENERATES",
+            implied_predicate="PRODUCES",
+            status="APPROVED",
+            human_approved=True,
+        )
         ephemeral_db.add(existing_rule)
         ephemeral_db.commit()
 
@@ -219,7 +307,12 @@ class TestCandidateDiscovery:
 
 class TestRuleApprovalLifecycle:
     def test_approve_and_reject(self, ephemeral_db):
-        rule = InferenceRule(predicate_1="USES", predicate_2="GENERATES", implied_predicate="PRODUCES", status="CRITIQUED")
+        rule = InferenceRule(
+            predicate_1="USES",
+            predicate_2="GENERATES",
+            implied_predicate="PRODUCES",
+            status="CRITIQUED",
+        )
         ephemeral_db.add(rule)
         ephemeral_db.commit()
         ephemeral_db.refresh(rule)

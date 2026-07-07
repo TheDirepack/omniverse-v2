@@ -1,10 +1,9 @@
-import pytest
 from app.agents.prompts import (
-    get_researcher_prompt,
-    get_critic_prompt,
     get_architect_prompt,
-    get_stability_prompt,
+    get_critic_prompt,
     get_extrapolation_prompt,
+    get_researcher_prompt,
+    get_stability_prompt,
     get_theory_auditor_prompt,
 )
 
@@ -23,7 +22,9 @@ class TestExtractionPrompt:
         assert "user" in result
 
     def test_with_focus(self):
-        result = get_researcher_prompt("DC", "Speed Force", focus="Speed Force abilities")
+        result = get_researcher_prompt(
+            "DC", "Speed Force", focus="Speed Force abilities"
+        )
         assert "FOCUSED FEATURE TARGET" in result["system"]
         assert "Speed Force" in result["system"]
 
@@ -68,7 +69,6 @@ class TestCriticPrompt:
 
 
 class TestArchitectPrompt:
-
     def test_basic(self):
         result = get_architect_prompt("dataset here", ["anomaly1"])
         assert "dataset here" in result["user"]

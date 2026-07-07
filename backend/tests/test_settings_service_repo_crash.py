@@ -1,5 +1,6 @@
-import pytest
 from unittest.mock import AsyncMock, patch
+
+import pytest
 from app.db.schema import Setting
 from app.services.settings_service import SettingsService
 
@@ -18,8 +19,9 @@ class TestSettingsServiceGetSetting:
         assert svc.get_setting("DOES_NOT_EXIST") is None
 
     def test_get_setting_returns_value(self, ephemeral_db):
-        from sqlmodel import Session
         from app.db.settings_session import settings_engine
+        from sqlmodel import Session
+
         with Session(settings_engine) as s:
             s.add(Setting(key="MAX_PARALLEL_AGENTS", value="7"))
             s.commit()
@@ -47,9 +49,9 @@ class TestResearchNodeSettingsLookup:
 
     async def test_research_node_reads_batch_size_without_crashing(self, ephemeral_db):
         from app.agents.nodes import research_node
-
-        from sqlmodel import Session
         from app.db.settings_session import settings_engine
+        from sqlmodel import Session
+
         with Session(settings_engine) as s:
             s.add(Setting(key="MAX_PARALLEL_AGENTS", value="2"))
             s.commit()
@@ -63,8 +65,15 @@ class TestResearchNodeSettingsLookup:
             "errors": [],
         }
 
-        fake_result = {"name": "TestWorldA", "summary": "stub summary", "status": "VERIFIED"}
-        with patch("app.agents.nodes.research_single_world", new=AsyncMock(return_value=fake_result)):
+        fake_result = {
+            "name": "TestWorldA",
+            "summary": "stub summary",
+            "status": "VERIFIED",
+        }
+        with patch(
+            "app.agents.nodes.research_single_world",
+            new=AsyncMock(return_value=fake_result),
+        ):
             # Before the fix, this raised AttributeError before even reaching
             # research_single_world -- the crash happened at the settings
             # lookup, not in the research call itself.
@@ -73,7 +82,9 @@ class TestResearchNodeSettingsLookup:
         assert "research_results" in result
         assert len(result["research_results"]) == 2
 
-    async def test_research_node_defaults_batch_size_when_setting_absent(self, ephemeral_db):
+    async def test_research_node_defaults_batch_size_when_setting_absent(
+        self, ephemeral_db
+    ):
         """No MAX_PARALLEL_AGENTS row at all -- must default to 5, not crash."""
         from app.agents.nodes import research_node
 
@@ -86,7 +97,12 @@ class TestResearchNodeSettingsLookup:
             "errors": [],
         }
 
-        with patch("app.agents.nodes.research_single_world", new=AsyncMock(return_value={"name": "SoloWorld", "summary": "s", "status": "VERIFIED"})):
+        with patch(
+            "app.agents.nodes.research_single_world",
+            new=AsyncMock(
+                return_value={"name": "SoloWorld", "summary": "s", "status": "VERIFIED"}
+            ),
+        ):
             result = await research_node(state)
 
         assert len(result["research_results"]) == 1

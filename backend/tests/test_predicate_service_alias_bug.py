@@ -1,7 +1,6 @@
-import pytest
 from app.db.schema import Predicate, PredicateAlias
-from app.services.predicate_service import PredicateService
 from app.services.ontology_service import OntologyService
+from app.services.predicate_service import PredicateService
 
 
 class TestPredicateAliasNormalization:
@@ -21,7 +20,9 @@ class TestPredicateAliasNormalization:
         svc.upsert_alias("uses", "POWERED_BY")
 
         stored = ephemeral_db.exec(
-            __import__("sqlmodel").select(PredicateAlias).where(PredicateAlias.alias == "USES")
+            __import__("sqlmodel")
+            .select(PredicateAlias)
+            .where(PredicateAlias.alias == "USES")
         ).first()
         assert stored is not None
         assert stored.predicate_id is not None, (
@@ -62,9 +63,13 @@ class TestPredicateAliasNormalization:
         svc.upsert_alias("uses", "OPERATES_VIA")
 
         all_aliases = ephemeral_db.exec(
-            __import__("sqlmodel").select(PredicateAlias).where(PredicateAlias.alias == "USES")
+            __import__("sqlmodel")
+            .select(PredicateAlias)
+            .where(PredicateAlias.alias == "USES")
         ).all()
-        assert len(all_aliases) == 1, "expected the alias row to be updated in place, not duplicated"
+        assert len(all_aliases) == 1, (
+            "expected the alias row to be updated in place, not duplicated"
+        )
         assert svc.normalize("uses") == "OPERATES_VIA"
 
     def test_normalize_falls_through_to_ontology_parent_chain(self, ephemeral_db):
@@ -84,7 +89,9 @@ class TestPredicateAliasNormalization:
             f"predicate chain to reach the root canonical form, got {result!r}"
         )
 
-    def test_normalize_unregistered_predicate_returns_raw_uppercased(self, ephemeral_db):
+    def test_normalize_unregistered_predicate_returns_raw_uppercased(
+        self, ephemeral_db
+    ):
         """No alias, no existing Predicate row -- normalize should just
         return the raw predicate uppercased, not crash or return None."""
         svc = PredicateService()

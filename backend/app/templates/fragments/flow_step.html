@@ -1,0 +1,73 @@
+<div class="flex flex-col items-center gap-4 py-8">
+    <!-- 1. Web Source -->
+    <div class="w-full max-w-md p-4 border rounded-lg bg-gray-50 dark:bg-gray-700 flex items-center gap-4">
+        <div class="text-xl">🌐</div>
+        <div class="flex-1">
+            <div class="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase">Web Source</div>
+            {% if source %}
+                <a href="{{ source.source_url }}" target="_blank" class="text-blue-600 hover:underline block truncate">
+                    {{ source.source_url }}
+                </a>
+            {% else %}
+                <span class="text-gray-400 italic">No direct source linked</span>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="text-gray-400">↓</div>
+
+    <!-- 2. Unconfirmed Claim -->
+    <div class="w-full max-w-md p-4 border rounded-lg {% if unconfirmed %}bg-yellow-50 dark:bg-yellow-900/30 border-yellow-200 dark:border-yellow-800{% else %}bg-gray-100 dark:bg-gray-800 opacity-50{% endif %} flex items-center gap-4">
+        <div class="text-xl">📝</div>
+        <div class="flex-1">
+            <div class="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase">Unconfirmed Claim</div>
+            {% if unconfirmed %}
+                <div class="text-sm">
+                    <strong>{{ unconfirmed.subject }}</strong> {{ unconfirmed.predicate }} <strong>{{ unconfirmed.object_val }}</strong>
+                    <div class="text-xs text-gray-500 mt-1">Confidence: {{ unconfirmed.confidence }}</div>
+                </div>
+            {% else %}
+                <span class="text-gray-400 italic">No corresponding unconfirmed claim found</span>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="text-gray-400">↓</div>
+
+    <!-- 3. Validation / Main DB -->
+    <div class="w-full max-w-md p-4 border-2 border-blue-500 rounded-lg bg-blue-50 dark:bg-blue-900/30 flex items-center gap-4 shadow-sm">
+        <div class="text-xl">✅</div>
+        <div class="flex-1">
+            <div class="text-xs font-bold text-blue-600 dark:text-blue-300 uppercase">Main Database (Verified)</div>
+            <div class="text-sm">
+                <strong>{{ subject.name if subject else 'Unknown' }}</strong> 
+                <span class="text-blue-700 font-medium">{{ predicate.canonical_name if predicate else claim.predicate }}</span> 
+                <strong>{{ claim.object_literal if claim.object_literal else object_name }}</strong>
+            </div>
+            <div class="text-xs text-gray-500 mt-1">Claim ID: {{ claim.id }} | Status: {{ claim.status }}</div>
+        </div>
+    </div>
+
+    <div class="text-gray-400">↓</div>
+
+    <!-- 4. Theory / Inference -->
+    <div class="w-full max-w-md space-y-3">
+        <div class="text-center text-xs font-bold text-gray-500 dark:text-gray-400 uppercase">Inferences Derived</div>
+        {% if inferences %}
+            {% for inf in inferences %}
+                <div class="p-3 border rounded-lg bg-purple-50 dark:bg-purple-900/30 border-purple-200 dark:border-purple-800 flex items-center gap-4">
+                    <div class="text-xl">🧠</div>
+                    <div class="flex-1 text-sm">
+                        <span class="font-medium">Inferred Claim:</span> 
+                        {{ inf.subject_id }} {{ inf.predicate }} {{ inf.object_id }}
+                        <div class="text-xs text-purple-600 dark:text-purple-400">Rule ID: {{ inf.derived_from_rule_id }}</div>
+                    </div>
+                </div>
+            {% endfor %}
+        {% else %}
+            <div class="p-4 border rounded-lg bg-gray-50 dark:bg-gray-700 text-center text-gray-400 dark:text-gray-500 italic text-sm">
+                No inferences derived from this claim
+            </div>
+        {% endif %}
+    </div>
+</div>

@@ -1,0 +1,35 @@
+<div class="space-y-4">
+    <h2 class="text-xl font-semibold">Neighborhood: {{ world.name }}</h2>
+
+    <div class="bg-gray-50 dark:bg-gray-900 rounded p-4">
+        <div class="grid grid-cols-2 gap-2 text-sm">
+            <div><span class="text-gray-500">Franchise:</span> {{ world.franchise or '—' }}</div>
+            <div><span class="text-gray-500">Continuity:</span> {{ world.continuity or '—' }}</div>
+            <div><span class="text-gray-500">Category:</span> {{ world.category or '—' }}</div>
+            <div><span class="text-gray-500">Era:</span> {{ world.era or '—' }}</div>
+        </div>
+    </div>
+
+    {% if related %}
+    <h3 class="font-medium text-sm text-gray-500">Related Worlds</h3>
+    <div class="divide-y divide-gray-200 dark:divide-gray-700">
+        {% for rel in related %}
+        <div class="py-2 flex justify-between items-center">
+            <span class="text-sm">{{ rel.name }}</span>
+            <span class="text-[10px] px-1.5 py-0.5 rounded bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300">
+                {{ rel.franchise or '?' }}
+            </span>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <p class="text-gray-500 dark:text-gray-400 italic text-sm">No related worlds found.</p>
+    {% endif %}
+
+    <button class="text-sm text-blue-500 hover:text-blue-700"
+            hx-get="/worlds/graph"
+            hx-target="#worlds-content"
+            hx-swap="innerHTML">
+        ← Back to World Graph
+    </button>
+</div>

@@ -1,0 +1,33 @@
+{% for world in worlds %}
+<div class="mb-2">
+    <div class="flex items-center gap-2 p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded cursor-pointer transition group">
+        <button hx-get="/knowledge/worlds/{{ world.id }}/children" 
+                hx-target="closest div" 
+                hx-swap="afterbegin"
+                hx-indicator="closest button"
+                class="text-gray-400 group-hover:text-blue-600 btn-loading">
+            ▶
+        </button>
+        <div class="min-w-0 flex-1">
+            <div class="flex items-center gap-2">
+                <span hx-get="/knowledge/worlds/{{ world.id }}" 
+                      hx-target="#detail-view" 
+                      hx-indicator="closest span"
+                      class="text-base font-semibold text-gray-800 dark:text-gray-100 hover:text-blue-600 cursor-pointer btn-loading truncate">
+                    {{ world.display_name }}
+                </span>
+                <span class="text-[10px] px-1 bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 rounded shrink-0">Tier {{ world.tier or '?' }}</span>
+            </div>
+            {% if (world.franchise and world.franchise != world.display_name) or (world.continuity and world.continuity != world.display_name) or (world.era and world.era != world.display_name) %}
+            <div class="text-xs text-gray-400 dark:text-gray-500 truncate mt-0.5">
+                {% if world.franchise and world.franchise != world.display_name %}{{ world.franchise }}{% endif %}
+                {% if world.continuity and world.continuity != world.display_name %}{% if world.franchise and world.franchise != world.display_name %} • {% endif %}{{ world.continuity }}{% endif %}
+                {% if world.era and world.era != world.display_name %}{% if world.franchise and world.franchise != world.display_name or (world.continuity and world.continuity != world.display_name) %} • {% endif %}{{ world.era }}{% endif %}
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% else %}
+<p class="text-gray-500 dark:text-gray-400 italic text-sm p-2">No worlds found.</p>
+{% endfor %}

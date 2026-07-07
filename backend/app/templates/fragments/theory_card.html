@@ -1,0 +1,22 @@
+<div id="theory-{{ theory.universe_id }}" class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow mb-6">
+    <div class="flex justify-between items-center mb-4">
+        <h3 class="text-xl font-bold">Universe: {{ theory.universe_name }}</h3>
+        <button hx-post="/theory/reevaluate" 
+                hx-vals='{"universe_id": {{ theory.universe_id }}}'
+                hx-target="#theory-{{ theory.universe_id }}-status" 
+                hx-swap="innerHTML"
+                hx-indicator="closest button"
+                class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition btn-loading">
+            Re-evaluate
+        </button>
+    </div>
+    <div id="theory-{{ theory.universe_id }}-status" class="mb-4"></div>
+    <div class="prose max-w-none text-gray-800 dark:text-gray-200">
+        {{ theory.theory_text }}
+    </div>
+    {% if theory.auditor_feedback %}
+    <div class="mt-4 p-3 bg-yellow-50 border-l-4 border-yellow-400 text-sm text-yellow-800">
+        <strong>Auditor Feedback:</strong> {{ theory.auditor_feedback }}
+    </div>
+    {% endif %}
+</div>

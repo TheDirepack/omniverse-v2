@@ -1,15 +1,16 @@
 import json
+
 import pytest
-from sqlmodel import Session, select
-from app.db.schema import Universe, Entity, Claim, InferenceRule, InferredClaim, Setting
+from app.db.schema import Claim, Entity, InferenceRule, Universe
 from app.repositories.inference import InferenceRepository
 from app.services.inference_engine_service import InferenceEngineService
+from sqlmodel import select
 
 
 def _make_universe(db, name="TestUniverse"):
     u = Universe(name=name, is_explored=True)
     db.add(u)
-    db.commit()
+    db.flush()
     db.refresh(u)
     return u
 
@@ -17,32 +18,44 @@ def _make_universe(db, name="TestUniverse"):
 def _make_entity(db, universe_id, name, entity_type="Thing"):
     e = Entity(name=name, entity_type=entity_type, universe_id=universe_id)
     db.add(e)
-    db.commit()
+    db.flush()
     db.refresh(e)
     return e
 
 
 def _make_claim(db, subject_id, predicate, object_id, **kwargs):
     from app.db.schema import Predicate
-    pred_obj = db.exec(select(Predicate).where(Predicate.canonical_name == predicate)).first()
+
+    pred_obj = db.exec(
+        select(Predicate).where(Predicate.canonical_name == predicate)
+    ).first()
     if not pred_obj:
         pred_obj = Predicate(canonical_name=predicate)
         db.add(pred_obj)
         db.flush()
-    c = Claim(subject_id=subject_id, predicate_id=pred_obj.id, predicate=predicate, object_entity_id=object_id, **kwargs)
+    c = Claim(
+        subject_id=subject_id,
+        predicate_id=pred_obj.id,
+        predicate=predicate,
+        object_entity_id=object_id,
+        **kwargs,
+    )
     db.add(c)
-    db.commit()
+    db.flush()
     db.refresh(c)
     return c
 
 
 def _make_rule(db, p1, p2, implied, approved=True):
     r = InferenceRule(
-        predicate_1=p1, predicate_2=p2, implied_predicate=implied,
-        status="APPROVED" if approved else "PROPOSED", human_approved=approved,
+        predicate_1=p1,
+        predicate_2=p2,
+        implied_predicate=implied,
+        status="APPROVED" if approved else "PROPOSED",
+        human_approved=approved,
     )
     db.add(r)
-    db.commit()
+    db.flush()
     db.refresh(r)
     return r
 
@@ -114,10 +127,22 @@ class TestInferenceRepository:
         assert approved[0].predicate_1 == "USES"
 
     def test_get_approved_rules_excludes_block_type(self, ephemeral_db):
-        approved_compose = InferenceRule(predicate_1="USES", predicate_2="GENERATES", implied_predicate="PRODUCES",
-                                          rule_type="compose", status="APPROVED", human_approved=True)
-        approved_block = InferenceRule(predicate_1="FOO", predicate_2="BAR", implied_predicate="BAZ",
-                                        rule_type="block", status="APPROVED", human_approved=True)
+        approved_compose = InferenceRule(
+            predicate_1="USES",
+            predicate_2="GENERATES",
+            implied_predicate="PRODUCES",
+            rule_type="compose",
+            status="APPROVED",
+            human_approved=True,
+        )
+        approved_block = InferenceRule(
+            predicate_1="FOO",
+            predicate_2="BAR",
+            implied_predicate="BAZ",
+            rule_type="block",
+            status="APPROVED",
+            human_approved=True,
+        )
         ephemeral_db.add_all([approved_compose, approved_block])
         ephemeral_db.commit()
         repo = InferenceRepository(ephemeral_db)
@@ -136,7 +161,7 @@ class TestInferenceEngineDepth:
         c2 = _make_claim(ephemeral_db, b.id, "GENERATES", c.id)
         _make_rule(ephemeral_db, "USES", "GENERATES", "PRODUCES")
 
-        svc = InferenceEngineService()
+        svc = InferenceEngineService(ephemeral_db)
         svc.set_max_depth(2)
         created = svc.materialize_inferred_claims()
 
@@ -145,7 +170,8 @@ class TestInferenceEngineDepth:
         assert ic.subject_id == a.id
         assert ic.predicate == "PRODUCES"
         assert ic.object_id == c.id
-        assert json.loads(ic.path_claim_ids) == [c1.id, c2.id]
+        repo = InferenceRepository(ephemeral_db)
+        assert repo.get_inferred_claim_paths(ic.id) == [c1.id, c2.id]
 
     def test_depth_3_composition_requires_second_rule(self, ephemeral_db):
         u = _make_universe(ephemeral_db)
@@ -159,7 +185,7 @@ class TestInferenceEngineDepth:
         _make_rule(ephemeral_db, "USES", "GENERATES", "PRODUCES")
         _make_rule(ephemeral_db, "PRODUCES", "MITIGATED_BY", "REQUIRES_MITIGATION_VIA")
 
-        svc = InferenceEngineService()
+        svc = InferenceEngineService(ephemeral_db)
         svc.set_max_depth(3)
         created = svc.materialize_inferred_claims()
 
@@ -181,7 +207,7 @@ class TestInferenceEngineDepth:
         _make_rule(ephemeral_db, "USES", "GENERATES", "PRODUCES")
         _make_rule(ephemeral_db, "PRODUCES", "MITIGATED_BY", "REQUIRES_MITIGATION_VIA")
 
-        svc = InferenceEngineService()
+        svc = InferenceEngineService(ephemeral_db)
         svc.set_max_depth(2)
         created = svc.materialize_inferred_claims()
 
@@ -198,7 +224,7 @@ class TestInferenceEngineDepth:
         _make_claim(ephemeral_db, b.id, "GENERATES", c.id)
         _make_rule(ephemeral_db, "USES", "GENERATES", "PRODUCES")
 
-        svc = InferenceEngineService()
+        svc = InferenceEngineService(ephemeral_db)
         first = svc.materialize_inferred_claims()
         second = svc.materialize_inferred_claims()
 
@@ -206,7 +232,7 @@ class TestInferenceEngineDepth:
         assert len(second) == 0  # already materialized, no duplicate
 
     def test_depth_setting_persists_and_validates(self, ephemeral_db):
-        svc = InferenceEngineService()
+        svc = InferenceEngineService(ephemeral_db)
         assert svc.get_max_depth() == 2  # default
         svc.set_max_depth(5)
         assert svc.get_max_depth() == 5
@@ -225,7 +251,7 @@ class TestInferenceEngineDepth:
         _make_claim(ephemeral_db, b.id, "GENERATES", c.id)
         _make_rule(ephemeral_db, "USES", "GENERATES", "PRODUCES")
 
-        svc = InferenceEngineService()
+        svc = InferenceEngineService(ephemeral_db)
         svc.set_max_depth(1)
         created = svc.materialize_inferred_claims()
         assert created == []
@@ -241,12 +267,18 @@ class TestInferenceEngineDepth:
         c = _make_entity(ephemeral_db, u.id, "C")
         _make_claim(ephemeral_db, a.id, "USES", b.id)
         _make_claim(ephemeral_db, b.id, "GENERATES", c.id)
-        r = InferenceRule(predicate_1="USES", predicate_2="GENERATES", implied_predicate="PRODUCES",
-                           rule_type="block", status="APPROVED", human_approved=True)
+        r = InferenceRule(
+            predicate_1="USES",
+            predicate_2="GENERATES",
+            implied_predicate="PRODUCES",
+            rule_type="block",
+            status="APPROVED",
+            human_approved=True,
+        )
         ephemeral_db.add(r)
         ephemeral_db.commit()
 
-        svc = InferenceEngineService()
+        svc = InferenceEngineService(ephemeral_db)
         created = svc.materialize_inferred_claims()
         assert created == []
 
@@ -260,13 +292,19 @@ class TestInferenceEngineDepth:
         c = _make_entity(ephemeral_db, u.id, "C")
         _make_claim(ephemeral_db, a.id, "USES", b.id)
         _make_claim(ephemeral_db, b.id, "GENERATES", c.id)
-        r = InferenceRule(predicate_1="USES", predicate_2="GENERATES", implied_predicate="PRODUCES",
-                           rule_type="compose", status="CRITIQUED", critic_verdict="APPROVE",
-                           human_approved=False)
+        r = InferenceRule(
+            predicate_1="USES",
+            predicate_2="GENERATES",
+            implied_predicate="PRODUCES",
+            rule_type="compose",
+            status="CRITIQUED",
+            critic_verdict="APPROVE",
+            human_approved=False,
+        )
         ephemeral_db.add(r)
         ephemeral_db.commit()
 
-        svc = InferenceEngineService()
+        svc = InferenceEngineService(ephemeral_db)
         created = svc.materialize_inferred_claims()
         assert created == []
 
@@ -288,7 +326,7 @@ class TestInferenceEngineDepth:
         _make_rule(ephemeral_db, "Q1", "P3", "Q2")
         _make_rule(ephemeral_db, "Q2", "P4", "Q3")
 
-        svc = InferenceEngineService()
+        svc = InferenceEngineService(ephemeral_db)
         svc.set_max_depth(4)
         created = svc.materialize_inferred_claims()
 
@@ -312,7 +350,7 @@ class TestInferenceEngineDepth:
         _make_rule(ephemeral_db, "Q1", "P3", "Q2")
         _make_rule(ephemeral_db, "Q2", "P4", "Q3")
 
-        svc = InferenceEngineService()
+        svc = InferenceEngineService(ephemeral_db)
         svc.set_max_depth(3)
         created = svc.materialize_inferred_claims()
 
@@ -334,7 +372,7 @@ class TestContradictionDetection:
         conflict_claim = _make_claim(ephemeral_db, a.id, "PRODUCES", conflicting.id)
         _make_rule(ephemeral_db, "USES", "GENERATES", "PRODUCES")
 
-        svc = InferenceEngineService()
+        svc = InferenceEngineService(ephemeral_db)
         created = svc.materialize_inferred_claims()
 
         assert len(created) == 1
@@ -357,7 +395,7 @@ class TestContradictionDetection:
         _make_claim(ephemeral_db, a.id, "PRODUCES", c.id)
         _make_rule(ephemeral_db, "USES", "GENERATES", "PRODUCES")
 
-        svc = InferenceEngineService()
+        svc = InferenceEngineService(ephemeral_db)
         created = svc.materialize_inferred_claims()
 
         assert len(created) == 1
@@ -395,7 +433,7 @@ class TestCrossUniverseGenericity:
 
         _make_rule(ephemeral_db, "USES", "GENERATES", "PRODUCES")
 
-        svc = InferenceEngineService()
+        svc = InferenceEngineService(ephemeral_db)
         created = svc.materialize_inferred_claims()
 
         results = {(ic.subject_id, ic.predicate, ic.object_id) for ic in created}

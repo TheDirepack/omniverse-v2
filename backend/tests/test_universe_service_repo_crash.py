@@ -16,6 +16,7 @@ class TestUniverseServiceRepoProperty:
     def test_repo_property_exists_and_returns_repository(self, ephemeral_db):
         svc = UniverseService()
         from app.repositories.universe import UniverseRepository
+
         assert isinstance(svc.repo, UniverseRepository)
 
     def test_repo_is_cached_across_accesses(self, ephemeral_db):
@@ -31,7 +32,7 @@ class TestUniverseServiceRepoProperty:
         with-Session-per-call methods below it, and vice versa -- both
         access patterns are used by different parts of the codebase on
         freshly-constructed UniverseService() instances."""
-        svc = UniverseService()
+        svc = UniverseService(session=ephemeral_db)
         u = svc.create_universe("TEST_RepoCoexist")
         assert u.id is not None
 
@@ -55,7 +56,7 @@ class TestUniverseServiceRepoProperty:
 @pytest.mark.asyncio
 class TestDbIntegrationNodeMarkExploredBatch:
     """Reproduces the exact crash point from the production log: right
-    after DB Architect finishes upserting traits, db_integration_node marks
+    after DB Architect finishes upserting claims, db_integration_node marks
     all integrated universes explored via uni_service.repo.get_by_names(...)
     then uni_service.repo.update_batch(...)."""
 

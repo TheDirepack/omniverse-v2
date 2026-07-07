@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+
+{% block title %}Inference - Omniverse{% endblock %}
+
+{% block content %}
+<div class="space-y-8">
+    <div class="flex justify-between items-center">
+        <h1 class="text-3xl font-bold">Inference Rules</h1>
+        <button hx-post="/inference/materialize" 
+                hx-target="#materialization-status"
+                hx-indicator="#materialization-status"
+                class="bg-purple-600 text-white px-6 py-2 rounded hover:bg-purple-700 transition btn-loading">
+            Materialize Claims
+        </button>
+    </div>
+    <div id="materialization-status" class="text-sm font-semibold text-purple-700"></div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        <!-- Proposed Rules -->
+        <section>
+            <h2 class="text-xl font-semibold mb-4 flex items-center">
+                <span class="w-3 h-3 bg-yellow-400 rounded-full mr-2"></span>
+                Proposed
+            </h2>
+            <div id="proposed-rules" class="space-y-2">
+                {% for rule in proposed %}
+                    {% include "fragments/rule_item.html" %}
+                {% else %}
+                    <p class="text-gray-500 italic">No proposed rules.</p>
+                {% endfor %}
+            </div>
+        </section>
+
+        <!-- Critiqued Rules -->
+        <section>
+            <h2 class="text-xl font-semibold mb-4 flex items-center">
+                <span class="w-3 h-3 bg-blue-400 rounded-full mr-2"></span>
+                Critiqued
+            </h2>
+            <div id="critiqued-rules" class="space-y-2">
+                {% for rule in critiqued %}
+                    {% include "fragments/rule_item.html" %}
+                {% else %}
+                    <p class="text-gray-500 italic">No critiqued rules.</p>
+                {% endfor %}
+            </div>
+        </section>
+
+        <!-- Approved Rules -->
+        <section>
+            <h2 class="text-xl font-semibold mb-4 flex items-center">
+                <span class="w-3 h-3 bg-green-400 rounded-full mr-2"></span>
+                Approved
+            </h2>
+            <div id="approved-rules" class="space-y-2">
+                {% for rule in approved %}
+                    {% include "fragments/rule_item.html" %}
+                {% else %}
+                    <p class="text-gray-500 italic">No approved rules.</p>
+                {% endfor %}
+            </div>
+        </section>
+
+        <!-- Rejected Rules -->
+        <section>
+            <h2 class="text-xl font-semibold mb-4 flex items-center">
+                <span class="w-3 h-3 bg-red-400 rounded-full mr-2"></span>
+                Rejected
+            </h2>
+            <div id="rejected-rules" class="space-y-2">
+                {% for rule in rejected %}
+                    {% include "fragments/rule_item.html" %}
+                {% else %}
+                    <p class="text-gray-500 italic">No rejected rules.</p>
+                {% endfor %}
+            </div>
+        </section>
+    </div>
+</div>
+{% endblock %}

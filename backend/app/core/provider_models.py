@@ -1,14 +1,20 @@
 import logging
+
 import httpx
 from sqlmodel import Session, select
-from app.db.session import engine
+
 from app.db.schema import ProviderConfig, ProviderKey
+from app.db.session import engine
 
 logger = logging.getLogger(__name__)
 
 PROVIDER_ENDPOINTS = {
     "ollama": lambda base: f"{base.rstrip('/')}/api/tags",
-    "custom": lambda base: f"{base.rstrip('/')}/models" if base.rstrip('/').endswith('/v1') else f"{base.rstrip('/')}/v1/models",
+    "custom": lambda base: (
+        f"{base.rstrip('/')}/models"
+        if base.rstrip("/").endswith("/v1")
+        else f"{base.rstrip('/')}/v1/models"
+    ),
     "openai": lambda _: "https://api.openai.com/v1/models",
     "anthropic": lambda _: "https://api.anthropic.com/v1/models",
     "gemini": lambda _: "https://generativelanguage.googleapis.com/v1/models",
@@ -22,7 +28,9 @@ NO_KEY_TYPES = {"ollama", "custom"}
 def _get_api_key(provider_id: int) -> str | None:
     with Session(engine) as session:
         key = session.exec(
-            select(ProviderKey).where(ProviderKey.provider_id == provider_id).order_by(ProviderKey.priority)
+            select(ProviderKey)
+            .where(ProviderKey.provider_id == provider_id)
+            .order_by(ProviderKey.priority)
         ).first()
         return key.api_key if key else None
 
@@ -61,7 +69,7 @@ async def fetch_live_models(provider: ProviderConfig) -> list[str]:
 
     url = PROVIDER_ENDPOINTS[ptype](provider.base_url or "")
     headers = {"User-Agent": "OmniverseV2/1.0"}
-    api_key = _get_api_key(provider.id)
+    api_key = _get_api_key(provider.id if provider.id is not None else 0)
 
     if ptype not in NO_KEY_TYPES and not api_key:
         return []
@@ -70,11 +78,14 @@ async def fetch_live_models(provider: ProviderConfig) -> list[str]:
         if api_key:
             headers["Authorization"] = f"Bearer {api_key}"
     elif ptype == "anthropic":
+        assert api_key is not None
         headers["x-api-key"] = api_key
         headers["anthropic-version"] = "2023-06-01"
     elif ptype == "gemini":
+        assert api_key is not None
         headers["x-goog-api-key"] = api_key
     else:
+        assert api_key is not None
         headers["Authorization"] = f"Bearer {api_key}"
 
     try:

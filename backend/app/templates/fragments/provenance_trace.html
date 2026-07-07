@@ -1,0 +1,81 @@
+<div class="space-y-4">
+    <div class="flex items-center gap-2 mb-2">
+        <h3 class="text-lg font-semibold">Provenance Trace</h3>
+        {% if claim_id %}
+        <span class="text-xs bg-gray-100 dark:bg-gray-700 text-gray-500 px-2 py-0.5 rounded">Claim #{{ claim_id }}</span>
+        {% endif %}
+    </div>
+
+    {% if artifact %}
+    {# Single artifact view #}
+    <div class="bg-gray-50 dark:bg-gray-900 rounded p-4">
+        <div class="grid grid-cols-2 gap-2 text-sm">
+            <div><span class="text-gray-500">Source URL:</span>
+                {% if artifact.source_url.startswith('http') %}
+                <a href="{{ artifact.source_url }}" target="_blank" class="text-blue-500 hover:underline">{{ artifact.source_url[:80] }}...</a>
+                {% else %}
+                <span class="font-mono">{{ artifact.source_url }}</span>
+                {% endif %}
+            </div>
+            <div><span class="text-gray-500">Content Hash:</span> <span class="font-mono text-xs">{{ artifact.content_hash[:16] }}...</span></div>
+            <div><span class="text-gray-500">Type:</span> {{ artifact.content_type }}</div>
+            <div><span class="text-gray-500">Engine:</span> {{ artifact.engine_name or '—' }}</div>
+            <div><span class="text-gray-500">Fetched:</span> {{ artifact.created_at.strftime('%Y-%m-%d %H:%M') if artifact.created_at else '—' }}</div>
+        </div>
+        {% if artifact.extracted_text %}
+        <details class="mt-3">
+            <summary class="text-xs text-gray-500 cursor-pointer hover:text-gray-700">Show extracted text ({{ artifact.extracted_text|length }} chars)</summary>
+            <pre class="text-xs mt-2 p-2 bg-white dark:bg-gray-800 rounded max-h-60 overflow-y-auto">{{ artifact.extracted_text[:2000] }}{% if artifact.extracted_text|length > 2000 %}...{% endif %}</pre>
+        </details>
+        {% endif %}
+    </div>
+
+    {% if usages %}
+    <div class="mt-2">
+        <h4 class="text-xs font-semibold text-gray-500 uppercase mb-1">Used by Worlds</h4>
+        <div class="flex flex-wrap gap-1">
+            {% for usage in usages %}
+            <span class="text-xs bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 px-2 py-0.5 rounded">{{ usage.universe_uuid[:8] }}</span>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    {% elif trace %}
+    {# Trace from claim backwards #}
+    <div class="relative">
+        <div class="absolute left-4 top-0 bottom-0 w-0.5 bg-gray-200 dark:bg-gray-700"></div>
+        {% for item in trace %}
+        <div class="relative pl-10 pb-6">
+            <div class="absolute left-2.5 top-1 w-3 h-3 rounded-full bg-blue-500 border-2 border-white dark:border-gray-800"></div>
+            <div class="bg-gray-50 dark:bg-gray-900 rounded p-3">
+                <div class="flex justify-between items-start">
+                    <div class="text-sm font-medium">{{ item.artifact.source_url[:60] if item.artifact else 'Unknown source' }}...</div>
+                    <span class="text-xs bg-gray-100 dark:bg-gray-700 text-gray-500 px-1.5 py-0.5 rounded">{{ item.edge.relation }}</span>
+                </div>
+                {% if item.artifact %}
+                <div class="text-xs text-gray-500 mt-1">
+                    <span>{{ item.artifact.content_type }}</span>
+                    <span class="mx-1">·</span>
+                    <span>{{ item.artifact.engine_name or '?' }}</span>
+                    <span class="mx-1">·</span>
+                    <span>{{ item.artifact.created_at.strftime('%Y-%m-%d %H:%M') if item.artifact.created_at else '?' }}</span>
+                </div>
+                {% endif %}
+                {% if item.artifact and item.artifact.source_url.startswith('http') %}
+                <a href="{{ item.artifact.source_url }}" target="_blank" class="text-xs text-blue-500 hover:underline mt-1 inline-block">
+                    View Source ↗
+                </a>
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <p class="text-gray-500 dark:text-gray-400 italic text-sm">No provenance data available. This claim was created before provenance tracking was implemented.</p>
+    {% endif %}
+
+    {% if not show_full %}
+    <a href="/provenance/claim/{{ claim_id }}" class="text-sm text-blue-500 hover:underline">View Full Trace →</a>
+    {% endif %}
+</div>

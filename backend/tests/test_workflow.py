@@ -1,4 +1,4 @@
-from app.agents.workflow import create_workflow, app_graph
+from app.agents.workflow import app_graph, create_workflow
 
 
 class TestWorkflowCreation:

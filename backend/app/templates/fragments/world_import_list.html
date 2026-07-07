@@ -1,0 +1,60 @@
+<div class="space-y-4">
+    <h2 class="text-xl font-semibold">Import from Registry</h2>
+
+    {% if imported %}
+    <div class="bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300 px-4 py-2 rounded text-sm">
+        ✅ Imported "{{ imported }}" successfully.
+    </div>
+    {% endif %}
+
+    <form hx-get="/worlds/import"
+          hx-target="#worlds-content"
+          hx-swap="innerHTML"
+          class="flex gap-2 mb-4">
+        <input type="text" name="q" value="{{ q or '' }}" placeholder="Search registry..."
+               class="flex-1 border rounded px-3 py-2 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500">
+        <button type="submit"
+                class="bg-blue-600 text-white px-4 py-2 rounded text-sm hover:bg-blue-700 transition">
+            Search
+        </button>
+    </form>
+
+    {% if entries %}
+    <div class="mb-4">
+        <button class="bg-green-600 text-white px-4 py-2 rounded text-sm hover:bg-green-700 transition"
+                hx-post="/worlds/import-all"
+                hx-target="#worlds-content"
+                hx-swap="innerHTML"
+                hx-indicator="#worlds-indicator"
+                hx-confirm="Import all {{ entries|length }} worlds from registry?">
+            Import All
+        </button>
+    </div>
+    <div class="divide-y divide-gray-200 dark:divide-gray-700">
+        {% for entry in entries %}
+        <div class="py-3 flex justify-between items-center">
+            <div>
+                <div class="font-medium">{{ entry.name }}</div>
+                <div class="text-xs text-gray-500 space-x-2">
+                    <span>{{ entry.franchise }}</span>
+                    {% if entry.continuity %}<span>· {{ entry.continuity }}</span>{% endif %}
+                    {% if entry.category %}<span>· {{ entry.category }}</span>{% endif %}
+                    {% if entry.parent %}<span>· parent: {{ entry.parent }}</span>{% endif %}
+                </div>
+            </div>
+            <button class="text-xs bg-blue-600 text-white px-3 py-1.5 rounded hover:bg-blue-700 transition"
+                    hx-post="/worlds/import/{{ entry.id }}"
+                    hx-target="#worlds-content"
+                    hx-swap="innerHTML"
+                    hx-indicator="#worlds-indicator">
+                Import
+            </button>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <p class="text-gray-500 dark:text-gray-400 italic">
+        {% if q %}No registry entries matching "{{ q }}".{% else %}No entries loaded.{% endif %}
+    </p>
+    {% endif %}
+</div>

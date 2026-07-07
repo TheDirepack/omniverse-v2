@@ -1,7 +1,9 @@
 from enum import Enum
 
+
 class AgentEventType(str, Enum):
     """Canonical event types for agent logging."""
+
     THOUGHT = "THOUGHT"
     TOOL_REQ = "TOOL_REQ"
     TOOL_RES = "TOOL_RES"

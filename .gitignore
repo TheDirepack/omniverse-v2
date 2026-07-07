@@ -1,15 +1,37 @@
-node_modules/
-.venv/
-venv/
-__pycache__/
+# Operating System and Editor specific
+.DS_Store
+.vscode/
+.idea/
+*.swp
+*.bak
+*~
+*.log
+temp/
+tmp/
+
+# Python specific
 *.pyc
-.env.local
-backend/venv/
-frontend/node_modules/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+dist/
+build/
+__pycache__/
 *.db
-*.db.bak
-frontend/dist/
-tests/provider_config.py
-backend/logs/
-backend/logs/agents.log
-agents.log
+*.db-journal
+
+# Frontend specific
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.parcel-cache/
+htmlcov/
+
+# Credentials
+provider_config.py
+backend/tests/provider_config.py
+
+# Test logs
+backend/tests/logs/

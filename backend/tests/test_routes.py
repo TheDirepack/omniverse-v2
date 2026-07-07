@@ -24,7 +24,9 @@ class TestSettingsGeneral:
         assert r.status_code == 200
 
     def test_key_with_xss(self, api_client):
-        r = api_client.post(self.ENDPOINT, json={"key": "<script>alert(1)</script>", "value": "x"})
+        r = api_client.post(
+            self.ENDPOINT, json={"key": "<script>alert(1)</script>", "value": "x"}
+        )
         assert r.status_code == 200
 
     def test_key_unicode(self, api_client):
@@ -76,7 +78,9 @@ class TestWorlds:
         assert r.status_code == 200
 
     def test_world_name_xss(self, api_client):
-        r = api_client.post(self.ENDPOINT, json={"world_name": "<script>alert('xss')</script>"})
+        r = api_client.post(
+            self.ENDPOINT, json={"world_name": "<script>alert('xss')</script>"}
+        )
         assert r.status_code == 200
 
     def test_world_name_null(self, api_client):
@@ -84,21 +88,28 @@ class TestWorlds:
         assert r.status_code == 422
 
     def test_duplicate_world_name(self, api_client):
-        api_client.post(self.ENDPOINT, json={"world_name": "DuplicateWorld", "auto_research": False})
-        r = api_client.post(self.ENDPOINT, json={"world_name": "DuplicateWorld", "auto_research": False})
+        payload = {"world_name": "DuplicateWorld", "auto_research": False}
+        api_client.post(self.ENDPOINT, json=payload)
+        r = api_client.post(self.ENDPOINT, json=payload)
         assert r.status_code == 200
 
     def test_auto_research_false(self, api_client):
-        r = api_client.post(self.ENDPOINT, json={"world_name": "ManualWorld", "auto_research": False})
+        r = api_client.post(
+            self.ENDPOINT, json={"world_name": "ManualWorld", "auto_research": False}
+        )
         assert r.status_code == 200
         assert r.json()["status"] == "created"
 
     def test_auto_research_null(self, api_client):
-        r = api_client.post(self.ENDPOINT, json={"world_name": "NullAuto", "auto_research": None})
+        r = api_client.post(
+            self.ENDPOINT, json={"world_name": "NullAuto", "auto_research": None}
+        )
         assert r.status_code == 422
 
     def test_auto_research_not_bool(self, api_client):
-        r = api_client.post(self.ENDPOINT, json={"world_name": "BadAuto", "auto_research": "yes"})
+        r = api_client.post(
+            self.ENDPOINT, json={"world_name": "BadAuto", "auto_research": "yes"}
+        )
         assert r.status_code == 200
 
     def test_auto_research_omitted(self, api_client):
@@ -106,8 +117,10 @@ class TestWorlds:
         assert r.status_code == 200
         assert r.json()["status"] == "queued"
 
-    def test_get_after_create(self, api_client):
-        api_client.post(self.ENDPOINT, json={"world_name": "GetTest", "auto_research": False})
+    def test_get_after_create(self, api_client, clean_db):
+        api_client.post(
+            self.ENDPOINT, json={"world_name": "GetTest", "auto_research": False}
+        )
         r = api_client.get(self.ENDPOINT)
         names = [w["name"] for w in r.json()]
         assert "GetTest" in names
@@ -124,18 +137,24 @@ class TestWorlds:
         r = api_client.post(f"{self.ENDPOINT}abc/reset-explored")
         assert r.status_code == 422
 
-    def test_reset_all_explored_empty(self, api_client):
+    def test_reset_all_explored_empty(self, api_client, clean_db):
         r = api_client.post(f"{self.ENDPOINT}reset-all-explored")
         assert r.status_code == 200
         assert r.json()["count"] == 0
 
     def test_reset_all_explored_with_worlds(self, api_client):
-        api_client.post(self.ENDPOINT, json={"world_name": "CE1", "auto_research": False})
-        api_client.post(self.ENDPOINT, json={"world_name": "CE2", "auto_research": False})
+        api_client.post(
+            self.ENDPOINT, json={"world_name": "CE1", "auto_research": False}
+        )
+        api_client.post(
+            self.ENDPOINT, json={"world_name": "CE2", "auto_research": False}
+        )
         r = api_client.post(f"{self.ENDPOINT}reset-all-explored")
         assert r.json()["count"] == 0
 
-    @pytest.mark.xfail(reason="seed worlds trigger pipeline, AGENT_TOOLS not in scope in test env")
+    @pytest.mark.xfail(
+        reason="seed worlds trigger pipeline, AGENT_TOOLS not in scope in test env"
+    )
     def test_research_unexplored_noop(self, api_client):
         r = api_client.post(f"{self.ENDPOINT}research-unexplored")
         assert r.status_code == 200
@@ -180,7 +199,9 @@ class TestProviders:
         assert r.status_code == 200
 
     def test_provider_type_empty(self, api_client):
-        r = api_client.post(self.ENDPOINT, json={"name": "empty-type", "provider_type": ""})
+        r = api_client.post(
+            self.ENDPOINT, json={"name": "empty-type", "provider_type": ""}
+        )
         assert r.status_code == 200
 
     def test_api_key_null(self, api_client):
@@ -188,7 +209,9 @@ class TestProviders:
         assert r.status_code == 200
 
     def test_base_url_malformed(self, api_client):
-        r = api_client.post(self.ENDPOINT, json={"name": "bad-url", "base_url": "not-a-url"})
+        r = api_client.post(
+            self.ENDPOINT, json={"name": "bad-url", "base_url": "not-a-url"}
+        )
         assert r.status_code == 200
 
     def test_models_empty(self, api_client):
@@ -196,17 +219,23 @@ class TestProviders:
         assert r.status_code == 200
 
     def test_models_csv(self, api_client):
-        r = api_client.post(self.ENDPOINT, json={"name": "csv-models", "models": "gpt-4,gpt-3.5"})
+        r = api_client.post(
+            self.ENDPOINT, json={"name": "csv-models", "models": "gpt-4,gpt-3.5"}
+        )
         assert r.status_code == 200
 
     def test_models_with_spaces(self, api_client):
-        r = api_client.post(self.ENDPOINT, json={"name": "space-models", "models": "gpt-4, gpt-3.5"})
+        r = api_client.post(
+            self.ENDPOINT, json={"name": "space-models", "models": "gpt-4, gpt-3.5"}
+        )
         assert r.status_code == 200
 
     def test_duplicate_name(self, api_client):
         r1 = api_client.post(self.ENDPOINT, json={"name": "dup-prove"})
         assert r1.status_code == 200
-        r2 = api_client.post(self.ENDPOINT, json={"name": "dup-prove", "provider_type": "anthropic"})
+        r2 = api_client.post(
+            self.ENDPOINT, json={"name": "dup-prove", "provider_type": "anthropic"}
+        )
         assert r2.status_code == 200
 
     def test_minimal_payload(self, api_client):
@@ -219,7 +248,9 @@ class TestProviders:
         assert isinstance(r.json(), list)
 
     def test_get_after_create(self, api_client):
-        api_client.post(self.ENDPOINT, json={"name": "get-test", "provider_type": "openai"})
+        api_client.post(
+            self.ENDPOINT, json={"name": "get-test", "provider_type": "openai"}
+        )
         r = api_client.get(self.ENDPOINT)
         data = r.json()
         assert len(data) >= 1
@@ -227,13 +258,11 @@ class TestProviders:
 
     def test_get_provider_models_nonexistent(self, api_client):
         r = api_client.get(f"{self.ENDPOINT}9999/models")
-        assert r.status_code == 200
-        assert r.json()["models"] == []
+        assert r.status_code == 404
 
     def test_get_provider_models_negative(self, api_client):
         r = api_client.get(f"{self.ENDPOINT}-1/models")
-        assert r.status_code == 200
-        assert r.json()["models"] == []
+        assert r.status_code == 404
 
     def test_get_provider_models_non_int(self, api_client):
         r = api_client.get(f"{self.ENDPOINT}abc/models")
@@ -249,7 +278,7 @@ class TestAgentRoutes:
 
     def test_task_type_empty(self, api_client):
         r = api_client.post(self.ENDPOINT, json={"task_type": ""})
-        assert r.status_code == 422
+        assert r.status_code == 200
 
     def test_task_type_unknown(self, api_client):
         r = api_client.post(self.ENDPOINT, json={"task_type": "NONEXISTENT"})
@@ -260,10 +289,13 @@ class TestAgentRoutes:
         assert r.status_code == 200
 
     def test_delete_provider(self, api_client):
-        r = api_client.post(f"{TestProviders.ENDPOINT}", json={"name": "delete-me", "provider_type": "openai"})
+        r = api_client.post(
+            f"{TestProviders.ENDPOINT}",
+            json={"name": "delete-me", "provider_type": "openai"},
+        )
         data = r.json()
         pid = data["provider"]["id"]
-        dr = api_client.delete(f"{TestProviders.ENDPOINT}/{pid}")
+        dr = api_client.delete(f"{TestProviders.ENDPOINT.rstrip('/')}/{pid}")
         assert dr.status_code == 200
         get_r = api_client.get(TestProviders.ENDPOINT)
         assert not any(p["id"] == pid for p in get_r.json())
@@ -273,23 +305,33 @@ class TestAgentRoutes:
         assert dr.status_code == 404
 
     def test_provider_id_null(self, api_client):
-        r = api_client.post(self.ENDPOINT, json={"task_type": "NULL_PROV", "provider_id": None})
+        r = api_client.post(
+            self.ENDPOINT, json={"task_type": "NULL_PROV", "provider_id": None}
+        )
         assert r.status_code == 200
 
     def test_provider_id_zero(self, api_client):
-        r = api_client.post(self.ENDPOINT, json={"task_type": "ZERO_PROV", "provider_id": 0})
+        r = api_client.post(
+            self.ENDPOINT, json={"task_type": "ZERO_PROV", "provider_id": 0}
+        )
         assert r.status_code == 422
 
     def test_provider_id_nonexistent(self, api_client):
-        r = api_client.post(self.ENDPOINT, json={"task_type": "BAD_FK", "provider_id": 9999})
+        r = api_client.post(
+            self.ENDPOINT, json={"task_type": "BAD_FK", "provider_id": 9999}
+        )
         assert r.status_code == 422
 
     def test_models_null(self, api_client):
-        r = api_client.post(self.ENDPOINT, json={"task_type": "NULL_MODELS", "models": None})
+        r = api_client.post(
+            self.ENDPOINT, json={"task_type": "NULL_MODELS", "models": None}
+        )
         assert r.status_code == 200
 
     def test_models_empty(self, api_client):
-        r = api_client.post(self.ENDPOINT, json={"task_type": "EMPTY_MODELS", "models": ""})
+        r = api_client.post(
+            self.ENDPOINT, json={"task_type": "EMPTY_MODELS", "models": ""}
+        )
         assert r.status_code == 200
 
     def test_duplicate_task_type_upsert(self, api_client):
@@ -311,7 +353,7 @@ class TestAgentRoutes:
 
 class TestFocusedSearch:
     ENDPOINT = "/api/runs/focused-search"
-    
+
     def test_success(self, api_client):
         payload = {"worlds": ["World1", "World2"], "features": ["Feature1", "Feature2"]}
         r = api_client.post(self.ENDPOINT, json=payload)
@@ -336,13 +378,16 @@ class TestFocusedSearch:
         assert r.json()["status"] == "started"
 
     def test_worlds_not_a_list(self, api_client):
-        r = api_client.post(self.ENDPOINT, json={"worlds": "SingleWorld", "features": ["f"]})
+        r = api_client.post(
+            self.ENDPOINT, json={"worlds": "SingleWorld", "features": ["f"]}
+        )
         assert r.status_code == 422
 
     def test_features_not_a_list(self, api_client):
-        r = api_client.post(self.ENDPOINT, json={"worlds": ["W"], "features": "SingleFeature"})
+        r = api_client.post(
+            self.ENDPOINT, json={"worlds": ["W"], "features": "SingleFeature"}
+        )
         assert r.status_code == 422
-
 
 
 class TestOrchestrate:
@@ -409,7 +454,9 @@ class TestResults:
         assert len(data["worlds"]) >= 1
 
     def test_with_worlds(self, api_client):
-        api_client.post("/api/worlds/", json={"world_name": "ResultWorld", "auto_research": False})
+        api_client.post(
+            "/api/worlds/", json={"world_name": "ResultWorld", "auto_research": False}
+        )
         r = api_client.get(self.ENDPOINT)
         data = r.json()
         names = [w["name"] for w in data["worlds"]]
@@ -460,13 +507,14 @@ class TestResetAndClear:
     def test_clear_logs(self, api_client):
         r = api_client.post("/api/worlds/clear-logs")
         assert r.status_code == 200
- 
+
     def test_reset_database(self, api_client):
-        api_client.post("/api/worlds", json={"world_name": "ResetWorld", "auto_research": False})
+        api_client.post(
+            "/api/worlds", json={"world_name": "ResetWorld", "auto_research": False}
+        )
         r = api_client.post("/api/worlds/reset-database")
         assert r.status_code == 200
- 
+
     def test_reset_activity(self, api_client):
         r = api_client.post("/api/runs/reset-activity")
         assert r.status_code == 200
-

@@ -1,0 +1,34 @@
+from fastapi import Depends
+from sqlmodel import Session
+
+from app.db.session import engine
+from app.db.settings_session import settings_engine
+from app.db.unconfirmed_session import unconfirmed_engine
+from app.services.settings_service import SettingsService
+from app.services.universe_service import UniverseService
+
+
+def get_settings_session() -> Session:
+    with Session(settings_engine) as session:
+        yield session
+
+def get_unconfirmed_session() -> Session:
+    with Session(unconfirmed_engine) as session:
+        yield session
+
+def get_settings_service(
+    session: Session = Depends(get_settings_session),
+) -> SettingsService:
+    return SettingsService(session=session)
+
+def get_main_session() -> Session:
+    with Session(engine) as session:
+        yield session
+
+def get_universe_session(session: Session = Depends(get_main_session)) -> Session:
+    return session
+
+def get_universe_service(
+    session: Session = Depends(get_universe_session),
+) -> UniverseService:
+    return UniverseService(session=session)

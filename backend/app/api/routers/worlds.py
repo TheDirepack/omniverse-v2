@@ -1,24 +1,113 @@
-from fastapi import APIRouter, HTTPException, BackgroundTasks
-from pydantic import BaseModel
-from app.services.universe_service import UniverseService
-from sqlmodel import Session, select
-from app.db.session import engine
-from app.db.schema import (
-    ExecutionState, Trait, WorldTier, TierSystem, Anomaly, ModelConfig, Universe,
-    Entity, EntityAlias, Claim, InferenceRule, InferredClaim,
-)
-from app.db.unconfirmed_session import engine as unconfirmed_engine
-from app.db.unconfirmed_schema import UnconfirmedUniverse, UnconfirmedTrait
-from app.db.extrapolation_session import engine as extrapolation_engine
-from app.db.extrapolation_schema import Theory
-from pathlib import Path
 import json
+from pathlib import Path
+
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
+from pydantic import BaseModel
+from sqlmodel import Session, select
+
+from app.db.extrapolation_schema import Theory
+from app.db.extrapolation_session import engine as extrapolation_engine
+from app.db.schema import (
+    Anomaly,
+    Claim,
+    Entity,
+    EntityAlias,
+    ExecutionState,
+    InferenceRule,
+    InferredClaim,
+    ModelConfig,
+    TierSystem,
+    Universe,
+    WorldTier,
+)
+from app.db.session import engine
+from app.db.unconfirmed_schema import UnconfirmedClaim, UnconfirmedUniverse
+from app.db.unconfirmed_session import unconfirmed_engine
+from app.services.universe_service import UniverseService
 
 router = APIRouter(prefix="/worlds", tags=["worlds"])
+
 
 class AddWorldPayload(BaseModel):
     world_name: str
     auto_research: bool = True
+
+
+class ImportWorldPayload(BaseModel):
+    world_id: str
+    auto_research: bool = True
+
+
+class CreateWorldPayload(BaseModel):
+    name: str
+    franchise: str | None = None
+    category: str | None = None
+    continuity: str | None = None
+    era: str | None = None
+    parent_id: int | None = None
+    auto_research: bool = False
+
+
+@router.post("/import")
+def import_world(payload: ImportWorldPayload, background_tasks: BackgroundTasks):
+    service = UniverseService()
+    world = service.import_from_registry(payload.world_id)
+    if not world:
+        return {
+            "status": "error",
+            "message": f"World '{payload.world_id}' not found in registry.",
+        }
+
+    if payload.auto_research and world.name:
+        import uuid
+
+        run_id = str(uuid.uuid4())
+        from app.api.routers.runs import run_pipeline_in_background
+
+        background_tasks.add_task(
+            run_pipeline_in_background, run_id, [world.name]
+        )
+        return {
+            "status": "queued",
+            "run_id": run_id,
+            "world_id": payload.world_id,
+            "world_name": world.name,
+        }
+    return {
+        "status": "imported",
+        "world_id": payload.world_id,
+        "world_name": world.name,
+    }
+
+
+@router.post("/create")
+def create_world(payload: CreateWorldPayload, background_tasks: BackgroundTasks):
+    service = UniverseService()
+    existing = service.get_universe(payload.name)
+    if existing:
+        return {"status": "exists", "world_name": payload.name, "id": existing.id}
+
+    world = service.create_universe(
+        name=payload.name,
+        franchise=payload.franchise,
+        category=payload.category,
+        continuity=payload.continuity,
+        era=payload.era,
+        parent_id=payload.parent_id,
+    )
+
+    if payload.auto_research and world.name:
+        import uuid
+
+        run_id = str(uuid.uuid4())
+        from app.api.routers.runs import run_pipeline_in_background
+
+        background_tasks.add_task(
+            run_pipeline_in_background, run_id, [world.name]
+        )
+        return {"status": "queued", "run_id": run_id, "world_name": world.name}
+    return {"status": "created", "world_name": world.name, "id": world.id}
+
 
 @router.post("/")
 def add_world(payload: AddWorldPayload, background_tasks: BackgroundTasks):
@@ -26,22 +115,35 @@ def add_world(payload: AddWorldPayload, background_tasks: BackgroundTasks):
     world = service.get_universe(payload.world_name)
     if not world:
         world = service.create_universe(payload.world_name)
-    
+
     if payload.auto_research:
         import uuid
+
         run_id = str(uuid.uuid4())
         from app.api.routers.runs import run_pipeline_in_background
-        background_tasks.add_task(run_pipeline_in_background, run_id, [payload.world_name])
+
+        background_tasks.add_task(
+            run_pipeline_in_background, run_id, [payload.world_name]
+        )
         return {"status": "queued", "run_id": run_id, "world_name": payload.world_name}
     return {"status": "created", "world_name": payload.world_name}
 
+
 @router.get("/")
-def get_worlds():
+def get_worlds(limit: int = 100, offset: int = 0, fields: list[str] | None = None):
     service = UniverseService()
-    worlds = service.get_all_universes()
+    worlds = service.get_all_universes(limit=limit, offset=offset, fields=fields)
+    if fields:
+        return [
+            dict(zip(fields, w, strict=False))
+            if isinstance(w, tuple)
+            else w.model_dump()
+            for w in worlds
+        ]
     return [
         {
             "id": w.id,
+            "uuid": w.uuid,
             "slug": w.slug,
             "name": w.name,
             "franchise": w.franchise,
@@ -49,10 +151,11 @@ def get_worlds():
             "continuity": w.continuity,
             "era": w.era,
             "summary": w.summary,
-            "is_explored": w.is_explored
+            "is_explored": w.is_explored,
         }
         for w in worlds
     ]
+
 
 @router.post("/{world_id}/reset-explored")
 def reset_world_explored(world_id: int):
@@ -61,11 +164,13 @@ def reset_world_explored(world_id: int):
         raise HTTPException(status_code=404, detail="Universe not found")
     return {"status": "success"}
 
+
 @router.post("/reset-all-explored")
 def reset_all_explored():
     service = UniverseService()
     count = service.reset_all_explored()
     return {"status": "success", "count": count}
+
 
 @router.post("/research-unexplored")
 def research_unexplored(background_tasks: BackgroundTasks):
@@ -74,16 +179,20 @@ def research_unexplored(background_tasks: BackgroundTasks):
     if not unexplored:
         return {"status": "noop", "run_id": None, "worlds": []}
     import uuid
+
     run_id = str(uuid.uuid4())
     from app.api.routers.runs import run_pipeline_in_background
+
     background_tasks.add_task(run_pipeline_in_background, run_id, unexplored)
     return {"status": "started", "run_id": run_id, "worlds": unexplored}
+
 
 @router.delete("/{world_id}")
 def delete_world(world_id: int):
     service = UniverseService()
     service.delete_universe(world_id)
     return {"status": "success"}
+
 
 @router.post("/reset-database")
 def reset_database():
@@ -98,58 +207,125 @@ def reset_database():
         # (already correct below).
         for table in [
             ExecutionState,
-            InferredClaim, Claim, EntityAlias, Entity, InferenceRule,
-            Trait, WorldTier, TierSystem, Anomaly, ModelConfig,
+            InferredClaim,
+            Claim,
+            EntityAlias,
+            Entity,
+            InferenceRule,
+            WorldTier,
+            TierSystem,
+            Anomaly,
+            ModelConfig,
         ]:
             session.exec(table.__table__.delete())
-        
+
         with Session(extrapolation_engine) as extra_session:
             extra_session.exec(Theory.__table__.delete())
-            
+
         universes = session.exec(select(Universe)).all()
         for world in universes:
             world.summary = None
             world.is_explored = False
             world.raw_data = None
             session.add(world)
-        
+
         json_path = Path(__file__).parent.parent.parent / "db" / "default_worlds.json"
         if json_path.exists():
             with open(json_path) as f:
                 default_worlds = json.load(f)
                 for w_data in default_worlds:
                     slug = w_data.get("id")
-                    exists = session.exec(select(Universe).where(Universe.slug == slug)).first()
+                    exists = session.exec(
+                        select(Universe).where(Universe.slug == slug)
+                    ).first()
                     if not exists:
-                        session.add(Universe(
-                            slug=slug,
-                            name=w_data.get("name"),
-                            franchise=w_data.get("franchise"),
-                            category=w_data.get("category"),
-                            continuity=w_data.get("continuity"),
-                            era=w_data.get("era"),
-                            summary=None,
-                            is_explored=False
-                        ))
+                        session.add(
+                            Universe(
+                                slug=slug,
+                                name=w_data.get("name"),
+                                franchise=w_data.get("franchise"),
+                                category=w_data.get("category"),
+                                continuity=w_data.get("continuity"),
+                                era=w_data.get("era"),
+                                summary=None,
+                                is_explored=False,
+                            )
+                        )
         session.commit()
-    
+
     with Session(unconfirmed_engine) as session:
         # Same FK-ordering issue as above: unconfirmed.db also enables
         # PRAGMA foreign_keys=ON (unconfirmed_session.py), and
-        # UnconfirmedTrait.universe_id references unconfirmed_universe.id.
-        # Deleting UnconfirmedUniverse before UnconfirmedTrait raises an
-        # IntegrityError the moment any trait rows exist -- this was the
+        # UnconfirmedClaim.universe_id references unconfirmed_universe.id.
+        # Deleting UnconfirmedUniverse before UnconfirmedClaim raises an
+        # IntegrityError the moment any claim rows exist -- this was the
         # actual cause of "reset has issues with Unconfirmed.db". Child
         # table must be deleted first.
-        for table in [UnconfirmedTrait, UnconfirmedUniverse]:
+        for table in [UnconfirmedClaim, UnconfirmedUniverse]:
             session.exec(table.__table__.delete())
         session.commit()
 
     return {"status": "success"}
 
+
+@router.get("/registry")
+def list_registry(q: str | None = Query(default=None)):
+    json_path = Path(__file__).parent.parent.parent / "db" / "default_worlds.json"
+    if not json_path.exists():
+        return {"worlds": []}
+    with open(json_path) as f:
+        entries = json.load(f)
+    if q:
+        q_lower = q.lower()
+        entries = [
+            e for e in entries
+            if q_lower in e.get("name", "").lower()
+            or q_lower in e.get("franchise", "").lower()
+            or q_lower in e.get("id", "").lower()
+        ]
+    return {"worlds": entries[:50]}
+
+
+@router.get("/search-duplicates")
+def search_duplicates(name: str = Query(...)):
+    service = UniverseService()
+    return {"candidates": service.find_duplicates(name)}
+
+
+@router.post("/merge")
+def merge_worlds(payload: dict):
+    keep_id = payload.get("keep_id")
+    merge_id = payload.get("merge_id")
+    if not keep_id or not merge_id:
+        raise HTTPException(status_code=400, detail="keep_id and merge_id required")
+    service = UniverseService()
+    return service.merge_worlds(keep_id, merge_id)
+
+
+@router.get("/by-uuid/{uuid}")
+def get_world_by_uuid(uuid: str):
+    service = UniverseService()
+    world = service.get_universe_by_uuid(uuid)
+    if not world:
+        raise HTTPException(status_code=404, detail="World not found")
+    return {
+        "id": world.id,
+        "uuid": world.uuid,
+        "slug": world.slug,
+        "name": world.name,
+        "franchise": world.franchise,
+        "category": world.category,
+        "continuity": world.continuity,
+        "era": world.era,
+        "summary": world.summary,
+        "is_explored": world.is_explored,
+    }
+
+
 @router.post("/clear-logs")
 def clear_logs():
     from app.services.execution_service import ExecutionService
+
     exec_service = ExecutionService()
     exec_service.clear_logs()
     return {"status": "success"}

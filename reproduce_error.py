@@ -1,5 +1,4 @@
 from typing import Dict, Optional
-import json
 
 def build_freshness_comparison_report(url_content_map: Dict[str, Optional[str]]) -> str:
     reports = []

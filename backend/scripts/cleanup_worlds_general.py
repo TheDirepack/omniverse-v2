@@ -1,18 +1,21 @@
 import re
-from sqlmodel import Session, select
-from app.db.session import engine
+
 from app.db.schema import Universe
-from app.db.unconfirmed_session import engine as unconfirmed_engine
+from app.db.session import engine
 from app.db.unconfirmed_schema import UnconfirmedUniverse
+from app.db.unconfirmed_session import unconfirmed_engine
+from sqlmodel import Session, select
 
 # Pattern to match trailing parentheses: optional space, then (anything) at the end of the string
 PATTERN = r"\s*\([^)]*\)$"
+
 
 def clean_name(name):
     if not name:
         return name
     new_name = re.sub(PATTERN, "", name, flags=re.IGNORECASE).strip()
     return new_name
+
 
 def main():
     # Main DB
@@ -40,6 +43,7 @@ def main():
                 updated_count += 1
         session.commit()
         print(f"Updated {updated_count} universes in unconfirmed DB.")
+
 
 if __name__ == "__main__":
     main()

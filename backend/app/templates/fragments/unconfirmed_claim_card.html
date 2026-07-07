@@ -1,0 +1,40 @@
+<div id="claim-{{ claim.id }}" class="bg-white dark:bg-gray-800 p-4 rounded-lg shadow border-l-4 border-blue-500 flex flex-col gap-2">
+    <div class="flex justify-between items-start">
+        <div class="font-semibold text-blue-800">{{ claim.universe_name }}</div>
+        <div class="text-xs font-mono text-gray-500">ID: {{ claim.id }}</div>
+    </div>
+    
+    <div class="text-sm text-gray-700 dark:text-gray-300">
+        <span class="font-bold">{{ claim.subject }}</span> 
+        <span class="text-blue-600 dark:text-blue-400">{{ claim.predicate }}</span> 
+        <span>{{ claim.object_val }}</span>
+    </div>
+
+    {% if claim.reference %}
+    <div class="text-xs text-gray-500 italic">
+        Ref: {{ claim.reference }}
+    </div>
+    {% endif %}
+
+    <div class="flex justify-between items-center mt-2">
+        <div class="text-xs font-medium px-2 py-1 bg-blue-50 text-blue-700 rounded">
+            Conf: {{ claim.confidence or 'N/A' }}
+        </div>
+        <div class="flex gap-2">
+            <button hx-post="/validation/claim/{{ claim.id }}/reject" 
+                    hx-target="#claim-{{ claim.id }}" 
+                    hx-swap="outerHTML"
+                    hx-indicator="closest button"
+                    class="text-xs px-3 py-1 bg-red-100 text-red-700 rounded hover:bg-red-200 transition btn-loading">
+                Reject
+            </button>
+            <button hx-post="/validation/claim/{{ claim.id }}/approve" 
+                    hx-target="#claim-{{ claim.id }}" 
+                    hx-swap="outerHTML"
+                    hx-indicator="closest button"
+                    class="text-xs px-3 py-1 bg-green-600 text-white rounded hover:bg-green-700 transition btn-loading">
+                Approve
+            </button>
+        </div>
+    </div>
+</div>

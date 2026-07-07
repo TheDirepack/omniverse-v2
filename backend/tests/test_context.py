@@ -1,8 +1,9 @@
 """
 Tests for app.core.context — the ContextVar-based universe context.
 """
+
 import asyncio
-import pytest
+
 from app.core.context import get_current_universe, set_current_universe
 
 

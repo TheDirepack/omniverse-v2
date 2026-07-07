@@ -1,10 +1,11 @@
-import pytest
 from unittest.mock import AsyncMock, patch
+
 from app.db.schema import InferenceRule
 
 
 class TestDepthEndpoints:
     def test_get_depth_default(self, client):
+        client.put("/api/inference/depth", json={"max_composition_depth": 2})
         r = client.get("/api/inference/depth")
         assert r.status_code == 200
         assert r.json()["max_composition_depth"] == 2
@@ -35,7 +36,9 @@ class TestDepthEndpoints:
 
 class TestRuleProposalTrigger:
     def test_propose_endpoint_returns_run_id(self, client):
-        with patch("app.api.routers.inference.run_rule_proposal_in_background", new=AsyncMock()) as mock_task:
+        with patch(
+            "app.api.routers.inference.run_rule_proposal_in_background", new=AsyncMock()
+        ) as mock_task:
             r = client.post("/api/inference/rules/propose")
             assert r.status_code == 200
             data = r.json()
@@ -53,7 +56,12 @@ class TestRuleListingAndApproval:
         assert data["approved"] == []
 
     def test_list_rules_by_status(self, ephemeral_db, client):
-        rule = InferenceRule(predicate_1="USES", predicate_2="GENERATES", implied_predicate="PRODUCES", status="CRITIQUED")
+        rule = InferenceRule(
+            predicate_1="USES",
+            predicate_2="GENERATES",
+            implied_predicate="PRODUCES",
+            status="CRITIQUED",
+        )
         ephemeral_db.add(rule)
         ephemeral_db.commit()
         r = client.get("/api/inference/rules?status=CRITIQUED")
@@ -63,7 +71,12 @@ class TestRuleListingAndApproval:
         assert data[0]["predicate_1"] == "USES"
 
     def test_approve_rule_endpoint(self, ephemeral_db, client):
-        rule = InferenceRule(predicate_1="USES", predicate_2="GENERATES", implied_predicate="PRODUCES", status="CRITIQUED")
+        rule = InferenceRule(
+            predicate_1="USES",
+            predicate_2="GENERATES",
+            implied_predicate="PRODUCES",
+            status="CRITIQUED",
+        )
         ephemeral_db.add(rule)
         ephemeral_db.commit()
         ephemeral_db.refresh(rule)
@@ -78,7 +91,12 @@ class TestRuleListingAndApproval:
         assert r.status_code == 404
 
     def test_list_rules_unknown_status_returns_empty(self, ephemeral_db, client):
-        rule = InferenceRule(predicate_1="USES", predicate_2="GENERATES", implied_predicate="PRODUCES", status="CRITIQUED")
+        rule = InferenceRule(
+            predicate_1="USES",
+            predicate_2="GENERATES",
+            implied_predicate="PRODUCES",
+            status="CRITIQUED",
+        )
         ephemeral_db.add(rule)
         ephemeral_db.commit()
         r = client.get("/api/inference/rules?status=NOT_A_REAL_STATUS")
@@ -88,7 +106,12 @@ class TestRuleListingAndApproval:
     def test_approve_then_reject_overwrites_state(self, ephemeral_db, client):
         """Approving then rejecting the same rule should leave it in the
         rejected state, not some inconsistent hybrid."""
-        rule = InferenceRule(predicate_1="USES", predicate_2="GENERATES", implied_predicate="PRODUCES", status="CRITIQUED")
+        rule = InferenceRule(
+            predicate_1="USES",
+            predicate_2="GENERATES",
+            implied_predicate="PRODUCES",
+            status="CRITIQUED",
+        )
         ephemeral_db.add(rule)
         ephemeral_db.commit()
         ephemeral_db.refresh(rule)
@@ -100,7 +123,12 @@ class TestRuleListingAndApproval:
         assert r.json()["human_approved"] is False
 
     def test_reject_rule_endpoint(self, ephemeral_db, client):
-        rule = InferenceRule(predicate_1="USES", predicate_2="GENERATES", implied_predicate="PRODUCES", status="CRITIQUED")
+        rule = InferenceRule(
+            predicate_1="USES",
+            predicate_2="GENERATES",
+            implied_predicate="PRODUCES",
+            status="CRITIQUED",
+        )
         ephemeral_db.add(rule)
         ephemeral_db.commit()
         ephemeral_db.refresh(rule)
@@ -120,7 +148,8 @@ class TestMaterializationEndpoint:
         assert data["created_count"] == 0
 
     def test_materialize_with_approved_rule(self, ephemeral_db, client):
-        from app.db.schema import Universe, Entity, Claim
+        from app.db.schema import Claim, Entity, Universe
+
         u = Universe(name="TestUniverse", is_explored=True)
         ephemeral_db.add(u)
         ephemeral_db.commit()
@@ -134,14 +163,21 @@ class TestMaterializationEndpoint:
         for e in [a, b, c]:
             ephemeral_db.refresh(e)
 
-        ephemeral_db.add_all([
-            Claim(subject_id=a.id, predicate="USES", object_entity_id=b.id),
-            Claim(subject_id=b.id, predicate="GENERATES", object_entity_id=c.id),
-        ])
+        ephemeral_db.add_all(
+            [
+                Claim(subject_id=a.id, predicate="USES", object_entity_id=b.id),
+                Claim(subject_id=b.id, predicate="GENERATES", object_entity_id=c.id),
+            ]
+        )
         ephemeral_db.commit()
 
-        rule = InferenceRule(predicate_1="USES", predicate_2="GENERATES", implied_predicate="PRODUCES",
-                              status="APPROVED", human_approved=True)
+        rule = InferenceRule(
+            predicate_1="USES",
+            predicate_2="GENERATES",
+            implied_predicate="PRODUCES",
+            status="APPROVED",
+            human_approved=True,
+        )
         ephemeral_db.add(rule)
         ephemeral_db.commit()
 

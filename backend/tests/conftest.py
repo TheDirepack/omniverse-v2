@@ -1,312 +1,257 @@
+import logging
 import os
-import atexit
-import socket
-import shutil
-import subprocess
-import sys
-import time
-import warnings
+from datetime import datetime
 from pathlib import Path
 
-print("LOADING ROOT CONFTEX...")
+# Use /dev/shm for RAM-disk speed in tests
+SHM_DIR = Path("/dev/shm/omniverse_tests")
+SHM_DIR.mkdir(exist_ok=True)
 
-# langchain-core eagerly imports pydantic.v1 which warns on Python 3.14+.
-# No code uses pydantic v1 models — safe to suppress.
-warnings.filterwarnings(
-    "ignore",
-    message="Core Pydantic V1 functionality isn't compatible with.*",
-)
-warnings.filterwarnings(
-    "ignore",
-    category=DeprecationWarning,
-    message="datetime.datetime.utcnow.*deprecated.*",
-)
+# Worker-specific DB suffixes for pytest-xdist
+worker_id = os.getenv("PYTEST_XDIST_WORKER")
+suffix = f"_{worker_id}" if worker_id else ""
+
+# Test database URLs
+# Use longer timeout to avoid 'database is locked' errors in parallel tests
+DB_TIMEOUT = 60
+TEST_DB_URL = f"sqlite:///{SHM_DIR}/omniverse_test{suffix}.db?timeout={DB_TIMEOUT}"
+TEST_UNCONFIRMED_URL = f"sqlite:///{SHM_DIR}/omniverse_test_unconfirmed{suffix}.db?timeout={DB_TIMEOUT}"
+TEST_EXTRAPOLATION_URL = f"sqlite:///{SHM_DIR}/omniverse_test_extrapolation{suffix}.db?timeout={DB_TIMEOUT}"
+TEST_SETTINGS_URL = f"sqlite:///{SHM_DIR}/omniverse_test_settings{suffix}.db?timeout={DB_TIMEOUT}"
+TEST_OPERATIONAL_URL = f"sqlite:///{SHM_DIR}/omniverse_test_operational{suffix}.db?timeout={DB_TIMEOUT}"
+
+# Override env vars for tests BEFORE importing app
+os.environ["DATABASE_URL"] = TEST_DB_URL
+os.environ["UNCONFIRMED_DB_URL"] = TEST_UNCONFIRMED_URL
+os.environ["EXTRAPOLATION_DB_URL"] = TEST_EXTRAPOLATION_URL
+os.environ["SETTINGS_DATABASE_URL"] = TEST_SETTINGS_URL
+os.environ["OPERATIONAL_DATABASE_URL"] = TEST_OPERATIONAL_URL
 
 import pytest
-from sqlmodel import SQLModel, Session, create_engine
 from fastapi.testclient import TestClient
-
-# Use temp file so worker threads in TestClient share same DB
-TEST_DB_PATH = "/tmp/omniverse_test.db"
-
-@atexit.register
-def _cleanup():
-    for p in [TEST_DB_PATH, "/tmp/omniverse_test_unconfirmed.db", "/tmp/omniverse_test_extrapolation.db", "/tmp/omniverse_test_settings.db"]:
-        if os.path.exists(p):
-            os.remove(p)
-
-os.environ["DATABASE_URL"] = f"sqlite:///{TEST_DB_PATH}"
-os.environ["UNCONFIRMED_DB_URL"] = "sqlite:////tmp/omniverse_test_unconfirmed.db"
-os.environ["EXTRAPOLATION_DB_URL"] = "sqlite:////tmp/omniverse_test_extrapolation.db"
-os.environ["SETTINGS_DATABASE_URL"] = "sqlite:////tmp/omniverse_test_settings.db"
-
-from app.db.session import engine
-from app.db.unconfirmed_session import engine as unconfirmed_engine, init_unconfirmed_db
-from app.db.unconfirmed_schema import unconfirmed_metadata
-from app.db.extrapolation_session import engine as extrapolation_engine, init_extrapolation_db
-from app.db.extrapolation_schema import extrapolation_metadata
-from app.db.settings_session import settings_engine, init_settings_db
+from sqlalchemy import event as sa_event
+from sqlmodel import Session, SQLModel, create_engine, select, text
 from app.main import app
+from typing import Any
 
 
+def _enable_fks(dbapi_connection, connection_record):
+    cursor = dbapi_connection.cursor()
+    cursor.execute("PRAGMA foreign_keys=ON")
+    cursor.close()
 
 
-@pytest.fixture(autouse=True)
-def auto_create_db(request):
-    """Autouse: create tables before each test, drop after. Ensures clean slate."""
-    if "real_server" in request.fixturenames:
-        yield
-        return
+# Create test engines
+engine = create_engine(TEST_DB_URL, connect_args={"check_same_thread": False})
+sa_event.listens_for(engine, "connect")(_enable_fks)
+unconfirmed_engine = create_engine(TEST_UNCONFIRMED_URL, connect_args={"check_same_thread": False})
+sa_event.listens_for(unconfirmed_engine, "connect")(_enable_fks)
+extrapolation_engine = create_engine(TEST_EXTRAPOLATION_URL, connect_args={"check_same_thread": False})
+sa_event.listens_for(extrapolation_engine, "connect")(_enable_fks)
+settings_engine = create_engine(TEST_SETTINGS_URL, connect_args={"check_same_thread": False})
+sa_event.listens_for(settings_engine, "connect")(_enable_fks)
 
-    SQLModel.metadata.create_all(engine)
-    init_unconfirmed_db()
-    init_extrapolation_db()
+
+class _CSRFClient:
+    def __init__(self, client: TestClient):
+        self._client = client
+        self._csrf_token: str | None = None
+        self._init_csrf()
+
+    def _init_csrf(self):
+        resp = self._client.get("/")
+        csrf = self._client.cookies.get("csrf_token")
+        if csrf:
+            self._csrf_token = csrf
+
+    def get(self, *args: Any, **kwargs: Any):
+        return self._client.get(*args, **kwargs)
+
+    def post(self, *args: Any, **kwargs: Any):
+        headers = kwargs.pop("headers", {}) or {}
+        if self._csrf_token and "X-CSRF-Token" not in headers:
+            headers["X-CSRF-Token"] = self._csrf_token
+        return self._client.post(*args, headers=headers, **kwargs)
+
+    def put(self, *args: Any, **kwargs: Any):
+        headers = kwargs.pop("headers", {}) or {}
+        if self._csrf_token and "X-CSRF-Token" not in headers:
+            headers["X-CSRF-Token"] = self._csrf_token
+        return self._client.put(*args, headers=headers, **kwargs)
+
+    def delete(self, *args: Any, **kwargs: Any):
+        headers = kwargs.pop("headers", {}) or {}
+        if self._csrf_token and "X-CSRF-Token" not in headers:
+            headers["X-CSRF-Token"] = self._csrf_token
+        return self._client.delete(*args, headers=headers, **kwargs)
+
+    def patch(self, *args: Any, **kwargs: Any):
+        headers = kwargs.pop("headers", {}) or {}
+        if self._csrf_token and "X-CSRF-Token" not in headers:
+            headers["X-CSRF-Token"] = self._csrf_token
+        return self._client.patch(*args, headers=headers, **kwargs)
+
+    def request(self, *args: Any, **kwargs: Any):
+        headers = kwargs.pop("headers", {}) or {}
+        if self._csrf_token and "X-CSRF-Token" not in headers:
+            headers["X-CSRF-Token"] = self._csrf_token
+        return self._client.request(*args, headers=headers, **kwargs)
+
+    @property
+    def cookies(self):
+        return self._client.cookies
+
+
+@pytest.fixture(scope="session", autouse=True)
+def setup_databases():
+    from app.db.session import init_db
+    
+    # First, create all tables across all DBs
+    init_db()
+    
+    # Clean settings DB before seeding to remove stale data from past runs
+    from app.db.settings_session import settings_engine, init_settings_db
+    from sqlmodel import Session, text
+    with Session(settings_engine) as s:
+        s.execute(text("DELETE FROM agentroutefallback"))
+        s.execute(text("DELETE FROM providerkey"))
+        s.execute(text("DELETE FROM providerconfig"))
+        s.execute(text("DELETE FROM setting"))
+        s.commit()
+    
+    # Re-seed DEFAULT route after cleaning
     init_settings_db()
     yield
-    try:
-        SQLModel.metadata.drop_all(engine)
-        unconfirmed_metadata.drop_all(unconfirmed_engine)
-        SQLModel.metadata.drop_all(settings_engine)
-    except Exception:
-        pass
 
-    # We don't explicitly drop unconfirmed tables here to avoid complexity, 
-    # but since we use a temp file that is cleaned up at atexit, it's okay.
+@pytest.fixture
+def ephemeral_db(clean_db):
+    return clean_db
 
 
 @pytest.fixture
-def ephemeral_db():
-    """Yields a session against the ephemeral DB. Tables already exist from autouse."""
-    with Session(engine) as session:
-        yield session
+def api_client(client):
+    return client
 
-
-from unittest.mock import patch
 
 @pytest.fixture
 def client():
-    """FastAPI TestClient against app with ephemeral DB.
-
-    app startup normally calls init_db(), which (among other things) seeds
-    ~150 default worlds from default_worlds.json. auto_create_db already
-    creates a clean schema for every test, so we no-op init_db here to keep
-    the DB genuinely empty by default -- tests that want seeded worlds add
-    them explicitly.
-    """
-    with patch("app.main.init_db"):
-        with TestClient(app) as c:
-            yield c
-
+    with TestClient(app) as c:
+        yield _CSRFClient(c)
 
 @pytest.fixture
-def seeded_db(ephemeral_db):
-    """DB with seeded Universe, ProviderConfig, AgentRouteFallback for FK tests."""
-    from app.db.schema import Universe, ProviderConfig, AgentRouteFallback
+def session():
+    with Session(engine) as session:
+        yield session
 
-    u = Universe(name="TestUniverse", summary="test summary", is_explored=False)
-    ephemeral_db.add(u)
-    ephemeral_db.commit()
-    ephemeral_db.refresh(u)
+@pytest.fixture
+def clean_db(session):
+    tables = [
+        "inferredclaimpath", "inferredclaim",
+        "claimattribute",
+        "claim",
+        "evidencechunk", "evidence",
+        "entityalias", "entity",
+        "predicatealias",
+        "worldtier", "anomaly", "universerelation",
+        "modelconfig", "providerkey", "agentroutefallback",
+        "providerconfig", "setting",
+        "inferencerule",
+        "predicate",
+        "universe", "tiersystem",
+        "executionstate",
+    ]
+    for t in tables:
+        session.execute(text(f"DELETE FROM {t}"))
+    session.commit()
 
-    p = ProviderConfig(name="test-provider", provider_type="openai")
-    ephemeral_db.add(p)
-    ephemeral_db.commit()
-    ephemeral_db.refresh(p)
+    # Clean settings engine tables too
+    from app.db.settings_session import settings_engine
+    with Session(settings_engine) as ss:
+        ss.execute(text("DELETE FROM agentroutefallback"))
+        ss.execute(text("DELETE FROM providerkey"))
+        ss.execute(text("DELETE FROM providerconfig"))
+        ss.execute(text("DELETE FROM setting"))
+        ss.commit()
 
-    r = AgentRouteFallback(task_type="RESEARCH", provider_id=p.id, models="gpt-4")
-    ephemeral_db.add(r)
-    ephemeral_db.commit()
-    ephemeral_db.refresh(r)
-
-    return ephemeral_db, u, p, r
-
-
-# ── Real server fixtures for test_routes.py ─────────────────────────
-
-BACKEND_DIR = Path(__file__).parent.parent / "backend"
-import uuid as _uuid
+    return session
 
 
-def _find_free_port() -> int:
-    sock = socket.socket()
-    sock.bind(("", 0))
-    port = sock.getsockname()[1]
-    sock.close()
-    return port
+@pytest.fixture(autouse=True)
+def _clear_acquisition_cache():
+    from app.core.acquisition_cache import acquisition_cache
+    from app.core import agent_engine as _ae
+    from app.db.unconfirmed_session import unconfirmed_engine
 
+    _ae._current_run_id = None
 
-@pytest.fixture(scope="module")
-def real_server():
-    """
-    Spawns a real uvicorn server for integration tests.
-    Each module gets its OWN seed DB path (uuid-suffixed) so modules
-    cannot leak DB state into one another even when run concurrently.
-    """
-    run_id = _uuid.uuid4().hex[:8]
+    acquisition_cache._lru.clear()
+    acquisition_cache._pending.clear()
 
-    # Module-local DB paths inside /tmp — no collision between modules
-    module_db_path = Path(f"/tmp/omniverse_v2_{run_id}.db")
-    module_unconfirmed_path = Path(f"/tmp/omniverse_test_unconfirmed_{run_id}.db")
-    module_settings_path = Path(f"/tmp/omniverse_test_settings_{run_id}.db")
-    module_extrapolation_path = Path(f"/tmp/omniverse_test_extrapolation_{run_id}.db")
+    repo = acquisition_cache.repo
+    repo.session.exec(text("DELETE FROM provenance_edge"))
+    repo.session.exec(text("DELETE FROM world_acquisition_usage"))
+    repo.session.exec(text("DELETE FROM acquisition_artifact"))
+    repo.session.commit()
 
-    # Start uvicorn pointing at the module-local DB
-    from tests.test_db import create_test_db
-    create_test_db("/tmp", db_filename=f"omniverse_v2_{run_id}.db")
+    with Session(unconfirmed_engine) as us:
+        us.exec(text("DELETE FROM unconfirmed_claim"))
+        us.exec(text("DELETE FROM unconfirmed_universe"))
+        us.commit()
+
+    yield
+
+@pytest.fixture
+def seeded_db(clean_db):
+    from app.db.schema import Universe, Entity, Claim
+    session = clean_db
+    u1 = Universe(name="U1", is_explored=True)
+    session.add(u1)
+    session.commit()
+    session.refresh(u1)
     
-    port = _find_free_port()
+    e1 = Entity(name="E1", entity_type="T1", universe_id=u1.id)
+    session.add(e1)
+    session.commit()
+    
+    return session, u1, e1, None
 
-    base_url = f"http://127.0.0.1:{port}"
-    subprocess_env = {k: v for k, v in os.environ.items() if k != "DATABASE_URL"}
-    subprocess_env["DATABASE_URL"] = f"sqlite:///{module_db_path}"
-    subprocess_env["UNCONFIRMED_DB_URL"] = f"sqlite:///{module_unconfirmed_path}"
-    # Without dedicated paths here, this module-scoped subprocess would
-    # inherit the SAME settings.db/extrapolation.db path the function-scoped
-    # auto_create_db autouse fixture drops and recreates between every test
-    # in THIS (parent) process -- yanking tables out from under the
-    # still-running subprocess mid-module and causing exactly the kind of
-    # widespread, hard-to-place 404s/"no such table" failures this was
-    # producing in test_settings_api.py.
-    subprocess_env["SETTINGS_DATABASE_URL"] = f"sqlite:///{module_settings_path}"
-    subprocess_env["EXTRAPOLATION_DB_URL"] = f"sqlite:///{module_extrapolation_path}"
 
-    proc = subprocess.Popen(
-        [sys.executable, "-m", "uvicorn", "app.main:app",
-         "--host", "127.0.0.1", "--port", str(port),
-         "--log-level", "debug"],
-        cwd=str(BACKEND_DIR),
-        env=subprocess_env,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        text=True,
+# --- Per-test log files, grouped by run ---
+
+LOG_DIR = Path(__file__).parent / "logs"
+
+
+def pytest_configure(config):
+    LOG_DIR.mkdir(exist_ok=True)
+    run_ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    config._test_run_dir = LOG_DIR / f"run_{run_ts}"
+    config._test_run_dir.mkdir(exist_ok=True)
+
+
+def pytest_runtest_setup(item):
+    test_name = item.nodeid.replace("::", ".").replace("/", ".")
+    run_dir = item.config._test_run_dir
+    log_file = run_dir / f"{test_name}.log"
+    handler = logging.FileHandler(log_file)
+    handler.setLevel(logging.DEBUG)
+    handler.setFormatter(
+        logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s")
     )
-
-    # Health wait loop (allow up to 45 seconds for slow Playwright browser startup)
-    import httpx
-    for _ in range(90):
-        try:
-            with httpx.Client() as c:
-                r = c.get(f"{base_url}/api/health", timeout=1)
-                if r.status_code == 200:
-                    break
-        except Exception:
-            time.sleep(0.5)
-    else:
-        # Read whatever was printed to stdout/stderr
-        proc.kill()
-        stdout_data, stderr_data = proc.communicate(timeout=5)
-        raise RuntimeError(
-            f"Real server did not start. Returncode: {proc.returncode}\n--- stdout ---\n{stdout_data}\n--- stderr ---\n{stderr_data}"
-        )
-
-    yield base_url
-
-    # Teardown
-    proc.terminate()
-    try:
-        proc.wait(timeout=5)
-    except subprocess.TimeoutExpired:
-        proc.kill()
-        proc.wait(timeout=2)
-
-    # Remove module-local DBs
-    for p in [module_db_path, module_unconfirmed_path]:
-        if p.exists():
-            p.unlink()
+    item._test_log_handler = handler
+    item._test_log_file = log_file
+    logging.getLogger().setLevel(logging.DEBUG)
+    logging.getLogger().addHandler(handler)
 
 
-
-@pytest.fixture
-def api_client(real_server):
-    import httpx
-    with httpx.Client(base_url=real_server) as c:
-        yield c
-
-
-# ── Real llama-server fixture for full-cycle inference-rule tests ──────
-#
-# Assumes `llama-server` (llama.cpp) is installed as a distro/system package
-# and reachable on PATH -- this fixture does not attempt to build or fetch
-# it. It also assumes the model file below is a REAL gguf, not the git-lfs
-# pointer stub -- LFS blobs for this repo are hosted on
-# github-cloud.githubusercontent.com, which is unreachable from some sandboxed
-# CI environments even when github.com itself is reachable. In that case
-# this fixture skips (not fails) so the rest of the suite still runs.
-
-MODEL_PATH = Path(__file__).parent / "model" / "Qwen_Qwen3-0.6B-Q5_K_L.gguf"
-MODEL_MIN_REAL_BYTES = 10 * 1024 * 1024  # LFS pointer stubs are ~130 bytes; real gguf is ~600MB
+def pytest_runtest_teardown(item):
+    handler = getattr(item, "_test_log_handler", None)
+    if handler:
+        logging.getLogger().removeHandler(handler)
+        handler.close()
 
 
-def _llama_server_available() -> tuple[bool, str]:
-    if shutil.which("llama-server") is None:
-        return False, "llama-server binary not found on PATH"
-    if not MODEL_PATH.exists():
-        return False, f"model file not found at {MODEL_PATH}"
-    if MODEL_PATH.stat().st_size < MODEL_MIN_REAL_BYTES:
-        return False, (
-            f"{MODEL_PATH} is only {MODEL_PATH.stat().st_size} bytes -- looks like an "
-            "unresolved git-lfs pointer, not the real model weights"
-        )
-    return True, ""
-
-
-@pytest.fixture(scope="module")
-def llama_server():
-    """
-    Launches a real llama-server subprocess against the Qwen3-0.6B model
-    checked into tests/model/, exposing the OpenAI-compatible
-    /v1/chat/completions endpoint the app's router already expects for
-    provider_type="custom". Module-scoped since model load takes a few
-    seconds and nothing in these tests needs a fresh process per test.
-
-    Skips (rather than fails) if llama-server or a real model file isn't
-    available, so `pytest -m "not slow"` runs (the default in CI) are
-    unaffected either way.
-    """
-    available, reason = _llama_server_available()
-    if not available:
-        pytest.skip(f"Skipping real-model tests: {reason}")
-
-    port = _find_free_port()
-    base_url = f"http://127.0.0.1:{port}"
-
-    proc = subprocess.Popen(
-        [
-            "llama-server",
-            "-m", str(MODEL_PATH),
-            "-c", "4096",
-            "--host", "127.0.0.1",
-            "--port", str(port),
-            "--temp", "0",
-            "-ngl", "0",
-        ],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-    )
-
-    import httpx
-    for _ in range(120):  # up to 60s for cold model load on CPU
-        if proc.poll() is not None:
-            output = proc.stdout.read() if proc.stdout else ""
-            raise RuntimeError(f"llama-server exited early (code {proc.returncode}):\n{output}")
-        try:
-            with httpx.Client() as c:
-                r = c.get(f"{base_url}/health", timeout=1)
-                if r.status_code == 200:
-                    break
-        except Exception:
-            time.sleep(0.5)
-    else:
-        proc.kill()
-        output = proc.stdout.read() if proc.stdout else ""
-        raise RuntimeError(f"llama-server did not become healthy in time:\n{output}")
-
-    yield base_url
-
-    proc.terminate()
-    try:
-        proc.wait(timeout=10)
-    except subprocess.TimeoutExpired:
-        proc.kill()
-        proc.wait(timeout=5)
+def pytest_sessionfinish(session):
+    run_dir = getattr(session.config, "_test_run_dir", None)
+    if run_dir and run_dir.exists():
+        count = len(list(run_dir.glob("*.log")))
+        print(f"\n[logs] {count} files written to {run_dir}/")

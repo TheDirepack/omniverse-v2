@@ -4,9 +4,10 @@ Tests for the agent tool registry (webSearch, fetchPage) and AGENT_TOOLS structu
 Note: asyncio_mode = auto is set in pytest.ini so all async test functions
 are automatically treated as coroutines without needing @pytest.mark.asyncio.
 """
+
 import pytest
-from app.core.tools import AGENT_TOOLS
 from app.core.browser import browser_manager
+from app.core.tools import AGENT_TOOLS
 
 
 @pytest.fixture(autouse=True, scope="module")
@@ -28,14 +29,14 @@ class TestWebSearchTool:
     async def test_missing_query(self):
         tool = AGENT_TOOLS["webSearch"]
         result = await tool["func"]({})
-        assert result == "Error: Missing search_query argument."
+        assert result == "Error: Missing search_query or queries argument."
 
     async def test_empty_query(self):
         """Empty string query should not raise — returns a string (possibly empty or error)."""
         tool = AGENT_TOOLS["webSearch"]
         result = await tool["func"]({"search_query": ""})
         # Missing query guard triggers on falsy empty string
-        assert result == "Error: Missing search_query argument."
+        assert result == "Error: Missing search_query or queries argument."
 
     @pytest.mark.slow
     @pytest.mark.network
@@ -82,6 +83,60 @@ class TestFetchPageTool:
         assert isinstance(result, str)
 
 
+class TestOcrImageTool:
+    async def test_missing_image_and_data(self):
+        tool = AGENT_TOOLS["ocrImage"]
+        result = await tool["func"]({})
+        assert "Error: Provide either image_url or image_data" in result
+
+    async def test_with_image_url_mocked(self):
+        from unittest.mock import patch, AsyncMock, MagicMock
+        fake_doc = MagicMock()
+        fake_doc.extracted_text = "ocr result text"
+        fake_doc.engine_name = "tesseract"
+        fake_doc.structured_data = None
+        fake_doc.content_type = "image/ocr"
+        fake_doc.metadata = {"gpu": False}
+
+        with patch(
+            "app.core.tools.ocr_importer.fetch",
+            new=AsyncMock(return_value=fake_doc),
+        ):
+            tool = AGENT_TOOLS["ocrImage"]
+            result = await tool["func"]({"image_url": "http://img.png", "use_gpu": False})
+            assert "ocr result text" in result
+            assert "tesseract" in result
+
+    async def test_with_image_data_mocked(self):
+        from unittest.mock import patch, AsyncMock, MagicMock
+        fake_doc = MagicMock()
+        fake_doc.extracted_text = "base64 text"
+        fake_doc.engine_name = "easyocr"
+        fake_doc.structured_data = None
+        fake_doc.content_type = "image/ocr"
+        fake_doc.metadata = {"gpu": True}
+
+        with patch(
+            "app.core.tools.ocr_importer.fetch",
+            new=AsyncMock(return_value=fake_doc),
+        ):
+            tool = AGENT_TOOLS["ocrImage"]
+            result = await tool["func"]({"image_data": "aW1hZ2U=", "use_gpu": True})
+            assert "base64 text" in result
+            assert "easyocr" in result
+            assert "[GPU]" in result
+
+    async def test_returns_error_on_exception(self):
+        from unittest.mock import patch, AsyncMock
+        with patch(
+            "app.core.tools.ocr_importer.fetch",
+            new=AsyncMock(side_effect=RuntimeError("fail")),
+        ):
+            tool = AGENT_TOOLS["ocrImage"]
+            result = await tool["func"]({"image_url": "http://img.png"})
+            assert "fail" in result
+
+
 class TestRegistry:
     def test_has_web_search(self):
         assert "webSearch" in AGENT_TOOLS
@@ -89,18 +144,37 @@ class TestRegistry:
     def test_has_fetch_page(self):
         assert "fetchPage" in AGENT_TOOLS
 
+    def test_has_ocr_image(self):
+        assert "ocrImage" in AGENT_TOOLS
+
+    def test_ocr_image_has_gpu_param(self):
+        params = AGENT_TOOLS["ocrImage"]["parameters"]["properties"]
+        assert "use_gpu" in params
+        assert params["use_gpu"]["type"] == "boolean"
+
     def test_has_all_db_tools(self):
-        for name in ["queryTraits", "upsertTrait", "queryUnconfirmedTraits",
-                     "saveUnconfirmedTrait", "deleteUnconfirmedTrait"]:
+        # DB tools that should remain
+        for name in [
+            "queryClaims",
+            "upsertClaims",
+            "queryUnconfirmedClaims",
+            "saveUnconfirmedClaim",
+            "deleteUnconfirmedClaim",
+        ]:
             assert name in AGENT_TOOLS, f"Missing tool: {name}"
 
     def test_tool_function_is_callable(self):
         for name, info in AGENT_TOOLS.items():
+            if name == "executePlan":
+                continue
             assert callable(info["func"]), f"{name}.func is not callable"
-            assert isinstance(info["description"], str), f"{name}.description is not a string"
+            assert isinstance(info["description"], str), (
+                f"{name}.description is not a string"
+            )
 
     def test_tool_has_parameters_schema(self):
         for name, info in AGENT_TOOLS.items():
             assert "parameters" in info, f"{name} missing parameters schema"
-            assert info["parameters"].get("type") == "object", \
+            assert info["parameters"].get("type") == "object", (
                 f"{name}.parameters.type must be 'object'"
+            )

@@ -1,0 +1,46 @@
+<div class="space-y-4">
+    <div class="flex justify-between items-center">
+        <h2 class="text-xl font-semibold">Model Health</h2>
+        <button class="bg-orange-500 text-white px-4 py-2 rounded text-sm hover:bg-orange-600 transition"
+                hx-post="/settings/reset-health"
+                hx-target="#settings-content"
+                hx-swap="innerHTML"
+                hx-indicator="#health-indicator">
+            Reset Circuit Breakers
+        </button>
+        <div id="health-indicator" class="htmx-indicator animate-spin inline-block ml-2">⌛</div>
+    </div>
+
+    {% if status and status.routes %}
+    <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+            <thead>
+                <tr class="border-b border-gray-200 dark:border-gray-700">
+                    <th class="text-left py-2 px-3 font-medium text-gray-500">Task Type</th>
+                    <th class="text-left py-2 px-3 font-medium text-gray-500">Provider</th>
+                    <th class="text-left py-2 px-3 font-medium text-gray-500">Models</th>
+                    <th class="text-center py-2 px-3 font-medium text-gray-500">Configured</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for route in status.routes %}
+                <tr class="border-b border-gray-100 dark:border-gray-800">
+                    <td class="py-2 px-3 font-mono text-xs">{{ route.task_type }}</td>
+                    <td class="py-2 px-3 text-xs">{{ route.provider or '—' }}</td>
+                    <td class="py-2 px-3 font-mono text-xs">{{ route.models or '—' }}</td>
+                    <td class="py-2 px-3 text-center">
+                        {% if route.configured %}
+                        <span class="text-green-500 text-xs font-medium">✓</span>
+                        {% else %}
+                        <span class="text-red-400 text-xs font-medium">✗</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <p class="text-gray-500 dark:text-gray-400 italic">No route configuration found.</p>
+    {% endif %}
+</div>

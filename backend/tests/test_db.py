@@ -1,7 +1,7 @@
-import os
 from pathlib import Path
-from sqlmodel import SQLModel, create_engine, Session, select
-from app.db.schema import Universe, ProviderConfig, ProviderKey, AgentRouteFallback
+
+from app.db.schema import AgentRouteFallback, ProviderConfig, ProviderKey, Universe
+from sqlmodel import Session, SQLModel, create_engine, select
 from tests.provider_config import PROVIDER_CREDENTIALS
 
 
@@ -20,20 +20,39 @@ def create_test_db(db_dir: str | Path, db_filename: str = "omniverse_v2.db"):
     # Run same migration ALTER TABLEs as init_db() (idempotent on fresh schema)
     with engine.begin() as conn:
         conn.exec_driver_sql("PRAGMA foreign_keys = ON")
-        columns = [row[1] for row in conn.exec_driver_sql("PRAGMA table_info(universe)").fetchall()]
+        columns = [
+            row[1]
+            for row in conn.exec_driver_sql("PRAGMA table_info(universe)").fetchall()
+        ]
         if "is_explored" not in columns:
-            conn.exec_driver_sql("ALTER TABLE universe ADD COLUMN is_explored BOOLEAN NOT NULL DEFAULT 0")
+            conn.exec_driver_sql(
+                "ALTER TABLE universe ADD COLUMN is_explored BOOLEAN NOT NULL DEFAULT 0"
+            )
         if "raw_data" not in columns:
             conn.exec_driver_sql("ALTER TABLE universe ADD COLUMN raw_data TEXT")
 
-        route_columns = [row[1] for row in conn.exec_driver_sql("PRAGMA table_info(agentroutefallback)").fetchall()]
+        route_columns = [
+            row[1]
+            for row in conn.exec_driver_sql(
+                "PRAGMA table_info(agentroutefallback)"
+            ).fetchall()
+        ]
         if "model_name" in route_columns and "models" not in route_columns:
-            conn.exec_driver_sql("ALTER TABLE agentroutefallback ADD COLUMN models TEXT")
+            conn.exec_driver_sql(
+                "ALTER TABLE agentroutefallback ADD COLUMN models TEXT"
+            )
             conn.exec_driver_sql("UPDATE agentroutefallback SET models = model_name")
         if "model_name" in route_columns and "models" in route_columns:
-            conn.exec_driver_sql("ALTER TABLE agentroutefallback DROP COLUMN model_name")
+            conn.exec_driver_sql(
+                "ALTER TABLE agentroutefallback DROP COLUMN model_name"
+            )
 
-        provider_columns = [row[1] for row in conn.exec_driver_sql("PRAGMA table_info(providerconfig)").fetchall()]
+        provider_columns = [
+            row[1]
+            for row in conn.exec_driver_sql(
+                "PRAGMA table_info(providerconfig)"
+            ).fetchall()
+        ]
         if "provider_type" in provider_columns and "base_url" in provider_columns:
             conn.exec_driver_sql(
                 "UPDATE providerconfig SET provider_type = 'custom' WHERE provider_type = 'openai' AND base_url IS NOT NULL AND base_url != ''"
@@ -61,7 +80,11 @@ def create_test_db(db_dir: str | Path, db_filename: str = "omniverse_v2.db"):
                 session.add(ProviderKey(provider_id=p.id, api_key=api_key, priority=0))
 
         # Seed worlds
-        for name in ["Real Life & History (Earth-0)", "Warhammer 40,000", "TestUniverse"]:
+        for name in [
+            "Real Life & History (Earth-0)",
+            "Warhammer 40,000",
+            "TestUniverse",
+        ]:
             exists = session.exec(select(Universe).where(Universe.name == name)).first()
             if not exists:
                 session.add(Universe(name=name, summary=None, is_explored=False))
@@ -69,7 +92,11 @@ def create_test_db(db_dir: str | Path, db_filename: str = "omniverse_v2.db"):
         # Seed default route
         existing_route = session.exec(select(AgentRouteFallback)).first()
         if not existing_route:
-            session.add(AgentRouteFallback(task_type="DEFAULT", priority=0, provider_id=None, models=None))
+            session.add(
+                AgentRouteFallback(
+                    task_type="DEFAULT", priority=0, provider_id=None, models=None
+                )
+            )
 
         session.commit()
 

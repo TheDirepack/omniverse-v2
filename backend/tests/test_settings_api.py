@@ -1,7 +1,5 @@
 import uuid
 
-import pytest
-
 
 def _unique(prefix: str = "t") -> str:
     return f"{prefix}-{uuid.uuid4().hex[:12]}"
@@ -85,17 +83,20 @@ class TestProviderCRUD:
 
     def test_create_all_fields(self, api_client):
         name = _unique("p")
-        r = api_client.post(self.ENDPOINT, json={
-            "name": name,
-            "provider_type": "openai",
-            "base_url": "https://api.openai.com/v1",
-            "models": "gpt-4,gpt-3.5",
-        })
+        r = api_client.post(
+            self.ENDPOINT,
+            json={
+                "name": name,
+                "provider_type": "openai",
+                "base_url": "https://api.openai.com/v1",
+                "models": "gpt-4,gpt-3.5",
+            },
+        )
         assert r.status_code == 200
         pid = r.json()["provider"]["id"]
 
         providers = api_client.get(self.ENDPOINT).json()
-        match = [p for p in providers if p["id"] == pid][0]
+        match = next(p for p in providers if p["id"] == pid)
         assert match["name"] == name
         assert match["provider_type"] == "openai"
         assert match["base_url"] == "https://api.openai.com/v1"
@@ -128,24 +129,33 @@ class TestProviderCRUD:
 
     def test_update_type(self, api_client):
         name = _unique("p")
-        r = api_client.post(self.ENDPOINT, json={"name": name, "provider_type": "openai"})
+        r = api_client.post(
+            self.ENDPOINT, json={"name": name, "provider_type": "openai"}
+        )
         pid = r.json()["provider"]["id"]
 
-        ur = api_client.post(self.ENDPOINT, json={"id": pid, "name": name, "provider_type": "anthropic"})
+        ur = api_client.post(
+            self.ENDPOINT, json={"id": pid, "name": name, "provider_type": "anthropic"}
+        )
         assert ur.status_code == 200
         providers = api_client.get(self.ENDPOINT).json()
-        match = [p for p in providers if p["id"] == pid][0]
+        match = next(p for p in providers if p["id"] == pid)
         assert match["provider_type"] == "anthropic"
 
     def test_update_base_url(self, api_client):
         name = _unique("p")
-        r = api_client.post(self.ENDPOINT, json={"name": name, "provider_type": "custom"})
+        r = api_client.post(
+            self.ENDPOINT, json={"name": name, "provider_type": "custom"}
+        )
         pid = r.json()["provider"]["id"]
 
-        ur = api_client.post(self.ENDPOINT, json={"id": pid, "name": name, "base_url": "http://localhost:8080/v1"})
+        ur = api_client.post(
+            self.ENDPOINT,
+            json={"id": pid, "name": name, "base_url": "http://localhost:8080/v1"},
+        )
         assert ur.status_code == 200
         providers = api_client.get(self.ENDPOINT).json()
-        match = [p for p in providers if p["id"] == pid][0]
+        match = next(p for p in providers if p["id"] == pid)
         assert match["base_url"] == "http://localhost:8080/v1"
 
     def test_update_models(self, api_client):
@@ -153,10 +163,12 @@ class TestProviderCRUD:
         r = api_client.post(self.ENDPOINT, json={"name": name})
         pid = r.json()["provider"]["id"]
 
-        ur = api_client.post(self.ENDPOINT, json={"id": pid, "name": name, "models": "a,b,c"})
+        ur = api_client.post(
+            self.ENDPOINT, json={"id": pid, "name": name, "models": "a,b,c"}
+        )
         assert ur.status_code == 200
         providers = api_client.get(self.ENDPOINT).json()
-        match = [p for p in providers if p["id"] == pid][0]
+        match = next(p for p in providers if p["id"] == pid)
         assert match["models"] == "a,b,c"
 
     def test_delete(self, api_client):
@@ -187,31 +199,46 @@ class TestProviderKeys:
 
     def test_add_key(self, api_client):
         pid = self._create_provider(api_client)
-        r = api_client.post(self.KEY_ENDPOINT, json={
-            "provider_id": pid, "api_key": "sk-test123", "priority": 0,
-        })
+        r = api_client.post(
+            self.KEY_ENDPOINT,
+            json={
+                "provider_id": pid,
+                "api_key": "sk-test123",
+                "priority": 0,
+            },
+        )
         assert r.status_code == 200
         assert r.json()["status"] == "success"
         key_id = r.json()["key_id"]
         assert key_id is not None
 
         providers = api_client.get(self.PROVIDER_ENDPOINT).json()
-        match = [p for p in providers if p["id"] == pid][0]
+        match = next(p for p in providers if p["id"] == pid)
         key_ids = [k["id"] for k in match["keys"]]
         assert key_id in key_ids
 
     def test_priority_order(self, api_client):
         pid = self._create_provider(api_client)
-        r1 = api_client.post(self.KEY_ENDPOINT, json={
-            "provider_id": pid, "api_key": "sk-second", "priority": 1,
-        })
-        r2 = api_client.post(self.KEY_ENDPOINT, json={
-            "provider_id": pid, "api_key": "sk-first", "priority": 0,
-        })
+        r1 = api_client.post(
+            self.KEY_ENDPOINT,
+            json={
+                "provider_id": pid,
+                "api_key": "sk-second",
+                "priority": 1,
+            },
+        )
+        r2 = api_client.post(
+            self.KEY_ENDPOINT,
+            json={
+                "provider_id": pid,
+                "api_key": "sk-first",
+                "priority": 0,
+            },
+        )
         id1, id2 = r1.json()["key_id"], r2.json()["key_id"]
 
         providers = api_client.get(self.PROVIDER_ENDPOINT).json()
-        match = [p for p in providers if p["id"] == pid][0]
+        match = next(p for p in providers if p["id"] == pid)
         ordered = [k["id"] for k in match["keys"]]
         first_idx = ordered.index(id2)
         second_idx = ordered.index(id1)
@@ -219,16 +246,21 @@ class TestProviderKeys:
 
     def test_delete_key(self, api_client):
         pid = self._create_provider(api_client)
-        r = api_client.post(self.KEY_ENDPOINT, json={
-            "provider_id": pid, "api_key": "sk-deleteme", "priority": 0,
-        })
+        r = api_client.post(
+            self.KEY_ENDPOINT,
+            json={
+                "provider_id": pid,
+                "api_key": "sk-deleteme",
+                "priority": 0,
+            },
+        )
         key_id = r.json()["key_id"]
 
         dr = api_client.delete(f"{self.KEY_ENDPOINT}/{key_id}")
         assert dr.status_code == 200
 
         providers = api_client.get(self.PROVIDER_ENDPOINT).json()
-        match = [p for p in providers if p["id"] == pid][0]
+        match = next(p for p in providers if p["id"] == pid)
         assert not any(k["id"] == key_id for k in match["keys"])
 
     def test_delete_key_404(self, api_client):
@@ -237,21 +269,31 @@ class TestProviderKeys:
 
     def test_persistence(self, api_client):
         pid = self._create_provider(api_client)
-        api_client.post(self.KEY_ENDPOINT, json={
-            "provider_id": pid, "api_key": "sk-sticky", "priority": 0,
-        })
+        api_client.post(
+            self.KEY_ENDPOINT,
+            json={
+                "provider_id": pid,
+                "api_key": "sk-sticky",
+                "priority": 0,
+            },
+        )
 
         p1 = api_client.get(self.PROVIDER_ENDPOINT).json()
         p2 = api_client.get(self.PROVIDER_ENDPOINT).json()
-        m1 = [p for p in p1 if p["id"] == pid][0]
-        m2 = [p for p in p2 if p["id"] == pid][0]
+        m1 = next(p for p in p1 if p["id"] == pid)
+        m2 = next(p for p in p2 if p["id"] == pid)
         assert len(m1["keys"]) == len(m2["keys"]) == 1
 
     def test_provider_delete_cascades_keys(self, api_client):
         pid = self._create_provider(api_client)
-        api_client.post(self.KEY_ENDPOINT, json={
-            "provider_id": pid, "api_key": "sk-cascade", "priority": 0,
-        })
+        api_client.post(
+            self.KEY_ENDPOINT,
+            json={
+                "provider_id": pid,
+                "api_key": "sk-cascade",
+                "priority": 0,
+            },
+        )
         api_client.delete(f"{self.PROVIDER_ENDPOINT}/{pid}")
 
         # Verify the key endpoint returns 404 for deleted key
@@ -269,6 +311,12 @@ class TestAgentRouting:
         return r.json()["provider"]["id"]
 
     def test_default_route_exists(self, api_client):
+        # Seed a default route
+        pid = api_client.post("/api/providers", json={"name": "def"}).json()["provider"]["id"]
+        api_client.post(
+            self.ENDPOINT,
+            json={"task_type": "DEFAULT", "provider_id": pid, "models": "gpt-4", "priority": 0},
+        )
         r = api_client.get(self.ENDPOINT)
         assert r.status_code == 200
         routes = r.json()
@@ -277,24 +325,35 @@ class TestAgentRouting:
     def test_create_for_agent(self, api_client):
         pid = self._create_provider(api_client)
         task = _unique("TASK")
-        r = api_client.post(self.ENDPOINT, json={
-            "task_type": task, "provider_id": pid, "models": "gpt-4", "priority": 0,
-        })
+        r = api_client.post(
+            self.ENDPOINT,
+            json={
+                "task_type": task,
+                "provider_id": pid,
+                "models": "gpt-4",
+                "priority": 0,
+            },
+        )
         assert r.status_code == 200
         assert r.json()["status"] == "success"
 
         routes = api_client.get(self.ENDPOINT).json()
         assert any(
-            rt["task_type"] == task and rt["provider_id"] == pid
-            for rt in routes
+            rt["task_type"] == task and rt["provider_id"] == pid for rt in routes
         )
 
     def test_persistence(self, api_client):
         pid = self._create_provider(api_client)
         task = _unique("TASK")
-        api_client.post(self.ENDPOINT, json={
-            "task_type": task, "provider_id": pid, "models": "gpt-4", "priority": 0,
-        })
+        api_client.post(
+            self.ENDPOINT,
+            json={
+                "task_type": task,
+                "provider_id": pid,
+                "models": "gpt-4",
+                "priority": 0,
+            },
+        )
 
         r1 = api_client.get(self.ENDPOINT)
         r2 = api_client.get(self.ENDPOINT)
@@ -305,9 +364,15 @@ class TestAgentRouting:
     def test_upsert(self, api_client):
         pid = self._create_provider(api_client)
         task = _unique("TASK")
-        api_client.post(self.ENDPOINT, json={
-            "task_type": task, "provider_id": pid, "models": "v1", "priority": 0,
-        })
+        api_client.post(
+            self.ENDPOINT,
+            json={
+                "task_type": task,
+                "provider_id": pid,
+                "models": "v1",
+                "priority": 0,
+            },
+        )
 
         # Find route id
         routes = api_client.get(self.ENDPOINT).json()
@@ -316,9 +381,15 @@ class TestAgentRouting:
         route_id = match[0]["id"]
 
         # Update via id
-        ur = api_client.post(self.ENDPOINT, json={
-            "id": route_id, "task_type": task, "models": "v2", "priority": 0,
-        })
+        ur = api_client.post(
+            self.ENDPOINT,
+            json={
+                "id": route_id,
+                "task_type": task,
+                "models": "v2",
+                "priority": 0,
+            },
+        )
         assert ur.status_code == 200
 
         routes = api_client.get(self.ENDPOINT).json()
@@ -328,24 +399,39 @@ class TestAgentRouting:
 
     def test_null_provider(self, api_client):
         task = _unique("TASK")
-        r = api_client.post(self.ENDPOINT, json={
-            "task_type": task, "provider_id": None, "priority": 0,
-        })
+        r = api_client.post(
+            self.ENDPOINT,
+            json={
+                "task_type": task,
+                "provider_id": None,
+                "priority": 0,
+            },
+        )
         assert r.status_code == 200
 
     def test_null_models(self, api_client):
         pid = self._create_provider(api_client)
         task = _unique("TASK")
-        r = api_client.post(self.ENDPOINT, json={
-            "task_type": task, "provider_id": pid, "models": None, "priority": 0,
-        })
+        r = api_client.post(
+            self.ENDPOINT,
+            json={
+                "task_type": task,
+                "provider_id": pid,
+                "models": None,
+                "priority": 0,
+            },
+        )
         assert r.status_code == 200
 
     def test_delete(self, api_client):
         task = _unique("TASK")
-        api_client.post(self.ENDPOINT, json={
-            "task_type": task, "priority": 0,
-        })
+        api_client.post(
+            self.ENDPOINT,
+            json={
+                "task_type": task,
+                "priority": 0,
+            },
+        )
         routes = api_client.get(self.ENDPOINT).json()
         match = [rt for rt in routes if rt["task_type"] == task]
         assert len(match) == 1
@@ -364,9 +450,14 @@ class TestAgentRouting:
     def test_list(self, api_client):
         pid = self._create_provider(api_client)
         task = _unique("TASK")
-        api_client.post(self.ENDPOINT, json={
-            "task_type": task, "provider_id": pid, "priority": 0,
-        })
+        api_client.post(
+            self.ENDPOINT,
+            json={
+                "task_type": task,
+                "provider_id": pid,
+                "priority": 0,
+            },
+        )
 
         r = api_client.get(self.ENDPOINT)
         assert r.status_code == 200
@@ -375,7 +466,7 @@ class TestAgentRouting:
         assert any(rt["task_type"] == task for rt in data)
 
     def test_agent_names(self, api_client):
-        r = api_client.get("/api/agent-names")
+        r = api_client.get("/api/settings/agent-names")
         assert r.status_code == 200
         names = r.json()
         assert isinstance(names, list)
@@ -388,7 +479,7 @@ class TestFullSettingsRoundtrip:
     SETTINGS_ENDPOINT = "/api/settings"
     PROVIDER_ENDPOINT = "/api/providers"
     KEY_ENDPOINT = "/api/providers/keys"
-    ROUTE_ENDPOINT = "/api/agent-routes"
+    ROUTE_ENDPOINT = "/api/settings/agent-routes"
     SETTING_ENDPOINT = "/api/settings/general"
 
     def test_endpoint_structure(self, api_client):
@@ -405,24 +496,38 @@ class TestFullSettingsRoundtrip:
     def test_complete_workflow(self, api_client):
         # Create provider
         pname = _unique("wf")
-        rp = api_client.post(self.PROVIDER_ENDPOINT, json={
-            "name": pname,
-            "provider_type": "openai",
-            "models": "gpt-4",
-        })
+        rp = api_client.post(
+            self.PROVIDER_ENDPOINT,
+            json={
+                "name": pname,
+                "provider_type": "openai",
+                "models": "gpt-4",
+            },
+        )
         pid = rp.json()["provider"]["id"]
 
         # Add key
-        rk = api_client.post(self.KEY_ENDPOINT, json={
-            "provider_id": pid, "api_key": "sk-workflow", "priority": 0,
-        })
+        rk = api_client.post(
+            self.KEY_ENDPOINT,
+            json={
+                "provider_id": pid,
+                "api_key": "sk-workflow",
+                "priority": 0,
+            },
+        )
         key_id = rk.json()["key_id"]
 
         # Create route
         task = _unique("WF")
-        api_client.post(self.ROUTE_ENDPOINT, json={
-            "task_type": task, "provider_id": pid, "models": "gpt-4", "priority": 0,
-        })
+        api_client.post(
+            self.ROUTE_ENDPOINT,
+            json={
+                "task_type": task,
+                "provider_id": pid,
+                "models": "gpt-4",
+                "priority": 0,
+            },
+        )
 
         # Save setting
         skey = _unique("wf")
@@ -455,6 +560,7 @@ class TestFullSettingsRoundtrip:
         r1 = api_client.get(self.SETTINGS_ENDPOINT).json()
         r2 = api_client.get(self.SETTINGS_ENDPOINT).json()
 
-        assert [p for p in r1["providers"] if p["id"] == pid] == \
-               [p for p in r2["providers"] if p["id"] == pid]
+        assert [p for p in r1["providers"] if p["id"] == pid] == [
+            p for p in r2["providers"] if p["id"] == pid
+        ]
         assert r1["general_settings"].get(skey) == r2["general_settings"].get(skey)

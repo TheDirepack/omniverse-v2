@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="p-6 max-w-4xl mx-auto">
+    <h1 class="text-2xl font-bold mb-6">Knowledge Flow Visualization</h1>
+    
+    <div class="bg-white p-6 rounded-lg shadow mb-8">
+        <label for="claim-id" class="block text-sm font-medium text-gray-700 mb-2">Enter Claim ID to Trace</label>
+        <div class="flex gap-2">
+            <input type="number" id="claim-id" name="claim_id" 
+                   class="flex-1 p-2 border rounded-md" 
+                   placeholder="e.g. 123">
+            <button hx-get="/flow/trace" 
+                    hx-include="#claim-id" 
+                    hx-target="#flow-result"
+                    hx-indicator="closest button"
+                    class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition btn-loading">
+                Trace Flow
+            </button>
+        </div>
+    </div>
+
+    <div id="flow-result" class="space-y-4">
+        <!-- Flow visualization will be injected here -->
+    </div>
+</div>
+{% endblock %}

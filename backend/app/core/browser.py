@@ -1,8 +1,11 @@
 import asyncio
 import logging
-from typing import AsyncGenerator
-from contextlib import asynccontextmanager
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager, suppress
+from typing import Any
+
 from cloakbrowser import launch_async
+
 
 class BrowserManager:
     def __init__(self):
@@ -16,10 +19,8 @@ class BrowserManager:
 
     async def stop(self):
         if self.browser:
-            try:
+            with suppress(Exception):
                 await self.browser.close()
-            except Exception:
-                pass
             self.browser = None
 
     async def _ensure_browser(self):
@@ -27,7 +28,7 @@ class BrowserManager:
             return
         # We use a lock to prevent multiple concurrent launches
         # Note: self._launch_lock needs to be initialized in __init__
-        if not hasattr(self, '_launch_lock'):
+        if not hasattr(self, "_launch_lock"):
             self._launch_lock = asyncio.Lock()
         async with self._launch_lock:
             if self.browser is None:
@@ -35,19 +36,22 @@ class BrowserManager:
 
     async def get_page(self):
         await self._ensure_browser()
-        
+
         await self.semaphore.acquire()
+        context = None
         try:
             context = await self.browser.new_context()
             page = await context.new_page()
             return page, context
         except Exception:
             logging.exception("Failed to create browser page/context")
+            if context:
+                await context.close()
             self.semaphore.release()
             raise
 
     @asynccontextmanager
-    async def page(self) -> AsyncGenerator[any, None]:
+    async def page(self) -> AsyncGenerator[Any, None]:
         """
         Async context manager that provides a page and handles cleanup automatically.
         """
@@ -62,5 +66,6 @@ class BrowserManager:
     def release_page(self, context):
         self.semaphore.release()
         # Note: The caller is responsible for closing the page and context.
+
 
 browser_manager = BrowserManager()

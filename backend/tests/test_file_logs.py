@@ -1,9 +1,5 @@
-import pytest
-from pathlib import Path
-from sqlmodel import Session
-from app.db.session import engine
 from app.core.agent_logger import LOG_FILE
-import os
+
 
 def test_get_file_logs_basic(client):
     # Setup: Create a dummy log file
@@ -19,6 +15,7 @@ def test_get_file_logs_basic(client):
     assert len(logs) == 3
     assert "Line 1: Error" in logs[0]
     assert "Line 3: Warning" in logs[2]
+
 
 def test_get_file_logs_filter(client):
     # Setup: Create dummy log file
@@ -40,6 +37,7 @@ def test_get_file_logs_filter(client):
     assert len(logs) == 1
     assert "Success" in logs[0]
 
+
 def test_get_file_logs_limit(client):
     # Setup: Create a log file with many lines
     LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
@@ -60,6 +58,7 @@ def test_get_file_logs_limit(client):
     logs = response.json()["logs"]
     assert len(logs) == 10
     assert "Log line 149" in logs[-1]
+
 
 def test_get_file_logs_no_file(client):
     # Setup: Ensure log file does not exist

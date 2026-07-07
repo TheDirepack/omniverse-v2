@@ -1,15 +1,10 @@
-import pytest
-from fastapi.testclient import TestClient
-from sqlmodel import Session, select
-from app.main import app
+from app.db.schema import Universe, WorldTier
 from app.db.session import engine
-from app.db.extrapolation_session import engine as extra_engine
-from app.db.schema import Universe, Trait, WorldTier
-from app.db.extrapolation_schema import Theory
+from app.main import app
+from fastapi.testclient import TestClient
+from sqlmodel import Session
 
-client = TestClient(app)
-
-def test_extrapolate_all_scope():
+def test_extrapolate_all_scope(client, clean_db):
     # Setup: Create some verified worlds
     with Session(engine) as session:
         u1 = Universe(name="U1", is_explored=True)
@@ -19,11 +14,6 @@ def test_extrapolate_all_scope():
         session.commit()
         session.refresh(u1)
         session.refresh(u2)
-        
-        t1 = Trait(universe_id=u1.id, name="Power", value="Flight")
-        t2 = Trait(universe_id=u2.id, name="Power", value="Strength")
-        session.add_all([t1, t2])
-        session.commit()
 
     response = client.post("/api/runs/extrapolate", json={"scope": "all"})
     assert response.status_code == 200
@@ -33,7 +23,7 @@ def test_extrapolate_all_scope():
     assert "U2" in data["worlds"]
     assert "U3" not in data["worlds"]
 
-def test_extrapolate_worlds_scope():
+def test_extrapolate_worlds_scope(client, clean_db):
     # Setup: Create some verified worlds
     with Session(engine) as session:
         u1 = Universe(name="U1", is_explored=True)
@@ -41,7 +31,10 @@ def test_extrapolate_worlds_scope():
         session.add_all([u1, u2])
         session.commit()
 
-    response = client.post("/api/runs/extrapolate", json={"scope": "worlds", "worlds": ["U1", "U2", "NonExistent"]})
+    response = client.post(
+        "/api/runs/extrapolate",
+        json={"scope": "worlds", "worlds": ["U1", "U2", "NonExistent"]},
+    )
     assert response.status_code == 200
     data = response.json()
     assert "worlds" in data
@@ -49,12 +42,12 @@ def test_extrapolate_worlds_scope():
     assert "U2" not in data["worlds"]
     assert "NonExistent" not in data["worlds"]
 
-def test_extrapolate_worlds_missing_list():
+def test_extrapolate_worlds_missing_list(client):
     response = client.post("/api/runs/extrapolate", json={"scope": "worlds"})
     assert response.status_code == 400
     assert "worlds list required" in response.json()["detail"]
 
-def test_extrapolate_tier_scope():
+def test_extrapolate_tier_scope(client, clean_db):
     # Setup: Create worlds and assign them to a tier
     with Session(engine) as session:
         u1 = Universe(name="T1_U1", is_explored=True)
@@ -62,17 +55,26 @@ def test_extrapolate_tier_scope():
         u3 = Universe(name="T2_U1", is_explored=True)
         session.add_all([u1, u2, u3])
         session.commit()
-        session.refresh(u1); session.refresh(u2); session.refresh(u3)
-        
+        session.refresh(u1)
+        session.refresh(u2)
+        session.refresh(u3)
+
         from app.db.schema import TierSystem
+
         ts = TierSystem(system_definition="Test System")
         session.add(ts)
         session.commit()
         session.refresh(ts)
-        
-        wt1 = WorldTier(universe_id=u1.id, system_id=ts.id, tier_number=1, justification="J1")
-        wt2 = WorldTier(universe_id=u2.id, system_id=ts.id, tier_number=1, justification="J2")
-        wt3 = WorldTier(universe_id=u3.id, system_id=ts.id, tier_number=2, justification="J3")
+
+        wt1 = WorldTier(
+            universe_id=u1.id, system_id=ts.id, tier_number=1, justification="J1"
+        )
+        wt2 = WorldTier(
+            universe_id=u2.id, system_id=ts.id, tier_number=1, justification="J2"
+        )
+        wt3 = WorldTier(
+            universe_id=u3.id, system_id=ts.id, tier_number=2, justification="J3"
+        )
         session.add_all([wt1, wt2, wt3])
         session.commit()
 
@@ -83,11 +85,11 @@ def test_extrapolate_tier_scope():
     assert "T1_U2" in data["worlds"]
     assert "T2_U1" not in data["worlds"]
 
-def test_extrapolate_tier_missing_value():
+def test_extrapolate_tier_missing_value(client):
     response = client.post("/api/runs/extrapolate", json={"scope": "tier"})
     assert response.status_code == 400
     assert "tier value required" in response.json()["detail"]
 
-def test_extrapolate_invalid_scope():
+def test_extrapolate_invalid_scope(client):
     response = client.post("/api/runs/extrapolate", json={"scope": "invalid"})
     assert response.status_code == 422

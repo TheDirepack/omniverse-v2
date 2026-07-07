@@ -17,8 +17,13 @@
     {% endif %}
 
     <div class="flex justify-between items-center mt-2">
-        <div class="text-xs font-medium px-2 py-1 bg-blue-50 text-blue-700 rounded">
-            Conf: {{ claim.confidence or 'N/A' }}
+        <div class="flex items-center gap-3">
+            <div class="text-xs font-medium px-2 py-1 bg-blue-50 text-blue-700 rounded">
+                Conf: {{ claim.confidence or 'N/A' }}
+            </div>
+            <a href="/provenance/unconfirmed/{{ claim.id }}" class="text-xs text-blue-600 hover:underline">
+                Trace
+            </a>
         </div>
         <div class="flex gap-2">
             <button hx-post="/validation/claim/{{ claim.id }}/reject" 

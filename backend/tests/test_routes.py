@@ -63,7 +63,7 @@ class TestWorlds:
     def test_get_empty(self, api_client):
         r = api_client.get(self.ENDPOINT)
         assert r.status_code == 200
-        assert len(r.json()) >= TestWorlds.SEED_COUNT
+        assert len(r.json()) == 0
 
     def test_missing_world_name(self, api_client):
         r = api_client.post(self.ENDPOINT, json={})
@@ -355,14 +355,15 @@ class TestFocusedSearch:
     ENDPOINT = "/api/runs/focused-search"
 
     def test_success(self, api_client):
-        payload = {"worlds": ["World1", "World2"], "features": ["Feature1", "Feature2"]}
+        payload = {"universe_uuids": ["some-uuid-1", "some-uuid-2"], "features": ["Feature1", "Feature2"]}
         r = api_client.post(self.ENDPOINT, json=payload)
         assert r.status_code == 200
         data = r.json()
         assert data["status"] == "started"
         assert data["run_id"] is not None
-        assert data["worlds"] == payload["worlds"]
+        assert data["uuids"] == payload["universe_uuids"]
         assert data["features"] == payload["features"]
+
 
     def test_missing_worlds(self, api_client):
         r = api_client.post(self.ENDPOINT, json={"features": ["magic"]})
@@ -373,9 +374,10 @@ class TestFocusedSearch:
         assert r.status_code == 422
 
     def test_both_empty(self, api_client):
-        r = api_client.post(self.ENDPOINT, json={"worlds": [], "features": []})
+        r = api_client.post(self.ENDPOINT, json={"universe_uuids": [], "features": []})
         assert r.status_code == 200
         assert r.json()["status"] == "started"
+
 
     def test_worlds_not_a_list(self, api_client):
         r = api_client.post(
@@ -402,19 +404,22 @@ class TestOrchestrate:
         assert r.status_code == 422
 
     def test_worlds_empty_list(self, api_client):
-        r = api_client.post(self.ENDPOINT, json={"worlds": []})
+        r = api_client.post(self.ENDPOINT, json={"universe_uuids": []})
         assert r.status_code == 400
 
+
     def test_worlds_with_empty_string(self, api_client):
-        r = api_client.post(self.ENDPOINT, json={"worlds": [""]})
+        r = api_client.post(self.ENDPOINT, json={"universe_uuids": [""]})
         assert r.status_code == 200
 
+
     def test_worlds_single(self, api_client):
-        r = api_client.post(self.ENDPOINT, json={"worlds": ["Warhammer 40k"]})
+        r = api_client.post(self.ENDPOINT, json={"universe_uuids": ["Warhammer 40k"]})
         assert r.status_code == 200
         data = r.json()
         assert data["status"] == "started"
         assert data["run_id"] is not None
+
 
     def test_worlds_not_a_list(self, api_client):
         r = api_client.post(self.ENDPOINT, json={"worlds": "single string"})

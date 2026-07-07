@@ -78,14 +78,11 @@ async def fetch_live_models(provider: ProviderConfig) -> list[str]:
         if api_key:
             headers["Authorization"] = f"Bearer {api_key}"
     elif ptype == "anthropic":
-        assert api_key is not None
         headers["x-api-key"] = api_key
         headers["anthropic-version"] = "2023-06-01"
     elif ptype == "gemini":
-        assert api_key is not None
         headers["x-goog-api-key"] = api_key
     else:
-        assert api_key is not None
         headers["Authorization"] = f"Bearer {api_key}"
 
     try:

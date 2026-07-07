@@ -2,10 +2,11 @@
     <h2 class="text-xl font-semibold">LLM Providers</h2>
 
     <script>
-        const PROVIDER_PRESETS = {{ presets|tojson|safe }};
+    (function() {
+        window.PROVIDER_PRESETS = {{ presets|tojson|safe }};
 
-        function applyPreset(select) {
-            const preset = PROVIDER_PRESETS[select.value];
+        window.applyPreset = function(select) {
+            const preset = window.PROVIDER_PRESETS[select.value];
             if (!preset) return;
             const card = select.closest('.provider-card') || select.closest('.add-provider-form');
             const typeInput = card.querySelector('[name=provider_type]');
@@ -14,13 +15,14 @@
             if (typeInput) typeInput.value = preset.provider_type;
             if (urlInput) urlInput.value = preset.base_url;
             if (modelsInput) modelsInput.value = preset.models;
-        }
+        };
 
-        function toggleEdit(btn) {
+        window.toggleEdit = function(btn) {
             const card = btn.closest('.provider-card');
             card.querySelector('.view-mode').classList.toggle('hidden');
             card.querySelector('.edit-mode').classList.toggle('hidden');
-        }
+        };
+    })();
     </script>
 
     {% if providers %}
@@ -168,9 +170,9 @@
                                   hx-target="#settings-content"
                                   hx-swap="innerHTML"
                                   class="flex gap-2 items-center text-xs">
-                                <input type="password" name="api_key" value="{{ key.api_key }}"
-                                       class="flex-1 border rounded px-2 py-1 bg-white dark:bg-gray-800 font-mono text-xs"
-                                       placeholder="API key">
+                                 <input type="password" name="api_key" value=""
+                                        class="flex-1 border rounded px-2 py-1 bg-white dark:bg-gray-800 font-mono text-xs"
+                                        placeholder="Enter key to change...">
                                 <input type="number" name="priority" value="{{ key.priority }}" min="0"
                                        class="w-16 border rounded px-2 py-1 bg-white dark:bg-gray-800 text-xs">
                                 <button type="submit"

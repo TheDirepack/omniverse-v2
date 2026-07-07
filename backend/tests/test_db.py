@@ -1,8 +1,13 @@
 from pathlib import Path
+import pytest
 
 from app.db.schema import AgentRouteFallback, ProviderConfig, ProviderKey, Universe
 from sqlmodel import Session, SQLModel, create_engine, select
-from tests.provider_config import PROVIDER_CREDENTIALS
+
+try:
+    from tests.provider_config import PROVIDER_CREDENTIALS
+except ImportError:
+    pytest.importorskip("tests.provider_config")
 
 
 def create_test_db(db_dir: str | Path, db_filename: str = "omniverse_v2.db"):

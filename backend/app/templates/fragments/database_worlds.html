@@ -60,13 +60,13 @@
                     hx-target="#database-worlds"
                     hx-swap="outerHTML"
                     hx-indicator="#db-worlds-indicator"
-                    hx-include="#batch-world-names">
+                    hx-include="#batch-world-uuids">
                 Research Selected (0)
             </button>
         </div>
     </div>
 
-    <input type="hidden" id="batch-world-names" name="world_names" value="">
+    <input type="hidden" id="batch-world-uuids" name="universe_uuids" value="">
 
     {% if worlds %}
     <div class="divide-y divide-gray-200 dark:divide-gray-700 max-h-96 overflow-y-auto">
@@ -75,7 +75,7 @@
             <div class="flex items-start gap-2 min-w-0 flex-1">
                 <input type="checkbox"
                        class="world-checkbox shrink-0 mt-1"
-                       data-name="{{ world.name }}"
+                       data-uuid="{{ world.uuid }}"
                        onchange="updateBatchResearch()">
                 <div class="min-w-0">
                     <div class="flex items-center gap-2">
@@ -97,22 +97,31 @@
                         <span class="italic">no timeline data</span>
                         {% endif %}
                     </div>
+                    {% if world.summary %}
+                    <details class="mt-1 text-xs text-gray-500 dark:text-gray-400 cursor-pointer">
+                        <summary class="hover:text-blue-600 transition">Quick Summary</summary>
+                        <div class="mt-1 p-2 bg-gray-50 dark:bg-gray-800 rounded border border-gray-200 dark:border-gray-700 leading-relaxed">
+                            {{ world.summary }}
+                        </div>
+                    </details>
+                    {% endif %}
                 </div>
             </div>
             <div class="flex items-center gap-1 shrink-0 ml-2">
-                <button class="text-xs bg-blue-600 text-white px-2 py-1 rounded hover:bg-blue-700 transition"
-                        hx-post="/research/add-world"
-                        hx-vals='{"world_name": {{ world.name|tojson }}, "auto_research": "true"}'
-                        hx-target="#database-worlds"
-                        hx-swap="outerHTML"
-                        hx-indicator="#db-worlds-indicator">
-                    Research
-                </button>
-                <button class="text-xs bg-purple-600 text-white px-1.5 py-1 rounded hover:bg-purple-700 transition"
-                        title="Add to Focused Search"
-                        onclick="addToFocusedSearch('{{ world.name|e }}')">
-                    Focus
-                </button>
+                                <button class="text-xs bg-blue-600 text-white px-2 py-1 rounded hover:bg-blue-700 transition"
+                                        hx-post="/research/set-active-world"
+                                        hx-vals='{"world_id": "{{ world.uuid }}"}'
+                                        hx-target="body"
+                                        hx-swap="none"
+                                        hx-on::after-request="window.location.href='/research'"
+                                        hx-indicator="#db-worlds-indicator">
+                                    Research
+                                        </button>
+                                 <button class="text-xs bg-purple-600 text-white px-1.5 py-1 rounded hover:bg-purple-700 transition"
+                                                        title="Add to Focused Search"
+                                                        onclick="addToFocusedSearch('{{ world.uuid|e }}')">
+                                    Focus
+                                </button>
                 <button class="text-xs bg-red-600 text-white px-1.5 py-1 rounded hover:bg-red-700 transition"
                         hx-post="/research/worlds/{{ world.id }}/delete"
                         hx-target="#database-worlds"
@@ -133,55 +142,58 @@
 </div>
 
 <script>
-let debounceTimer;
-function debounceFilter() {
-    clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(function() {
-        htmx.trigger('#world-filter-form', 'submit');
-    }, 400);
-}
+(function() {
+    window.debounceTimer = window.debounceTimer || null;
 
-function addToFocusedSearch(name) {
-    const ws = document.querySelector('textarea[name=worlds]');
-    if (ws) {
-        const val = ws.value.trim();
-        ws.value = val ? val + ', ' + name : name;
-        ws.focus();
-        document.getElementById('focused-search-panel')?.scrollIntoView({ behavior: 'smooth' });
-    }
-}
+    window.debounceFilter = function() {
+        clearTimeout(window.debounceTimer);
+        window.debounceTimer = setTimeout(function() {
+            htmx.trigger('#world-filter-form', 'submit');
+        }, 400);
+    };
 
-function addCheckedToFocusedSearch() {
-    const checkboxes = document.querySelectorAll('.world-checkbox:checked');
-    const names = Array.from(checkboxes).map(function(cb) { return cb.getAttribute('data-name'); });
-    names.forEach(function(n) { addToFocusedSearch(n); });
-    checkboxes.forEach(function(cb) { cb.checked = false; });
-    updateBatchResearch();
-}
-
-function updateBatchResearch() {
-    const checkboxes = document.querySelectorAll('.world-checkbox:checked');
-    const names = Array.from(checkboxes).map(function(cb) { return cb.getAttribute('data-name'); });
-    const hidden = document.getElementById('batch-world-names');
-    const researchBtn = document.getElementById('research-selected-btn');
-    const focusBtn = document.getElementById('focus-selected-btn');
-    if (hidden) hidden.value = names.join(',');
-    var show = names.length > 0;
-    if (researchBtn) {
-        if (show) {
-            researchBtn.classList.remove('hidden');
-            researchBtn.textContent = 'Research Selected (' + names.length + ')';
-        } else {
-            researchBtn.classList.add('hidden');
+    window.addToFocusedSearch = function(uuid) {
+        const ws = document.querySelector('textarea[name=worlds]');
+        if (ws) {
+            const val = ws.value.trim();
+            ws.value = val ? val + ', ' + uuid : uuid;
+            ws.focus();
+            document.getElementById('focused-search-panel')?.scrollIntoView({ behavior: 'smooth' });
         }
-    }
-    if (focusBtn) {
-        if (show) {
-            focusBtn.classList.remove('hidden');
-            focusBtn.textContent = 'Add to Focused Search (' + names.length + ')';
-        } else {
-            focusBtn.classList.add('hidden');
+    };
+
+    window.addCheckedToFocusedSearch = function() {
+        const checkboxes = document.querySelectorAll('.world-checkbox:checked');
+        const uuids = Array.from(checkboxes).map(function(cb) { return cb.getAttribute('data-uuid'); });
+        uuids.forEach(function(u) { window.addToFocusedSearch(u); });
+        checkboxes.forEach(function(cb) { cb.checked = false; });
+        window.updateBatchResearch();
+    };
+
+    window.updateBatchResearch = function() {
+        const checkboxes = document.querySelectorAll('.world-checkbox:checked');
+        const uuids = Array.from(checkboxes).map(function(cb) { return cb.getAttribute('data-uuid'); });
+        const hidden = document.getElementById('batch-world-uuids');
+        const researchBtn = document.getElementById('research-selected-btn');
+        const focusBtn = document.getElementById('focus-selected-btn');
+        if (hidden) hidden.value = uuids.join(',');
+        var show = uuids.length > 0;
+        if (researchBtn) {
+            if (show) {
+                researchBtn.classList.remove('hidden');
+                researchBtn.textContent = 'Research Selected (' + uuids.length + ')';
+            } else {
+                researchBtn.classList.add('hidden');
+            }
         }
-    }
-}
+        if (focusBtn) {
+            if (show) {
+                focusBtn.classList.remove('hidden');
+                focusBtn.textContent = 'Add to Focused Search (' + uuids.length + ')';
+            } else {
+                focusBtn.classList.add('hidden');
+            }
+        }
+    };
+})();
 </script>

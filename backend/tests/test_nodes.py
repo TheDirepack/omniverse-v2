@@ -132,8 +132,8 @@ class TestDBIntegratorNode:
             nonlocal call_count
             call_count += 1
             if call_count == 1:
-                return "Integrated U1", integration_history
-            return "Cleaned U1", cleanup_history
+                return True, "Integrated U1", integration_history
+            return True, "Cleaned U1", cleanup_history
 
         with (
             patch("app.agents.nodes.run_agent", side_effect=mock_run_agent),
@@ -145,3 +145,35 @@ class TestDBIntegratorNode:
 
             assert result["active_task"] == "SUMMARY"
             assert call_count == 2
+    @pytest.mark.asyncio
+    async def test_integration_failure_detection(self):
+        state = {
+            "run_id": "run-fail",
+            "research_results": [
+                {"name": "Universe-1", "summary": "Verified data for U1"}
+            ],
+        }
+
+        call_count = 0
+        async def mock_run_agent(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                # Simulate a failure that contains "Error"
+                return False, "Error: Integration failed due to DB lock", []
+            return True, "Cleaned U1", []
+
+        with (
+            patch("app.agents.nodes.run_agent", side_effect=mock_run_agent),
+            patch("app.agents.nodes.set_current_universe"),
+            patch("app.services.execution_service.ExecutionService.log_transition"),
+            patch("app.db.session.Session"),
+        ):
+            # We don't care about the return value here as much as the call count
+            try:
+                await db_integrator_node(state)
+            except Exception:
+                pass
+            
+            # Should only have called run_agent ONCE (integration failed, so no cleanup)
+            assert call_count == 1

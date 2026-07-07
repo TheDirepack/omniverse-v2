@@ -12,19 +12,100 @@
         }
     </script>
     <script>
-        function getCookie(name) {
-            const value = `; ${document.cookie}`;
-            const parts = value.split(`; ${name}=`);
-            if (parts.length === 2) return parts.pop().split(';').shift();
+        tailwind.config = {
+            darkMode: 'class',
         }
-        document.body.addEventListener('htmx:configRequest', (event) => {
-            const token = getCookie('csrf_token');
-            if (token) {
-                event.detail.headers['X-CSRF-Token'] = token;
-            }
-        });
+    </script>
+    <script>
+        function openFocusedSearch(worlds = '', feature = '') {
+            const modal = document.getElementById('focused-search-modal');
+            const content = document.getElementById('focused-search-content');
+            modal.classList.remove('hidden');
+            
+            // Load content
+            htmx.ajax('GET', '/research/focused-search', {
+                target: '#focused-search-content',
+                swap: 'innerHTML'
+            }).then(() => {
+                // Pre-fill inputs after load
+                const worldsInp = content.querySelector('[name=worlds]');
+                const featInp = content.querySelector('[name=features]');
+                if (worldsInp) worldsInp.value = worlds;
+                if (featInp) featInp.value = feature;
+                if (featInp) featInp.focus();
+            });
+        }
+
+        function openWorldModal(type) {
+            const modal = document.getElementById('world-modal');
+            const content = document.getElementById('world-modal-content');
+            modal.classList.remove('hidden');
+
+            const endpoint = '/worlds/import' if type === 'import' else '/worlds/create';
+            
+            htmx.ajax('GET', endpoint, {
+                target: '#world-modal-content',
+                swap: 'innerHTML'
+            });
+        }
 
         function toggleDarkMode() {
+            if (document.documentElement.classList.contains('dark')) {
+                document.documentElement.classList.remove('dark');
+                localStorage.setItem('color-theme', 'light');
+            } else {
+                document.documentElement.classList.add('dark');
+                localStorage.setItem('color-theme', 'dark');
+            }
+        }
+    </script>
+    <style>
+        .htmx-indicator {
+            display: none;
+        }
+        .htmx-request .htmx-indicator {
+            display: inline-block;
+        }
+        .htmx-request.btn-loading {
+            opacity: 0.7;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 text-gray-900 dark:bg-gray-900 dark:text-gray-100 transition-colors duration-200">
+    <!-- Focused Search Modal -->
+    <div id="focused-search-modal" class="hidden fixed inset-0 z-50 overflow-y-auto bg-black bg-opacity-50 flex items-center justify-center p-4">
+        <div class="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-lg w-full max-h-full overflow-hidden flex flex-col">
+            <div class="flex justify-between items-center p-4 border-b border-gray-200 dark:border-gray-700">
+                <h3 class="text-lg font-semibold">Focused Search</h3>
+                <button onclick="document.getElementById('focused-search-modal').classList.add('hidden')" class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+                    <span class="text-2xl">&times;</span>
+                </button>
+            </div>
+            <div id="focused-search-content" class="p-6 overflow-y-auto">
+                <div class="flex items-center justify-center h-32">
+                    <p class="text-gray-500 dark:text-gray-400 italic">Loading focused search...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- World Management Modal -->
+    <div id="world-modal" class="hidden fixed inset-0 z-50 overflow-y-auto bg-black bg-opacity-50 flex items-center justify-center p-4">
+        <div class="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-2xl w-full max-h-full overflow-hidden flex flex-col">
+            <div class="flex justify-between items-center p-4 border-b border-gray-200 dark:border-gray-700">
+                <h3 class="text-lg font-semibold">World Management</h3>
+                <button onclick="document.getElementById('world-modal').classList.add('hidden')" class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+                    <span class="text-2xl">&times;</span>
+                </button>
+            </div>
+            <div id="world-modal-content" class="p-6 overflow-y-auto">
+                <!-- Content loaded via htmx -->
+            </div>
+        </div>
+    </div>
+
+    <nav class="bg-blue-600 text-white p-4 shadow-md">
             if (document.documentElement.classList.contains('dark')) {
                 document.documentElement.classList.remove('dark');
                 localStorage.setItem('color-theme', 'light');
@@ -56,7 +137,7 @@
                     <span class="dark:hidden">🌙</span>
                     <span class="hidden dark:inline">☀️</span>
                 </button>
-                <a href="/research" class="hover:underline">Research</a>
+                    <a href="/research/choose-world" class="hover:underline">Research</a>
                 <a href="/worlds" class="hover:underline">Worlds</a>
                 <a href="/knowledge" class="hover:underline">Knowledge</a>
                 <a href="/logs" class="hover:underline">Logs</a>

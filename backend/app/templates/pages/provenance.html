@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+
+{% block title %}Provenance - Omniverse{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto space-y-8">
+    <div class="flex justify-between items-center">
+        <h1 class="text-3xl font-bold">Provenance Trace</h1>
+        <a href="/knowledge" class="text-blue-600 hover:text-blue-800 text-sm">← Back to Knowledge</a>
+    </div>
+
+    <div class="relative border-l-4 border-blue-500 ml-4 pl-8 space-y-12 py-4">
+        
+        <!-- Stage 1: The Claim -->
+        <div class="relative">
+            <div class="absolute -left-[26px] top-0 w-5 h-5 rounded-full bg-blue-500 border-4 border-white dark:border-gray-900"></div>
+            <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow border-l-4 {% if is_unconfirmed %}border-amber-500{% else %}border-blue-600{% endif %}">
+                <div class="flex justify-between items-start mb-2">
+                    <span class="text-xs font-bold uppercase {% if is_unconfirmed %}text-amber-600{% else %}text-blue-600{% endif %}">
+                        {% if is_unconfirmed %}Unconfirmed Claim{% else %}Verified Claim{% endif %}
+                    </span>
+                    <span class="text-xs text-gray-400">{{ claim.created_at }}</span>
+                </div>
+                <div class="text-lg font-medium">
+                     {% if is_unconfirmed %}
+                         <span class="font-bold">{{ claim.subject }}</span> 
+                         <span class="text-blue-500 font-semibold">{{ claim.predicate }}</span> 
+                         <span>{{ claim.object_val }}</span>
+                     {% else %}
+                         {{ subject.name if subject else 'Unknown' }} 
+                         <span class="text-blue-500 font-semibold">{{ predicate.name if predicate else 'Unknown' }}</span> 
+                         {{ claim.object_literal or (object_entity.name if object_entity else 'Unknown') }}
+                     {% endif %}
+
+                </div>
+                <div class="mt-2 text-sm text-gray-500 italic">
+                    {{ claim.context or 'No additional context provided.' }}
+                </div>
+            </div>
+        </div>
+
+        <!-- Stage 2: Validation/Evidence -->
+        {% if evidence_chunk %}
+        <div class="relative">
+            <div class="absolute -left-[26px] top-0 w-5 h-5 rounded-full bg-green-500 border-4 border-white dark:border-gray-900"></div>
+            <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow border-l-4 border-green-600">
+                <div class="flex justify-between items-start mb-2">
+                    <span class="text-xs font-bold uppercase text-green-600">Supporting Evidence</span>
+                    <span class="text-xs text-gray-400">{{ evidence.created_at if evidence else 'N/A' }}</span>
+                </div>
+                <div class="text-sm font-mono bg-gray-50 dark:bg-gray-900 p-3 rounded border border-gray-100 dark:border-gray-800 mb-3">
+                    {{ evidence_chunk.content }}
+                </div>
+                <div class="flex items-center gap-2 text-xs text-gray-500">
+                    <span class="font-semibold">Source:</span>
+                    <a href="{{ evidence.source_url }}" target="_blank" class="text-blue-600 hover:underline truncate">
+                        {{ evidence.source_url }}
+                    </a>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Stage 3: Acquisition Artifact -->
+        {% if artifact %}
+        <div class="relative">
+            <div class="absolute -left-[26px] top-0 w-5 h-5 rounded-full bg-purple-500 border-4 border-white dark:border-gray-900"></div>
+            <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow border-l-4 border-purple-600">
+                <div class="flex justify-between items-start mb-2">
+                    <span class="text-xs font-bold uppercase text-purple-600">Acquisition Artifact</span>
+                    <span class="text-xs text-gray-400">{{ artifact.created_at }}</span>
+                </div>
+                <div class="grid grid-cols-2 gap-4 text-sm">
+                    <div class="space-y-1">
+                        <div class="text-gray-500 text-xs">Engine</div>
+                        <div class="font-mono">{{ artifact.engine_name or 'Unknown' }} ({{ artifact.engine_version or 'N/A' }})</div>
+                    </div>
+                    <div class="space-y-1">
+                        <div class="text-gray-500 text-xs">Fetch Duration</div>
+                        <div class="font-mono">{{ artifact.fetch_duration_ms }}ms</div>
+                    </div>
+                </div>
+                <div class="mt-4 p-3 bg-gray-50 dark:bg-gray-900 rounded border border-gray-100 dark:border-gray-800">
+                    <div class="text-xs font-semibold text-gray-400 mb-1 uppercase">Raw Extracted Text (Sample)</div>
+                    <div class="text-xs font-mono line-clamp-6 text-gray-600 dark:text-gray-300">
+                        {{ artifact.extracted_text[:1000] if artifact.extracted_text else '[No text available]' }}
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% else %}
+        <div class="relative">
+            <div class="absolute -left-[26px] top-0 w-5 h-5 rounded-full bg-gray-300 border-4 border-white dark:border-gray-900"></div>
+            <div class="bg-gray-50 dark:bg-gray-900 p-6 rounded-lg border border-dashed border-gray-300 dark:border-gray-700">
+                <div class="text-sm text-gray-500 italic">
+                    No acquisition artifact linked to this evidence.
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+    </div>
+</div>
+{% endblock %}

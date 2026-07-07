@@ -6,6 +6,7 @@ from app.core.context import set_current_universe
 from app.services.execution_service import ExecutionService
 from app.services.theory_service import TheoryService
 from app.services.universe_service import UniverseService
+from app.services.knowledge_retriever import KnowledgeRetrieverService
 
 
 async def extrapolation_node(state: dict[str, Any]) -> dict[str, Any]:
@@ -25,74 +26,95 @@ async def extrapolation_node(state: dict[str, Any]) -> dict[str, Any]:
         run_id,
         "Ontological Theorist",
         "Starting theoretical scaling projections",
-        "IN_PROGRESS",
+        "EXTRAPOLATING",
         state,
     )
 
     generated_theories = []
 
     verified_world_names = state.get("verified_worlds", [])
-    universes = uni_service.repo.get_by_names(verified_world_names)
+    universes = uni_service.get_by_names(verified_world_names)
 
     for universe in universes:
         if universe.id is None:
             continue
         set_current_universe(universe.name)
 
-        uni_context = universe.summary or "No summary recorded."
+        retriever = KnowledgeRetrieverService()
+        uni_context = retriever.get_claims_dataset(universe.id)
 
         comparison_texts = []
         for other in universes:
             if other.id == universe.id:
                 continue
-            comparison_texts.append(f"World: {other.name}\nSummary:\n{other.summary or 'No summary recorded.'}")
+            other_dataset = retriever.get_claims_dataset(other.id)
+            comparison_texts.append(f"World: {other.name}\nDataset:\n{other_dataset}")
 
         comparison_context = "\n\n---\n\n".join(comparison_texts)
 
-        theory_prompt = get_extrapolation_prompt(
-            universe.name, uni_context, comparison_context
-        )
+        # Revision loop
+        max_revisions = 3
+        current_attempt = 0
+        verified_theory = None
+        final_audit = ""
 
-        speculation, _ = await run_agent(
-            agent_name="Ontological Theorist",
-            system_prompt=theory_prompt["system"],
-            user_prompt=theory_prompt["user"],
-            step="Extrapolation",
-            run_id=run_id,
-            tools_names=[],
-            submit_tool_name="submit_theory",
-        )
+        while current_attempt < max_revisions:
+            theory_prompt = get_extrapolation_prompt(
+                universe.name, uni_context, comparison_context
+            )
+            
+            # If it's a revision, we need to tell the agent what was wrong
+            user_prompt = theory_prompt["user"]
+            if current_attempt > 0:
+                user_prompt += f"\n\nPREVIOUS REJECTION FEEDBACK:\n{final_audit}"
+        
+            success, speculation, _ = await run_agent(
+                agent_name="Ontological Theorist",
+                system_prompt=theory_prompt["system"],
+                user_prompt=user_prompt,
+                step=f"Extrapolation (Attempt {current_attempt+1})",
+                run_id=run_id,
+                tools_names=[],
+                submit_tool_name="submit_theory",
+            )
+        
+            audit_prompt = get_theory_auditor_prompt(speculation)
+            success_audit, audit_result, _ = await run_agent(
+                agent_name="Theoretical Auditor",
+                system_prompt=audit_prompt["system"],
+                user_prompt=audit_prompt["user"],
+                step=f"Theory Audit (Attempt {current_attempt+1})",
+                run_id=run_id,
+                tools_names=[],
+                submit_tool_name="submit_audit",
+            )
+        
+            if audit_result.strip().upper().startswith("VERIFIED"):
+                verified_theory = speculation
+                final_audit = audit_result
+                break
+            
+            final_audit = audit_result
+            current_attempt += 1
 
-        audit_prompt = get_theory_auditor_prompt(speculation)
 
-        audit_result, _ = await run_agent(
-            agent_name="Theoretical Auditor",
-            system_prompt=audit_prompt["system"],
-            user_prompt=audit_prompt["user"],
-            step="Theory Audit",
-            run_id=run_id,
-            tools_names=[],
-            submit_tool_name="submit_audit",
-        )
-
-        is_verified = audit_result.strip().upper().startswith("VERIFIED")
-        if not is_verified:
+        if not verified_theory:
             exec_service.log_transition(
                 run_id,
                 "Theoretical Auditor",
-                f"Rejected theory for {universe.name}",
-                "REVISION_REQUIRED",
-                {"audit": audit_result},
+                f"Discarded theory for {universe.name} after {max_revisions} failed revisions.",
+                "REJECTED",
+                {"last_audit": final_audit},
             )
             continue
 
-        theory_service.upsert_theory(universe.id, speculation, audit_result)
+        theory_service.upsert_theory(universe.id, verified_theory, final_audit)
 
         generated_theories.append(
             {
                 "universe_name": universe.name,
-                "theory": speculation,
-                "feedback": audit_result,
+                "theory": verified_theory,
+                "feedback": final_audit,
             }
         )
 

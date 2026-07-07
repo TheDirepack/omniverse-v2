@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.routers.inference import router as inference_router
 from app.api.routers.providers import router as providers_router
 from app.api.routers.research import router as research_router
+from app.api.routers.unconfirmed import router as unconfirmed_router
 from app.api.routers.routes import router as routes_router
 from app.api.routers.runs import router as runs_router
 from app.api.routers.settings import router as settings_router
@@ -69,6 +70,7 @@ app.include_router(inference_views_router, prefix="/inference")
 app.include_router(flow_views_router, prefix="/flow")
 app.include_router(logs_views_router, prefix="/logs")
 app.include_router(research_router, prefix="/api")
+app.include_router(unconfirmed_router, prefix="/api")
 app.include_router(settings_router, prefix="/api")
 app.include_router(routes_router, prefix="/api")
 app.include_router(providers_router, prefix="/api")

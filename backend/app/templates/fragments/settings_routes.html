@@ -273,7 +273,13 @@
             var span = document.createElement('span');
             span.className = 'model-tag inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200';
             span.dataset.model = m;
-            span.innerHTML = m + ' <button type="button" class="tag-remove text-blue-500 hover:text-red-500 font-bold leading-none" onclick="removeModelTag(this)">\u00d7</button>';
+            span.textContent = m + ' ';
+            var btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'tag-remove text-blue-500 hover:text-red-500 font-bold leading-none';
+            btn.textContent = '\u00d7';
+            btn.onclick = function() { removeModelTag(this); };
+            span.appendChild(btn);
             container.appendChild(span);
         });
     }

@@ -75,7 +75,9 @@ class AcquisitionCacheRepository:
         target_id: int,
         relation: str,
         run_id: str | None = None,
+        session: Session | None = None,
     ) -> ProvenanceEdge:
+        print(f"DEBUG: store_provenance called: artifact={source_artifact_id}, target={target_id}, type={target_type}")
         edge = ProvenanceEdge(
             source_artifact_id=source_artifact_id,
             target_type=target_type,
@@ -83,8 +85,11 @@ class AcquisitionCacheRepository:
             relation=relation,
             run_id=run_id,
         )
-        self.session.add(edge)
-        self.session.commit()
+        s = session or self.session
+        s.add(edge)
+        if session is None:
+            s.commit()
+        print(f"DEBUG: provenance edge added to session {id(s)}")
         return edge
 
     def get_provenance_for_claim(

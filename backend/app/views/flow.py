@@ -4,8 +4,6 @@ from sqlmodel import Session, select, and_
 
 from app.core.templates import templates
 from app.core.dependencies import get_main_session, get_unconfirmed_session
-from app.db.session import engine as main_engine
-from app.db.unconfirmed_session import unconfirmed_engine
 from app.db.schema import Claim, Entity, Predicate, Evidence, EvidenceChunk, InferredClaim, InferredClaimPath
 from app.db.unconfirmed_schema import UnconfirmedClaim
 
@@ -61,7 +59,7 @@ async def trace_claim(
             stmt = select(UnconfirmedClaim).where(
                 and_(
                     UnconfirmedClaim.subject == subject.name,
-                    UnconfirmedClaim.predicate == (predicate.canonical_name if predicate else claim.predicate),
+                    UnconfirmedClaim.predicate == predicate.canonical_name,
                     UnconfirmedClaim.object_val == obj_val
                 )
             )

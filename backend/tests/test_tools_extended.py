@@ -6,6 +6,7 @@ from sqlmodel import Session, select
 
 from app.core.acquisition_cache import acquisition_cache
 from app.core.context import set_current_universe
+from app.core.runtime_state import set_current_run_id
 from app.core.tools import (
     AGENT_TOOLS,
     _get_run_id,
@@ -28,6 +29,7 @@ from app.db.unconfirmed_session import unconfirmed_engine
 @pytest.fixture(autouse=True)
 def _clear_active_context():
     set_current_universe(None)
+    set_current_run_id(None)
     yield
 
 

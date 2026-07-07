@@ -23,10 +23,14 @@
                     <span class="text-blue-600">{{ claim.predicate }}</span> 
                     <span>{{ claim.object_literal or claim.object_entity }}</span>
                 </div>
-                <div class="text-xs text-gray-400">Support: {{ claim.support_count }}</div>
+                <div class="flex items-center gap-3">
+                    <div class="text-xs text-gray-400">Support: {{ claim.support_count }}</div>
+                    <a href="/provenance/claim/{{ claim.id }}" 
+                       class="text-[10px] bg-gray-100 dark:bg-gray-700 px-1.5 py-0.5 rounded hover:bg-gray-200 dark:hover:bg-gray-600 transition text-gray-500">
+                        Trace
+                    </a>
+                </div>
             </div>
-            {% else %}
-            <p class="text-gray-500 italic text-sm">No associated claims found.</p>
             {% endfor %}
         </div>
     </div>

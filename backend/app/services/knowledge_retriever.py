@@ -113,3 +113,18 @@ class KnowledgeRetrieverService:
                 )
 
         return semantic_list
+
+    def get_claims_dataset(self, universe_id: int) -> str:
+        """
+        Returns a formatted dataset string of all verified claims for a universe.
+        Used for Tiering and Extrapolation to ensure structured data input.
+        """
+        claims = self.get_semantic_claims(universe_id)
+        if not claims:
+            return "No verified claims available."
+        
+        lines = [
+            f"({c['subject']} --{c['predicate']}--> {c['object']}) [Support: {c['support']}]"
+            for c in claims
+        ]
+        return "\n".join(lines)

@@ -11,9 +11,6 @@ from app.core.tools import AGENT_TOOLS
 from app.db.unconfirmed_schema import AcquisitionArtifact
 from app.core.importers.ocr_importer import ocr_importer
 
-# Track current run_id for provenance recording in tools
-_current_run_id: str | None = None
-
 
 async def _read_page_cached(url: str, run_id: str | None = None):
     """
@@ -154,17 +151,18 @@ async def run_agent(
     tools_names: list[str],
     submit_tool_name: str,
     max_turns: int = 50,
+    min_turns: int = 0,
     max_retries: int = 1,
     provider_id: int | None = None,
     history: list[dict[str, str]] | None = None,
-) -> tuple[str, list[dict[str, Any]]]:
+) -> tuple[bool, str, list[dict[str, Any]]]:
     """
     Runs a tool-using agent loop.
     Uses global AcquisitionCache (persistent, content-hash keyed, shared across runs).
-    Returns (final_answer, full_messages_history).
+    Returns (success, final_answer, full_messages_history).
     """
-    global _current_run_id
-    _current_run_id = run_id
+    from app.core.runtime_state import set_current_run_id
+    set_current_run_id(run_id)
 
     for attempt in range(max_retries + 1):
         if history:
@@ -228,6 +226,11 @@ async def run_agent(
 
             if await is_aborted(run_id):
                 raise RuntimeError(f"Run {run_id} was aborted by user.")
+
+            # Enforce minimum turns before allowing submission
+            if _turn < min_turns:
+                # We don't stop the agent, but we will block the submit tool if it tries to call it.
+                pass
 
             active_tools = litellm_tools
 
@@ -300,6 +303,18 @@ async def run_agent(
                     args = json.loads(tool_call.function.arguments)
 
                     if name == submit_tool_name:
+                        # 1. Enforce minimum turns
+                        if _turn < min_turns:
+                            messages.append(
+                                {
+                                    "role": "tool",
+                                    "tool_call_id": tool_call.id,
+                                    "name": name,
+                                    "content": f"Submission rejected: Minimum research turns ({min_turns}) not yet reached. Current turn: {_turn + 1}. Please continue exploring and verifying claims before submitting.",
+                                }
+                            )
+                            continue
+
                         args_dataset = args.get("dataset")
                         if args_dataset:
                             try:
@@ -338,12 +353,36 @@ async def run_agent(
                                         }
                                     )
                                     continue
-                            except Exception:
-                                pass  # Fallback to submitting if dataset is malformed
+                            except json.JSONDecodeError:
+                                messages.append(
+                                    {
+                                        "role": "tool",
+                                        "tool_call_id": tool_call.id,
+                                        "name": name,
+                                        "content": "Submission rejected: The dataset provided is not valid JSON. Please ensure you return a properly formatted JSON object.",
+                                    }
+                                )
+                                return True, "Submission rejected: The dataset provided is not valid JSON. Please ensure you return a properly formatted JSON object.", messages
+                            except Exception as e:
+
+
+
+
+
+
+                                messages.append(
+                                    {
+                                        "role": "tool",
+                                        "tool_call_id": tool_call.id,
+                                        "name": name,
+                                        "content": f"Submission rejected: Error parsing dataset: {e!s}. Please check your formatting.",
+                                    }
+                                )
+                                continue
 
                         # If the tool provides a dataset, use it; otherwise, fallback to content
-                        args_dataset = args.get("dataset")
                         return (
+                            True,
                             args_dataset or content or "Findings submitted.",
                             messages,
                         )
@@ -461,11 +500,23 @@ async def run_agent(
                 )
                 continue
 
-            return content, messages
+            return (
+                True,
+                content,
+                messages
+            )
 
         if attempt < max_retries:
             continue
         else:
-            return "MAX_TURNS_REACHED", messages
+            return (
+                False,
+                "MAX_TURNS_REACHED",
+                messages
+            )
 
-    return "Error: Max turns reached without submission.", messages
+    return (
+        False,
+        "Error: Max turns reached without submission.",
+        messages
+    )

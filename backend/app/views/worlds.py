@@ -1,5 +1,7 @@
 import json
+import asyncio
 from pathlib import Path
+
 
 from fastapi import APIRouter, Form, Query, Request
 from fastapi.responses import HTMLResponse
@@ -21,8 +23,10 @@ async def worlds_import_fragment(request: Request, q: str = Query(default="")):
     json_path = Path(__file__).parent.parent / "db" / "default_worlds.json"
     entries = []
     if json_path.exists():
-        with open(json_path) as f:
-            all_entries = json.load(f)
+        def _read_json():
+            with open(json_path) as f:
+                return json.load(f)
+        all_entries = await asyncio.to_thread(_read_json)
 
         service = UniverseService()
         existing = service.get_all_universes(limit=5000)
@@ -57,8 +61,10 @@ async def worlds_import_action(request: Request, world_id: str):
     json_path = Path(__file__).parent.parent / "db" / "default_worlds.json"
     entries = []
     if json_path.exists():
-        with open(json_path) as f:
-            entries = json.load(f)
+        def _read_json():
+            with open(json_path) as f:
+                return json.load(f)
+        entries = await asyncio.to_thread(_read_json)
     template = templates.env.get_template("fragments/world_import_list.html")
     return HTMLResponse(
         content=template.render(
@@ -75,8 +81,10 @@ async def worlds_import_all_action(request: Request):
     json_path = Path(__file__).parent.parent / "db" / "default_worlds.json"
     entries = []
     if json_path.exists():
-        with open(json_path) as f:
-            entries = json.load(f)
+        def _read_json():
+            with open(json_path) as f:
+                return json.load(f)
+        entries = await asyncio.to_thread(_read_json)
     template = templates.env.get_template("fragments/world_import_list.html")
     return HTMLResponse(
         content=template.render(

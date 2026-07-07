@@ -109,6 +109,7 @@ class AcquisitionCache:
         target_id: int,
         relation: str,
         run_id: str | None = None,
+        session: Session | None = None,
     ):
         self.repo.store_provenance(
             source_artifact_id=source_artifact_id,
@@ -116,6 +117,7 @@ class AcquisitionCache:
             target_id=target_id,
             relation=relation,
             run_id=run_id,
+            session=session,
         )
 
     def close(self):

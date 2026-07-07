@@ -9,6 +9,15 @@ class ExecutionRepository:
     def __init__(self, session: Session):
         self.session = session
 
+    def get_all_runs(self, limit: int = 100) -> Sequence[ExecutionState]:
+        # Get the latest state for each unique run_id
+        return self.session.exec(
+            select(ExecutionState)
+            .order_by(ExecutionState.created_at.desc())
+            .distinct(ExecutionState.run_id)
+            .limit(limit)
+        ).all()
+
     def create_log(self, execution_state: ExecutionState) -> ExecutionState:
         self.session.add(execution_state)
         return execution_state

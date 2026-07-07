@@ -35,6 +35,7 @@ class UnconfirmedClaim(UnconfirmedModel, table=True):
     context: str | None = None
     predicate: str
     object_val: str
+    artifact_id: int | None = None
     reference: str | None = None
     wiki_source: str | None = None
     confidence: str | None = None

@@ -186,8 +186,8 @@ async def test_tool_fetch_page_parallel():
         result = await tool_fetch_page(args)
 
         assert mock_fetch.call_count == 2
-        assert "--- Content from http://url1.com ---" in result
-        assert "--- Content from http://url2.com ---" in result
+        assert "--- Content from http://url1.com" in result
+        assert "--- Content from http://url2.com" in result
         assert "[MAIN ARTICLE]\nThe main content of the page." in result
         assert "Words: 100" in result
         assert "RECOMMENDED NEXT STEPS" in result

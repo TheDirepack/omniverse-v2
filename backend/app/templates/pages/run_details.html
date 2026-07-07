@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+
+{% block title %}Run Details - Omniverse{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <div class="flex justify-between items-center">
+        <div class="flex items-center gap-4">
+            <a href="/research" class="text-blue-600 hover:text-blue-800 text-sm flex items-center gap-1">
+                ← Back to Research
+            </a>
+            <h1 class="text-3xl font-bold">Run: <span class="font-mono text-gray-600 dark:text-gray-400">{{ run_id }}</span></h1>
+        </div>
+        <button hx-post="/runs/abort"
+                hx-vals='{"run_id": "{{ run_id }}"}'
+                hx-confirm="Abort this run?"
+                class="bg-red-600 text-white px-4 py-2 rounded text-sm hover:bg-red-700 transition">
+            Abort Run
+        </button>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <!-- Logs Column -->
+        <div class="space-y-4">
+            <h2 class="text-xl font-semibold">Execution Logs</h2>
+            <div id="run-logs" 
+                 hx-get="/runs/logs/{{ run_id }}" 
+                 hx-trigger="load, every 2s" 
+                 hx-swap="innerHTML"
+                 class="bg-black text-green-400 p-4 rounded-lg font-mono text-xs h-[80vh] overflow-y-auto shadow-inner border border-gray-800">
+                <p class="italic text-gray-600">Streaming logs...</p>
+            </div>
+        </div>
+
+        <!-- Acquisition Column -->
+        <div class="space-y-4">
+            <h2 class="text-xl font-semibold">Acquisition Pipeline</h2>
+            <div id="acquisition-panel" 
+                 hx-get="/runs/{{ run_id }}/acquisition" 
+                 hx-trigger="load" 
+                 hx-swap="innerHTML"
+                 class="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+                <p class="text-gray-500 dark:text-gray-400 italic">Loading acquisition artifacts...</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Auto-scroll logs to bottom
+    document.body.addEventListener('htmx:afterOnLoad', function(evt) {
+        if (evt.detail.target.id === 'run-logs') {
+            evt.detail.target.scrollTop = evt.detail.target.scrollHeight;
+        }
+    });
+</script>
+{% endblock %}

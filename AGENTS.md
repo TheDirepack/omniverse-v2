@@ -50,6 +50,7 @@ Tests use ephemeral SQLite at `/dev/shm/omniverse_tests/`. Autouse fixture drops
 - **Atomic Claims**: Knowledge is stored as triples (Subject $\rightarrow$ Predicate $\rightarrow$ Object).
 - **Predicate Normalization**: Raw predicates are mapped to canonical forms via `PredicateService` (e.g., "uses" $\rightarrow$ `POWERED_BY`).
 - **Typed Objects**: Objects are stored as either `object_entity_id` (pointer to another entity) or `object_literal` (text).
+- **Provenance**: Claims link to `AcquisitionArtifact` via `artifact_id` for source traceability.
 - **Technical Specs**: Specific values (e.g., jump range) are stored in `ClaimAttribute` linked to a claim.
 - **Confidence Model**: derived from `support_count` (matching claims) and `contradiction_count` (conflicting claims).
 - **Inference**:
@@ -62,7 +63,7 @@ Tests use ephemeral SQLite at `/dev/shm/omniverse_tests/`. Autouse fixture drops
 - **Main DB**: SQLite via SQLModel at `DATABASE_URL` (default `backend/data/omniverse_v2.db`). Stores the canonical Knowledge Graph (Entities and Claims).
 - **Settings DB**: `backend/data/settings.db`. Agent routes, provider configs, settings.
 - **Operational DB**: `backend/data/operational.db`. Execution state, logs.
-- **Staging DB**: `backend/data/unconfirmed.db`. Persistent research notes, leads, and unconfirmed claims.
+- **Staging DB**: `backend/data/unconfirmed.db`. Persistent research notes, leads, unconfirmed claims, and provenance edges.
 - **Extrapolation DB**: `backend/data/extrapolation.db`. Isolated storage for speculative theories; must never contaminate canon DB.
 
 All default to `backend/data/` but overridable via env vars.
@@ -92,7 +93,7 @@ All default to `backend/data/` but overridable via env vars.
 DB-driven fallback chain in `core/router.py`. `api_base` passed from `provider.base_url`.
 Agent names: Researcher, Universe Chronicler, DB Architect, Tier Architect, Logic Auditor, Stability Unit, Ontological Theorist, Theoretical Auditor.
 
-- **Agent tool loop**: `core/agent_engine.py` supports stateful sessions. Includes a `min_turns` gate to prevent early submission.
+- **Agent tool loop**: `core/agent_engine.py` supports stateful sessions. `_current_run_id` managed in `core/runtime_state.py` to avoid circular imports. Includes a `min_turns` gate to prevent early submission.
 - **Available tools**: `webSearch`, `fetchPage`, `compareSourceFreshness`, `queryClaims`, `upsertClaims`, `queryUnconfirmedClaims`, `saveUnconfirmedClaim`, `deleteUnconfirmedClaim`.
 
 
@@ -110,6 +111,8 @@ Global `ACTIVE_RUNS` / `ABORTED_RUNS` sets in `core/state.py`. Abort checked bet
 - **CORS**: wide open (`*`).
 - **pytest markers**: `slow` for LLM/network tests. `asyncio_mode = auto`.
 - **Log Format**: `[Timestamp] [Agent] [Model] [KeyID] [WorldName] [Type] Content` (used for structured filtering in LogViewer).
+- **Log Viewer**: HTMX-based, tail-pagination (newest first), backend-driven filtering.
+- **Caching**: `AcquisitionCache` deduplicates web requests by content hash; search results cached by composite key.
 - **Linting**: `./lint.sh` — Ruff (18 rule categories). `./lint.sh --strict` — +Mypy, Bandit, Pylint.
 - **Backend entry**: `app/main.py`.
 - **Frontend**: HTMX views rendered from `backend/app/views/`. React frontend removed. Vite proxy: none.

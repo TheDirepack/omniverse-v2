@@ -11,39 +11,16 @@ from app.agents.prompts import (
     get_stability_prompt,
 )
 from app.core.agent_engine import run_agent
+from app.core.validation import audit_success
 from app.db.session import engine
 from app.services.execution_service import ExecutionService
 from app.services.settings_service import SettingsService
 from app.services.tiering_service import TieringService
 from app.services.universe_service import UniverseService
+from app.services.knowledge_retriever import KnowledgeRetrieverService
 
 
-def audit_success(audit_result: str) -> bool:
-    try:
-        parsed = json.loads(audit_result)
-        status = str(parsed.get("Verification_Status", "")).strip().upper()
-        if status:
-            return status == "SUCCESS"
-    except (json.JSONDecodeError, AttributeError, TypeError):
-        pass
-
-    upper = audit_result.upper()
-    if "REVISION_REQUIRED" in upper:
-        return False
-
-    lines = upper.splitlines()
-    for line in lines:
-        line = line.strip()
-        if (
-            line.startswith("SUCCESS")
-            or line.startswith("VERIFIED")
-            or line.startswith("STATUS: SUCCESS")
-            or line.startswith("STATUS: VERIFIED")
-        ):
-            return True
-
-    return False
-
+# Removed local audit_success function
 
 async def _audit_tier_system(
     tier_system_definition: str, dataset: str, run_id: str
@@ -100,7 +77,12 @@ def _parse_stability_result(stability_result: str) -> dict[str, Any]:
         except Exception as e:
             logging.exception(f"Failed to parse tier number from stability result: {e}")
 
-    return {"status": status, "tier": tier_num, "justification": stability_result}
+    anomaly_details = None
+    details_match = re.search(r"ANOMALY_DETAILS:\s*(.*)", stability_result, re.IGNORECASE | re.MULTILINE)
+    if details_match:
+        anomaly_details = details_match.group(1).strip()
+
+    return {"status": status, "tier": tier_num, "justification": stability_result, "anomaly_details": anomaly_details}
 
 
 MAX_ARCHITECTURE_ATTEMPTS = 5
@@ -140,10 +122,17 @@ async def architecture_node(state: dict[str, Any]) -> dict[str, Any]:
         )
 
     dataset = ""
+    verified_world_names = state.get("verified_worlds", [])
+    if verified_world_names:
+        retriever = KnowledgeRetrieverService()
+        world_datasets = []
+        for name in verified_world_names:
+            u = uni_service.get_universe(name)
+            if u:
+                world_datasets.append(f"--- {u.name} ---\n{retriever.get_claims_dataset(u.id)}")
+        dataset = "\n\n".join(world_datasets)
+
     with Session(engine):
-        setting = settings_service.get_setting("CONSOLIDATED_DATASET")
-        if setting:
-            dataset = setting.value
         active_rubric = tier_service.repo.get_active_rubric()
 
     if active_rubric is None:
@@ -152,12 +141,12 @@ async def architecture_node(state: dict[str, Any]) -> dict[str, Any]:
             "Tier Architect",
             f"No persistent rubric found. Bootstrapping tier rubric from scratch "
             f"(attempt {attempt}/{MAX_ARCHITECTURE_ATTEMPTS}).",
-            "IN_PROGRESS",
+            "BOOTSTRAPPING_RUBRIC",
             state,
         )
 
         architect_prompts = get_architect_prompt(dataset, anomalies)
-        tier_system_definition, _ = await run_agent(
+        success_arch, tier_system_definition, _ = await run_agent(
             agent_name="Tier Architect",
             system_prompt=architect_prompts["system"],
             user_prompt=architect_prompts["user"],
@@ -175,7 +164,7 @@ async def architecture_node(state: dict[str, Any]) -> dict[str, Any]:
             "Logic Auditor",
             f"Audited bootstrap Tier Rubric. Status: "
             f"{'SUCCESS' if is_success else 'REVISION_REQUIRED'}",
-            "IN_PROGRESS",
+            "RUBRIC_AUDITED",
             state,
         )
 
@@ -196,7 +185,7 @@ async def architecture_node(state: dict[str, Any]) -> dict[str, Any]:
         run_id,
         "Stability Unit",
         f"Slotting worlds into persistent rubric v{active_rubric.version}",
-        "IN_PROGRESS",
+        "SLOTTING_WORLDS",
         state,
     )
 
@@ -204,14 +193,15 @@ async def architecture_node(state: dict[str, Any]) -> dict[str, Any]:
     anomalous = []
 
     verified_world_names = state.get("verified_worlds", [])
-    universes = uni_service.repo.get_by_names(verified_world_names)
+    universes = uni_service.get_by_names(verified_world_names)
 
     for universe in universes:
         assert universe.id is not None
-        summary = universe.summary or "No summary available."
-        stability_prompts = get_stability_prompt(summary, rubric_text)
+        retriever = KnowledgeRetrieverService()
+        world_data = retriever.get_claims_dataset(universe.id)
+        stability_prompts = get_stability_prompt(world_data, rubric_text)
 
-        stability_result, _ = await run_agent(
+        success, stability_result, _ = await run_agent(
             agent_name="Stability Unit",
             system_prompt=stability_prompts["system"],
             user_prompt=stability_prompts["user"],
@@ -238,9 +228,9 @@ async def architecture_node(state: dict[str, Any]) -> dict[str, Any]:
                 exec_service.log_transition(
                     run_id,
                     "Stability Unit",
-                    f"Could not parse TIER value for {universe.name}, "
-                    f"defaulting to Tier 11.",
-                    "IN_PROGRESS",
+                        f"No TIER field found in stability output for {universe.name}, "
+                        f"defaulting to Tier 11.",
+                    "SLOTTING_WORLDS",
                     state,
                 )
         else:
@@ -279,7 +269,7 @@ async def architecture_node(state: dict[str, Any]) -> dict[str, Any]:
                 "Manager",
                 f"Max amendment attempts reached for {len(anomalous)} anomalies. "
                 "Recording as untiered and proceeding.",
-                "IN_PROGRESS",
+                "SLOTTING_WORLDS",
                 state,
             )
             for universe, res in anomalous:
@@ -305,7 +295,7 @@ async def architecture_node(state: dict[str, Any]) -> dict[str, Any]:
             "Rubric Steward",
             f"{len(anomalous)} world(s) don't fit the persistent rubric. "
             "Proposing minimal amendment.",
-            "IN_PROGRESS",
+            "AMENDING_RUBRIC",
             state,
         )
 
@@ -330,7 +320,7 @@ async def architecture_node(state: dict[str, Any]) -> dict[str, Any]:
             "Logic Auditor",
             f"Audited rubric amendment. Status: "
             f"{'SUCCESS' if is_success else 'REVISION_REQUIRED'}",
-            "IN_PROGRESS",
+            "RUBRIC_AUDITED",
             state,
         )
 
@@ -364,26 +354,29 @@ async def architecture_node(state: dict[str, Any]) -> dict[str, Any]:
             "Stability Unit",
             f"Re-slotting {len(anomalous)} world(s) against amended rubric "
             f"v{new_rubric_version}",
-            "IN_PROGRESS",
+            "RESLOTTING_WORLDS",
             state,
         )
         for universe, _prev_result in anomalous:
+            retriever = KnowledgeRetrieverService()
+            world_data = retriever.get_claims_dataset(universe.id)
             stability_prompts = get_stability_prompt(
-                universe.summary or "", new_rubric_text
+                world_data, new_rubric_text
             )
-            stability_result, _ = await run_agent(
-                agent_name="Stability Unit",
-                system_prompt=stability_prompts["system"],
-                user_prompt=stability_prompts["user"],
-                step="Stability Re-check",
-                run_id=run_id,
-                tools_names=["webSearch", "fetchPage"],
-                submit_tool_name="submit_stability",
-            )
-            parsed = _parse_stability_result(stability_result)
-            tier_val = parsed["tier"] if parsed["tier"] is not None else -1
-            assert universe.id is not None
-            tier_service.slot_world(
+        success, stability_result, _ = await run_agent(
+            agent_name="Stability Unit",
+            system_prompt=stability_prompts["system"],
+            user_prompt=stability_prompts["user"],
+            step="Stability Re-check",
+            run_id=run_id,
+            tools_names=["webSearch", "fetchPage"],
+            submit_tool_name="submit_stability",
+        )
+        parsed = _parse_stability_result(stability_result)
+        tier_val = parsed["tier"] if parsed["tier"] is not None else -1
+        assert universe.id is not None
+        tier_service.slot_world(
+
                 universe.id, new_rubric_id, tier_val, parsed["justification"]
             )
 

@@ -184,11 +184,11 @@ class OcrService:
                         tables.append(table.export_to_dataframe().to_string())
                     headings = [h.text for h in result.document.headings]
                     structured = {"headings": headings, "tables": tables} if tables else None
-                    return text
+                    return text, structured
                 finally:
                     Path(tmp.name).unlink(missing_ok=True)
 
-            extracted_text = await asyncio.to_thread(_run)
+            extracted_text, structured = await asyncio.to_thread(_run)
             return Document(
                 content_type="image/ocr",
                 extracted_text=extracted_text,

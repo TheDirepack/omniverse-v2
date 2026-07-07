@@ -6,9 +6,23 @@ from app.db.session import engine
 
 
 def test_research_page(client):
-    response = client.get("/research/")
+    from app.db.schema import Universe
+    from app.db.session import engine
+    from sqlmodel import Session, select
+
+    with Session(engine) as session:
+        u = session.exec(select(Universe)).first()
+        if not u:
+            u = Universe(name="TestWorld")
+            session.add(u)
+            session.commit()
+            session.refresh(u)
+        world_id = str(u.id)
+
+    response = client.get("/research", cookies={"active_world_id": world_id})
     assert response.status_code == 200
     assert "Database Worlds" in response.text
+
 
 
 def test_research_queue(client):

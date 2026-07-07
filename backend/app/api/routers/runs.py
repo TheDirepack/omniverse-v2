@@ -3,6 +3,7 @@ import json
 import uuid
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
 from app.agents.workflow import app_graph
@@ -19,7 +20,7 @@ router = APIRouter(prefix="/runs", tags=["runs"])
 
 
 class OrchestratePayload(BaseModel):
-    worlds: list[str]
+    universe_uuids: list[str]
 
 
 class ExtrapolatePayload(BaseModel):
@@ -29,11 +30,11 @@ class ExtrapolatePayload(BaseModel):
 
 
 class FocusedSearchPayload(BaseModel):
-    worlds: list[str]
+    universe_uuids: list[str]
     features: list[str]
 
 
-async def run_pipeline_in_background(run_id: str, target_worlds: list[str]):
+async def run_pipeline_in_background(run_id: str, universe_uuids: list[str]):
     exec_service = ExecutionService()
     uni_service = UniverseService()
 
@@ -45,9 +46,17 @@ async def run_pipeline_in_background(run_id: str, target_worlds: list[str]):
         )
         return
 
-    for name in target_worlds:
-        if not uni_service.get_universe(name):
-            uni_service.create_universe(name)
+    # Resolve UUIDs to names for the pipeline state
+    target_worlds = []
+    for uuid in universe_uuids:
+        universe = uni_service.get_universe_by_uuid(uuid)
+        if universe:
+            target_worlds.append(universe.name)
+        else:
+            # This should technically not happen if the UI passes valid UUIDs,
+            # but we handle it gracefully.
+            pass
+
     await add_active_run(run_id)
     inputs = {
         "target_worlds": target_worlds,
@@ -78,13 +87,22 @@ async def run_pipeline_in_background(run_id: str, target_worlds: list[str]):
 
 
 async def run_focused_search_in_background(
-    run_id: str, target_worlds: list[str], focused_features: list[str]
+    run_id: str, universe_uuids: list[str], focused_features: list[str]
 ):
     exec_service = ExecutionService()
+    uni_service = UniverseService()
     from app.core.runtime_state import is_aborted
 
     if await is_aborted(run_id):
         raise RuntimeError("Run aborted before start")
+    
+    # Resolve UUIDs to names
+    target_worlds = []
+    for uuid in universe_uuids:
+        universe = uni_service.get_universe_by_uuid(uuid)
+        if universe:
+            target_worlds.append(universe.name)
+
     await add_active_run(run_id)
     inputs = {
         "target_worlds": target_worlds,
@@ -135,6 +153,8 @@ async def run_tiering_in_background(run_id: str):
     state: OmniverseState = {
         "run_id": run_id,
         "target_worlds": [],
+        "focused_features": [],
+        "is_focused_search": False,
         "research_results": [],
         "verified_worlds": verified_worlds,
         "current_tier_system": None,
@@ -143,6 +163,7 @@ async def run_tiering_in_background(run_id: str):
         "generated_theories": [],
         "errors": [],
         "architecture_retries": 0,
+        "architecture_attempts": 0,
         "active_task": "ARCHITECTURE",
     }
     try:
@@ -183,13 +204,13 @@ async def run_extrapolation_in_background(run_id: str, target_worlds: list[str])
 def trigger_orchestration(
     payload: OrchestratePayload, background_tasks: BackgroundTasks
 ):
-    if not payload.worlds:
+    if not payload.universe_uuids:
         raise HTTPException(
-            status_code=400, detail="Must provide at least one target world name."
+            status_code=400, detail="Must provide at least one target universe UUID."
         )
     run_id = str(uuid.uuid4())
-    background_tasks.add_task(run_pipeline_in_background, run_id, payload.worlds)
-    return {"status": "started", "run_id": run_id, "worlds": payload.worlds}
+    background_tasks.add_task(run_pipeline_in_background, run_id, payload.universe_uuids)
+    return {"status": "started", "run_id": run_id, "uuids": payload.universe_uuids}
 
 
 @router.post("/tiering")
@@ -214,7 +235,7 @@ def trigger_extrapolation(
             raise HTTPException(
                 status_code=400, detail="worlds list required for 'worlds' scope"
             )
-        verified_names = [u.name for u in uni_service.repo.get_all() if u.is_explored]
+        verified_names = [u.name for u in uni_service.get_all_universes() if u.is_explored]
         target_worlds = [w for w in payload.worlds if w in verified_names]
         if not target_worlds:
             return {
@@ -256,12 +277,12 @@ def trigger_extrapolation(
 def focused_search(payload: FocusedSearchPayload, background_tasks: BackgroundTasks):
     run_id = str(uuid.uuid4())
     background_tasks.add_task(
-        run_focused_search_in_background, run_id, payload.worlds, payload.features
+        run_focused_search_in_background, run_id, payload.universe_uuids, payload.features
     )
     return {
         "status": "started",
         "run_id": run_id,
-        "worlds": payload.worlds,
+        "uuids": payload.universe_uuids,
         "features": payload.features,
     }
 
@@ -305,6 +326,57 @@ def reset_activity():
     exec_service.clear_logs()
     return {"status": "success"}
 
+
+@router.get("/history", response_class=HTMLResponse)
+async def runs_history(request: Request):
+    exec_service = ExecutionService()
+    runs = exec_service.repo.get_all_runs()
+    
+    results = []
+    for run in runs:
+        import json
+        try:
+            state = json.loads(run.state_snapshot)
+            target_worlds = state.get("target_worlds", [])
+            goal = ", ".join(target_worlds) if target_worlds else "Unknown Goal"
+        except:
+            goal = "Unknown Goal"
+            
+        results.append({
+            "run_id": run.run_id,
+            "world": goal,
+            "status": run.status,
+            "node": run.node_name,
+            "created_at": str(run.created_at),
+        })
+    
+    template = templates.env.get_template("fragments/research_history.html")
+    return HTMLResponse(content=template.render(request=request, runs=results))
+
+
+@router.get("/{run_id}", response_class=HTMLResponse)
+async def run_details(request: Request, run_id: str):
+    template = templates.env.get_template("pages/run_details.html")
+    return HTMLResponse(content=template.render(request=request, run_id=run_id))
+
+
+@router.get("/{run_id}/acquisition", response_class=HTMLResponse)
+async def run_acquisition(request: Request, run_id: str):
+    from app.db.unconfirmed_session import unconfirmed_session_factory
+    from app.db.schema import WorldAcquisitionUsage, AcquisitionArtifact
+    from sqlmodel import Session, select
+
+    with Session(unconfirmed_session_factory()) as session:
+        stmt = (
+            select(AcquisitionArtifact)
+            .join(WorldAcquisitionUsage)
+            .where(WorldAcquisitionUsage.run_id == run_id)
+            .order_by(WorldAcquisitionUsage.created_at)
+        )
+        artifacts = session.exec(stmt).all()
+
+    template = templates.env.get_template("fragments/acquisition_panel.html")
+    return HTMLResponse(content=template.render(request=request, artifacts=artifacts, run_id=run_id))
 
 @router.get("/logs/file")
 def get_file_logs(
@@ -387,19 +459,19 @@ def get_file_logs(
         if not has_filters:
             # Tail read logic: return most recent first
             # offset 0, limit 100 -> results[total-100 : total]
-            end_idx = total - offset
-            start_idx = total - (offset + (limit or 100))
+            end_idx = total - (offset or 0)
+            start_idx = total - ((offset or 0) + (limit or 100))
             sliced_logs = results[max(0, start_idx) : max(0, end_idx)]
         else:
             # Filtered logs: return in chronological order
-            sliced_logs = results[offset : offset + (limit or 100)]
+            sliced_logs = results[(offset or 0) : (offset or 0) + (limit or 100)]
 
         return {
             "logs": sliced_logs,
             "total": total,
-            "has_more": (total - (offset + (limit or 100)) > 0)
+            "has_more": (total - ((offset or 0) + (limit or 100)) > 0)
             if not has_filters
-            else (offset + (limit or 100) < total),
+            else ((offset or 0) + (limit or 100) < total),
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error reading logs: {e!s}")
@@ -418,7 +490,7 @@ async def get_realtime_logs(run_id: str):
                 for log in new_logs:
                     yield f"data: {json.dumps({'id': log.id, 'node_name': log.node_name, 'thought': log.thought, 'status': log.status, 'created_at': str(log.created_at)})}\n\n"
                     last_id = log.id
-                    if log.status in {"FAILED", "ABORTED", "ABORT_REQUESTED"}:
+                    if log.status in {"FAILED", "ABORT_REQUESTED"}:
                         yield f"data: {json.dumps({'finished': True, 'failed': log.status == 'FAILED', 'aborted': log.status != 'FAILED'})}\n\n"
                         return
                     if log.status == "COMPLETED" and log.node_name in {

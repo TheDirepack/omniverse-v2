@@ -92,3 +92,12 @@ async def get_active_runs() -> list[str]:
 ACTIVE_RUNS: set[str] = set()
 ABORTED_RUNS: set[str] = set()
 RUNS_LOCK = asyncio.Lock()
+
+_current_run_id: str | None = None
+
+def set_current_run_id(run_id: str | None):
+    global _current_run_id
+    _current_run_id = run_id
+
+def get_current_run_id() -> str | None:
+    return _current_run_id

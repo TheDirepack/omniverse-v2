@@ -3,7 +3,11 @@ from app.core.provider_models import fetch_live_models
 from app.db.schema import ProviderConfig, ProviderKey
 from app.db.session import engine
 from sqlmodel import Session
-from tests.provider_config import PROVIDER_CREDENTIALS
+
+try:
+    from tests.provider_config import PROVIDER_CREDENTIALS
+except ImportError:
+    pytest.importorskip("tests.provider_config")
 
 pytestmark = pytest.mark.slow
 

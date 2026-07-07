@@ -6,80 +6,34 @@
 <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
     <!-- Main Panel -->
     <div class="md:col-span-2 space-y-6">
-        <!-- Add New World -->
+        <!-- Research Job Dashboard -->
         <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow">
-            <h2 class="text-xl font-semibold mb-4">Add New World</h2>
-            <form hx-post="/research/add-world"
-                  hx-target="#database-worlds"
-                  hx-swap="outerHTML"
-                  hx-indicator="#add-indicator"
-                  class="grid grid-cols-2 gap-4">
-                <div class="col-span-2">
-                    <label class="block text-sm font-medium mb-1">Name *</label>
-                    <input type="text" name="world_name" required
-                           class="w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-                </div>
-                <div>
-                    <label class="block text-sm font-medium mb-1">Franchise</label>
-                    <input type="text" name="franchise"
-                           class="w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-                </div>
-                <div>
-                    <label class="block text-sm font-medium mb-1">Category</label>
-                    <input type="text" name="category"
-                           class="w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                           placeholder="Science Fantasy, Space Opera...">
-                </div>
-                <div>
-                    <label class="block text-sm font-medium mb-1">Continuity</label>
-                    <input type="text" name="continuity"
-                           class="w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                           placeholder="Games, Anime, Movies...">
-                </div>
-                <div>
-                    <label class="block text-sm font-medium mb-1">Era</label>
-                    <input type="text" name="era"
-                           class="w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-                </div>
-                <div>
-                    <label class="block text-sm font-medium mb-1">Parent World</label>
-                    <select name="parent_id"
-                            class="w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-                        <option value="">None (top-level)</option>
-                        {% for u in universes %}
-                        <option value="{{ u.id }}">{{ u.name }}</option>
-                        {% endfor %}
-                    </select>
-                </div>
-                <div class="col-span-2 flex gap-2">
-                    <button type="submit" name="auto_research" value="true"
-                            class="bg-blue-600 text-white px-4 py-2 rounded text-sm hover:bg-blue-700 transition">
-                        Quick Add & Research
-                    </button>
-                    <button type="submit" name="auto_research" value="false"
-                            class="bg-gray-500 text-white px-4 py-2 rounded text-sm hover:bg-gray-600 transition">
-                        Add Only
-                    </button>
-                    <div id="add-indicator" class="htmx-indicator animate-spin inline-block">⌛</div>
-                </div>
-            </form>
-        </div>
-
-        <!-- Database Worlds (with integrated search) -->
-        <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow">
-            <h2 class="text-xl font-semibold mb-4">Database Worlds</h2>
-            <div id="db-worlds-indicator" class="htmx-indicator text-sm text-blue-500 mb-2">Loading...</div>
-            <div id="database-worlds"
-                 hx-get="/research/database-worlds"
+            <div id="research-history"
+                 hx-get="/runs/history"
                  hx-trigger="load"
-                 hx-swap="outerHTML">
-                <p class="text-gray-500 dark:text-gray-400 italic">Loading worlds...</p>
+                 hx-swap="innerHTML">
+                <p class="text-gray-500 dark:text-gray-400 italic">Loading research jobs...</p>
             </div>
         </div>
     </div>
 
     <!-- Right Panel -->
     <div class="space-y-6">
+        <!-- World Management -->
+        <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow space-y-4">
+            <h2 class="text-xl font-semibold mb-4">World Management</h2>
+            <div class="grid grid-cols-1 gap-3">
+                <button onclick="openWorldModal('import')" 
+                        class="w-full py-2 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition">
+                    Import World
+                </button>
+                <button onclick="openWorldModal('create')" 
+                        class="w-full py-2 px-4 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-medium transition">
+                    Create World
+                </button>
+            </div>
+        </div>
+
         <!-- Active Research Queue -->
         <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow">
             <h2 class="text-xl font-semibold mb-4">Active Research</h2>
@@ -92,12 +46,18 @@
         </div>
 
         <!-- Focused Search -->
-        <div id="focused-search-panel"
-             hx-get="/research/focused-search"
-             hx-trigger="load"
-             hx-swap="innerHTML">
-            <p class="text-gray-500 dark:text-gray-400 italic">Loading Focused Search...</p>
+        <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow text-center">
+            <h2 class="text-xl font-semibold mb-4">Focused Search</h2>
+            <p class="text-sm text-gray-500 dark:text-gray-400 mb-6">
+                Trigger a targeted research job to fill specific gaps in the knowledge graph.
+            </p>
+            <button onclick="openFocusedSearch()" 
+                    class="w-full py-2 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition">
+                Launch Focused Search
+            </button>
         </div>
     </div>
+
 </div>
+{% endblock %}
 {% endblock %}

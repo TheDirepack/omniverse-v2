@@ -34,6 +34,11 @@ packages = ["app"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+markers = [
+    "slow: mark test as slow running",
+    "network: mark test as requiring network access",
+]
+addopts = "-m \"not network and not slow\""
 
 [tool.ruff]
 line-length = 88

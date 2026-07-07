@@ -1,7 +1,7 @@
 <div class="space-y-6">
     <div class="flex justify-between items-center">
         <div>
-            <h2 class="text-2xl font-bold text-gray-800 dark:text-gray-100">{{ world.name }}</h2>
+            <h2 class="text-2xl font-bold text-gray-800 dark:text-gray-100">{{ world.display_name }}</h2>
             {% if world.franchise or world.category %}
             <p class="text-sm text-gray-500 dark:text-gray-400">
                 {{ world.franchise or '' }}{% if world.franchise and world.category %} — {% endif %}{{ world.category or '' }}
@@ -46,8 +46,9 @@
     <div>
         <h3 class="text-lg font-semibold mb-2">Claims ({{ claims|length }})</h3>
         <div class="divide-y divide-gray-200 dark:divide-gray-700 border rounded max-h-64 overflow-y-auto">
-            {% for claim in claims %}
-            <div class="py-2 px-3 text-sm">
+        {% for claim in claims %}
+        <div class="py-2 px-3 text-sm flex justify-between items-center">
+            <div>
                 <span class="font-bold">{{ claim.subject_id }}</span>
                 <span class="text-blue-600 mx-1">{{ claim.predicate }}</span>
                 <span>{{ claim.object_literal or claim.object_entity_id }}</span>
@@ -55,9 +56,12 @@
                 <a href="{{ claim.source_wiki }}" target="_blank" class="text-xs text-blue-500 ml-2 hover:underline">source</a>
                 {% endif %}
             </div>
-            {% else %}
-            <p class="text-gray-500 italic text-sm p-3">No claims found.</p>
-            {% endfor %}
+            <a href="/provenance/claim/{{ claim.id }}" 
+               class="text-[10px] bg-gray-100 dark:bg-gray-700 px-1.5 py-0.5 rounded hover:bg-gray-200 dark:hover:bg-gray-600 transition text-gray-500">
+                Trace
+            </a>
+        </div>
+        {% endfor %}
         </div>
     </div>
 </div>

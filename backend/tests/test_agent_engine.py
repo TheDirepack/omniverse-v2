@@ -58,7 +58,7 @@ class TestRunAgentDirectSubmit:
             "app.core.agent_engine.router.run_model",
             new=AsyncMock(return_value=(response, "mock-model", "mock-key")),
         ):
-            result, _ = await run_agent(
+            success, result, _ = await run_agent(
                 agent_name="TEST",
                 system_prompt="You are a researcher.",
                 user_prompt="Research Warhammer 40k.",
@@ -67,6 +67,7 @@ class TestRunAgentDirectSubmit:
                 tools_names=["webSearch"],
                 submit_tool_name="submitFindings",
             )
+        assert success is True
         assert result == "Here are my findings."
 
     async def test_submit_returns_empty_content_as_default(self):
@@ -78,7 +79,7 @@ class TestRunAgentDirectSubmit:
             "app.core.agent_engine.router.run_model",
             new=AsyncMock(return_value=(response, "mock-model", "mock-key")),
         ):
-            result, _ = await run_agent(
+            success, result, _ = await run_agent(
                 agent_name="TEST",
                 system_prompt="sys",
                 user_prompt="user",
@@ -87,6 +88,7 @@ class TestRunAgentDirectSubmit:
                 tools_names=[],
                 submit_tool_name="submitFindings",
             )
+        assert success is True
         assert result == "Findings submitted."
 
 
@@ -134,7 +136,7 @@ class TestRunAgentToolLoop:
                 },
             ),
         ):
-            result, _ = await run_agent(
+            success, result, _ = await run_agent(
                 agent_name="TEST",
                 system_prompt="sys",
                 user_prompt="user",
@@ -143,7 +145,7 @@ class TestRunAgentToolLoop:
                 tools_names=["webSearch"],
                 submit_tool_name="submitFindings",
             )
-
+        assert success is True
         assert result == "Done researching."
         assert captured_messages[0]["search_query"] == "WH40k lore"
 
@@ -165,7 +167,7 @@ class TestRunAgentToolLoop:
             )
 
         with patch("app.core.agent_engine.router.run_model", new=mock_run_model):
-            result, _ = await run_agent(
+            success, result, _ = await run_agent(
                 agent_name="TEST",
                 system_prompt="sys",
                 user_prompt="user",
@@ -174,6 +176,7 @@ class TestRunAgentToolLoop:
                 tools_names=[],
                 submit_tool_name="submitFindings",
             )
+        assert success is True
         assert result == "submitted"
 
 
@@ -189,7 +192,7 @@ class TestRunAgentMaxTurns:
             "app.core.agent_engine.router.run_model",
             new=AsyncMock(return_value=(no_tool_response, "m", "k")),
         ):
-            result, _ = await run_agent(
+            success, result, _ = await run_agent(
                 agent_name="TEST",
                 system_prompt="sys",
                 user_prompt="user",
@@ -199,6 +202,7 @@ class TestRunAgentMaxTurns:
                 submit_tool_name="submitFindings",
                 max_turns=2,
             )
+        assert success is False
         assert "MAX_TURNS_REACHED" in result
 
     async def test_text_response_without_tool_calls_returns_content(self):
@@ -209,7 +213,7 @@ class TestRunAgentMaxTurns:
             "app.core.agent_engine.router.run_model",
             new=AsyncMock(return_value=(text_response, "m", "k")),
         ):
-            result, _ = await run_agent(
+            success, result, _ = await run_agent(
                 agent_name="TEST",
                 system_prompt="sys",
                 user_prompt="user",
@@ -218,6 +222,7 @@ class TestRunAgentMaxTurns:
                 tools_names=[],
                 submit_tool_name="submitFindings",
             )
+        assert success is True
         assert result == "Here is my answer."
 
 
@@ -302,7 +307,7 @@ class TestRunAgentFetchCache:
             ),
             patch("app.core.web_fetch.web_fetcher.fetch_page", new=mock_fetch_page),
         ):
-            _result, _ = await run_agent(
+            success, result, _ = await run_agent(
                 agent_name="TEST",
                 system_prompt="sys",
                 user_prompt="user",
@@ -311,7 +316,7 @@ class TestRunAgentFetchCache:
                 tools_names=["fetchPage"],
                 submit_tool_name="submitFindings",
             )
-
+        assert success is True
         assert not fetch_called, "Cached URL should not trigger fetch"
 
 
@@ -393,7 +398,7 @@ class TestRunAgentStateful:
             "app.core.agent_engine.router.run_model",
             new=AsyncMock(return_value=(response, "mock-model", "mock-key")),
         ) as mock_router:
-            result, final_history = await run_agent(
+            success, result, final_history = await run_agent(
                 agent_name="TEST",
                 system_prompt="New System",
                 user_prompt="Submit now",
@@ -403,7 +408,7 @@ class TestRunAgentStateful:
                 submit_tool_name="submitFindings",
                 history=history,
             )
-
+        assert success is True
         assert result == "Final Answer"
         # Check that router was called with the combined history
         called_messages = mock_router.call_args[1]["messages"]
@@ -427,7 +432,7 @@ class TestRunAgentStateful:
             "app.core.agent_engine.router.run_model",
             new=AsyncMock(return_value=(response, "mock-model", "mock-key")),
         ) as mock_router:
-            _result, _final_history = await run_agent(
+            _success, _result, _final_history = await run_agent(
                 agent_name="TEST",
                 system_prompt="Sys",
                 user_prompt="User",
@@ -436,7 +441,6 @@ class TestRunAgentStateful:
                 tools_names=[],
                 submit_tool_name="submitFindings",
             )
-
         assert mock_router.call_count == 1
         called_messages = mock_router.call_args[1]["messages"]
         assert len(called_messages) == 2
@@ -639,7 +643,7 @@ class TestRunAgentCoverageGap:
             return (_make_response(content="final", tool_calls=[retry_tc]), "m", "k")
 
         with patch("app.core.agent_engine.router.run_model", new=mock_run):
-            result, _ = await run_agent(
+            success, result, _ = await run_agent(
                 agent_name="TEST",
                 system_prompt="sys",
                 user_prompt="user",
@@ -649,7 +653,7 @@ class TestRunAgentCoverageGap:
                 submit_tool_name="submitFindings",
                 max_turns=5,
             )
-        assert result is not None
+        assert success is not None
 
     async def test_coverage_too_low_less_than_3(self):
         submit_tc = _make_tool_call(
@@ -668,7 +672,7 @@ class TestRunAgentCoverageGap:
             return (_make_response(content="done", tool_calls=[retry_tc]), "m", "k")
 
         with patch("app.core.agent_engine.router.run_model", new=mock_run):
-            result, _ = await run_agent(
+            success, result, _ = await run_agent(
                 agent_name="TEST",
                 system_prompt="sys",
                 user_prompt="user",
@@ -678,7 +682,7 @@ class TestRunAgentCoverageGap:
                 submit_tool_name="submitFindings",
                 max_turns=5,
             )
-        assert result is not None
+        assert success is not None
 
     async def test_malformed_dataset_returns_raw_string(self):
         submit_tc = _make_tool_call(
@@ -690,7 +694,7 @@ class TestRunAgentCoverageGap:
             return (_make_response(content="fallback content", tool_calls=[submit_tc]), "m", "k")
 
         with patch("app.core.agent_engine.router.run_model", new=mock_run):
-            result, _ = await run_agent(
+            success, result, _ = await run_agent(
                 agent_name="TEST",
                 system_prompt="sys",
                 user_prompt="user",
@@ -699,7 +703,9 @@ class TestRunAgentCoverageGap:
                 tools_names=[],
                 submit_tool_name="submitFindings",
             )
-        assert result == "not valid json"
+            assert success is True
+            assert "not valid JSON" in result
+
 
 
 class TestRunAgentExecutePlan:
@@ -741,7 +747,7 @@ class TestRunAgentExecutePlan:
                 },
             ),
         ):
-            result, _ = await run_agent(
+            success, result, _ = await run_agent(
                 agent_name="TEST",
                 system_prompt="sys",
                 user_prompt="user",
@@ -749,7 +755,9 @@ class TestRunAgentExecutePlan:
                 run_id="run-plan",
                 tools_names=["webSearch", "executePlan"],
                 submit_tool_name="submitFindings",
+                max_turns=5,
             )
+        assert success is True
         assert result == "planned"
         mock_search.assert_awaited_once()
 
@@ -795,7 +803,7 @@ class TestRunAgentExecutePlan:
                 },
             ),
         ):
-            result, _ = await run_agent(
+            success, result, _ = await run_agent(
                 agent_name="TEST",
                 system_prompt="sys",
                 user_prompt="user",
@@ -805,6 +813,7 @@ class TestRunAgentExecutePlan:
                 submit_tool_name="submitFindings",
                 max_turns=5,
             )
+        assert success is True
         assert result == "done"
 
     async def test_execute_plan_step_exception(self):
@@ -841,7 +850,7 @@ class TestRunAgentExecutePlan:
                 },
             ),
         ):
-            result, _ = await run_agent(
+            success, result, _ = await run_agent(
                 agent_name="TEST",
                 system_prompt="sys",
                 user_prompt="user",
@@ -851,6 +860,7 @@ class TestRunAgentExecutePlan:
                 submit_tool_name="submitFindings",
                 max_turns=5,
             )
+        assert success is True
         assert result == "recovered"
 
 
@@ -884,7 +894,7 @@ class TestRunAgentToolFailureTracking:
                 },
             ),
         ):
-            result, _ = await run_agent(
+            success, result, _ = await run_agent(
                 agent_name="TEST",
                 system_prompt="sys",
                 user_prompt="user",
@@ -894,6 +904,7 @@ class TestRunAgentToolFailureTracking:
                 submit_tool_name="submitFindings",
                 max_turns=10,
             )
+        assert success is True
         assert result == "after fails"
 
     async def test_infrastructure_failure_disables_tool(self):
@@ -923,7 +934,7 @@ class TestRunAgentToolFailureTracking:
                 },
             ),
         ):
-            result, _ = await run_agent(
+            success, result, _ = await run_agent(
                 agent_name="TEST",
                 system_prompt="sys",
                 user_prompt="user",
@@ -933,6 +944,7 @@ class TestRunAgentToolFailureTracking:
                 submit_tool_name="submitFindings",
                 max_turns=10,
             )
+        assert success is True
         assert result == "infra done"
 
 
@@ -951,7 +963,7 @@ class TestRunAgentStatefulEdgeCases:
             "app.core.agent_engine.router.run_model",
             new=AsyncMock(return_value=(response, "mock-model", "mock-key")),
         ) as mock_router:
-            result, final_history = await run_agent(
+            success, result, final_history = await run_agent(
                 agent_name="TEST",
                 system_prompt="Same System",
                 user_prompt="Submit now",
@@ -961,7 +973,7 @@ class TestRunAgentStatefulEdgeCases:
                 submit_tool_name="submitFindings",
                 history=history,
             )
-
+        assert success is True
         assert result == "Result"
         called_messages = mock_router.call_args[1]["messages"]
         assert called_messages[0]["content"] == "Same System"
@@ -978,7 +990,7 @@ class TestRunAgentStatefulEdgeCases:
             "app.core.agent_engine.router.run_model",
             new=AsyncMock(return_value=(response, "mock-model", "mock-key")),
         ) as mock_router:
-            result, _ = await run_agent(
+            success, result, _ = await run_agent(
                 agent_name="TEST",
                 system_prompt="Sys",
                 user_prompt="Same prompt",
@@ -988,7 +1000,7 @@ class TestRunAgentStatefulEdgeCases:
                 submit_tool_name="submitFindings",
                 history=history,
             )
-
+        assert success is True
         assert result == "Result"
         called_messages = mock_router.call_args[1]["messages"]
         assert len(called_messages) == 2  # system + user, no duplicate

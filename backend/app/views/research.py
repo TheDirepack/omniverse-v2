@@ -52,10 +52,41 @@ router = APIRouter(tags=["research_views"])
 
 @router.get("/", response_class=HTMLResponse)
 async def research_page(request: Request):
+    # Redirect to choose-world if no active world is set (via cookie)
+    active_world = request.cookies.get("active_world_id")
+    if not active_world:
+        return HTMLResponse(
+            content=f'<script>window.location.href="/research/choose-world";</script>',
+            status_code=302
+        )
+    
+    uni_service = UniverseService()
+    world = uni_service.get_universe_by_uuid(active_world)
+    if not world:
+        return HTMLResponse(
+            content=f'<script>window.location.href="/research/choose-world";</script>',
+            status_code=302
+        )
+    
+    template = templates.env.get_template("pages/research.html")
+    return HTMLResponse(content=template.render(request=request, world=world))
+
+
+@router.get("/choose-world", response_class=HTMLResponse)
+async def choose_world_page(request: Request):
     uni_service = UniverseService()
     universes = uni_service.get_all_universes(limit=5000)
-    template = templates.env.get_template("pages/research.html")
+    template = templates.env.get_template("pages/choose_world.html")
     return HTMLResponse(content=template.render(request=request, universes=universes))
+
+
+@router.post("/set-active-world", response_class=HTMLResponse)
+async def set_active_world(request: Request, world_id: str):
+    response = HTMLResponse(content="OK")
+    response.set_cookie(key="active_world_id", value=world_id)
+    return response
+
+
 
 
 @router.get("/database-worlds", response_class=HTMLResponse)

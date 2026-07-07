@@ -125,9 +125,9 @@ async def tool_web_search(args: dict[str, Any]) -> str:
 
 
 def _get_run_id() -> str | None:
-    from app.core.agent_engine import _current_run_id
+    from app.core.runtime_state import get_current_run_id
+    return get_current_run_id()
 
-    return _current_run_id
 
 
 def _get_universe_uuid() -> str | None:
@@ -186,26 +186,42 @@ async def tool_fetch_page(args: dict[str, Any]) -> str:
     max_links = args.get("max_links", 20)
 
     async def run_fetch(url):
-        try:
+        async def do_fetch():
             res = await web_fetcher.fetch_page(url, max_links=max_links)
-            if isinstance(res, str):
-                return (f"--- Content from {url} ---\n{res}", res)
+            return AcquisitionArtifact(
+                content_hash=AcquisitionArtifact.compute_hash(json.dumps(res, default=str)),
+                source_url=url,
+                content_type="web_page",
+                extracted_text=json.dumps(res, default=str),
+                engine_name="trafilatura",
+            )
+
+        try:
+            artifact, status = await acquisition_cache.get(url, do_fetch=do_fetch)
+            if not artifact:
+                return (f"Error fetching {url}: fetch failed", None, "fetch_failed", None)
+
+            res = json.loads(artifact.extracted_text)
+            
+            if isinstance(res, str): # Should not happen with current web_fetcher
+                 return (f"--- Content from {url} ---\n{res}", res, "fetch_failed", None)
 
             if "error" in res:
-                return (f"Error fetching {url}: {res['error']}", None)
+                return (f"Error fetching {url}: {res['error']}", res, "fetch_failed", artifact)
 
             meta = res["metadata"]
             output = [
-                f"--- Content from {url} ---",
+                f"--- Content from {url} (Artifact ID: {artifact.id}) ---",
                 f"[EXTRACTION REPORT]\nWords: {meta['word_count']} | Type: {meta['page_type']}",
             ]
 
-            if res["freshness"]:
+
+            if res.get("freshness"):
                 output.append(res["freshness"])
 
             output.append("[MAIN ARTICLE]\n" + res["main_content"])
 
-            if res["internal_links"]:
+            if res.get("internal_links"):
                 links = res["internal_links"]
                 recommended = [link for link in links if link["tier"] == "High"]
                 others = [link for link in links if link["tier"] != "High"]
@@ -231,24 +247,36 @@ async def tool_fetch_page(args: dict[str, Any]) -> str:
 
                 output.append("[INTERNAL LINKS]\n" + "\n".join(links_output))
 
-            if res["research_signals"]:
+            if res.get("research_signals"):
                 output.append("[RESEARCH SIGNALS]\n" + res["research_signals"])
 
-            return ("\n\n".join(output), res.get("main_content"))
+            return ("\n\n".join(output), res, status, artifact)
         except Exception as e:
-            return (f"Error fetching {url}: {e!s}", None)
+            return (f"Error fetching {url}: {e!s}", None, "fetch_failed", None)
 
     fetch_results = await asyncio.gather(*[run_fetch(url) for url in urls])
-    output = "\n\n".join(r[0] for r in fetch_results)
+    
+    output_parts = []
+    for output_str, _, _, _ in fetch_results:
+        output_parts.append(output_str)
+    
+    output = "\n\n".join(output_parts)
 
-    for url, (_, raw) in zip(urls, fetch_results):
-        if raw:
-            _store_artifact(
-                content_type="web_page",
-                content_text=raw,
-                source_url=url,
-                engine_name="trafilatura",
-            )
+    # Record usage for actual fetches
+    universe_uuid = _get_universe_uuid()
+    run_id = _get_run_id()
+    if universe_uuid and run_id:
+        for _, _, status, artifact in fetch_results:
+            if status == "fetched" and artifact:
+                try:
+                    acquisition_cache.repo.record_usage(
+                        artifact_id=artifact.id,
+                        universe_uuid=universe_uuid,
+                        run_id=run_id,
+                        usage_type="direct_fetch"
+                    )
+                except Exception:
+                    pass
 
     return output
 
@@ -380,6 +408,8 @@ async def tool_upsert_claims(args: dict[str, Any]) -> str:
             context = item.get("context")
             raw_pred = item.get("predicate", "")
             o_val = item.get("object_val", "")
+            artifact_id = item.get("artifact_id")
+            staging_ref = item.get("staging_ref")
             if not all([s_name, raw_pred, o_val]):
                 skipped.append(f"Missing fields: {item}")
                 continue
@@ -421,12 +451,27 @@ async def tool_upsert_claims(args: dict[str, Any]) -> str:
 
             s_ent = get_or_create_entity(s_name)
 
-            # Determine if object is an entity or literal
+            # Symmetric Entity Resolution for Object
             o_ent = session.exec(
                 select(Entity).where(
                     Entity.universe_id == universe.id, Entity.name == o_val
                 )
             ).first()
+            if not o_ent:
+                alias = session.exec(
+                    select(EntityAlias).where(
+                        EntityAlias.universe_id == universe.id,
+                        EntityAlias.alias == o_val,
+                    )
+                ).first()
+                if alias:
+                    o_ent = session.get(Entity, alias.entity_id)
+            
+            if not o_ent:
+                # If object isn't an existing entity, we treat it as a literal
+                # but we could also auto-create it if we wanted. 
+                # Following current logic: object_entity_id = None, object_literal = o_val
+                o_ent = None
 
             o_entity_id = o_ent.id if o_ent else None
             o_literal = None if o_ent else o_val
@@ -466,11 +511,39 @@ async def tool_upsert_claims(args: dict[str, Any]) -> str:
                     support_count=1,
                     universe_scope=universe.id,
                     status="VERIFIED",
+                    source_unconfirmed_id=staging_ref,
                 )
                 session.add(new_claim)
+                session.flush()
+                target_claim = new_claim
+
+            # Attributes
+            attrs = item.get("attributes", {})
+            for k, v in attrs.items():
+                attr = ClaimAttribute(claim_id=target_claim.id, key=k, value=str(v))
+                session.add(attr)
                 session.flush()  # get ID
                 created.append(f"({s_name}, {predicate_name}, {o_val})")
-                target_claim = new_claim
+
+            # Provenance
+            if artifact_id:
+                print(f"DEBUG: recording provenance for artifact {artifact_id}")
+                run_id = _get_run_id()
+                if run_id:
+                    print(f"DEBUG: run_id is {run_id}")
+                    try:
+                        acquisition_cache.store_provenance(
+                            source_artifact_id=artifact_id,
+                            target_type="unconfirmed_claim",
+                            target_id=new_claim.id,
+                            relation="supports",
+                            run_id=run_id,
+                        )
+                    except Exception as e:
+                        print(f"DEBUG: provenance recording failed: {e}")
+                else:
+                    print("DEBUG: run_id is None, skipping provenance")
+
 
             # Handle attributes
             attrs = item.get("attributes", {})
@@ -599,7 +672,7 @@ async def tool_save_unconfirmed_claim(args: dict[str, Any]) -> str:
     """
     Save unconfirmed claims for the active universe.
     Claims are atomic statements: (subject, context, predicate, object).
-    Prefer batching via `items`: [{subject, context, predicate, object_val, reference, wiki_source, confidence}, ...].
+    Prefer batching via `items`: [{subject, context, predicate, object_val, reference, wiki_source, confidence, artifact_id}, ...].
     """
     universe_name = get_current_universe()
     if not universe_name:
@@ -615,6 +688,7 @@ async def tool_save_unconfirmed_claim(args: dict[str, Any]) -> str:
             "reference": args.get("reference"),
             "wiki_source": args.get("wiki_source"),
             "confidence": args.get("confidence"),
+            "artifact_id": args.get("artifact_id"),
         }
         items = [single]
 
@@ -633,25 +707,43 @@ async def tool_save_unconfirmed_claim(args: dict[str, Any]) -> str:
             context = item.get("context")
             predicate = item.get("predicate", "")
             object_val = item.get("object_val", "")
+            artifact_id = item.get("artifact_id")
             if not all([subject, predicate, object_val]):
                 errors.append(f"Skipped claim with missing required fields: {item}")
                 continue
-            session.add(
-                UnconfirmedClaim(
-                    universe_id=universe.id,
-                    subject=subject,
-                    context=context,
-                    predicate=predicate,
-                    object_val=object_val,
-                    reference=item.get("reference"),
-                    wiki_source=item.get("wiki_source"),
-                    confidence=item.get("confidence"),
-                )
+            
+            new_claim = UnconfirmedClaim(
+                universe_id=universe.id,
+                subject=subject,
+                context=context,
+                predicate=predicate,
+                object_val=object_val,
+                reference=item.get("reference"),
+                wiki_source=item.get("wiki_source"),
+                confidence=str(item.get("confidence") or ""),
             )
-            saved.append(f"({subject}, {predicate}, {object_val})")
+            session.add(new_claim)
+            session.flush()
+
+            if artifact_id:
+                try:
+                    acquisition_cache.store_provenance(
+                        source_artifact_id=artifact_id,
+                        target_type="unconfirmed_claim",
+                        target_id=new_claim.id,
+                        relation="supports",
+                        run_id=_get_run_id(),
+                        session=session,
+                    )
+                except Exception:
+                    pass
+
+            saved.append(new_claim.id)
+
+
         session.commit()
 
-    result = f"Saved {len(saved)} unconfirmed claim(s) for {universe_name}."
+    result = f"Saved {len(saved)} unconfirmed claim(s) for {universe_name}. IDs: {', '.join(map(str, saved))}"
     if errors:
         result += " Errors: " + "; ".join(errors)
     return result
@@ -780,11 +872,23 @@ async def tool_link_entity_to_canonical(args: dict[str, Any]) -> str:
         if not entity:
             return f"Entity {entity_name} not found in {current_name}."
 
-        service.set_entity_canonical(entity.id, canonical_id)
+        # Resolve canonical_id if it's a name
+        resolved_canonical_id = canonical_id
+        if isinstance(canonical_id, str):
+            canonical_entity = session.exec(
+                select(Entity).where(
+                    Entity.name == canonical_id
+                )
+            ).first()
+            if not canonical_entity:
+                return f"Canonical entity {canonical_id} not found in any universe."
+            resolved_canonical_id = canonical_entity.id
+
+        service.set_entity_canonical(entity.id, resolved_canonical_id)
         status = (
             "marked as canonical"
-            if canonical_id is None
-            else f"linked to canonical ID {canonical_id}"
+            if resolved_canonical_id is None
+            else f"linked to canonical ID {resolved_canonical_id}"
         )
         return f"Entity {entity_name} in {current_name} {status}."
 
@@ -895,16 +999,17 @@ AGENT_TOOLS: dict[str, dict[str, Any]] = {
                     "description": "Batch mode (preferred): a list of claims to integrate.",
                     "items": {
                         "type": "object",
-                        "properties": {
-                            "subject": {"type": "string"},
-                            "predicate": {"type": "string"},
-                            "object_val": {"type": "string"},
-                            "source_reference": {"type": "string"},
-                            "source_wiki": {"type": "string"},
-                            "confidence": {"type": "number"},
-                        },
-                        "required": ["subject", "predicate", "object_val"],
-                    },
+                                 "properties": {
+                                     "subject": {"type": "string"},
+                                     "predicate": {"type": "string"},
+                                     "object_val": {"type": "string"},
+                                     "source_reference": {"type": "string"},
+                                     "source_wiki": {"type": "string"},
+                                     "confidence": {"type": "number"},
+                                     "unconfirmed_claim_id": {"type": "integer", "description": "The ID of the staging claim this promotes."},
+                                 },
+                                 "required": ["subject", "predicate", "object_val"],
+                                 },
                 },
             },
             "required": [],
@@ -1011,10 +1116,10 @@ AGENT_TOOLS: dict[str, dict[str, Any]] = {
                     "type": "string",
                     "description": "The name of the entity to link.",
                 },
-                "canonical_entity_id": {
-                    "type": "integer",
-                    "description": "The ID of the canonical entity. Pass null to mark this entity as canonical.",
-                },
+                                "canonical_entity_id": {
+                                    "type": "string",
+                                    "description": "The name or ID of the canonical entity. Pass null to mark this entity as canonical.",
+                                },
             },
             "required": ["entity_name"],
         },

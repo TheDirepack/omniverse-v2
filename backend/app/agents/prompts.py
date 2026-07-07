@@ -10,7 +10,8 @@ RESEARCH_SCHEMA = """
       "object_val": "string",
       "reference": "url: section/line",
       "wiki_source": "page name or url",
-      "confidence": "High | Medium | Low"
+      "confidence": "High | Medium | Low",
+      "staging_ref": "integer | null (The ID from saveUnconfirmedClaim, if applicable)"
     }
   ],
   "Knowledge_Graph": [
@@ -62,6 +63,8 @@ def get_researcher_prompt(
     unconfirmed_data: str | None = None,
     verified_claims: str | None = None,
     knowledge_graph: str | None = None,
+    multiverse_leads: str | None = None,
+    multiverse_kg: str | None = None,
 ):
     focus_block = ""
     if focus:
@@ -71,7 +74,7 @@ Investigate this feature specifically: {focus}
 Goal: prove existence, disprove existence, or mark inconclusive. Extract details, mechanism, limits, contradictions, and citations.
 Add an item named "Focused Verdict" with Detail containing one of: VERIFIED, DISPROVED, INCONCLUSIVE.
 """
-
+    
     unconfirmed_block = ""
     if unconfirmed_data and unconfirmed_data.strip():
         unconfirmed_block = f"""
@@ -79,7 +82,7 @@ STAGING DATABASE (Unconfirmed Claims):
 The following atomic claims were previously found but not yet verified:
 {unconfirmed_data}
 """
-
+    
     verified_block = ""
     if verified_claims and verified_claims.strip():
         verified_block = f"""
@@ -87,13 +90,29 @@ VERIFIED KNOWLEDGE BASE:
 The following facts are already confirmed in the main database:
 {verified_claims}
 """
-
+    
     graph_block = ""
     if knowledge_graph and knowledge_graph.strip():
         graph_block = f"""
 EXISTING KNOWLEDGE GRAPH:
 Current semantic mapping of the universe:
 {knowledge_graph}
+"""
+    
+    multiverse_block = ""
+    if multiverse_leads or multiverse_kg:
+        leads = multiverse_leads or "None"
+        kg = multiverse_kg or "None"
+        multiverse_block = f"""
+MULTIVERSE LEADS (Parent/Children Universes):
+The following data exists for related universes in the multiverse:
+LEADS:
+{leads}
+
+KNOWLEDGE GRAPH:
+{kg}
+
+IMPORTANT: This data is NOT necessarily true for the current universe/timeline. Use it to identify what to check and where gaps might be, but you MUST independently verify every lead and explicitly document any deviations.
 """
 
     mode_block = "INITIAL RESEARCH"
@@ -112,7 +131,7 @@ INSTRUCTIONS:
 3. STABILITY: Keep all unaffected verified data exactly as it is.
 4. PATCHING: Update the JSON by patching only the necessary fields.
 """
-
+    
     return {
         "system": f"""### ROLE
 Deep-Dive Wiki Investigator & Archivist for {entity}. You are a forensic researcher. You operate in a phased workflow to ensure maximum precision and zero hallucination.
@@ -120,6 +139,7 @@ Deep-Dive Wiki Investigator & Archivist for {entity}. You are a forensic researc
 MODE: {mode_block}
 {verified_block}
 {graph_block}
+{multiverse_block}
 {unconfirmed_block}
 
 PHASED WORKFLOW
@@ -164,6 +184,7 @@ Requirements: {requirements}
 """,
         "user": f"Perform the research operation for {entity}. Focus on the phased workflow: Discover $\rightarrow$ Extract $\rightarrow$ Synthesize $\rightarrow$ Format.",
     }
+
 
 
 def get_critic_prompt(
@@ -324,12 +345,12 @@ TIER: [0-10 or None]
 JUSTIFICATION: [technical citation]
 ANOMALY_DETAILS: [None or reason for anomaly/insufficiency]
 
-RULES
-- Use the provided DATA. Do not use a pre-existing tier (this is a blind re-evaluation).
-- If world data is too sparse to map to any threshold, output STATUS: INSUFFICIENT_DATA and TIER: None.
-- If world fits rubric cleanly: STATUS: STABLE, TIER: [0-10].
-- If world data fall between tiers, exceed rubric, or contradict rubric: STATUS: ANOMALY, TIER: None (escalated to Rubric Steward).
-""",
+        RULES
+        - Use the provided DATA. Do not use a pre-existing tier (this is a blind re-evaluation).
+        - If world data is too sparse to map to any threshold, output STATUS: INSUFFICIENT_DATA and TIER: None. In this case, you MUST provide a specific, actionable research request in ANOMALY_DETAILS detailing exactly what technical data is missing to make a stable assignment.
+        - If world fits rubric cleanly: STATUS: STABLE, TIER: [0-10].
+        - If world data fall between tiers, exceed rubric, or contradict rubric: STATUS: ANOMALY, TIER: None (escalated to Rubric Steward).
+        """,
         "user": f"World Data:\n{world_data}\n\nPersistent Tier Rubric:\n{system}\n\nAssign tier or escalate.",
     }
 
@@ -439,13 +460,15 @@ OBJECTIVE
 SOP
 1. Call `queryUnconfirmedClaims` to list all staging claims with their IDs and contents.
 2. Call `queryClaims` to see all claims currently in the main database for this universe.
-3. Review the integration history to map which staging IDs resulted in which main DB claims.
+3. Match promoted claims:
+    - PRIMARY: Match by `source_unconfirmed_id` (the explicit reference to the staging row).
+    - FALLBACK: Use semantic matching and integration history if `source_unconfirmed_id` is null.
 4. Call `deleteUnconfirmedClaim` ONCE with all identified promoted staging IDs in the `claim_ids` list. If no matches are found, do not call the tool.
 5. Call `submit_cleanup` when all confirmed staging claims are removed.
 
 RULES
 - Main DB is READ-ONLY. Do not modify it.
-- Use semantic matching and integration history to identify promoted claims, not just exact matches.
+- Prioritize deterministic matching via `source_unconfirmed_id`.
 - Leave unconfirmed claims that were not promoted.
 """,
         "user": "Unconfirmed staging cleanup is ready. Review unconfirmed claims, match against main DB, and delete the promoted ones.",

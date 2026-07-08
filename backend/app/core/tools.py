@@ -516,41 +516,12 @@ async def tool_upsert_claims(args: dict[str, Any]) -> str:
                 session.add(new_claim)
                 session.flush()
                 target_claim = new_claim
+                created.append(f"({s_name}, {predicate_name}, {o_val})")
 
             # Attributes
             attrs = item.get("attributes", {})
-            for k, v in attrs.items():
-                attr = ClaimAttribute(claim_id=target_claim.id, key=k, value=str(v))
-                session.add(attr)
-                session.flush()  # get ID
-                created.append(f"({s_name}, {predicate_name}, {o_val})")
-
-            # Provenance
-            if artifact_id:
-                print(f"DEBUG: recording provenance for artifact {artifact_id}")
-                run_id = _get_run_id()
-                if run_id:
-                    print(f"DEBUG: run_id is {run_id}")
-                    try:
-                        acquisition_cache.store_provenance(
-                            source_artifact_id=artifact_id,
-                            target_type="unconfirmed_claim",
-                            target_id=new_claim.id,
-                            relation="supports",
-                            run_id=run_id,
-                        )
-                    except Exception as e:
-                        print(f"DEBUG: provenance recording failed: {e}")
-                else:
-                    print("DEBUG: run_id is None, skipping provenance")
-
-
-            # Handle attributes
-            attrs = item.get("attributes", {})
             if isinstance(attrs, dict):
                 for k, v in attrs.items():
-                    # Use a composite key check or just append
-                    # For now, we overwrite if key exists for this claim
                     existing_attr = session.exec(
                         select(ClaimAttribute).where(
                             ClaimAttribute.claim_id == target_claim.id,
@@ -566,7 +537,20 @@ async def tool_upsert_claims(args: dict[str, Any]) -> str:
                                 claim_id=target_claim.id, key=k, value=str(v)
                             )
                         )
-
+            
+            # Provenance
+            if artifact_id:
+                try:
+                    acquisition_cache.store_provenance(
+                        source_artifact_id=artifact_id,
+                        target_type="claim",
+                        target_id=target_claim.id,
+                        relation="supports",
+                        run_id=_get_run_id(),
+                        session=session,
+                    )
+                except Exception:
+                    pass
         session.commit()
 
         parts = []

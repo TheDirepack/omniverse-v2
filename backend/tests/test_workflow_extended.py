@@ -104,50 +104,6 @@ class TestParseStabilityResult:
         assert result["justification"] == text
 
 
-class TestConsolidationNode:
-    """Partial tests for consolidation_node with mocks."""
-
-    async def test_aborted_raises(self):
-        from app.workflow.consolidation_workflow import consolidation_node
-
-        with patch(
-            "app.core.runtime_state.is_aborted",
-            new=AsyncMock(return_value=True),
-        ):
-            with pytest.raises(RuntimeError, match="aborted"):
-                await consolidation_node({"run_id": "aborted-consolidation"})
-
-    async def test_empty_verified_worlds(self):
-        from app.workflow.consolidation_workflow import consolidation_node
-
-        mock_agent = AsyncMock(return_value=("some dataset", []))
-
-        with (
-            patch(
-                "app.core.runtime_state.is_aborted",
-                new=AsyncMock(return_value=False),
-            ),
-            patch(
-                "app.workflow.consolidation_workflow.run_agent",
-                new=mock_agent,
-            ),
-            patch(
-                "app.workflow.consolidation_workflow.UniverseService",
-            ),
-            patch(
-                "app.workflow.consolidation_workflow.ExecutionService",
-            ),
-            patch(
-                "app.workflow.consolidation_workflow.SettingsService",
-            ),
-        ):
-            result = await consolidation_node({
-                "run_id": "test-consolidation",
-                "verified_worlds": [],
-            })
-            assert result["active_task"] == "ARCHITECTURE"
-
-
 class TestExtrapolationNode:
     """Partial tests for extrapolation_node with mocks."""
 

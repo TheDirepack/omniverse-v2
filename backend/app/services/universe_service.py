@@ -13,6 +13,19 @@ from app.repositories.universe import UniverseRepository
 class UniverseService:
     def __init__(self, session: Session | None = None):
         self.session = session
+        self._repo: UniverseRepository | None = None
+
+    @property
+    def repo(self) -> UniverseRepository:
+        """Lazily-created, cached repo bound to a dedicated session held for
+        this UniverseService instance's lifetime. Restores the .repo access
+        pattern that several call sites across the pipeline (nodes.py,
+        summarizer.py, runs.py, and the workflow modules) depend on to make
+        multiple sequential repo calls within one execution.
+        """
+        if self._repo is None:
+            self._repo = UniverseRepository(self.session or Session(engine))
+        return self._repo
 
     def get_universe(self, name: str) -> Universe | None:
         session = self.session or Session(engine)

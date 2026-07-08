@@ -21,7 +21,7 @@ class ProviderConfig(SQLModel, table=True):
 class ProviderKey(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     provider_id: int = Field(
-        sa_column=Column(ForeignKey("providerconfig.id", ondelete="CASCADE"))
+        sa_column=Column(ForeignKey("providerconfig.id", ondelete="CASCADE"), nullable=False)
     )
     api_key: str
     priority: int = Field(default=0)
@@ -67,8 +67,8 @@ class UniverseRelation(SQLModel, table=True):
         UniqueConstraint("from_universe_id", "to_universe_id", "relation_type"),
     )
     id: int | None = Field(default=None, primary_key=True)
-    from_universe_id: int = Field(sa_column=Column(ForeignKey("universe.id", ondelete="CASCADE")))
-    to_universe_id: int = Field(sa_column=Column(ForeignKey("universe.id", ondelete="CASCADE")))
+    from_universe_id: int = Field(sa_column=Column(ForeignKey("universe.id", ondelete="CASCADE"), nullable=False))
+    to_universe_id: int = Field(sa_column=Column(ForeignKey("universe.id", ondelete="CASCADE"), nullable=False))
     relation_type: str = Field(index=True)
     description: str | None = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
@@ -87,7 +87,7 @@ class TierSystem(SQLModel, table=True):
 class WorldTier(SQLModel, table=True):
     __table_args__ = (UniqueConstraint("universe_id"),)
     id: int | None = Field(default=None, primary_key=True)
-    universe_id: int = Field(sa_column=Column(ForeignKey("universe.id", ondelete="CASCADE")))
+    universe_id: int = Field(sa_column=Column(ForeignKey("universe.id", ondelete="CASCADE"), nullable=False))
     system_id: int = Field(foreign_key="tiersystem.id")
     tier_number: int
     justification: str
@@ -95,7 +95,7 @@ class WorldTier(SQLModel, table=True):
 
 class Anomaly(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
-    universe_id: int = Field(sa_column=Column(ForeignKey("universe.id", ondelete="CASCADE")))
+    universe_id: int = Field(sa_column=Column(ForeignKey("universe.id", ondelete="CASCADE"), nullable=False))
     description: str
     detected_at: datetime = Field(default_factory=datetime.utcnow)
 
@@ -124,7 +124,7 @@ class Entity(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     name: str = Field(index=True)
     entity_type: str
-    universe_id: int = Field(sa_column=Column(ForeignKey("universe.id", ondelete="CASCADE")))
+    universe_id: int = Field(sa_column=Column(ForeignKey("universe.id", ondelete="CASCADE"), nullable=False))
     canonical_entity_id: int | None = Field(default=None, foreign_key="entity.id")
     canonical: bool = Field(default=False)
     created_at: datetime = Field(default_factory=datetime.utcnow)
@@ -135,7 +135,7 @@ class EntityAlias(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     entity_id: int = Field(foreign_key="entity.id")
     alias: str = Field(index=True)
-    universe_id: int = Field(sa_column=Column(ForeignKey("universe.id", ondelete="CASCADE")))
+    universe_id: int = Field(sa_column=Column(ForeignKey("universe.id", ondelete="CASCADE"), nullable=False))
 
 
 class Predicate(SQLModel, table=True):
@@ -153,7 +153,7 @@ class PredicateAlias(SQLModel, table=True):
 
 class Evidence(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
-    universe_id: int = Field(sa_column=Column(ForeignKey("universe.id", ondelete="CASCADE")))
+    universe_id: int = Field(sa_column=Column(ForeignKey("universe.id", ondelete="CASCADE"), nullable=False))
     source_url: str = Field(index=True)
     source_name: str | None = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
@@ -221,7 +221,7 @@ class InferredClaim(SQLModel, table=True):
     predicate: str
     object_id: int = Field(foreign_key="entity.id")
     derived_from_rule_id: int = Field(
-        sa_column=Column(ForeignKey("inferencerule.id", ondelete="CASCADE"))
+        sa_column=Column(ForeignKey("inferencerule.id", ondelete="CASCADE"), nullable=False)
     )
     contradicts_claim_id: int | None = Field(default=None, foreign_key="claim.id")
     reviewed: bool = Field(default=False)

@@ -79,21 +79,24 @@
                     {% else %}
                     <p class="text-xs text-gray-400 italic mb-2">No API keys configured.</p>
                     {% endif %}
-                    <form hx-post="/settings/providers/{{ provider.id }}/keys"
-                          hx-target="#settings-content"
-                          hx-swap="innerHTML"
-                          class="flex gap-2 items-center">
-                        <input type="text" name="api_key" placeholder="New API key..."
-                               class="flex-1 border rounded px-2 py-1 text-xs bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                               required>
-                        <input type="number" name="priority" value="0" min="0"
-                               class="w-16 border rounded px-2 py-1 text-xs bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                               placeholder="Prio">
-                        <button type="submit"
-                                class="bg-green-600 text-white px-3 py-1 rounded text-xs hover:bg-green-700 transition">
-                            Add
-                        </button>
-                    </form>
+                     <form hx-post="/settings/providers/{{ provider.id }}/keys"
+                           hx-target="#settings-content"
+                           hx-swap="innerHTML"
+                           class="flex gap-2 items-center">
+                         <label for="key-add-{{ provider.id }}" class="sr-only">New API key</label>
+                         <input type="text" id="key-add-{{ provider.id }}" name="api_key" placeholder="New API key..."
+                                class="flex-1 border rounded px-2 py-1 text-xs bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                required>
+                         <label for="key-prio-{{ provider.id }}" class="sr-only">Priority</label>
+                         <input type="number" id="key-prio-{{ provider.id }}" name="priority" value="0" min="0"
+                                class="w-16 border rounded px-2 py-1 text-xs bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                placeholder="Prio">
+                         <button type="submit"
+                                 class="bg-green-600 text-white px-3 py-1 rounded text-xs hover:bg-green-700 transition">
+                             Add
+                         </button>
+                     </form>
+
                 </div>
             </div>
 

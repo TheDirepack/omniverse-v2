@@ -40,7 +40,7 @@ Tests use ephemeral SQLite at `/dev/shm/omniverse_tests/`. Autouse fixture drops
 - `backend/app/services/` — Business logic (orchestrates repositories and workflows).
 - `backend/app/repositories/` — Data access layer (SQLModel operations).
 - `backend/app/agents/` — LangGraph node implementations and agent prompts.
-- `backend/app/workflow/` — Specialized LangGraph state machines (Consolidation, Extrapolation, Tiering).
+- `backend/app/workflow/` — Specialized LangGraph state machines (DB Integration, Extrapolation, Tiering).
 - `backend/app/research/` — High-level research agent logic.
 - `backend/app/core/` — Low-level utilities (agent engine, tools, browser, router).
 - `backend/app/db/` — Database schemas and session management.

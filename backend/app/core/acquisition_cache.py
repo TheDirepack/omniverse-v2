@@ -4,6 +4,7 @@ from enum import Enum
 
 from app.db.unconfirmed_schema import AcquisitionArtifact
 from app.repositories.acquisition_cache import AcquisitionCacheRepository
+from sqlmodel import Session
 
 
 class FreshnessPolicy(Enum):

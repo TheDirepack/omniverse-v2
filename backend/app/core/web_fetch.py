@@ -273,12 +273,13 @@ class WebFetcher:
 
             # 2. CLASSIFY & TIER
             tier = "Low"
-            parent_html = str(a.find_parent()).lower()
-
+            parent = a.find_parent()
+            parent_html = str(parent).lower() if parent else ""
+            
             if (
                 any(sel in parent_html for sel in high_value_selectors)
-                or a.find_parent("main")
-                or a.find_parent("article")
+                or (parent and parent.name == "main")
+                or (parent and parent.name == "article")
             ):
                 tier = "High"
             elif (

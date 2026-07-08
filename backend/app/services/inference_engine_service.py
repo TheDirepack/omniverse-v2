@@ -64,30 +64,47 @@ class InferenceEngineService:
             # depth 1 means "no composition at all" -- a single asserted
             # claim isn't an inference, so there is nothing to materialize.
             return []
-
+        
         session = self.session or Session(engine)
         try:
             repo = InferenceRepository(session)
             approved_rules = list(repo.get_approved_rules())
             created: list[InferredClaim] = []
-
+        
             # Depth 2: direct composition over asserted Claims.
             for rule in approved_rules:
                 first_hop = repo.get_claims_by_predicate(rule.predicate_1)
+                if not first_hop:
+                    continue
+                
+                # Batch the second hop lookup
+                mid_ids = [
+                    (c1.object_entity_id if c1.object_entity_id else c1.subject_id)
+                    for c1 in first_hop
+                ]
+                
+                # Get all second hops for this predicate in one query
+                all_second_hops = repo.find_claims_with_subject_predicate_batch(
+                    mid_ids, rule.predicate_2
+                )
+                
+                # Map mid_id -> list of claims
+                second_hop_map = {}
+                for c2 in all_second_hops:
+                    mid_id = c2.subject_id
+                    second_hop_map.setdefault(mid_id, []).append(c2)
+                
                 for c1 in first_hop:
                     mid_id = (
                         c1.object_entity_id if c1.object_entity_id else c1.subject_id
-                    )  # fallback but should be object_entity_id
-                    second_hops = repo.find_claims_with_subject_predicate(
-                        mid_id, rule.predicate_2
                     )
-                    for c2 in second_hops:
+                    for c2 in second_hop_map.get(mid_id, []):
                         ic = self._materialize_edge(
                             repo, rule.id, rule.implied_predicate, c1, c2
                         )
                         if ic:
                             created.append(ic)
-
+        
             # Depth > 2: compose an InferredClaim (as the "first hop") with a
             # further asserted Claim, one additional hop per iteration,
             # bounded by max_depth.
@@ -96,13 +113,23 @@ class InferenceEngineService:
             while current_depth < max_depth and frontier:
                 next_frontier = []
                 for rule in approved_rules:
-                    for ic in frontier:
-                        if ic.predicate != rule.predicate_1:
-                            continue
-                        second_hops = repo.find_claims_with_subject_predicate(
-                            ic.object_id, rule.predicate_2
-                        )
-                        for c2 in second_hops:
+                    # Filter frontier for matching predicate
+                    matching_frontier = [ic for ic in frontier if ic.predicate == rule.predicate_1]
+                    if not matching_frontier:
+                        continue
+                        
+                    mid_ids = [ic.object_id for ic in matching_frontier]
+                    all_second_hops = repo.find_claims_with_subject_predicate_batch(
+                        mid_ids, rule.predicate_2
+                    )
+                    
+                    second_hop_map = {}
+                    for c2 in all_second_hops:
+                        mid_id = c2.subject_id
+                        second_hop_map.setdefault(mid_id, []).append(c2)
+                    
+                    for ic in matching_frontier:
+                        for c2 in second_hop_map.get(ic.object_id, []):
                             new_ic = self._materialize_edge_from_inferred(
                                 repo, rule.id, rule.implied_predicate, ic, c2
                             )
@@ -111,12 +138,12 @@ class InferenceEngineService:
                 created.extend(next_frontier)
                 frontier = next_frontier
                 current_depth += 1
-
+        
             # Refresh all created objects so callers can safely read
             # attributes without hitting DetachedInstanceError.
             for ic in created:
                 session.refresh(ic)
-
+        
             session.commit()
             return created
         finally:

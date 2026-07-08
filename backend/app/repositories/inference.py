@@ -105,7 +105,7 @@ class InferenceRepository:
         fields: list[str] | None = None,
     ) -> Sequence[Any]:
         from app.db.schema import Predicate
-
+        
         stmt = (
             select(Claim)
             .join(Predicate, Claim.predicate_id == Predicate.id)
@@ -124,11 +124,11 @@ class InferenceRepository:
                         Predicate.canonical_name == predicate,
                     )
                 )
-
+        
         res = self.session.exec(stmt.offset(offset).limit(limit)).all()
         if res:
             return res
-
+        
         # Fallback
         stmt_fallback = select(Claim).where(
             Claim.subject_id == subject_id, Claim.predicate == predicate
@@ -140,6 +140,56 @@ class InferenceRepository:
                     Claim.subject_id == subject_id, Claim.predicate == predicate
                 )
         return self.session.exec(stmt_fallback.offset(offset).limit(limit)).all()
+
+    def find_claims_with_subject_predicate_batch(
+        self,
+        subject_ids: list[int],
+        predicate: str,
+        fields: list[str] | None = None,
+    ) -> Sequence[Any]:
+        """Batch version of find_claims_with_subject_predicate to avoid N+1 queries."""
+        if not subject_ids:
+            return []
+        from app.db.schema import Predicate
+        
+        # Try migrated path
+        stmt = (
+            select(Claim)
+            .join(Predicate, Claim.predicate_id == Predicate.id)
+            .where(
+                Claim.subject_id.in_(subject_ids), 
+                Predicate.canonical_name == predicate
+            )
+        )
+        if fields:
+            proj_fields = [getattr(Claim, f) for f in fields if hasattr(Claim, f)]
+            if proj_fields:
+                stmt = (
+                    select(*proj_fields)
+                    .join(Predicate)
+                    .where(
+                        Claim.subject_id.in_(subject_ids),
+                        Predicate.canonical_name == predicate,
+                    )
+                )
+        
+        res = self.session.exec(stmt).all()
+        if res:
+            return res
+        
+        # Fallback
+        stmt_fallback = select(Claim).where(
+            Claim.subject_id.in_(subject_ids), 
+            Claim.predicate == predicate
+        )
+        if fields:
+            proj_fields = [getattr(Claim, f) for f in fields if hasattr(Claim, f)]
+            if proj_fields:
+                stmt_fallback = select(*proj_fields).where(
+                    Claim.subject_id.in_(subject_ids), 
+                    Claim.predicate == predicate
+                )
+        return self.session.exec(stmt_fallback).all()
 
     def frequent_predicate_pairs(
         self, min_count: int = 3

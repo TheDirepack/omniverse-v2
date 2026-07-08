@@ -44,7 +44,7 @@ async def validation_page(request: Request, session: Session = Depends(get_uncon
     all_worlds = uni_service.get_all_universes()
     duplicates = []
     for w in all_worlds:
-        candidates = uni_service.find_duplicates(w.name)
+        candidates = uni_service.find_duplicates(w.name, all_worlds=all_worlds)
         # Filter out the world itself
         filtered_candidates = [c for c in candidates if c["id"] != w.id]
         if filtered_candidates:

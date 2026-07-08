@@ -41,6 +41,10 @@ class UniverseRepository:
     def get_by_names(self, names: list[str]) -> Sequence[Universe]:
         return self.session.exec(select(Universe).where(Universe.name.in_(names))).all()
 
+    def get_children(self, universe_id: int) -> Sequence[Universe]:
+        """Returns all universes that have the given universe as their parent."""
+        return self.session.exec(select(Universe).where(Universe.parent_id == universe_id)).all()
+
     def get_explored(
         self, limit: int = 100, offset: int = 0, fields: list[str] | None = None
     ) -> Sequence[Any]:

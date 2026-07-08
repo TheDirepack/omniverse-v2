@@ -228,15 +228,15 @@ class UniverseService:
                 session.close()
 
     def find_duplicates(
-        self, name: str, threshold: float = 0.7
+        self, name: str, threshold: float = 0.7, all_worlds: Sequence[Any] | None = None
     ) -> list[dict[str, Any]]:
         session = self.session or Session(engine)
         try:
-            repo = UniverseRepository(session)
-            all_worlds = repo.get_all()
+            # Use provided list or fetch from repo
+            worlds = all_worlds if all_worlds is not None else UniverseRepository(session).get_all()
             candidates = []
             name_lower = name.lower()
-            for w in all_worlds:
+            for w in worlds:
                 w_name_lower = w.name.lower() if w.name else ""
                 similarity = self._name_similarity(name_lower, w_name_lower)
                 if similarity >= threshold:

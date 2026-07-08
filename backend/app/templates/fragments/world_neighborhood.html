@@ -27,7 +27,7 @@
     {% endif %}
 
     <button class="text-sm text-blue-500 hover:text-blue-700"
-            hx-get="/worlds/graph"
+             hx-get="{{ url_for('worlds_graph_fragment') }}"
             hx-target="#worlds-content"
             hx-swap="innerHTML">
         ← Back to World Graph

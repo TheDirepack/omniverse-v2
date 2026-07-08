@@ -7,7 +7,7 @@
     </div>
     {% endif %}
 
-    <form hx-post="/worlds/create"
+     <form hx-post="{{ url_for('worlds_create_action') }}"
           hx-target="#world-modal-content"
           hx-swap="innerHTML"
           class="grid grid-cols-2 gap-4">

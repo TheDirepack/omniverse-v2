@@ -14,7 +14,7 @@
         <div class="lg:col-span-1 bg-white dark:bg-gray-800 p-6 rounded-lg shadow">
             <h2 class="text-xl font-semibold mb-4">World Hierarchy</h2>
             <div id="world-tree" 
-                 hx-get="/knowledge/worlds" 
+                  hx-get="{{ url_for('list_worlds') }}" 
                  hx-trigger="load" 
                  hx-swap="innerHTML">
                 <p class="text-gray-500 dark:text-gray-400 italic">Loading worlds...</p>

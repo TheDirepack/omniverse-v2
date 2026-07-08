@@ -36,11 +36,23 @@ async def settings_general_update(
 ):
     service = SettingsService()
     service.update_general_setting(key, value)
+    
+    # Special handling for browser pool configuration
+    if key == "BROWSER_POOL_SIZE" or key == "BROWSER_MAX_CONCURRENCY_PER_INSTANCE":
+        from app.core.browser import browser_manager
+        settings = service.get_all_settings()
+        gen = settings["general_settings"]
+        pool_size = int(gen.get("BROWSER_POOL_SIZE", 2))
+        max_concurrency = int(gen.get("BROWSER_MAX_CONCURRENCY_PER_INSTANCE", 5))
+        await browser_manager.update_config(pool_size, max_concurrency)
+
     data = service.get_all_settings()
     template = templates.env.get_template("fragments/settings_general.html")
-    return HTMLResponse(
+    response = HTMLResponse(
         content=template.render(request=request, settings=data["general_settings"])
     )
+    response.headers["HX-Trigger"] = '{"showToast": {"value": "Setting updated", "type": "info"}}'
+    return response
 
 
 @router.post("/general/delete", response_class=HTMLResponse)
@@ -94,7 +106,7 @@ async def settings_provider_upsert(
     from app.agents.agent_names import AGENT_NAMES
 
     template = templates.env.get_template("fragments/settings_providers.html")
-    return HTMLResponse(
+    response = HTMLResponse(
         content=template.render(
             request=request,
             providers=data["providers"],
@@ -103,6 +115,8 @@ async def settings_provider_upsert(
             presets=PROVIDER_PRESETS,
         )
     )
+    response.headers["HX-Trigger"] = '{"showToast": {"value": "Provider updated", "type": "info"}}'
+    return response
 
 
 @router.post("/providers/{provider_id}/update", response_class=HTMLResponse)
@@ -273,7 +287,7 @@ async def settings_route_upsert(
     from app.agents.agent_names import AGENT_NAMES
 
     template = templates.env.get_template("fragments/settings_routes.html")
-    return HTMLResponse(
+    response = HTMLResponse(
         content=template.render(
             request=request,
             agent_routes=data["agent_routes"],
@@ -281,6 +295,8 @@ async def settings_route_upsert(
             agent_names=AGENT_NAMES,
         )
     )
+    response.headers["HX-Trigger"] = '{"showToast": {"value": "Route updated", "type": "info"}}'
+    return response
 
 
 @router.post("/routes/{route_id}/delete", response_class=HTMLResponse)

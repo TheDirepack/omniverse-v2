@@ -75,8 +75,8 @@
         <div class="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-lg w-full max-h-full overflow-hidden flex flex-col">
             <div class="flex justify-between items-center p-4 border-b border-gray-200 dark:border-gray-700">
                 <h3 id="focused-search-title" class="text-lg font-semibold">Focused Search</h3>
-                <button onclick="document.getElementById('focused-search-modal').classList.add('hidden')" 
-                        class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                 <button data-action="close-focused-search" 
+                         class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
                         aria-label="Close search modal">
                     <span class="text-2xl" aria-hidden="true">&times;</span>
                 </button>
@@ -98,8 +98,8 @@
         <div class="bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-2xl w-full max-h-full overflow-hidden flex flex-col">
             <div class="flex justify-between items-center p-4 border-b border-gray-200 dark:border-gray-700">
                 <h3 id="world-modal-title" class="text-lg font-semibold">World Management</h3>
-                <button onclick="document.getElementById('world-modal').classList.add('hidden')" 
-                        class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                 <button data-action="close-world-modal" 
+                         class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
                         aria-label="Close world management modal">
                     <span class="text-2xl" aria-hidden="true">&times;</span>
                 </button>
@@ -117,7 +117,7 @@
         <div class="container mx-auto flex justify-between items-center">
             <a href="/" class="text-xl font-bold" aria-label="Omniverse Research Home">Omniverse Research</a>
             <div class="flex items-center space-x-4">
-                <button onclick="toggleDarkMode()" class="p-2 rounded-lg hover:bg-blue-500 transition" title="Toggle Dark Mode" aria-label="Toggle Dark Mode">
+                 <button data-action="toggle-dark-mode" class="p-2 rounded-lg hover:bg-blue-500 transition" title="Toggle Dark Mode" aria-label="Toggle Dark Mode">
                     <span class="dark:hidden" aria-hidden="true">🌙</span>
                     <span class="hidden dark:inline" aria-hidden="true">☀️</span>
                 </button>
@@ -161,8 +161,59 @@
             }, 3000);
         }
 
-        // Modal Accessibility: Close on Escape
+        // HTMX Global Error Handlers
+        document.body.addEventListener('htmx:responseError', function(evt) {
+            showToast(`Request failed with status ${evt.detail.xhr.status}: ${evt.detail.xhr.statusText}`, 'error');
+        });
+
+        document.body.addEventListener('htmx:sendError', function(evt) {
+            showToast('A network error occurred. Please check your connection.', 'error');
+        });
+
+        // Delegated Event Listener for data-action attributes
+        document.body.addEventListener('click', function(e) {
+            const target = e.target.closest('[data-action]');
+            if (!target) return;
+
+            const action = target.dataset.action;
+            
+            if (action === 'close-focused-search') {
+                document.getElementById('focused-search-modal').classList.add('hidden');
+            } else if (action === 'close-world-modal') {
+                document.getElementById('world-modal').classList.add('hidden');
+            } else if (action === 'toggle-dark-mode') {
+                toggleDarkMode();
+            } else if (action === 'add-checked-focused-search') {
+                addCheckedToFocusedSearch();
+            } else if (action === 'add-to-focused-search') {
+                addToFocusedSearch(target.dataset.uuid);
+            } else if (action === 'open-focused-search') {
+                openFocusedSearch();
+            } else if (action === 'open-focused-search-with-params') {
+                openFocusedSearch(target.dataset.worlds, target.dataset.feature);
+            } else if (action === 'open-world-modal') {
+                openWorldModal(target.dataset.type);
+            } else if (action === 'toggle-edit') {
+                toggleEdit(target);
+            } else if (action === 'toggle-card') {
+                toggleCard(target);
+            } else if (action === 'add-route-slot') {
+                addRouteSlot(target, target.dataset.taskType, target.dataset.nextPriority);
+            } else if (action === 'remove-model-tag') {
+                removeModelTag(target);
+            } else if (action === 'redirect-to-run') {
+                window.location.href = target.dataset.url;
+            } else if (action === 'show-structured-data') {
+                showToast('Structured Data: ' + target.dataset.json, 'info');
+            } else if (action === 'stop-propagation') {
+                e.stopPropagation();
+            } else if (action === 'confirm-delete-setting') {
+                confirmDeleteSetting(target.dataset.key);
+            }
+        });
+
         document.addEventListener('keydown', function(event) {
+
             if (event.key === 'Escape') {
                 const modals = ['focused-search-modal', 'world-modal'];
                 modals.forEach(id => {

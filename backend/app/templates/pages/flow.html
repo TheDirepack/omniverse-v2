@@ -10,7 +10,7 @@
             <input type="number" id="claim-id" name="claim_id" 
                    class="flex-1 p-2 border rounded-md" 
                    placeholder="e.g. 123">
-            <button hx-get="/flow/trace" 
+             <button hx-get="{{ url_for('trace_claim_query') }}" 
                     hx-include="#claim-id" 
                     hx-target="#flow-result"
                     hx-indicator="closest button"

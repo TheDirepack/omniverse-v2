@@ -1,7 +1,7 @@
 import os
 
 from sqlalchemy import event
-from sqlmodel import create_engine
+from sqlmodel import Session, create_engine
 
 from app.db.unconfirmed_schema import unconfirmed_metadata
 
@@ -22,3 +22,7 @@ def _enable_foreign_keys(dbapi_connection, _connection_record):
 
 def init_unconfirmed_db():
     unconfirmed_metadata.create_all(unconfirmed_engine)
+
+
+def get_unconfirmed_session():
+    return Session(unconfirmed_engine)

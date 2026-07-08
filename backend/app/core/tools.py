@@ -29,6 +29,142 @@ from app.core.importers.ocr_importer import ocr_importer
 from app.services.knowledge_retriever import KnowledgeRetrieverService
 from app.services.predicate_service import PredicateService
 from app.services.universe_service import UniverseService
+from app.services.research_workspace import WorkspaceService
+
+async def tool_load_notebook_entry(args: dict[str, Any]) -> str:
+    entry_id = args.get("entry_id")
+    if not entry_id:
+        return "Error: Missing entry_id."
+    
+    service = WorkspaceService()
+    entry = service.get_notebook_entry(entry_id)
+    if not entry:
+        return f"Notebook entry {entry_id} not found."
+    
+    return (
+        f"--- Notebook Entry {entry.id} ---\n"
+        f"Title: {entry.title}\n"
+        f"Kind: {entry.kind} | Status: {entry.status} | Priority: {entry.priority}\n"
+        f"Summary: {entry.summary}\n"
+        f"Details: {entry.details or 'No detailed notes provided.'}"
+    )
+
+
+async def tool_save_notebook_entry(args: dict[str, Any]) -> str:
+    universe_uuid = _get_universe_uuid()
+    if not universe_uuid:
+        return "Error: No active universe context."
+    
+    entry_id = args.get("entry_id")
+    title = args.get("title")
+    summary = args.get("summary")
+    kind = args.get("kind", "Observation")
+    details = args.get("details")
+    status = args.get("status", "OPEN")
+    priority = args.get("priority", 0)
+    
+    if not title or not summary:
+        return "Error: Missing title or summary."
+    
+    service = WorkspaceService()
+    entry = service.upsert_notebook_entry(
+        universe_uuid=universe_uuid,
+        title=title,
+        summary=summary,
+        kind=kind,
+        details=details,
+        status=status,
+        priority=priority,
+        entry_id=entry_id
+    )
+    return f"Notebook entry {entry.id} saved successfully."
+
+
+async def tool_manage_source(args: dict[str, Any]) -> str:
+    universe_uuid = _get_universe_uuid()
+    if not universe_uuid:
+        return "Error: No active universe context."
+    
+    url = args.get("url")
+    if not url:
+        return "Error: Missing url."
+    
+    title = args.get("title")
+    reason = args.get("reason_saved")
+    coverage = args.get("coverage")
+    reliability = args.get("reliability")
+    status = args.get("extraction_status", "UNREAD")
+    source_id = args.get("source_id")
+    
+    service = WorkspaceService()
+    source = service.upsert_source(
+        universe_uuid=universe_uuid,
+        url=url,
+        title=title,
+        reason_saved=reason,
+        coverage=coverage,
+        reliability=reliability,
+        extraction_status=status,
+        source_id=source_id
+    )
+    return f"Source {source.id} updated/saved: {source.url}"
+
+
+async def tool_record_timeline_event(args: dict[str, Any]) -> str:
+    universe_uuid = _get_universe_uuid()
+    if not universe_uuid:
+        return "Error: No active universe context."
+    
+    title = args.get("title")
+    if not title:
+        return "Error: Missing title."
+    
+    date = args.get("date")
+    era = args.get("era")
+    summary = args.get("summary")
+    description = args.get("description")
+    importance = args.get("importance", 1)
+    confidence = args.get("confidence", 1.0)
+    
+    service = WorkspaceService()
+    event = service.create_timeline_event(
+        universe_uuid=universe_uuid,
+        title=title,
+        date=date,
+        era=era,
+        summary=summary,
+        description=description,
+        importance=importance,
+        confidence=confidence
+    )
+    return f"Timeline event {event.id} recorded: {title}"
+
+
+async def tool_add_timeline_detail(args: dict[str, Any]) -> str:
+    timeline_id = args.get("timeline_id")
+    if not timeline_id:
+        return "Error: Missing timeline_id."
+    
+    detail_type = args.get("type") # 'participant', 'location', 'source', 'claim'
+    value_id = args.get("value_id")
+    role = args.get("role") # for participants
+    
+    if not value_id:
+        return "Error: Missing value_id."
+    
+    service = WorkspaceService()
+    if detail_type == "participant":
+        service.add_timeline_participant(timeline_id, value_id, role)
+    elif detail_type == "location":
+        service.add_timeline_location(timeline_id, value_id)
+    elif detail_type == "source":
+        service.add_timeline_source(timeline_id, value_id)
+    elif detail_type == "claim":
+        service.add_timeline_claim(timeline_id, value_id)
+    else:
+        return f"Error: Invalid detail type '{detail_type}'."
+    
+    return f"Added {detail_type} {value_id} to timeline event {timeline_id}."
 
 
 async def tool_web_search(args: dict[str, Any]) -> str:
@@ -1125,6 +1261,98 @@ AGENT_TOOLS: dict[str, dict[str, Any]] = {
                 },
             },
             "required": [],
+        },
+    },
+    "loadNotebookEntry": {
+        "func": tool_load_notebook_entry,
+        "description": "Fetch the full details of a specific research notebook entry by ID.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "entry_id": {"type": "integer", "description": "The ID of the notebook entry to load."},
+            },
+            "required": ["entry_id"],
+        },
+    },
+    "saveNotebookEntry": {
+        "func": tool_save_notebook_entry,
+        "description": "Create or update a research notebook entry (lead, hypothesis, etc.). Use this to record your current thinking, future tasks, and unresolved questions. Prefer updating existing entries via `entry_id` when refining a thought.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "entry_id": {"type": "integer", "description": "ID of entry to update. Omit to create new."},
+                "title": {"type": "string", "description": "Concise title for the entry."},
+                "summary": {"type": "string", "description": "One-sentence summary of the core point."},
+                "details": {"type": "string", "description": "Full detailed notes and reasoning."},
+                "kind": {
+                    "type": "string", 
+                    "enum": ["Lead", "Hypothesis", "Contradiction", "Question", "Observation"],
+                    "description": "The nature of the entry."
+                },
+                "status": {
+                    "type": "string", 
+                    "enum": ["OPEN", "RESOLVED", "SUPERSEDED", "DISCARDED"],
+                    "description": "Current status of the investigation."
+                },
+                "priority": {"type": "integer", "description": "Priority level (0=Low, 10=Critical)."},
+            },
+            "required": ["title", "summary"],
+        },
+    },
+    "manageSource": {
+        "func": tool_manage_source,
+        "description": "Curate the research source library. Mark sources as useful, track their extraction status, and record why they are valuable.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "source_id": {"type": "integer", "description": "ID of source to update. Omit to create new."},
+                "url": {"type": "string", "description": "The URL of the source."},
+                "title": {"type": "string", "description": "Title of the source."},
+                "reason_saved": {"type": "string", "description": "Why this source is valuable for the research."},
+                "coverage": {"type": "string", "description": "What specific aspects of the world it covers."},
+                "reliability": {"type": "string", "description": "Assessment of source reliability."},
+                "extraction_status": {
+                    "type": "string", 
+                    "enum": ["UNREAD", "PARTIAL", "COMPLETE"],
+                    "description": "How much of the source has been mined."
+                },
+            },
+            "required": ["url"],
+        },
+    },
+    "recordTimelineEvent": {
+        "func": tool_record_timeline_event,
+        "description": "Record a structured historical event in the world's timeline. This is for factual occurrences, not interpretations.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "title": {"type": "string", "description": "Name of the event."},
+                "date": {"type": "string", "description": "Date of the event (e.g. '2183 CE')."},
+                "era": {"type": "string", "description": "The era or period."},
+                "summary": {"type": "string", "description": "Brief summary of the event."},
+                "description": {"type": "string", "description": "Detailed account of what happened."},
+                "importance": {"type": "integer", "description": "Impact level (1-10)."},
+                "confidence": {"type": "number", "description": "Confidence in the event's occurrence (0.0-1.0)."},
+            },
+            "required": ["title"],
+        },
+    },
+    "addTimelineDetail": {
+        "func": tool_add_timeline_detail,
+        "description": "Add a participant, location, source, or supporting claim to a timeline event.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "timeline_id": {"type": "integer", "description": "ID of the timeline event."},
+                "type": {
+                    "type": "string", 
+                    "enum": ["participant", "location", "source", "claim"],
+                    "description": "The type of detail to add."
+                },
+                "value_id": {"type": "integer", "description": "The ID of the entity, source, or claim."},
+                "role": {"type": "string", "description": "Role of the participant (e.g. 'Commander')."},
+            },
+            "required": ["timeline_id", "type", "value_id"],
         },
     },
     "executePlan": {

@@ -10,7 +10,7 @@ from app.agents.prompts import (
     get_rubric_amendment_prompt,
     get_stability_prompt,
 )
-from app.core.agent_engine import run_agent
+from app.core.agent_engine import run_agent, Capability
 from app.core.validation import audit_success
 from app.db.session import engine
 from app.services.execution_service import ExecutionService
@@ -49,13 +49,15 @@ Correction Queue.
 
     audit_result, _ = await run_agent(
         agent_name="Logic Auditor",
-        system_prompt=critic_system_prompt,
-        user_prompt=critic_user_prompt,
-        step="Audit",
+        system_prompt=audit_prompt["system"],
+        user_prompt=audit_prompt["user"],
+        step="Audit Tiering Proposal",
         run_id=run_id,
-        tools_names=["fetchPage"],
+        tools_names=auditor_tools,
         submit_tool_name="submit_audit",
+        required_capabilities={Capability.READ_MAIN_DB},
     )
+
     return audit_success(audit_result), audit_result
 
 
@@ -150,11 +152,13 @@ async def architecture_node(state: dict[str, Any]) -> dict[str, Any]:
             agent_name="Tier Architect",
             system_prompt=architect_prompts["system"],
             user_prompt=architect_prompts["user"],
-            step="Architecture",
+            step="Design Tiering Rubric",
             run_id=run_id,
             tools_names=[],
-            submit_tool_name="submit_architecture",
+            submit_tool_name="submit_rubric",
+            required_capabilities={Capability.READ_MAIN_DB},
         )
+
 
         is_success, audit_result = await _audit_tier_system(
             tier_system_definition, dataset, run_id
@@ -205,11 +209,13 @@ async def architecture_node(state: dict[str, Any]) -> dict[str, Any]:
             agent_name="Stability Unit",
             system_prompt=stability_prompts["system"],
             user_prompt=stability_prompts["user"],
-            step="Stability Check",
+            step=f"Check Stability: {universe.name}",
             run_id=run_id,
-            tools_names=["webSearch", "fetchPage"],
+            tools_names=[],
             submit_tool_name="submit_stability",
+            required_capabilities={Capability.READ_MAIN_DB},
         )
+
 
         status_match = re.search(
             r"STATUS:\s*(STABLE|ANOMALY|INSUFFICIENT_DATA)",
@@ -303,14 +309,16 @@ async def architecture_node(state: dict[str, Any]) -> dict[str, Any]:
             rubric_text, dataset, anomaly_descriptions
         )
         amended_definition, _ = await run_agent(
-            agent_name="Rubric Steward",
+            agent_name="Tier Architect",
             system_prompt=amendment_prompt["system"],
             user_prompt=amendment_prompt["user"],
-            step="Rubric Amendment",
+            step="Amend Tiering Rubric",
             run_id=run_id,
             tools_names=[],
-            submit_tool_name="submit_architecture",
+            submit_tool_name="submit_rubric",
+            required_capabilities={Capability.READ_MAIN_DB},
         )
+
 
         is_success, audit_result = await _audit_tier_system(
             amended_definition, dataset, run_id

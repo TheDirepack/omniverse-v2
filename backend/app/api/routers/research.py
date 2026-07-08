@@ -1,10 +1,55 @@
 from fastapi import APIRouter
+from pydantic import BaseModel
+from typing import List
 
 from app.services.theory_service import TheoryService
 from app.services.tiering_service import TieringService
 from app.services.universe_service import UniverseService
 
 router = APIRouter(prefix="/research", tags=["research"])
+
+
+class UnconfirmedClaimResponse(BaseModel):
+    subject: str
+    predicate: str
+    object_val: str
+    universe_name: str
+    context: str | None = None
+    artifact_id: int | None = None
+    reference: str | None = None
+    wiki_source: str | None = None
+    confidence: float | None = None
+
+
+class ResearchWorldResult(BaseModel):
+    id: int
+    name: str
+    summary: str | None = None
+    is_explored: bool
+    tier: int | None = None
+    tier_justification: str | None = None
+    theory: str | None = None
+    theory_audit: str | None = None
+
+
+class AnomalyResponse(BaseModel):
+    world_id: int
+    description: str
+    detected_at: str
+
+
+class ResearchResultsResponse(BaseModel):
+    tier_system: str | None = None
+    worlds: List[ResearchWorldResult]
+    anomalies: List[AnomalyResponse]
+
+
+class TheoryResponse(BaseModel):
+    id: int
+    universe_id: int
+    theory: str
+    auditor_feedback: str | None = None
+    created_at: str
 
 
 @router.get("/claims")
@@ -18,7 +63,7 @@ def get_claims(
     return service.get_claims(universe_ids, limit=limit, offset=offset, fields=fields)
 
 
-@router.get("/claims/unconfirmed")
+@router.get("/claims/unconfirmed", response_model=List[UnconfirmedClaimResponse])
 def get_unconfirmed_claims(universe_ids: str | None = None):
     from sqlmodel import Session, select
 
@@ -38,12 +83,12 @@ def get_unconfirmed_claims(universe_ids: str | None = None):
         for claim, name in results:
             claim_dict = claim.model_dump()
             claim_dict["universe_name"] = name
-            output.append(claim_dict)
+            output.append(UnconfirmedClaimResponse(**claim_dict))
 
         return output
 
 
-@router.get("/results")
+@router.get("/results", response_model=ResearchResultsResponse)
 def get_results():
     uni_service = UniverseService()
     tier_service = TieringService()
@@ -70,32 +115,32 @@ def get_results():
         wt = tiers_map.get(uni.id)
         th = theories_map.get(uni.id)
         results.append(
-            {
-                "id": uni.id,
-                "name": uni.name,
-                "summary": uni.summary,
-                "is_explored": uni.is_explored,
-                "tier": wt.tier_number if wt else None,
-                "tier_justification": wt.justification if wt else None,
-                "theory": th.theory_text if th else None,
-                "theory_audit": th.auditor_feedback if th else None,
-            }
+            ResearchWorldResult(
+                id=uni.id,
+                name=uni.name,
+                summary=uni.summary,
+                is_explored=uni.is_explored,
+                tier=wt.tier_number if wt else None,
+                tier_justification=wt.justification if wt else None,
+                theory=th.theory_text if th else None,
+                theory_audit=th.auditor_feedback if th else None,
+            )
         )
 
     anomalies = tier_service.repo.get_all_anomalies()
 
-    return {
-        "tier_system": tier_system.system_definition if tier_system else None,
-        "worlds": results,
-        "anomalies": [
-            {
-                "world_id": a.universe_id,
-                "description": a.description,
-                "detected_at": str(a.detected_at),
-            }
+    return ResearchResultsResponse(
+        tier_system=tier_system.system_definition if tier_system else None,
+        worlds=results,
+        anomalies=[
+            AnomalyResponse(
+                world_id=a.universe_id,
+                description=a.description,
+                detected_at=str(a.detected_at),
+            )
             for a in anomalies
         ],
-    }
+    )
 
 
 @router.get("/tiers")
@@ -103,17 +148,17 @@ def get_tiers():
     return get_results()
 
 
-@router.get("/theories")
+@router.get("/theories", response_model=List[TheoryResponse])
 def get_theories():
     service = TheoryService()
     theories = service.repo.get_all_theories()
     return [
-        {
-            "id": t.id,
-            "universe_id": t.universe_id,
-            "theory": t.theory_text,
-            "auditor_feedback": t.auditor_feedback,
-            "created_at": str(t.created_at),
-        }
+        TheoryResponse(
+            id=t.id,
+            universe_id=t.universe_id,
+            theory=t.theory_text,
+            auditor_feedback=t.auditor_feedback,
+            created_at=str(t.created_at),
+        )
         for t in theories
     ]

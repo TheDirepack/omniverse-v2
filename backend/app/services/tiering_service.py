@@ -35,13 +35,13 @@ class TieringService:
     def amend_rubric(
         self, old_rubric_id: int, new_definition: str, reason: str
     ) -> TierSystem:
-        old_rubric = self.session.get(TierSystem, old_rubric_id)
+        old_rubric = self.repo.session.get(TierSystem, old_rubric_id)
         if old_rubric:
             old_rubric.is_active = False
             self.repo.update_rubric(old_rubric)
 
         new_version = (
-            (self.session.get(TierSystem, old_rubric_id).version or 1) + 1
+            (self.repo.session.get(TierSystem, old_rubric_id).version or 1) + 1
             if old_rubric
             else 1
         )

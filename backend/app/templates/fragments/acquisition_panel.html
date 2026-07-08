@@ -45,7 +45,7 @@
                     </div>
                     {% if art.structured_data %}
                     <button class="text-xs text-blue-600 hover:text-blue-800" 
-                            onclick="alert('Structured Data:\\n' + {{ art.structured_data|tojson|safe }})">
+                             data-action="show-structured-data" data-json='{{ art.structured_data|tojson|safe }}'
                         View JSON
                     </button>
                     {% endif %}

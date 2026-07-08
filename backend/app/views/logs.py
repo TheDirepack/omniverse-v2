@@ -26,6 +26,7 @@ EVENT_COLORS = {
     "WARNING": "text-orange-600 dark:text-orange-400",
     "COMPLETED": "text-emerald-600 dark:text-emerald-400",
     "IN_PROGRESS": "text-cyan-600 dark:text-cyan-400",
+    "STEP": "text-pink-600 dark:text-pink-400",
 }
 
 
@@ -81,8 +82,9 @@ def _get_filter_options():
         "event_types": [
             "THOUGHT", "TOOL_REQ", "TOOL_RES", "PROMPT",
             "MODEL_CALL", "ERROR", "FAILED", "INFO",
-            "WARNING", "COMPLETED", "IN_PROGRESS",
+            "WARNING", "COMPLETED", "IN_PROGRESS", "STEP",
         ],
+
     }
 
 

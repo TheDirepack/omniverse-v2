@@ -12,7 +12,7 @@ def test_knowledge_page(client):
 def test_research_page(client):
     response = client.get("/research")
     assert response.status_code == 200
-    assert "Database Worlds" in response.text
+    assert "Choose a World" in response.text
 
 
 def test_inference_page(client):

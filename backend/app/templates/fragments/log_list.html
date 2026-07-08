@@ -14,7 +14,7 @@
 {% if has_more %}
 <div id="load-more-trigger" class="p-3 text-center border-t border-gray-200 dark:border-gray-700">
     <button class="px-4 py-2 bg-gray-200 dark:bg-gray-700 rounded hover:bg-gray-300 dark:hover:bg-gray-600 transition text-sm"
-            hx-get="/logs/list?limit={{ limit }}&offset={{ next_offset }}{% if filter %}&filter={{ filter }}{% endif %}{% if agent %}&agent={{ agent }}{% endif %}{% if world %}&world={{ world }}{% endif %}{% if model %}&model={{ model }}{% endif %}{% if event_type %}&event_type={{ event_type }}{% endif %}{% if tool %}&tool={{ tool }}{% endif %}"
+             hx-get="{{ url_for('logs_list', limit=limit, offset=next_offset, filter=filter, agent=agent, world=world, model=model, event_type=event_type, tool=tool) }}"
             hx-target="#load-more-trigger"
             hx-swap="outerHTML">
         Load More

@@ -11,17 +11,17 @@ PROVIDER_PRESETS = {
     "openai": {
         "provider_type": "openai",
         "base_url": "https://api.openai.com/v1",
-        "models": "gpt-4o,gpt-4o-mini,gpt-4-turbo,gpt-3.5-turbo",
+        "models": "",
     },
     "anthropic": {
         "provider_type": "anthropic",
         "base_url": "https://api.anthropic.com/v1",
-        "models": "claude-3-5-sonnet-20241022,claude-3-5-haiku-20241022,claude-3-opus-20240229",
+        "models": "",
     },
     "google": {
         "provider_type": "gemini",
         "base_url": "https://generativelanguage.googleapis.com/v1beta",
-        "models": "gemini-2.0-flash,gemini-1.5-pro,gemini-1.5-flash",
+        "models": "",
     },
     "ollama": {
         "provider_type": "ollama",
@@ -31,12 +31,12 @@ PROVIDER_PRESETS = {
     "groq": {
         "provider_type": "groq",
         "base_url": "https://api.groq.com/openai/v1",
-        "models": "mixtral-8x7b-32768,llama3-70b-8192,llama3-8b-8192,deepseek-r1-distill-llama-70b",
+        "models": "",
     },
     "openrouter": {
         "provider_type": "openrouter",
         "base_url": "https://openrouter.ai/api/v1",
-        "models": "openai/gpt-4o,anthropic/claude-3.5-sonnet,google/gemini-2.0-flash",
+        "models": "",
     },
     "custom": {
         "provider_type": "custom",
@@ -237,6 +237,47 @@ class SettingsService:
             res = SettingsRepository(session).delete_route(route_id)
             session.commit()
             return res
+        finally:
+            if not self.session:
+                session.close()
+
+    def validate_settings(self) -> list[dict[str, str]]:
+        """Validate the current settings configuration."""
+        session = self.session or Session(settings_engine)
+        try:
+            all_settings = self.get_all_settings()
+            issues = []
+
+            # 1. Validate General Settings
+            general = all_settings.get("general_settings", {})
+            min_turns = general.get("MIN_RESEARCH_TURNS")
+            if min_turns is None:
+                issues.append({"severity": "WARNING", "message": "Setting 'MIN_RESEARCH_TURNS' is missing. Using default (6)."})
+            elif not str(min_turns).isdigit():
+                issues.append({"severity": "ERROR", "message": f"Setting 'MIN_RESEARCH_TURNS' must be an integer. Current value: {min_turns}"})
+
+            # 2. Validate Providers
+            providers = all_settings.get("providers", [])
+            provider_ids = {p["id"] for p in providers}
+            for p in providers:
+                if not p["keys"]:
+                    issues.append({"severity": "ERROR", "message": f"Provider '{p['name']}' has no API keys configured."})
+                for k in p["keys"]:
+                    if not k["api_key"]:
+                        issues.append({"severity": "ERROR", "message": f"Provider '{p['name']}' has an empty API key."})
+
+                if p["provider_type"] != "custom" and not p["base_url"]:
+                    issues.append({"severity": "ERROR", "message": f"Provider '{p['name']}' is missing base_url."})
+
+            # 3. Validate Agent Routes
+            routes = all_settings.get("agent_routes", [])
+            for r in routes:
+                if r["provider_id"] not in provider_ids:
+                    issues.append({"severity": "ERROR", "message": f"Route for '{r['task_type']}' points to non-existent provider ID {r['provider_id']}."})
+                if not r["models"]:
+                    issues.append({"severity": "WARNING", "message": f"Route for '{r['task_type']}' has no models specified."})
+
+            return issues
         finally:
             if not self.session:
                 session.close()

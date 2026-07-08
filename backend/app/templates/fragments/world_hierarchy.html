@@ -12,9 +12,9 @@
                 {% if world.continuity %}
                 <span class="text-[10px] text-gray-400">{{ world.continuity }}</span>
                 {% endif %}
-                <a href="/worlds/{{ world.uuid }}/neighborhood"
-                   class="text-xs text-blue-500 hover:text-blue-700 ml-auto opacity-0 group-hover:opacity-100 transition"
-                   hx-get="/worlds/{{ world.uuid }}/neighborhood"
+                 <a href="{{ url_for('world_neighborhood', uuid=world.uuid) }}"
+                    class="text-xs text-blue-500 hover:text-blue-700 ml-auto opacity-0 group-hover:opacity-100 transition"
+                    hx-get="{{ url_for('world_neighborhood', uuid=world.uuid) }}"
                    hx-target="#worlds-content"
                    hx-swap="innerHTML">
                     View Neighborhood
@@ -29,9 +29,9 @@
                     {% if child.continuity %}
                     <span class="text-[10px] text-gray-400">{{ child.continuity }}</span>
                     {% endif %}
-                    <a href="/worlds/{{ child.uuid }}/neighborhood"
-                       class="text-xs text-blue-500 hover:text-blue-700 ml-auto opacity-0 group-hover:opacity-100 transition"
-                       hx-get="/worlds/{{ child.uuid }}/neighborhood"
+                     <a href="{{ url_for('world_neighborhood', uuid=child.uuid) }}"
+                        class="text-xs text-blue-500 hover:text-blue-700 ml-auto opacity-0 group-hover:opacity-100 transition"
+                        hx-get="{{ url_for('world_neighborhood', uuid=child.uuid) }}"
                        hx-target="#worlds-content"
                        hx-swap="innerHTML">
                         View Neighborhood

@@ -31,6 +31,34 @@ BASE_DIR = Path(__file__).resolve().parent
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     init_db()
+    
+    # DB Connectivity check
+    try:
+        from sqlmodel import Session, text
+        from app.db.session import engine
+        with Session(engine) as session:
+            session.exec(text("SELECT 1"))
+        import logging
+        logging.getLogger("startup").info("Database connectivity verified.")
+    except Exception as e:
+        import logging
+        logging.getLogger("startup").error(f"Database connectivity check failed: {e}")
+
+    # Reconcile stale runs on startup
+    from app.services.execution_service import ExecutionService
+    exec_service = ExecutionService()
+    exec_service.reconcile_stale_runs()
+    exec_service.close()
+
+    # Validate settings on startup
+    from app.services.settings_service import SettingsService
+    settings_service = SettingsService()
+    issues = settings_service.validate_settings()
+    for issue in issues:
+        import logging
+        level = logging.ERROR if issue["severity"] == "ERROR" else logging.WARNING
+        logging.getLogger("startup").log(level, f"Settings Validation {issue['severity']}: {issue['message']}")
+    
     await browser_manager.start()
     yield
     await browser_manager.stop()

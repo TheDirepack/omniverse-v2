@@ -48,6 +48,19 @@ class CreateWorldPayload(BaseModel):
     auto_research: bool = False
 
 
+class UniverseResponse(BaseModel):
+    id: int
+    uuid: str
+    slug: str
+    name: str
+    franchise: str | None = None
+    category: str | None = None
+    continuity: str | None = None
+    era: str | None = None
+    summary: str | None = None
+    is_explored: bool
+
+
 @router.post("/import")
 def import_world(payload: ImportWorldPayload, background_tasks: BackgroundTasks):
     service = UniverseService()
@@ -141,18 +154,18 @@ def get_worlds(limit: int = 100, offset: int = 0, fields: list[str] | None = Non
             for w in worlds
         ]
     return [
-        {
-            "id": w.id,
-            "uuid": w.uuid,
-            "slug": w.slug,
-            "name": w.name,
-            "franchise": w.franchise,
-            "category": w.category,
-            "continuity": w.continuity,
-            "era": w.era,
-            "summary": w.summary,
-            "is_explored": w.is_explored,
-        }
+        UniverseResponse(
+            id=w.id,
+            uuid=w.uuid,
+            slug=w.slug,
+            name=w.name,
+            franchise=w.franchise,
+            category=w.category,
+            continuity=w.continuity,
+            era=w.era,
+            summary=w.summary,
+            is_explored=w.is_explored,
+        )
         for w in worlds
     ]
 
@@ -304,7 +317,7 @@ def merge_worlds(payload: MergeWorldsPayload):
     return service.merge_worlds(payload.keep_id, payload.merge_id)
 
 
-@router.get("/by-uuid/{uuid}")
+@router.get("/by-uuid/{uuid}", response_model=UniverseResponse)
 def get_world_by_uuid(uuid: str):
     service = UniverseService()
     world = service.get_universe_by_uuid(uuid)

@@ -4,12 +4,13 @@ from typing import Any
 import json
 import uuid
 
-from fastapi import APIRouter, BackgroundTasks, Form, Query, Request
-from fastapi.responses import HTMLResponse
+from fastapi import APIRouter, BackgroundTasks, Form, Query, Request, Response
+from fastapi.responses import HTMLResponse, RedirectResponse
 
 from app.core.runtime_state import get_active_runs
 from app.core.templates import templates
 from app.services.universe_service import UniverseService
+from app.services.research_workspace import WorkspaceService
 
 
 def _filter_worlds(
@@ -55,18 +56,12 @@ async def research_page(request: Request):
     # Redirect to choose-world if no active world is set (via cookie)
     active_world = request.cookies.get("active_world_id")
     if not active_world:
-        return HTMLResponse(
-            content=f'<script>window.location.href="/research/choose-world";</script>',
-            status_code=302
-        )
+        return RedirectResponse(url="/research/choose-world", status_code=302)
     
     uni_service = UniverseService()
     world = uni_service.get_universe_by_uuid(active_world)
     if not world:
-        return HTMLResponse(
-            content=f'<script>window.location.href="/research/choose-world";</script>',
-            status_code=302
-        )
+        return RedirectResponse(url="/research/choose-world", status_code=302)
     
     template = templates.env.get_template("pages/research.html")
     return HTMLResponse(content=template.render(request=request, world=world))
@@ -222,3 +217,68 @@ async def reset_all_explored(request: Request):
     count = uni_service.reset_all_explored()
     worlds = uni_service.get_all_universes(limit=5000)
     return _render_worlds(request, worlds)
+
+
+@router.get("/workspace/notebook", response_class=HTMLResponse)
+async def workspace_notebook(request: Request):
+    active_world = request.cookies.get("active_world_id")
+    if not active_world:
+        return HTMLResponse(content="No active world set.", status_code=400)
+    
+    uni_service = UniverseService()
+    world = uni_service.get_universe_by_uuid(active_world)
+    if not world:
+        return HTMLResponse(content="World not found.", status_code=404)
+    
+    workspace_service = WorkspaceService()
+    entries = workspace_service.get_notebook_index(world.uuid)
+    
+    template = templates.env.get_template("fragments/research_notebook.html")
+    return HTMLResponse(content=template.render(request=request, world=world, entries=entries))
+
+
+@router.get("/workspace/notebook/{entry_id}", response_class=HTMLResponse)
+async def workspace_notebook_entry(request: Request, entry_id: int):
+    workspace_service = WorkspaceService()
+    entry = workspace_service.get_notebook_entry(entry_id)
+    if not entry:
+        return HTMLResponse(content="Entry not found.", status_code=404)
+    
+    template = templates.env.get_template("fragments/research_notebook_entry.html")
+    return HTMLResponse(content=template.render(request=request, entry=entry))
+
+
+@router.get("/workspace/sources", response_class=HTMLResponse)
+async def workspace_sources(request: Request):
+    active_world = request.cookies.get("active_world_id")
+    if not active_world:
+        return HTMLResponse(content="No active world set.", status_code=400)
+    
+    uni_service = UniverseService()
+    world = uni_service.get_universe_by_uuid(active_world)
+    if not world:
+        return HTMLResponse(content="World not found.", status_code=404)
+    
+    workspace_service = WorkspaceService()
+    sources = workspace_service.get_sources(world.uuid)
+    
+    template = templates.env.get_template("fragments/research_sources.html")
+    return HTMLResponse(content=template.render(request=request, world=world, sources=sources))
+
+
+@router.get("/workspace/timeline", response_class=HTMLResponse)
+async def workspace_timeline(request: Request):
+    active_world = request.cookies.get("active_world_id")
+    if not active_world:
+        return HTMLResponse(content="No active world set.", status_code=400)
+    
+    uni_service = UniverseService()
+    world = uni_service.get_universe_by_uuid(active_world)
+    if not world:
+        return HTMLResponse(content="World not found.", status_code=404)
+    
+    workspace_service = WorkspaceService()
+    timeline = workspace_service.get_timeline(world.uuid)
+    
+    template = templates.env.get_template("fragments/research_timeline.html")
+    return HTMLResponse(content=template.render(request=request, world=world, timeline=timeline))

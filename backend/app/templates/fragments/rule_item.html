@@ -21,12 +21,12 @@
         </div>
         <div class="flex space-x-2">
             {% if rule.status in ['PROPOSED', 'CRITIQUED'] %}
-            <button hx-post="/inference/rules/{{ rule.id }}/approve" 
+             <button hx-post="{{ url_for('approve_rule_view', rule_id=rule.id) }}" 
                     hx-indicator="closest button"
                     class="bg-green-500 text-white px-3 py-1 rounded text-sm hover:bg-green-600 transition btn-loading">
                 Approve
             </button>
-            <button hx-post="/inference/rules/{{ rule.id }}/reject" 
+             <button hx-post="{{ url_for('reject_rule_view', rule_id=rule.id) }}" 
                     hx-indicator="closest button"
                     class="bg-red-500 text-white px-3 py-1 rounded text-sm hover:bg-red-600 transition btn-loading">
                 Reject

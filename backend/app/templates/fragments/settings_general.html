@@ -6,7 +6,7 @@
             if (confirm('Delete setting "' + key + '"?')) {
                 const form = new FormData();
                 form.set('key', key);
-                fetch('/settings/general/delete', {
+                 fetch('{{ url_for('settings_general_delete') }}', {
                     method: 'POST',
                     body: new URLSearchParams(form)
                 }).then(r => r.text()).then(html => {
@@ -17,7 +17,7 @@
     </script>
 
     {% set bool_keys = ['AGENT_LOGGING', 'HIDE_WEBFETCH_CONTENT', 'HIDE_WEBSEARCH_CONTENT'] %}
-    {% set slider_keys = {'MAX_PARALLEL_AGENTS': 5, 'MIN_RESEARCH_TURNS': 6} %}
+    {% set slider_keys = {'MAX_PARALLEL_AGENTS': 5, 'MIN_RESEARCH_TURNS': 6, 'BROWSER_POOL_SIZE': 2, 'BROWSER_MAX_CONCURRENCY_PER_INSTANCE': 5} %}
 
     {% if settings %}
     <div class="overflow-x-auto">
@@ -35,7 +35,7 @@
                     <td class="py-2 px-3 font-mono text-sm">{{ key }}</td>
                     <td class="py-2 px-3">
                         {% if key in bool_keys %}
-                        <form hx-post="/settings/general/update"
+                         <form hx-post="{{ url_for('settings_general_update') }}"
                               hx-target="#settings-content"
                               hx-swap="innerHTML"
                               class="flex items-center gap-2">
@@ -48,7 +48,7 @@
                             <span class="text-xs {{ 'text-green-600' if value == 'true' else 'text-gray-400' }}">{{ value }}</span>
                         </form>
                         {% elif key in slider_keys.keys() %}
-                        <form hx-post="/settings/general/update"
+                         <form hx-post="{{ url_for('settings_general_update') }}"
                               hx-target="#settings-content"
                               hx-swap="innerHTML"
                               class="flex items-center gap-2">
@@ -64,7 +64,7 @@
                             </button>
                         </form>
                         {% else %}
-                        <form hx-post="/settings/general/update"
+                         <form hx-post="{{ url_for('settings_general_update') }}"
                               hx-target="#settings-content"
                               hx-swap="innerHTML"
                               class="flex gap-2 items-center">
@@ -80,7 +80,7 @@
                     </td>
                     <td class="py-2 px-3 text-right">
                         <button class="text-red-400 hover:text-red-600 text-xs"
-                                onclick="confirmDeleteSetting('{{ key|e }}')">
+                                 data-action="confirm-delete-setting" data-key="{{ key|e }}">
                             ✕
                         </button>
                     </td>

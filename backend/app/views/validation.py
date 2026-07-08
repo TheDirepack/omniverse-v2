@@ -71,28 +71,11 @@ async def approve_claim(
 ):
     unconfirmed_claim = session.get(UnconfirmedClaim, claim_id)
     if not unconfirmed_claim:
-        return ""
+        return Response(content="", status_code=404)
 
     # --- Promotion Logic ---
-    # 1. Ensure Universe exists in main DB
-    # For now, we'll just look up by ID. In a real system, we'd match names.
-    # Since we don't have a clear mapping from unconfirmed_universe.id to main_universe.id,
-    # this is a bit tricky without more information.
-    # We'll assume the ID matches for this exercise or just create a new one.
-
-    # However, the requirement doesn't mandate full promotion, just "Approves an unconfirmed claim".
-    # I will implement a basic version that deletes it from unconfirmed.
-    # If I want to be helpful, I'll try to promote it.
-
-    # Let's try a minimal promotion:
     try:
         # Find/Create Universe
-        # (This is a simplification. Real implementation would match by name)
-        # For now, let's just assume the universe exists or create it.
-        # In a real scenario, we'd use unconfirmed_claim.universe_id to find the name in unconfirmed DB
-        # and then find/create the universe in the main DB.
-
-        # Let's get the universe name from unconfirmed DB
         unconfirmed_universe = session.get(UnconfirmedUniverse, unconfirmed_claim.universe_id)
         if unconfirmed_universe:
             main_universe = main_session.exec(select(Universe).where(Universe.name == unconfirmed_universe.name)).first()
@@ -102,7 +85,6 @@ async def approve_claim(
                 main_session.commit()
                 main_session.refresh(main_universe)
         else:
-            # Fallback if universe not found
             main_universe = None
 
         # Find/Create Predicate
@@ -113,29 +95,34 @@ async def approve_claim(
             main_session.commit()
             main_session.refresh(main_predicate)
 
-        # Find/Create Entities (Subject and Object)
-        # Note: unconfirmed_claim doesn't have entity IDs, it has strings.
-        # This means we have to create entities from the strings.
-
         # Subject
         subject_entity = main_session.exec(select(Entity).where(Entity.name == unconfirmed_claim.subject)).first()
         if not subject_entity:
-            # We need a universe for the entity.
             u_id = main_universe.id if main_universe else None
             subject_entity = Entity(name=unconfirmed_claim.subject, entity_type="unknown", universe_id=u_id)
             main_session.add(subject_entity)
             main_session.commit()
             main_session.refresh(subject_entity)
 
-        # Object (if it's not a literal)
-        # This is getting complex. Let's stick to a simpler version if it's just a claim.
-        # If it's a literal:
+        # Object Resolution
+        object_entity_id = None
+        object_literal = unconfirmed_claim.object_val
+        
+        # Try to find an existing entity for the object value in the main DB
+        if object_literal:
+            object_entity = main_session.exec(
+                select(Entity).where(Entity.name == object_literal)
+            ).first()
+            if object_entity:
+                object_entity_id = object_entity.id
+                object_literal = None # Use entity ID instead of literal if found
 
         new_claim = Claim(
             subject_id=subject_entity.id,
             predicate_id=main_predicate.id,
             predicate=unconfirmed_claim.predicate,
-            object_literal=unconfirmed_claim.object_val,
+            object_entity_id=object_entity_id,
+            object_literal=object_literal,
             universe_scope=main_universe.id if main_universe else None,
             status="VERIFIED"
         )
@@ -146,21 +133,26 @@ async def approve_claim(
         session.delete(unconfirmed_claim)
         session.commit()
 
+        response = HTMLResponse(content="")
+        response.headers["HX-Trigger"] = '{"showToast": {"value": "Claim approved and promoted", "type": "info"}}'
+        return response
+
     except Exception as e:
         print(f"Error during claim approval: {e}")
-        return ""
-
-    return ""
+        return HTMLResponse(content="", status_code=500)
 
 @router.post("/claim/{claim_id}/reject", response_class=HTMLResponse)
 async def reject_claim(claim_id: int, session: Session = Depends(get_unconfirmed_session)):
     unconfirmed_claim = session.get(UnconfirmedClaim, claim_id)
     if not unconfirmed_claim:
-        return ""
+        return Response(content="", status_code=404)
 
     session.delete(unconfirmed_claim)
     session.commit()
-    return ""
+    
+    response = HTMLResponse(content="")
+    response.headers["HX-Trigger"] = '{"showToast": {"value": "Claim rejected", "type": "info"}}'
+    return response
 
 @router.post("/entity/{entity_id}/merge", response_class=HTMLResponse)
 async def merge_entity(entity_id: int):

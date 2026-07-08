@@ -6,7 +6,7 @@
     {% endif %}
 
     <form id="world-filter-form"
-          hx-get="/research/database-worlds"
+           hx-get="{{ url_for('database_worlds') }}"
           hx-target="#database-worlds"
           hx-swap="outerHTML"
           hx-indicator="#db-worlds-indicator"
@@ -40,7 +40,7 @@
         <div class="flex items-center gap-2">
             <span>{{ worlds|length }} world(s)</span>
             <button class="text-xs bg-amber-500 text-white px-2 py-1 rounded hover:bg-amber-600 transition"
-                    hx-post="/research/reset-all-explored"
+                     hx-post="{{ url_for('reset_all_explored') }}"
                     hx-target="#database-worlds"
                     hx-swap="outerHTML"
                     hx-confirm="Reset explored status for all worlds?"
@@ -49,14 +49,14 @@
             </button>
         </div>
         <div class="flex gap-2">
-            <button id="focus-selected-btn"
-                    class="bg-purple-600 text-white px-3 py-1.5 rounded text-xs hover:bg-purple-700 transition hidden"
-                    onclick="addCheckedToFocusedSearch()">
+                     <button id="focus-selected-btn"
+                     class="bg-purple-600 text-white px-3 py-1.5 rounded text-xs hover:bg-purple-700 transition hidden"
+                     data-action="add-checked-focused-search">
                 Add to Focused Search (0)
             </button>
             <button id="research-selected-btn"
                     class="bg-indigo-600 text-white px-3 py-1.5 rounded text-xs hover:bg-indigo-700 transition hidden"
-                    hx-post="/research/batch-research"
+                     hx-post="{{ url_for('batch_research') }}"
                     hx-target="#database-worlds"
                     hx-swap="outerHTML"
                     hx-indicator="#db-worlds-indicator"
@@ -81,7 +81,7 @@
                     <div class="flex items-center gap-2">
                         <span class="text-base font-semibold truncate">{{ world.display_name }}</span>
                         <button class="text-xs px-1.5 py-0.5 rounded shrink-0 {{ 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300' if world.is_explored else 'bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400' }}"
-                                hx-post="/research/worlds/{{ world.id }}/toggle-explored"
+                                 hx-post="{{ url_for('toggle_explored', world_id=world.id) }}"
                                 hx-target="#database-worlds"
                                 hx-swap="outerHTML"
                                 hx-indicator="#db-worlds-indicator"
@@ -109,21 +109,21 @@
             </div>
             <div class="flex items-center gap-1 shrink-0 ml-2">
                                 <button class="text-xs bg-blue-600 text-white px-2 py-1 rounded hover:bg-blue-700 transition"
-                                        hx-post="/research/set-active-world"
+                                         hx-post="{{ url_for('set_active_world') }}"
                                         hx-vals='{"world_id": "{{ world.uuid }}"}'
                                         hx-target="body"
                                         hx-swap="none"
-                                        hx-on::after-request="window.location.href='/research'"
+                                         hx-on::after-request="if (event.detail.successful) { window.location.href='/research' }"
                                         hx-indicator="#db-worlds-indicator">
                                     Research
                                         </button>
                                  <button class="text-xs bg-purple-600 text-white px-1.5 py-1 rounded hover:bg-purple-700 transition"
                                                         title="Add to Focused Search"
-                                                        onclick="addToFocusedSearch('{{ world.uuid|e }}')">
+                                                         data-action="add-to-focused-search" data-uuid="{{ world.uuid|e }}">
                                     Focus
                                 </button>
                 <button class="text-xs bg-red-600 text-white px-1.5 py-1 rounded hover:bg-red-700 transition"
-                        hx-post="/research/worlds/{{ world.id }}/delete"
+                         hx-post="{{ url_for('delete_world', world_id=world.id) }}"
                         hx-target="#database-worlds"
                         hx-swap="outerHTML"
                         hx-confirm="Delete {{ world.name }} and all associated data?"

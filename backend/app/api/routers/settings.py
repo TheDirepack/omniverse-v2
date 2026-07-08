@@ -14,6 +14,18 @@ class SetupSetting(BaseModel):
     value: str | None = None
 
 
+class RouteStatusResponse(BaseModel):
+    task_type: str
+    configured: bool
+    provider: str | None = None
+    models: str | None = None
+
+
+class ModelStatusResponse(BaseModel):
+    initialized: bool
+    routes: list[RouteStatusResponse]
+
+
 @router.get("/")
 def get_settings():
     service = SettingsService()
@@ -44,7 +56,7 @@ def get_agent_names():
     return AGENT_NAMES
 
 
-@router.get("/model-status")
+@router.get("/model-status", response_model=ModelStatusResponse)
 def model_status():
     with Session(settings_engine) as session:
         repo = SettingsRepository(session)
@@ -54,13 +66,13 @@ def model_status():
         for route in routes:
             provider = providers.get(route.provider_id)
             route_status.append(
-                {
-                    "task_type": route.task_type,
-                    "configured": bool(
+                RouteStatusResponse(
+                    task_type=route.task_type,
+                    configured=bool(
                         provider and provider.provider_type and route.models
                     ),
-                    "provider": provider.name if provider else None,
-                    "models": route.models,
-                }
+                    provider=provider.name if provider else None,
+                    models=route.models,
+                )
             )
-    return {"initialized": True, "routes": route_status}
+    return ModelStatusResponse(initialized=True, routes=route_status)

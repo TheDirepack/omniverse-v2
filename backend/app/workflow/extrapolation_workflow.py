@@ -1,7 +1,7 @@
 from typing import Any
 
 from app.agents.prompts import get_extrapolation_prompt, get_theory_auditor_prompt
-from app.core.agent_engine import run_agent
+from app.core.agent_engine import run_agent, Capability
 from app.core.context import set_current_universe
 from app.services.execution_service import ExecutionService
 from app.services.theory_service import TheoryService
@@ -71,23 +71,27 @@ async def extrapolation_node(state: dict[str, Any]) -> dict[str, Any]:
             success, speculation, _ = await run_agent(
                 agent_name="Ontological Theorist",
                 system_prompt=theory_prompt["system"],
-                user_prompt=user_prompt,
-                step=f"Extrapolation (Attempt {current_attempt+1})",
+                user_prompt=theory_prompt["user"],
+                step=f"Theorize {universe.name}",
                 run_id=run_id,
                 tools_names=[],
                 submit_tool_name="submit_theory",
+                required_capabilities={Capability.READ_MAIN_DB},
             )
+
         
             audit_prompt = get_theory_auditor_prompt(speculation)
             success_audit, audit_result, _ = await run_agent(
                 agent_name="Theoretical Auditor",
                 system_prompt=audit_prompt["system"],
                 user_prompt=audit_prompt["user"],
-                step=f"Theory Audit (Attempt {current_attempt+1})",
+                step=f"Audit Theory: {universe.name}",
                 run_id=run_id,
                 tools_names=[],
                 submit_tool_name="submit_audit",
+                required_capabilities={Capability.READ_MAIN_DB},
             )
+
         
             if audit_result.strip().upper().startswith("VERIFIED"):
                 verified_theory = speculation

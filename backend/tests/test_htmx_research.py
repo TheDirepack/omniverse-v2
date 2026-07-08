@@ -17,11 +17,12 @@ def test_research_page(client):
             session.add(u)
             session.commit()
             session.refresh(u)
-        world_id = str(u.id)
+        world_uuid = u.uuid
 
-    response = client.get("/research", cookies={"active_world_id": world_id})
+    response = client.get("/research/", cookies={"active_world_id": world_uuid})
     assert response.status_code == 200
-    assert "Database Worlds" in response.text
+    assert "Research - Omniverse" in response.text
+
 
 
 

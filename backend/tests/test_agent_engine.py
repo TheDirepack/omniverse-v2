@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from app.core.agent_engine import run_agent
+from app.core.agent_engine import run_agent, Capability
 from app.core.runtime_state import ABORTED_RUNS
 from app.core.tools import AGENT_TOOLS
 
@@ -1004,3 +1004,56 @@ class TestRunAgentStatefulEdgeCases:
         assert result == "Result"
         called_messages = mock_router.call_args[1]["messages"]
         assert len(called_messages) == 2  # system + user, no duplicate
+
+class TestCapabilityGating:
+    """Verify that tools are filtered based on required_capabilities."""
+
+    async def test_capability_filtering_removes_forbidden_tools(self):
+        # Only allow ACQUISITION
+        req_caps = {Capability.ACQUISITION}
+        
+        # Mock a tool call for a forbidden tool (upsertClaims - WRITE_MAIN_DB)
+        forbidden_tc = _make_tool_call("upsertClaims", {})
+        submit_tc = _make_tool_call("submitFindings", {})
+        
+        response = _make_response(content=None, tool_calls=[forbidden_tc])
+        submit_response = _make_response(content="Done", tool_calls=[submit_tc])
+        
+        call_count = 0
+        async def mock_run(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            return (response, "m", "k") if call_count == 1 else (submit_response, "m", "k")
+
+        with patch("app.core.agent_engine.router.run_model", new=mock_run):
+            # Use a tool that requires WRITE_MAIN_DB while only giving ACQUISITION
+            success, result, _ = await run_agent(
+                agent_name="TEST",
+                system_prompt="sys",
+                user_prompt="user",
+                step="s",
+                run_id="run-cap",
+                tools_names=["upsertClaims", "webSearch"],
+                submit_tool_name="submitFindings",
+                required_capabilities=req_caps,
+            )
+        
+        # Let's check the actual tools passed to the router
+        with patch("app.core.agent_engine.router.run_model", new=AsyncMock(return_value=(submit_response, "m", "k"))) as mock_router:
+            await run_agent(
+                agent_name="TEST",
+                system_prompt="sys",
+                user_prompt="user",
+                step="s",
+                run_id="run-cap-check",
+                tools_names=["upsertClaims", "webSearch"],
+                submit_tool_name="submitFindings",
+                required_capabilities=req_caps,
+            )
+            
+            passed_tools = mock_router.call_args[1]["tools"]
+            tool_names = [t["function"]["name"] for t in passed_tools]
+            
+            assert "webSearch" in tool_names
+            assert "upsertClaims" not in tool_names
+            assert "submitFindings" in tool_names

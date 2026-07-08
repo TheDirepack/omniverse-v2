@@ -6,6 +6,7 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
+from app.core.templates import templates
 from app.agents.workflow import app_graph
 from app.core.runtime_state import (
     abort_run,
@@ -34,6 +35,28 @@ class FocusedSearchPayload(BaseModel):
     features: list[str]
 
 
+class AbortRunPayload(BaseModel):
+    run_id: str = Field(..., min_length=1, alias="runId")
+
+    class Config:
+        populate_by_name = True
+
+
+class AgentLogResponse(BaseModel):
+    run_id: str
+    node_name: str
+    thought: str | None = None
+    status: str
+    created_at: str
+
+
+class AgentActivityResponse(BaseModel):
+    active_runs: list[str]
+    logs: list[AgentLogResponse]
+
+
+from app.core.domain import ResearchTarget
+
 async def run_pipeline_in_background(run_id: str, universe_uuids: list[str]):
     exec_service = ExecutionService()
     uni_service = UniverseService()
@@ -46,17 +69,21 @@ async def run_pipeline_in_background(run_id: str, universe_uuids: list[str]):
         )
         return
 
-    # Resolve UUIDs to names for the pipeline state
+    # Resolve UUIDs to ResearchTarget domain objects
     target_worlds = []
-    for uuid in universe_uuids:
-        universe = uni_service.get_universe_by_uuid(uuid)
-        if universe:
-            target_worlds.append(universe.name)
-        else:
-            # This should technically not happen if the UI passes valid UUIDs,
-            # but we handle it gracefully.
-            pass
-
+    for uuid_val in universe_uuids:
+        u = uni_service.get_universe_by_uuid(uuid_val)
+        if u:
+            target_worlds.append(ResearchTarget(
+                uuid=u.uuid,
+                name=u.name,
+                franchise=u.franchise,
+                continuity=u.continuity,
+                era=u.era,
+                slug=u.slug,
+                parent_id=u.parent_id
+            ))
+    
     await add_active_run(run_id)
     inputs = {
         "target_worlds": target_worlds,
@@ -96,12 +123,20 @@ async def run_focused_search_in_background(
     if await is_aborted(run_id):
         raise RuntimeError("Run aborted before start")
     
-    # Resolve UUIDs to names
+    # Resolve UUIDs to ResearchTarget domain objects
     target_worlds = []
-    for uuid in universe_uuids:
-        universe = uni_service.get_universe_by_uuid(uuid)
-        if universe:
-            target_worlds.append(universe.name)
+    for uuid_val in universe_uuids:
+        u = uni_service.get_universe_by_uuid(uuid_val)
+        if u:
+            target_worlds.append(ResearchTarget(
+                uuid=u.uuid,
+                name=u.name,
+                franchise=u.franchise,
+                continuity=u.continuity,
+                era=u.era,
+                slug=u.slug,
+                parent_id=u.parent_id
+            ))
 
     await add_active_run(run_id)
     inputs = {
@@ -288,10 +323,8 @@ def focused_search(payload: FocusedSearchPayload, background_tasks: BackgroundTa
 
 
 @router.post("/abort")
-async def abort_run_endpoint(payload: dict):
-    run_id = payload.get("runId") or payload.get("run_id")
-    if not run_id:
-        raise HTTPException(status_code=400, detail="runId required")
+async def abort_run_endpoint(payload: AbortRunPayload):
+    run_id = payload.run_id
     await abort_run(run_id)
     exec_service = ExecutionService()
     exec_service.log_transition(
@@ -300,7 +333,7 @@ async def abort_run_endpoint(payload: dict):
     return {"status": "abort_requested", "run_id": run_id}
 
 
-@router.get("/agent-activity")
+@router.get("/agent-activity", response_model=AgentActivityResponse)
 async def agent_activity():
     exec_service = ExecutionService()
     logs = exec_service.repo.get_recent_logs()
@@ -339,7 +372,7 @@ async def runs_history(request: Request):
             state = json.loads(run.state_snapshot)
             target_worlds = state.get("target_worlds", [])
             goal = ", ".join(target_worlds) if target_worlds else "Unknown Goal"
-        except:
+        except (json.JSONDecodeError, TypeError, AttributeError):
             goal = "Unknown Goal"
             
         results.append({

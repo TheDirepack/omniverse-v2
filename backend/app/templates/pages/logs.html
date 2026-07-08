@@ -22,7 +22,7 @@
         <div class="flex flex-col gap-1">
             <label class="text-xs text-gray-500 uppercase tracking-wide">Agent</label>
             <select name="agent" class="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-sm"
-                    hx-get="/logs/list" hx-trigger="change" hx-target="#log-container" hx-include="#log-filters">
+                    hx-get="{{ url_for('logs_list') }}" hx-trigger="change" hx-target="#log-container" hx-include="#log-filters">
                 <option value="">All Agents</option>
                 {% for name in agent_names %}
                 <option value="{{ name }}">{{ name }}</option>
@@ -32,7 +32,7 @@
         <div class="flex flex-col gap-1">
             <label class="text-xs text-gray-500 uppercase tracking-wide">World</label>
             <select name="world" class="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-sm"
-                    hx-get="/logs/list" hx-trigger="change" hx-target="#log-container" hx-include="#log-filters">
+                    hx-get="{{ url_for('logs_list') }}" hx-trigger="change" hx-target="#log-container" hx-include="#log-filters">
                 <option value="">All Worlds</option>
                 {% for name in world_names %}
                 <option value="{{ name }}">{{ name }}</option>
@@ -42,7 +42,7 @@
         <div class="flex flex-col gap-1">
             <label class="text-xs text-gray-500 uppercase tracking-wide">Model</label>
             <select name="model" class="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-sm"
-                    hx-get="/logs/list" hx-trigger="change" hx-target="#log-container" hx-include="#log-filters">
+                    hx-get="{{ url_for('logs_list') }}" hx-trigger="change" hx-target="#log-container" hx-include="#log-filters">
                 <option value="">All Models</option>
                 {% for m in model_names %}
                 <option value="{{ m }}">{{ m }}</option>
@@ -52,7 +52,7 @@
         <div class="flex flex-col gap-1">
             <label class="text-xs text-gray-500 uppercase tracking-wide">Event</label>
             <select name="event_type" class="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-sm"
-                    hx-get="/logs/list" hx-trigger="change" hx-target="#log-container" hx-include="#log-filters">
+                    hx-get="{{ url_for('logs_list') }}" hx-trigger="change" hx-target="#log-container" hx-include="#log-filters">
                 <option value="">All Events</option>
                 {% for et in event_types %}
                 <option value="{{ et }}">{{ et }}</option>

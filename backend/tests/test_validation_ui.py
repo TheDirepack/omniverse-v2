@@ -29,6 +29,8 @@ def test_validation_page(client):
 def test_approve_claim(client, unconfirmed_data):
     response = client.post(f"/validation/claim/{unconfirmed_data.id}/approve")
     assert response.status_code == 200
+    assert "HX-Trigger" in response.headers
+    assert '"showToast": {"value": "Claim approved and promoted", "type": "info"}' in response.headers["HX-Trigger"]
     
     # Verify it's gone from unconfirmed
     with Session(unconfirmed_engine) as session:
@@ -38,6 +40,8 @@ def test_approve_claim(client, unconfirmed_data):
 def test_reject_claim(client, unconfirmed_data):
     response = client.post(f"/validation/claim/{unconfirmed_data.id}/reject")
     assert response.status_code == 200
+    assert "HX-Trigger" in response.headers
+    assert '"showToast": {"value": "Claim rejected", "type": "info"}' in response.headers["HX-Trigger"]
     
     # Verify it's gone from unconfirmed
     with Session(unconfirmed_engine) as session:

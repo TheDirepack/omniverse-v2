@@ -7,7 +7,7 @@
     </div>
     {% endif %}
 
-    <form hx-get="/worlds/import"
+     <form hx-get="{{ url_for('worlds_import_fragment') }}"
           hx-target="#world-modal-content"
           hx-swap="innerHTML"
           class="flex gap-2 mb-4">
@@ -23,7 +23,7 @@
     {% if entries %}
     <div class="mb-4">
         <button class="bg-green-600 text-white px-4 py-2 rounded text-sm hover:bg-green-700 transition"
-                hx-post="/worlds/import-all"
+                 hx-post="{{ url_for('worlds_import_all_action') }}"
                 hx-target="#world-modal-content"
                 hx-swap="innerHTML"
                 hx-indicator="#worlds-indicator"
@@ -44,7 +44,7 @@
                 </div>
             </div>
             <button class="text-xs bg-blue-600 text-white px-3 py-1.5 rounded hover:bg-blue-700 transition"
-                    hx-post="/worlds/import/{{ entry.id }}"
+                     hx-post="{{ url_for('worlds_import_action', world_id=entry.id) }}"
                     hx-target="#world-modal-content"
                     hx-swap="innerHTML"
                     hx-indicator="#worlds-indicator">

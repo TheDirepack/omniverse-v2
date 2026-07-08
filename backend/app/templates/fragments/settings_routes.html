@@ -11,7 +11,7 @@
     <div class="routing-card border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 overflow-hidden"
          data-agent-name="DEFAULT" data-expanded="true">
         <div class="routing-card-header flex items-center justify-between px-4 py-3 bg-gray-50 dark:bg-gray-900 cursor-pointer select-none"
-             onclick="toggleCard(this)">
+              data-action="toggle-card"
             <div class="flex items-center gap-3">
                 <span class="font-semibold text-sm">DEFAULT</span>
                 <span class="text-xs text-gray-500">{{ default_count }} step(s)</span>
@@ -31,7 +31,7 @@
             {% endif %}
 
             <button class="text-xs text-blue-600 hover:text-blue-800 font-medium"
-                    onclick="addRouteSlot(this, 'DEFAULT', {{ default_count }})">
+                     data-action="add-route-slot" data-task-type="DEFAULT" data-next-priority="{{ default_count }}">
                 + Add Provider Step
             </button>
 
@@ -60,7 +60,7 @@
     <div class="routing-card border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 overflow-hidden"
          data-agent-name="{{ name }}">
         <div class="routing-card-header flex items-center justify-between px-4 py-3 bg-gray-50 dark:bg-gray-900 cursor-pointer select-none"
-             onclick="toggleCard(this)">
+              data-action="toggle-card"
             <div class="flex items-center gap-3">
                 <span class="font-semibold text-sm">{{ name }}</span>
                 <span class="text-xs text-gray-500">{{ status_text }}</span>
@@ -68,10 +68,10 @@
             <div class="flex items-center gap-2">
                 {% if not has_custom and default_count > 0 %}
                 <button class="text-xs px-2 py-1 rounded bg-blue-100 text-blue-700 hover:bg-blue-200 dark:bg-blue-900 dark:text-blue-300"
-                        hx-post="/settings/routes/{{ name }}/override"
+                                 hx-post="{{ url_for('settings_route_override', agent_name=name) }}"
                         hx-target="#settings-content"
                         hx-swap="innerHTML"
-                        onclick="event.stopPropagation()">
+                                                         data-action="stop-propagation">
                     Override
                 </button>
                 {% endif %}
@@ -88,7 +88,7 @@
             {% endif %}
 
             <button class="text-xs text-blue-600 hover:text-blue-800 font-medium"
-                    onclick="addRouteSlot(this, '{{ name }}', {{ agent_routes_for|length }})">
+                     data-action="add-route-slot" data-task-type="{{ name }}" data-next-priority="{{ agent_routes_for|length }}">
                 + Add Provider Step
             </button>
 
@@ -194,7 +194,7 @@
             if (!isNaN(id)) routeIds.push(id);
         });
         if (routeIds.length > 0 && typeof htmx !== 'undefined') {
-            htmx.ajax('POST', '/settings/routes/reorder', {
+             htmx.ajax('POST', '{{ url_for('settings_route_reorder') }}', {
                 values: { route_ids: JSON.stringify(routeIds) },
                 target: '#settings-content',
                 swap: 'innerHTML'
@@ -288,7 +288,7 @@
         var card = btn.closest('.routing-card');
         var slotsContainer = card.querySelector('.route-slots');
         if (typeof htmx === 'undefined') return;
-        htmx.ajax('POST', '/settings/routes/upsert', {
+         htmx.ajax('POST', '{{ url_for('settings_route_upsert') }}', {
             values: {
                 task_type: taskType,
                 provider_id: '',

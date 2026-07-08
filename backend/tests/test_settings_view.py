@@ -33,6 +33,8 @@ class TestSettingsGeneral:
             data={"key": "test_key", "value": "test_val"},
         )
         assert r.status_code == 200
+        assert "HX-Trigger" in r.headers
+        assert '"showToast": {"value": "Setting updated", "type": "info"}' in r.headers["HX-Trigger"]
 
     def test_delete_setting(self, api_client):
         r = api_client.post(
@@ -54,6 +56,8 @@ class TestSettingsProviders:
             },
         )
         assert r.status_code == 200
+        assert "HX-Trigger" in r.headers
+        assert '"showToast": {"value": "Provider updated", "type": "info"}' in r.headers["HX-Trigger"]
 
     def test_update_provider(self, api_client, clean_db):
         # Create provider first via API
@@ -173,6 +177,8 @@ class TestSettingsRoutes:
             },
         )
         assert r.status_code == 200
+        assert "HX-Trigger" in r.headers
+        assert '"showToast": {"value": "Route updated", "type": "info"}' in r.headers["HX-Trigger"]
 
     def test_delete_route(self, api_client, clean_db):
         api_client.post(

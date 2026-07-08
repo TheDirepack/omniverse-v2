@@ -1,9 +1,9 @@
 from typing import Any, TypedDict
-
+from app.core.domain import ResearchTarget
 
 class OmniverseState(TypedDict):
     run_id: str
-    target_worlds: list[str]
+    target_worlds: list[ResearchTarget]
     focused_features: list[str] | None  # Targets for focused search
     is_focused_search: bool  # Whether this is a focused search run
     research_results: list[Any]

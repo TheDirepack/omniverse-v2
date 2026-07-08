@@ -1,7 +1,29 @@
 import json
-from typing import Any
+from typing import Any, Optional
+from enum import Enum, auto
 
 from sqlalchemy.exc import OperationalError, ProgrammingError
+
+class Capability(Enum):
+    READ_MAIN_DB = auto()
+    WRITE_MAIN_DB = auto()
+    READ_WORKSPACE = auto()
+    WRITE_WORKSPACE = auto()
+    ACQUISITION = auto()
+    SUBMIT = auto()
+
+# Tool to Capability mapping
+TOOL_CAPABILITIES = {
+    "queryClaims": Capability.READ_MAIN_DB,
+    "upsertClaims": Capability.WRITE_MAIN_DB,
+    "queryUnconfirmedClaims": Capability.READ_WORKSPACE,
+    "saveUnconfirmedClaim": Capability.WRITE_WORKSPACE,
+    "deleteUnconfirmedClaim": Capability.WRITE_WORKSPACE,
+    "webSearch": Capability.ACQUISITION,
+    "fetchPage": Capability.ACQUISITION,
+    "ocrImage": Capability.ACQUISITION,
+    "compareSourceFreshness": Capability.ACQUISITION,
+}
 
 from app.core.acquisition_cache import acquisition_cache
 from app.core.agent_event_types import AgentEventType
@@ -73,6 +95,9 @@ async def _execute_tool(
     name: str,
     args: dict[str, Any],
     run_id: str | None = None,
+    agent_name: str | None = None,
+    model: str | None = None,
+    key_id: str | None = None,
 ) -> str:
     """Execute a tool, routing fetchPage/compareSourceFreshness through shared cache."""
     if name == "fetchPage":
@@ -155,6 +180,7 @@ async def run_agent(
     max_retries: int = 1,
     provider_id: int | None = None,
     history: list[dict[str, str]] | None = None,
+    required_capabilities: set[Capability] | None = None,
 ) -> tuple[bool, str, list[dict[str, Any]]]:
     """
     Runs a tool-using agent loop.
@@ -188,10 +214,19 @@ async def run_agent(
 
         # Filter tools and prepare litellm-compatible tool definitions
         disabled_tools = set()
+        
+        # Filter by capabilities if provided
+        filtered_tools_names = tools_names
+        if required_capabilities is not None:
+            filtered_tools_names = [
+                name for name in tools_names 
+                if name not in TOOL_CAPABILITIES or TOOL_CAPABILITIES[name] in required_capabilities
+            ]
+
         available_tools = {
             k: v
             for k, v in AGENT_TOOLS.items()
-            if k in tools_names and k not in disabled_tools
+            if k in filtered_tools_names and k not in disabled_tools
         }
         litellm_tools = []
         for name, info in available_tools.items():
@@ -364,12 +399,6 @@ async def run_agent(
                                 )
                                 return True, "Submission rejected: The dataset provided is not valid JSON. Please ensure you return a properly formatted JSON object.", messages
                             except Exception as e:
-
-
-
-
-
-
                                 messages.append(
                                     {
                                         "role": "tool",
@@ -420,11 +449,24 @@ async def run_agent(
                                         except (ValueError, IndexError):
                                             pass
 
+                                # Log the granular step
+                                if agent_name:
+                                    agent_logger.log(
+                                        agent=agent_name,
+                                        event_type=AgentEventType.STEP,
+                                        content=f"Executing step {i+1}/{len(plan)}: {tool_name} with {tool_args}",
+                                        model=model or "unknown",
+                                        key_id=key_id or "unknown",
+                                    )
+
                                 try:
                                     obs = await _execute_tool(
                                         tool_name,
                                         tool_args,
                                         run_id,
+                                        agent_name=agent_name,
+                                        model=model,
+                                        key_id=key_id,
                                     )
                                     results_history.append(obs)
                                     plan_observations.append(
@@ -439,7 +481,12 @@ async def run_agent(
                         else:
                             try:
                                 observation = await _execute_tool(
-                                    name, args, run_id
+                                    name,
+                                    args,
+                                    run_id,
+                                    agent_name=agent_name,
+                                    model=model,
+                                    key_id=key_id,
                                 )
                                 tool_failures[name] = 0
                             except Exception as e:

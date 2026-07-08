@@ -1,7 +1,7 @@
 {% for world in worlds %}
 <div class="mb-2">
     <div class="flex items-center gap-2 p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded cursor-pointer transition group">
-        <button hx-get="/knowledge/worlds/{{ world.id }}/children" 
+         <button hx-get="{{ url_for('world_children', world_id=world.id) }}" 
                 hx-target="closest div" 
                 hx-swap="afterbegin"
                 hx-indicator="closest button"
@@ -10,7 +10,7 @@
         </button>
         <div class="min-w-0 flex-1">
             <div class="flex items-center gap-2">
-                <span hx-get="/knowledge/worlds/{{ world.id }}" 
+                 <span hx-get="{{ url_for('world_detail', world_id=world.id) }}" 
                       hx-target="#detail-view" 
                       hx-indicator="closest span"
                       class="text-base font-semibold text-gray-800 dark:text-gray-100 hover:text-blue-600 cursor-pointer btn-loading truncate">

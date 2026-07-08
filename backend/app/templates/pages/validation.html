@@ -52,7 +52,7 @@
                             {% for candidate in dup.candidates %}
                             <div class="flex justify-between items-center p-2 bg-gray-50 dark:bg-gray-900 rounded border border-gray-100 dark:border-gray-800">
                                 <div class="text-xs truncate">{{ candidate.name }}</div>
-                                <form hx-post="/api/worlds/merge" hx-swap="outerHTML" hx-target="closest div" class="inline">
+                                 <form hx-post="{{ url_for('merge_worlds') }}" hx-swap="outerHTML" hx-target="closest div" class="inline">
                                     <input type="hidden" name="keep_id" value="{{ dup.world.id }}">
                                     <input type="hidden" name="merge_id" value="{{ candidate.id }}">
                                     <button class="text-[10px] px-2 py-0.5 bg-purple-600 text-white rounded hover:bg-purple-700">

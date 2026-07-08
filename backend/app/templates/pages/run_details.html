@@ -6,12 +6,12 @@
 <div class="space-y-6">
     <div class="flex justify-between items-center">
         <div class="flex items-center gap-4">
-            <a href="/research" class="text-blue-600 hover:text-blue-800 text-sm flex items-center gap-1">
+             <a href="{{ url_for('research_page') }}" class="text-blue-600 hover:text-blue-800 text-sm flex items-center gap-1">
                 ← Back to Research
             </a>
             <h1 class="text-3xl font-bold">Run: <span class="font-mono text-gray-600 dark:text-gray-400">{{ run_id }}</span></h1>
         </div>
-        <button hx-post="/runs/abort"
+         <button hx-post="{{ url_for('abort_run_endpoint') }}"
                 hx-vals='{"run_id": "{{ run_id }}"}'
                 hx-confirm="Abort this run?"
                 class="bg-red-600 text-white px-4 py-2 rounded text-sm hover:bg-red-700 transition">
@@ -19,24 +19,56 @@
         </button>
     </div>
 
+    <!-- Phase Tracker -->
+    <div class="bg-white dark:bg-gray-900 p-6 rounded-lg shadow border border-gray-200 dark:border-gray-800">
+        <h2 class="text-sm font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-6">Pipeline Progress</h2>
+        <div class="relative flex justify-between items-center max-w-4xl mx-auto">
+            <!-- Progress Line -->
+            <div class="absolute top-1/2 left-0 w-full h-1 bg-gray-200 dark:bg-gray-700 -translate-y-1/2 z-0"></div>
+            <div id="progress-bar" class="absolute top-1/2 left-0 h-1 bg-blue-600 -translate-y-1/2 z-0 transition-all duration-500" style="width: 0%"></div>
+            
+            <!-- Phases -->
+            <div class="phase-node z-10 flex flex-col items-center gap-2" data-node="research_node">
+                <div class="w-8 h-8 rounded-full bg-gray-200 dark:bg-gray-700 border-4 border-white dark:border-gray-900 flex items-center justify-center text-xs font-bold transition-colors duration-300">1</div>
+                <span class="text-xs font-medium text-gray-500 dark:text-gray-400">Acquisition</span>
+            </div>
+            <div class="phase-node z-10 flex flex-col items-center gap-2" data-node="db_integrator_node">
+                <div class="w-8 h-8 rounded-full bg-gray-200 dark:bg-gray-700 border-4 border-white dark:border-gray-900 flex items-center justify-center text-xs font-bold transition-colors duration-300">2</div>
+                <span class="text-xs font-medium text-gray-500 dark:text-gray-400">Integration</span>
+            </div>
+            <div class="phase-node z-10 flex flex-col items-center gap-2" data-node="summary_node">
+                <div class="w-8 h-8 rounded-full bg-gray-200 dark:bg-gray-700 border-4 border-white dark:border-gray-900 flex items-center justify-center text-xs font-bold transition-colors duration-300">3</div>
+                <span class="text-xs font-medium text-gray-500 dark:text-gray-400">Final Report</span>
+            </div>
+            <div class="phase-node z-10 flex flex-col items-center gap-2" data-node="architecture_node">
+                <div class="w-8 h-8 rounded-full bg-gray-200 dark:bg-gray-700 border-4 border-white dark:border-gray-900 flex items-center justify-center text-xs font-bold transition-colors duration-300">4</div>
+                <span class="text-xs font-medium text-gray-500 dark:text-gray-400">Tiering</span>
+            </div>
+            <div class="phase-node z-10 flex flex-col items-center gap-2" data-node="extrapolation_node">
+                <div class="w-8 h-8 rounded-full bg-gray-200 dark:bg-gray-700 border-4 border-white dark:border-gray-900 flex items-center justify-center text-xs font-bold transition-colors duration-300">5</div>
+                <span class a="text-xs font-medium text-gray-500 dark:text-gray-400">Extrapolation</span>
+            </div>
+        </div>
+    </div>
+
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <!-- Logs Column -->
         <div class="space-y-4">
-            <h2 class="text-xl font-semibold">Execution Logs</h2>
+            <div class="flex justify-between items-center">
+                <h2 class="text-xl font-semibold">Execution Logs</h2>
+                <div id="run-status-badge" class="text-xs font-mono px-2 py-1 rounded bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400">Initializing...</div>
+            </div>
             <div id="run-logs" 
-                 hx-get="/runs/logs/{{ run_id }}" 
-                 hx-trigger="load, every 2s" 
-                 hx-swap="innerHTML"
                  class="bg-black text-green-400 p-4 rounded-lg font-mono text-xs h-[80vh] overflow-y-auto shadow-inner border border-gray-800">
-                <p class="italic text-gray-600">Streaming logs...</p>
+                <p class="italic text-gray-600">Connecting to log stream...</p>
             </div>
         </div>
 
         <!-- Acquisition Column -->
         <div class="space-y-4">
             <h2 class="text-xl font-semibold">Acquisition Pipeline</h2>
-            <div id="acquisition-panel" 
-                 hx-get="/runs/{{ run_id }}/acquisition" 
+             <div id="acquisition-panel" 
+                  hx-get="{{ url_for('run_acquisition', run_id=run_id) }}" 
                  hx-trigger="load" 
                  hx-swap="innerHTML"
                  class="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
@@ -47,11 +79,80 @@
 </div>
 
 <script>
-    // Auto-scroll logs to bottom
-    document.body.addEventListener('htmx:afterOnLoad', function(evt) {
-        if (evt.detail.target.id === 'run-logs') {
-            evt.detail.target.scrollTop = evt.detail.target.scrollHeight;
+    const runId = "{{ run_id }}";
+    const logsDiv = document.getElementById('run-logs');
+    const statusBadge = document.getElementById('run-status-badge');
+    const progressBar = document.getElementById('progress-bar');
+    const phaseNodes = document.querySelectorAll('.phase-node');
+
+    const PHASE_MAP = {
+        'research_node': { index: 0, label: 'Acquisition' },
+        'db_integrator_node': { index: 1, label: 'Integration' },
+        'summary_node': { index: 2, label: 'Final Report' },
+        'architecture_node': { index: 3, label: 'Tiering' },
+        'extrapolation_node': { index: 4, label: 'Extrapolation' },
+    };
+
+    function updatePhase(nodeName, status) {
+        const phase = PHASE_MAP[nodeName];
+        if (!phase) return;
+
+        const nodeEl = document.querySelector(`.phase-node[data-node="${nodeName}"]`);
+        if (!nodeEl) return;
+
+        const circle = nodeEl.querySelector('div');
+        const label = nodeEl.querySelector('span');
+
+        if (status === 'COMPLETED') {
+            circle.classList.remove('bg-gray-200', 'dark:bg-gray-700');
+            circle.classList.add('bg-green-500', 'text-white');
+            label.classList.remove('text-gray-500', 'dark:text-gray-400');
+            label.classList.add('text-green-600', 'font-bold');
+        } else if (status === 'RUNNING' || status === 'INTEGRATING' || status === 'RESEARCHING' || status === 'SUMMARIZING') {
+            circle.classList.remove('bg-gray-200', 'dark:bg-gray-700');
+            circle.classList.add('bg-blue-500', 'text-white', 'animate-pulse');
+            label.classList.remove('text-gray-500', 'dark:text-gray-400');
+            label.classList.add('text-blue-600', 'font-bold');
+        } else if (status === 'FAILED') {
+            circle.classList.remove('bg-gray-200', 'dark:bg-gray-700');
+            circle.classList.add('bg-red-500', 'text-white');
+            label.classList.remove('text-gray-500', 'dark:text-gray-400');
+            label.classList.add('text-red-600', 'font-bold');
         }
-    });
+
+        // Update progress bar width
+        const progress = ((phase.index + 1) / Object.keys(PHASE_MAP).length) * 100;
+        progressBar.style.width = `${progress}%`;
+    }
+
+     const eventSource = new EventSource("{{ url_for('get_realtime_logs', run_id=run_id) }}");
+
+    eventSource.onmessage = function(event) {
+        const data = JSON.parse(event.data);
+        
+        if (data.finished) {
+            statusBadge.textContent = data.aborted ? 'ABORTED' : (data.failed ? 'FAILED' : 'COMPLETED');
+            statusBadge.classList.add('bg-blue-100', 'text-blue-800');
+            eventSource.close();
+            return;
+        }
+
+        if (data.node_name) {
+            updatePhase(data.node_name, data.status);
+            statusBadge.textContent = `${data.node_name} (${data.status})`;
+        }
+
+        const logEntry = document.createElement('div');
+        logEntry.className = 'mb-1';
+        logEntry.innerHTML = `<span class="text-gray-600">[${data.created_at.split('T')[1].split('.')[0]}]</span> <span class="text-blue-400">${data.node_name}:</span> ${data.thought}`;
+        logsDiv.appendChild(logEntry);
+        logsDiv.scrollTop = logsDiv.scrollHeight;
+    };
+
+    eventSource.onerror = function() {
+        console.error("SSE connection failed.");
+        statusBadge.textContent = "CONNECTION LOST";
+        statusBadge.classList.add('bg-red-100', 'text-red-800');
+    };
 </script>
 {% endblock %}

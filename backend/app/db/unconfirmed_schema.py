@@ -39,6 +39,7 @@ class UnconfirmedClaim(UnconfirmedModel, table=True):
     reference: str | None = None
     wiki_source: str | None = None
     confidence: str | None = None
+    run_id: str | None = Field(default=None, index=True)
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
@@ -92,3 +93,84 @@ class ProvenanceEdge(UnconfirmedModel, table=True):
     relation: str
     run_id: str | None = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class ResearchSource(UnconfirmedModel, table=True):
+    __tablename__ = "research_source"
+
+    id: int | None = Field(default=None, primary_key=True)
+    universe_uuid: str = Field(index=True)
+    url: str = Field(index=True)
+    title: str | None = None
+    reason_saved: str | None = None
+    coverage: str | None = None
+    reliability: str | None = None
+    extraction_status: str = Field(default="UNREAD")
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class NotebookEntry(UnconfirmedModel, table=True):
+    __tablename__ = "notebook_entry"
+
+    id: int | None = Field(default=None, primary_key=True)
+    universe_uuid: str = Field(index=True)
+    title: str
+    summary: str
+    details: str | None = None
+    kind: str = Field(index=True)
+    status: str = Field(default="OPEN")
+    priority: int = Field(default=0)
+    run_id: str | None = Field(default=None, index=True)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class TimelineEntry(UnconfirmedModel, table=True):
+    __tablename__ = "timeline_entry"
+
+    id: int | None = Field(default=None, primary_key=True)
+    universe_uuid: str = Field(index=True)
+    era: str | None = None
+    date: str | None = None
+    calendar_system: str | None = None
+    title: str
+    summary: str | None = None
+    description: str | None = None
+    importance: int = Field(default=1)
+    confidence: float = Field(default=1.0)
+    status: str = Field(default="PROPOSED")
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class TimelineParticipant(UnconfirmedModel, table=True):
+    __tablename__ = "timeline_participant"
+
+    id: int | None = Field(default=None, primary_key=True)
+    timeline_id: int = Field(sa_column=Column(ForeignKey("timeline_entry.id", ondelete="CASCADE"), nullable=False))
+    entity_id: int
+    role: str | None = None
+
+
+class TimelineLocation(UnconfirmedModel, table=True):
+    __tablename__ = "timeline_location"
+
+    id: int | None = Field(default=None, primary_key=True)
+    timeline_id: int = Field(sa_column=Column(ForeignKey("timeline_entry.id", ondelete="CASCADE"), nullable=False))
+    location_id: int
+
+
+class TimelineSource(UnconfirmedModel, table=True):
+    __tablename__ = "timeline_source"
+
+    id: int | None = Field(default=None, primary_key=True)
+    timeline_id: int = Field(sa_column=Column(ForeignKey("timeline_entry.id", ondelete="CASCADE"), nullable=False))
+    source_id: int = Field(foreign_key="research_source.id")
+
+
+class TimelineClaim(UnconfirmedModel, table=True):
+    __tablename__ = "timeline_claim"
+
+    id: int | None = Field(default=None, primary_key=True)
+    timeline_id: int = Field(sa_column=Column(ForeignKey("timeline_entry.id", ondelete="CASCADE"), nullable=False))
+    claim_id: int

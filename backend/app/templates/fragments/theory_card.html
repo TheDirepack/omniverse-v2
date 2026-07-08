@@ -10,7 +10,7 @@
                     class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition btn-loading">
                 Re-evaluate
             </button>
-             <button onclick="openFocusedSearch('{{ theory.universe_name }}', '')"
+              <button data-action="open-focused-search-with-params" data-worlds="{{ theory.universe_name }}" data-feature=""
                      class="bg-purple-600 text-white px-4 py-2 rounded hover:bg-purple-700 transition">
                  Request Evidence
              </button>

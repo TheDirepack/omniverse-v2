@@ -6,7 +6,7 @@
 <div class="space-y-8">
     <div class="flex justify-between items-center">
         <h1 class="text-3xl font-bold">Inference Rules</h1>
-        <button hx-post="/inference/materialize" 
+         <button hx-post="{{ url_for('materialize_view') }}" 
                 hx-target="#materialization-status"
                 hx-indicator="#materialization-status"
                 class="bg-purple-600 text-white px-6 py-2 rounded hover:bg-purple-700 transition btn-loading">

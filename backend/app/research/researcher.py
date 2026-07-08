@@ -2,16 +2,18 @@ import json
 from typing import Any
 
 from app.agents.prompts import get_critic_prompt, get_researcher_prompt
-from app.core.agent_engine import run_agent
+from app.core.agent_engine import run_agent, Capability
 from app.core.context import set_current_universe
 from app.core.retry_handler import RetryHandler
 from app.core.validators import validate_research_json
 from app.core.validation import audit_success
 from app.services.execution_service import ExecutionService
+from app.services.research_workspace import WorkspaceService
 
 
 from app.core.validation import audit_success
 from app.services.execution_service import ExecutionService
+from app.services.research_workspace import WorkspaceService
 
 async def save_audit_artifacts(
     _world_name: str, retry_handler: RetryHandler, final_result: str
@@ -38,19 +40,11 @@ async def save_audit_artifacts(
         }
     )
 
-    # Save final knowledge graph
-    await tool_save_unconfirmed_claim(
-        {
-            "subject": _world_name,
-            "predicate": "HAS_FINAL_KNOWLEDGE_GRAPH",
-            "object_val": final_result,
-            "confidence": "high",
-        }
-    )
 
+from app.core.domain import ResearchTarget
 
 async def research_single_world(
-    universe_uuid: str,
+    target: ResearchTarget,
     run_id: str,
     focus: str | None = None,
 ) -> dict[str, Any]:
@@ -63,98 +57,109 @@ async def research_single_world(
     from app.services.settings_service import SettingsService
     from app.services.tiering_service import TieringService
     from app.services.universe_service import UniverseService
+    from app.core.agent_config import get_tools_for_agent
 
     uni_service = UniverseService()
     tier_service = TieringService()
     settings_service = SettingsService()
     retriever = KnowledgeRetrieverService()
-
-    universe = uni_service.get_universe_by_uuid(universe_uuid)
-    if not universe:
-        raise ValueError(f"Universe with UUID {universe_uuid} not found.")
-
-    if universe:
-        tier_service.clear_world_tier(universe.id)
-
-    world_name = universe.name
-    stage_label = f"{world_name} focused on {focus}" if focus else world_name
-    set_current_universe(world_name)
-
-    exec_service = ExecutionService()
-    exec_service.log_transition(
-        run_id,
-        "Research Unit",
-        f"Initiating incremental research for world: {stage_label}",
-        "RESEARCHING",
-        {},
-    )
-
-    researcher_tools = [
-        "webSearch",
-        "fetchPage",
-        "ocrImage",
-        "compareSourceFreshness",
-        "queryClaims",
-        "queryUnconfirmedClaims",
-        "saveUnconfirmedClaim",
-    ]
-    auditor_tools = [
-        "fetchPage",
-        "compareSourceFreshness",
-        "queryClaims",
-        "queryUnconfirmedClaims",
-    ]
-
-    # Fetch existing knowledge for the first prompt
-    universe_id = universe.id if universe else None
-    verified_claims_str = ""
-    knowledge_graph_str = ""
-    multiverse_leads_str = ""
-    multiverse_kg_str = ""
-
-    if universe_id:
-        # Current universe context
-        claims = retriever.get_semantic_claims(universe_id)
-        verified_claims_str = "\n".join(
-            [
-                f"({c['subject']} --{c['predicate']}--> {c['object']}) | "
-                f"ref: {c['reference'] or 'N/A'}"
-                for c in claims
-            ]
-        )
-        knowledge_graph_str = json.dumps(
-            retriever.get_universe_knowledge_graph(universe_id), indent=2
-        )
-
-        # Multiverse context: Parent and Children
-        related_ids = []
-        if universe.parent_id:
-            related_ids.append(universe.parent_id)
-        
-        children = uni_service.get_children(universe.id)
-        related_ids.extend([c.id for c in children])
-
-        if related_ids:
-            rel_claims = []
-            rel_kgs = []
-            for rid in related_ids:
-                rel_u = uni_service.get_universe_by_id(rid)
-                if rel_u:
-                    c = retriever.get_semantic_claims(rid)
-                    if c:
-                        rel_claims.append(f"--- {rel_u.name} ---\n" + "\n".join(
-                            [f"({cl['subject']} --{cl['predicate']}--> {cl['object']}) | ref: {cl['reference'] or 'N/A'}" for cl in c]
-                        ))
-                    kg = retriever.get_universe_knowledge_graph(rid)
-                    if kg:
-                        rel_kgs.append(f"--- {rel_u.name} ---\n{json.dumps(kg, indent=2)}")
-            
-            multiverse_leads_str = "\n\n".join(rel_claims)
-            multiverse_kg_str = "\n\n".join(rel_kgs)
-
-    retry_handler = RetryHandler(max_iterations=3)
+    workspace_service = WorkspaceService()
 
     try:
+        universe = uni_service.get_universe_by_uuid(target.uuid)
+        if not universe:
+            raise ValueError(f"Universe with UUID {target.uuid} not found.")
+
+        if universe:
+            tier_service.clear_world_tier(universe.id)
+
+        world_name = universe.name
+        stage_label = f"{world_name} focused on {focus}" if focus else world_name
+        set_current_universe(world_name)
+
+        exec_service = ExecutionService()
+        exec_service.log_transition(
+            run_id,
+            "Research Unit",
+            f"Initiating incremental research for world: {stage_label}",
+            "RESEARCHING",
+            {},
+        )
+
+        # Tool definitions
+        researcher_tools = get_tools_for_agent("Researcher")
+        auditor_tools = get_tools_for_agent("LogicAuditor")
+
+        auditor_tools = [
+            "fetchPage",
+            "compareSourceFreshness",
+            "queryClaims",
+            "queryUnconfirmedClaims",
+        ]
+
+        # Fetch existing knowledge for the first prompt
+        universe_id = universe.id if universe else None
+        verified_claims_str = ""
+        knowledge_graph_str = ""
+        multiverse_leads_str = ""
+        multiverse_kg_str = ""
+
+        if universe_id:
+            # Current universe context
+            claims = retriever.get_semantic_claims(universe_id)
+            verified_claims_str = "\n".join(
+                [
+                    f"({c['subject']} --{c['predicate']}--> {c['object']}) | "
+                    f"ref: {c['reference'] or 'N/A'}"
+                    for c in claims
+                ]
+            )
+            knowledge_graph_str = json.dumps(
+                retriever.get_universe_knowledge_graph(universe_id), indent=2
+            )
+
+            # Multiverse context: Parent and Children
+            related_ids = []
+            if universe.parent_id:
+                related_ids.append(universe.parent_id)
+            
+            children = uni_service.get_children(universe.id)
+            related_ids.extend([c.id for c in children])
+
+            if related_ids:
+                async def fetch_related_data(rid):
+                    rel_u = uni_service.get_universe_by_id(rid)
+                    if not rel_u:
+                        return None
+                    
+                    claims = retriever.get_semantic_claims(rid)
+                    kg = retriever.get_universe_knowledge_graph(rid)
+                    
+                    return {
+                        "name": rel_u.name,
+                        "claims": claims,
+                        "kg": kg
+                    }
+
+                # Parallelize related universe fetches
+                results = await asyncio.gather(*(fetch_related_data(rid) for rid in related_ids))
+                
+                rel_claims = []
+                rel_kgs = []
+                for res in results:
+                    if res:
+                        if res["claims"]:
+                            rel_claims.append(f"--- {res['name']} ---\n" + "\n".join(
+                                [f"({cl['subject']} --{cl['predicate']}--> {cl['object']}) | ref: {cl['reference'] or 'N/A'}" for cl in res["claims"]]
+                            ))
+                        if res["kg"]:
+                            rel_kgs.append(f"--- {res['name']} ---\n{json.dumps(res['kg'], indent=2)}")
+                
+                multiverse_leads_str = "\n\n".join(rel_claims)
+                multiverse_kg_str = "\n\n".join(rel_kgs)
+
+        retry_handler = RetryHandler(max_iterations=3)
+
         while retry_handler.current_iteration < retry_handler.max_iterations:
             i = retry_handler.iteration_count
             research_queue = retry_handler.get_research_queue()
@@ -164,7 +169,14 @@ async def research_single_world(
             from app.core.tools import tool_query_unconfirmed_claims
 
             unconfirmed_data = await tool_query_unconfirmed_claims({})
+            
+            # Fetch indexed workspace data for the prompt
+            workspace_index = workspace_service.get_full_workspace_index(target.uuid)
 
+            # Add notebook content to the prompt to prevent redundant searching
+            notebook_content = workspace_service.get_notebook_content(run_id, target.uuid)
+            notebook_section = f"\n\n### CURRENT WORKING NOTES (From Research Notebook):\n{notebook_content or 'No notes yet.'}"
+            
             researcher_prompt = get_researcher_prompt(
                 entity=world_name,
                 requirements="Collect comprehensive canonical wiki data.",
@@ -176,9 +188,10 @@ async def research_single_world(
                 knowledge_graph=knowledge_graph_str if i == 0 else None,
                 multiverse_leads=multiverse_leads_str if i == 0 else None,
                 multiverse_kg=multiverse_kg_str if i == 0 else None,
+                workspace_index=workspace_index,
             )
 
-            user_prompt = researcher_prompt["user"]
+            user_prompt = researcher_prompt["user"] + notebook_section
 
             if research_queue and feedback_summary == "None":
                 user_prompt += (
@@ -206,9 +219,15 @@ async def research_single_world(
                 run_id=run_id,
                 tools_names=researcher_tools,
                 max_turns=min_turns,
+                required_capabilities={
+                    Capability.READ_MAIN_DB,
+                    Capability.READ_WORKSPACE,
+                    Capability.WRITE_WORKSPACE,
+                    Capability.ACQUISITION,
+                },
             )
-
-
+            if await is_aborted(run_id):
+                raise RuntimeError(f"Run {run_id} was aborted after research turn.")
 
             # Deterministic Validation
             try:
@@ -241,11 +260,13 @@ async def research_single_world(
                                     world_name, retry_handler, sifted
                                 )
                                 return {
+                                    "uuid": target.uuid,
                                     "name": world_name,
                                     "summary": sifted,
                                     "status": "PARTIAL",
                                 }
-                        continue
+
+                            continue
             except json.JSONDecodeError:
                 deterministic_critique = json.dumps(
                     {
@@ -265,6 +286,7 @@ async def research_single_world(
                     if sifted:
                         await save_audit_artifacts(world_name, retry_handler, sifted)
                         return {
+                            "uuid": target.uuid,
                             "name": world_name,
                             "summary": sifted,
                             "status": "PARTIAL",
@@ -286,13 +308,20 @@ async def research_single_world(
                 run_id=run_id,
                 tools_names=auditor_tools,
                 submit_tool_name="submit_audit",
+                required_capabilities={
+                    Capability.READ_MAIN_DB,
+                    Capability.READ_WORKSPACE,
+                    Capability.WRITE_WORKSPACE,
+                },
             )
+            if await is_aborted(run_id):
+                raise RuntimeError(f"Run {run_id} was aborted after audit turn.")
 
             if audit_success(critique):
                 import logging
                 logging.getLogger(__name__).debug(f"audit_success(critique) is True for {critique}")
                 await save_audit_artifacts(world_name, retry_handler, result)
-                return {"name": world_name, "summary": result, "status": "VERIFIED"}
+                return {"uuid": target.uuid, "name": world_name, "summary": result, "status": "VERIFIED"}
             import logging
             logging.getLogger(__name__).debug(f"audit_success(critique) is False for {critique}")
             retry_handler.update_state(result, critique, turn_history)
@@ -311,6 +340,7 @@ async def research_single_world(
             world_name, retry_handler, retry_handler.last_result or ""
         )
         return {
+            "uuid": target.uuid,
             "name": world_name,
             "summary": retry_handler.last_result,
             "status": "PARTIAL",
@@ -325,3 +355,5 @@ async def research_single_world(
             {},
         )
         raise e
+    finally:
+        workspace_service.session.close()

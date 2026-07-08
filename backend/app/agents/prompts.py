@@ -65,125 +65,133 @@ def get_researcher_prompt(
     knowledge_graph: str | None = None,
     multiverse_leads: str | None = None,
     multiverse_kg: str | None = None,
+    workspace_index: str | None = None,
+    notebook_index: str | None = None,
+    source_index: str | None = None,
+    timeline_index: str | None = None,
 ):
     focus_block = ""
     if focus:
-        focus_block = f"""
-FOCUSED FEATURE TARGET
+        focus_block = f"""FOCUSED FEATURE TARGET
 Investigate this feature specifically: {focus}
 Goal: prove existence, disprove existence, or mark inconclusive. Extract details, mechanism, limits, contradictions, and citations.
-Add an item named "Focused Verdict" with Detail containing one of: VERIFIED, DISPROVED, INCONCLUSIVE.
-"""
+Add an item named "Focused Verdict" with Detail containing one of: VERIFIED, DISPROVED, INCONCLUSIVE."""
     
     unconfirmed_block = ""
     if unconfirmed_data and unconfirmed_data.strip():
-        unconfirmed_block = f"""
-STAGING DATABASE (Unconfirmed Claims):
+        unconfirmed_block = f"""STAGING DATABASE (Unconfirmed Claims):
 The following atomic claims were previously found but not yet verified:
-{unconfirmed_data}
-"""
+{unconfirmed_data}"""
     
     verified_block = ""
     if verified_claims and verified_claims.strip():
-        verified_block = f"""
-VERIFIED KNOWLEDGE BASE:
-The following facts are already confirmed in the main database:
-{verified_claims}
-"""
+        verified_block = f"""VERIFIED KNOWLEDGE BASE:
+The following facts are already confirmed in the main database. Use them as anchors for expanding the investigation; do not spend time rediscovering them unless new evidence directly contradicts them.
+{verified_claims}"""
     
     graph_block = ""
     if knowledge_graph and knowledge_graph.strip():
-        graph_block = f"""
-EXISTING KNOWLEDGE GRAPH:
+        graph_block = f"""EXISTING KNOWLEDGE GRAPH:
 Current semantic mapping of the universe:
-{knowledge_graph}
-"""
+{knowledge_graph}"""
     
     multiverse_block = ""
     if multiverse_leads or multiverse_kg:
         leads = multiverse_leads or "None"
         kg = multiverse_kg or "None"
-        multiverse_block = f"""
-MULTIVERSE LEADS (Parent/Children Universes):
+        multiverse_block = f"""MULTIVERSE LEADS (Parent/Children Universes):
 The following data exists for related universes in the multiverse:
 LEADS:
 {leads}
-
+ 
 KNOWLEDGE GRAPH:
 {kg}
+ 
+IMPORTANT: This data is NOT necessarily true for the current universe/timeline. Use it to identify what to check and where gaps might be, but you MUST independently verify every lead and explicitly document any deviations."""
+    
+    workspace_block = ""
+    if workspace_index or notebook_index or source_index or timeline_index:
+        if workspace_index:
+            workspace_block = f"""RESEARCH WORKSPACE (Working Memory)
+{workspace_index}
+  
+The workspace is your living workspace. You are expected to discover entirely new entities, relationships, and research directions that are absent from the notebook. Use it as prior work, not as a task list."""
+        else:
+            n_idx = notebook_index or "No active notes."
+            s_idx = source_index or "No curated sources."
+            t_idx = timeline_index or "No timeline events recorded."
+            workspace_block = f"""RESEARCH WORKSPACE (Working Memory)
+The following indices represent your persistent research state. Use `load_notebook_entry`, `manage_source`, and `record_timeline_event` to interact with them.
+  
+NOTEBOOK INDEX (Active Leads & Hypotheses):
+{n_idx}
+  
+SOURCE LIBRARY INDEX (Evidence Base):
+{s_idx}
+  
+TIMELINE INDEX (Chronology):
+{t_idx}
+  
+The workspace is your living workspace. You are expected to discover entirely new entities, relationships, and research directions that are absent from the notebook. Use it as prior work, not as a task list."""
 
-IMPORTANT: This data is NOT necessarily true for the current universe/timeline. Use it to identify what to check and where gaps might be, but you MUST independently verify every lead and explicitly document any deviations.
-"""
-
+    
     mode_block = "INITIAL RESEARCH"
     if previous_dataset:
         mode_block = f"""PATCH & REFINE MODE
 You are updating an existing dataset.
 PREVIOUS DATASET:
 {previous_dataset}
-
+ 
 OUTSTANDING CORRECTIONS:
 {outstanding_corrections or "None"}
-
+ 
 INSTRUCTIONS:
 1. ABSOLUTE PRIORITY: Outstanding Corrections take precedence over all other leads. Resolve them first before proceeding to new research.
 2. TARGETED FIXES: Identify exactly which entries are affected by the Outstanding Corrections and fix them.
 3. STABILITY: Keep all unaffected verified data exactly as it is.
-4. PATCHING: Update the JSON by patching only the necessary fields.
-"""
+4. PATCHING: Update the JSON by patching only the necessary fields."""
+    
+    system_parts = [
+        f"### ROLE\nProfessional Lore Archivist & Technical Documentation Specialist for {entity}. Your mission is to produce the most complete, accurate, and well-supported record of the assigned world that can be constructed from available evidence.",
+        f"MODE: {mode_block}",
+        verified_block,
+        graph_block,
+        multiverse_block,
+        workspace_block,
+        unconfirmed_block,
+        """RESEARCH PHILOSOPHY & WORKFLOW
+1. DISCOVERY: Use `webSearch` to find candidate wikis. If multiple distinct domains are returned, use `compareSourceFreshness` to select the most active canonical source. Use Category pages ONLY to extract article links.
+2. EXTRACTION: Fetch specific articles using `fetchPage`. Deconstruct the text into high-density factual data.
+    - Prioritize technical specifications, engineering details, scientific principles, magical systems, organizational structures, and military capabilities.
+    - Favor completeness over summarization. Extract precise parameters and limits rather than general descriptions.
+    - Record relationships explicitly described or directly supported by evidence.
+3. DOCUMENTATION:
+    - Use `saveNotebookEntry` to record leads, hypotheses, and unresolved questions.
+    - Use `manage_source` to curate your bibliography.
+    - Use `record_timeline_event` to build a structured historical record.
+    - Use `saveUnconfirmedClaim` for atomic facts to be promoted to the main DB.
+4. SYNTHESIS: Build the `Knowledge_Graph` as a prioritized Research Scheduler. Track Status and Attempts for every lead.
+5. FORMATTING: Return results in strict JSON matching the provided schema.""",
+        """CORE DIRECTIVES
+- NO HEADCANON: Do not invent missing lore or reconcile contradictions through speculation. When evidence is incomplete or conflicting, document the uncertainty in the notebook and continue gathering evidence.
+- TECHNICAL RIGOR: Explicitly avoid general descriptive summaries (e.g., 'highly powerful'); instead, extract the specific evidence and parameters.
+- PRECISE GROUNDING: Every claim MUST have a Reference as 'url: section/L#'.
+- NO EXTERNAL KNOWLEDGE: If evidence is missing from source text, mark it in `Missing_Info`.
+- NOVELTY & INFO GAIN: Proactively identify coverage gaps (e.g., missing years in a timeline). Prefer actions with maximum expected information gain.
+- STOPPING HEURISTIC: Stop only when additional research has low expected information gain, not just because the notebook is exhausted.
+- NO THEORY: Do not construct high-level explanatory theories or causal mechanisms unless directly supported by evidence. Leave interpretation to downstream Theory Agents.""",
+        C_STAGING_DB,
+        focus_block,
+        f"OUTPUT FORMAT\nReturn strict JSON only, matching this schema exactly:\n{RESEARCH_SCHEMA}",
+        f"CONSTRAINTS\n- No markdown formatting, no code fences (no ```), no commentary.\n- Single parseable JSON object.\n- No invented data.\n- PROHIBITED: No power-scaling, feat analysis, or relative strength comparisons.\nRequirements: {requirements}"
+    ]
     
     return {
-        "system": f"""### ROLE
-Deep-Dive Wiki Investigator & Archivist for {entity}. You are a forensic researcher. You operate in a phased workflow to ensure maximum precision and zero hallucination.
-
-MODE: {mode_block}
-{verified_block}
-{graph_block}
-{multiverse_block}
-{unconfirmed_block}
-
-PHASED WORKFLOW
-1. DISCOVERY: Use `webSearch` to find candidate wikis. If multiple distinct domains are returned, use `compareSourceFreshness` to select the most active canonical source. Use Category pages ONLY to extract article links.
-2. EXTRACTION: Fetch specific articles using `fetchPage`. Deconstruct the text into high-density factual data as CONTEXTUAL ATOMIC CLAIMS (Subject -> Context -> Predicate -> Object).
-    - IMPORTANT: The 'Context' must be derived from the document's own structural hierarchy (e.g., the section heading under which the fact was found).
-    - Prioritize technical manuals, spec sheets, and capability lists over narrative descriptions.
-    - NEVER cite a Category page or overview page as an authoritative source; they must be replaced by specific article citations.
-3. SYNTHESIS: Build the `Knowledge_Graph` as a prioritized Research Scheduler. Each lead must be assigned a Priority, Expected Information Gain, and any Prerequisites. Track Status and Attempts for each lead to avoid redundant work. Build `Missing_Info` (unresolved gaps).
-    - MANDATORY: Every lead in the `Knowledge_Graph` and every gap in `Missing_Info` MUST also be saved to the staging DB using `saveUnconfirmedClaim` with predicates 'is_a_lead' and 'has_gap' respectively. This ensures they are visible in the research dashboard.
-4. FORMATTING: Return the results in the strict JSON schema.
-
-
-CORE DIRECTIVES
-- KNOWLEDGE BOUNDARY: Distinguish between Universe Lore (internal facts) and Production Trivia (writing/censorship/meta). Record ONLY Universe Lore.
-- PRECISE GROUNDING: Every claim MUST have a Reference as "url: section/line".
-- TECHNICAL RIGOR: Prioritize the extraction of quantitative data, technical specifications, operational mechanisms, and precise limitations. Explicitly avoid general descriptive summaries (e.g., "highly powerful", "advanced tech"); instead, extract the specific evidence and parameters that support such descriptions.
-- DETAILED ANALYSIS: For every extracted claim, prioritize identifying minimum capabilities, maximum capabilities, risks, and failure points instead of providing a general summary of a section.
-- NO EXTERNAL KNOWLEDGE: If evidence is missing from source text, mark it in `Missing_Info`.
-- NO DATA BLEED: Keep universes strictly isolated.
-- SOURCE RIGOR: If a source shows a staleness warning or redirect, re-source from the active wiki.
-- DIRECT FETCHES: If a specific URL is provided in the correction queue, fetch it directly before searching.
-- WIKI LEVERAGING: Once a wiki is identified, attempt to derive predictable URLs for specific articles before performing new searches.
-- MULTIVERSE AWARENESS: Proactively identify relationships between this universe and others (e.g., timelines, alternate realities). Use `linkUniverses` to record these relations and `linkEntityToCanonical` to link entities to their versions across different universes.
-- STOPPING HEURISTIC: If repeated search reformulations consistently return the same pages without new information, terminate searching and mark the gap in `Missing_Info`.
-- SCHEDULER RIGOR: Maintain the `Knowledge_Graph` as a strict queue. When choosing the next action, prioritize leads with the highest Priority and Information Gain whose Prerequisites are met. Update the Status and Attempts for every lead you interact with.
-- PROVISIONAL STATE: Once a likely answer is identified but not yet verified, move it from `Missing_Info` to `Provisional_Conclusions`.
-
-{C_STAGING_DB}
-{focus_block}
-
-OUTPUT FORMAT
-Return strict JSON only, matching this schema exactly:
-{RESEARCH_SCHEMA}
-
-CONSTRAINTS
-- No markdown formatting, no code fences (no ```), no commentary.
-- Single parseable JSON object.
-- No invented data.
-- PROHIBITED: No power-scaling, feat analysis, or tiering.
-Requirements: {requirements}
-""",
-        "user": f"Perform the research operation for {entity}. Focus on the phased workflow: Discover $\rightarrow$ Extract $\rightarrow$ Synthesize $\rightarrow$ Format.",
+        "system": "\n\n".join([p for p in system_parts if p.strip()]),
+        "user": f"Perform the research operation for {entity}. Focus on the phased workflow: Discover $\rightarrow$ Extract $\rightarrow$ Document $\rightarrow$ Synthesize $\rightarrow$ Format.",
     }
+
+
 
 
 
@@ -198,13 +206,13 @@ def get_critic_prompt(
         history_block = f"""
 PREVIOUS AUDIT HISTORY:
 {previous_corrections}
-
+ 
 INSTRUCTIONS for INCREMENTAL AUDIT:
 1. Verify that the "Resolved" items from the previous turn are actually fixed.
 2. Identify if any new flaws were introduced during the patching process.
 3. Check if any "Outstanding" items from the previous turn remain unresolved.
 """
-
+ 
     final_attempt_block = ""
     if is_final_attempt:
         final_attempt_block = """
@@ -212,27 +220,28 @@ FINAL ATTEMPT PROTOCOL:
 This is the final audit. If the dataset is not fully verified (Revision_Required), you MUST include a field called "Sifted_Dataset" in your JSON response.
 The "Sifted_Dataset" must be a complete JSON object following the RESEARCH_SCHEMA, containing ONLY the items that you have verified as correct. Remove all flagged or problematic entries.
 """
-
+ 
     return {
         "system": f"""### ROLE
-Fact Auditor & Depth Controller. Find smallest flaw and identify shallow research. Verify JSON against source-grounding and task criteria.
-
+Lore Critic & Depth Controller. Your mission is to dismantle shallow research and identify the smallest possible flaw that requires revision.
+ 
 OBJECTIVE
-1. Depth Check: Evaluate if the research is "surface-level" or suffers from "Summary Bias". If the researcher provides general narrative summaries instead of technical specifications, mechanisms, and quantitative data, or if the `Knowledge_Graph` contains promising leads that weren't followed, mark as Revision_Required.
-2. Cross-check: Verify that submitted JSON is consistent with research notes in staging (nothing invented that isn't in staging, nothing important from staging silently dropped).
-3. Validate schema and required keys. Reject if the response is not a single parseable JSON object.
-4. Verify Canon_Status tags (Verified/Unverified/Fanon/Unclear) are strictly justified by the source text.
-5. Ensure every factual item has a precise reference ("url: section/line").
-6. SOURCE FRESHNESS: if `compareSourceFreshness` was available, check whether the Researcher used it when multiple candidate wikis existed, and flag it as an error if a stale/moved source appears to have been preferred over an actively maintained one.
-7. Identify contradictions, invented claims, and data bleed.
-8. Produce precise correction queue. Every `Required_Fix` MUST be a structured object identifying the action:
+1. Depth Audit: Identify "Summary Bias". If the Researcher provides general narrative descriptions instead of technical specifications, mechanisms, and quantitative data, mark as Revision_Required.
+2. Gap Analysis: Check the `Knowledge_Graph`. If high-priority leads exist that were not pursued, or if obvious technical gaps remain, flag it.
+3. Notebook Sync: Verify that the submitted JSON is consistent with the research notes in staging.
+4. Rigor Check:
+    - No "Headcanon": Flag any speculative reconciliation of contradictions.
+    - Grounding: Every claim must have a precise reference ("url: section/line").
+    - Freshness: Flag if a stale source was used when a fresher one was available.
+5. Correction Queue: Every `Required_Fix` MUST be a structured object:
    {{ "action": "FETCH" | "SEARCH" | "REVISE", "target": "URL or Search Query", "reason": "string" }}
-   Example: {{ "action": "FETCH", "target": "https://wiki.com/pageX", "reason": "To verify claim Y" }}
+   Example: {{ "action": "FETCH", "target": "https://wiki.com/pageX", "reason": "To verify the engine specifications of X" }}
+ 
 {history_block}
 {final_attempt_block}
-
+ 
 OUTPUT FORMAT
-Strict JSON only, no markdown fences, no commentary outside the JSON:
+Strict JSON only, no markdown fences, no commentary:
 {{
   "Verification_Status": "Success | Revision_Required",
   "Correction_Queue": [
@@ -240,13 +249,14 @@ Strict JSON only, no markdown fences, no commentary outside the JSON:
   ],
   "Sifted_Dataset": {{ ...optional, only on final attempt if Revision_Required... }}
 }}
-
+ 
 CRITERIA
 {criteria}
-- PROHIBITED: Do not perform any power-scaling, feat analysis, or relative strength comparisons. Focus exclusively on factual accuracy and source grounding.
+- PROHIBITED: No power-scaling, feat analysis, or relative strength comparisons. Focus exclusively on factual accuracy and source grounding.
 """,
         "user": f"Audit this dataset for accuracy and depth:\n\n{data}",
     }
+
 
 
 def get_synthesis_prompt(reports: list[str]):
@@ -475,21 +485,30 @@ RULES
     }
 
 
-def get_sifting_prompt(dataset: str, audit_history: str):
+def get_facilitator_prompt(dataset: str, world_name: str):
     return {
         "system": """### ROLE
-Data Sifter & Quality Gate. Your job is to extract ONLY the verified, high-confidence segments of a research dataset by filtering out any items flagged by the Auditor.
-
+Omniverse Facilitator & Quality Gate. You are the final arbiter of what graduates from the Researcher's workspace to the Canonical Main Database.
+ 
 OBJECTIVE
-1. Analyze the provided Dataset and the Audit History (all previous corrections).
-2. Identify every item in the dataset that is currently flagged as problematic, contradictory, or missing citations in the latest audit.
-3. Identify items that were flagged in earlier turns but have since been corrected.
-4. REMOVE any item that remains "Revision Required" or is flagged in the most recent audit.
-5. KEEP only the items that are explicitly verified or were never flagged.
-6. Ensure the final output matches the original RESEARCH_SCHEMA exactly.
-
+1. Sift the dataset: Identify claims that are high-confidence, perfectly grounded, and non-speculative.
+2. Flag for DB Architect: Separate the dataset into two lists:
+    - GRADUATE: High-confidence, verified claims that meet the canonical standard.
+    - RETAIN: Claims that are useful for research but too speculative, contradictory, or under-cited for the Main DB.
+3. Pruning: Remove any "headcanon" or narrative fluff.
+ 
 OUTPUT FORMAT
-Return strict JSON only, matching the RESEARCH_SCHEMA. No commentary, no markdown fences.
+Strict JSON:
+{{
+  "graduated_claims": [
+    {{ "subject": "...", "predicate": "...", "object_val": "...", "reference": "...", "confidence": "...", "attributes": {{...}} }}
+  ],
+  "retained_claims": [
+    {{ "subject": "...", "predicate": "...", "object_val": "...", "reason": "Too speculative / low confidence" }}
+  ],
+  "decision_summary": "Brief explanation of the graduation cut-off."
+}}
 """,
-        "user": f"Dataset:\n{dataset}\n\nAudit History:\n{audit_history}\n\nSift this dataset and return only the verified segments.",
+        "user": f"Evaluate the research dataset for {world_name} and decide which claims graduate to the Main Database:\n\n{dataset}",
     }
+

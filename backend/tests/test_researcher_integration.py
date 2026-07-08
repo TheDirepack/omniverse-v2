@@ -5,6 +5,8 @@ from app.db.schema import Universe
 from sqlmodel import Session
 from app.db.session import engine
 
+from app.core.domain import ResearchTarget
+
 @pytest.mark.asyncio
 async def test_research_single_world_integration_flow(mocker, clean_db):
     # Setup mock universe
@@ -12,8 +14,9 @@ async def test_research_single_world_integration_flow(mocker, clean_db):
     u = Universe(name="IntegrationWorld", slug="int-world")
     session.add(u)
     session.commit()
-    u_uuid = u.uuid
-
+    
+    target = ResearchTarget(uuid=u.uuid, name=u.name)
+ 
     # Mock run_agent to simulate a successful research loop
     # First call: Researcher returns JSON
     # Second call: Auditor returns "SUCCESS"
@@ -31,12 +34,13 @@ async def test_research_single_world_integration_flow(mocker, clean_db):
     mock_uni_service = mocker.patch("app.services.universe_service.UniverseService", return_value=mocker.Mock())
     mock_uni_service.return_value.get_universe_by_uuid.return_value = Universe(name="IntegrationWorld", id=1)
     mock_uni_service.return_value.get_children.return_value = []
-
-    result = await research_single_world(u_uuid, "test-run")
+ 
+    result = await research_single_world(target, "test-run")
     
     assert result["status"] == "VERIFIED"
     assert result["name"] == "IntegrationWorld"
     assert mock_run.call_count == 2
+
 
 @pytest.mark.asyncio
 async def test_research_single_world_min_turns_passed(mocker, clean_db):
@@ -45,8 +49,9 @@ async def test_research_single_world_min_turns_passed(mocker, clean_db):
     u = Universe(name="MinTurnsWorld", slug="min-turns")
     session.add(u)
     session.commit()
-    u_uuid = u.uuid
-
+    
+    target = ResearchTarget(uuid=u.uuid, name=u.name)
+ 
     mock_run = AsyncMock()
     mock_run.return_value = (True, '{"Universe_Name": "MinTurnsWorld", "Verified_Claims": [], "Knowledge_Graph": [], "Missing_Info": [], "Provisional_Conclusions": []}', [])
     
@@ -62,8 +67,8 @@ async def test_research_single_world_min_turns_passed(mocker, clean_db):
         (True, "STATUS: SUCCESS", []),
         (True, "STATUS: SUCCESS", []),
     ]
-
-    await research_single_world(u_uuid, "test-run")
+ 
+    await research_single_world(target, "test-run")
     
     # Check first call to run_agent (Researcher) for min_turns
     args, kwargs = mock_run.call_args_list[0]
@@ -71,3 +76,4 @@ async def test_research_single_world_min_turns_passed(mocker, clean_db):
     # The prompt uses min_turns internally in the loop logic but passed to run_agent as max_turns
     # Actually, in researcher.py: run_agent(..., max_turns=min_turns)
     assert kwargs["max_turns"] >= 6
+

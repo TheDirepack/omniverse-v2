@@ -1,0 +1,24 @@
+<div class="space-y-4">
+    <div class="flex items-center justify-between mb-4">
+        <h3 class="text-lg font-semibold">Research Notebook</h3>
+        <span class="text-xs text-gray-500">{{ entries|length }} entries</span>
+    </div>
+    <div class="grid grid-cols-1 gap-2">
+        {% for entry in entries %}
+        <div class="p-3 bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600 hover:border-blue-400 transition cursor-pointer"
+             hx-get="{{ url_for('workspace_notebook_entry', entry_id=entry.id) }}"
+             hx-target="#workspace-detail-panel"
+             hx-swap="innerHTML">
+            <div class="flex justify-between items-start mb-1">
+                <span class="font-medium text-sm">{{ entry.title }}</span>
+                <span class="text-[10px] px-2 py-0.5 rounded bg-gray-200 dark:bg-gray-600 text-gray-600 dark:text-gray-300 uppercase font-bold">
+                    {{ entry.kind }}
+                </span>
+            </div>
+            <p class="text-xs text-gray-600 dark:text-gray-400 line-clamp-1">{{ entry.summary }}</p>
+        </div>
+        {% else %}
+        <p class="text-sm text-gray-500 dark:text-gray-400 italic text-center py-4">No notebook entries yet.</p>
+        {% endfor %}
+    </div>
+</div>

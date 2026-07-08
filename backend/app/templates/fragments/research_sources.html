@@ -1,0 +1,30 @@
+<div class="space-y-4">
+    <div class="flex items-center justify-between mb-4">
+        <h3 class="text-lg font-semibold">Source Library</h3>
+        <span class="text-xs text-gray-500">{{ sources|length }} sources</span>
+    </div>
+    <div class="grid grid-cols-1 gap-3">
+        {% for source in sources %}
+        <div class="p-3 bg-white dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600 shadow-sm">
+            <div class="flex justify-between items-start mb-2">
+                <a href="{{ source.url }}" target="_blank" class="text-sm font-medium text-blue-600 hover:underline truncate mr-2">
+                    {{ source.title or source.url }}
+                </a>
+                <span class="text-[10px] px-2 py-0.5 rounded bg-gray-100 dark:bg-gray-600 text-gray-600 dark:text-gray-300 font-bold uppercase">
+                    {{ source.extraction_status }}
+                </span>
+            </div>
+            <div class="text-xs text-gray-500 dark:text-gray-400 space-y-1">
+                {% if source.reason_saved %}
+                <p><span class="font-semibold">Value:</span> {{ source.reason_saved }}</p>
+                {% endif %}
+                {% if source.coverage %}
+                <p><span class="font-semibold">Coverage:</span> {{ source.coverage }}</p>
+                {% endif %}
+            </div>
+        </div>
+        {% else %}
+        <p class="text-sm text-gray-500 dark:text-gray-400 italic text-center py-4">No curated sources yet.</p>
+        {% endfor %}
+    </div>
+</div>

@@ -15,3 +15,4 @@ class AgentEventType(str, Enum):
     WARNING = "WARNING"
     COMPLETED = "COMPLETED"
     IN_PROGRESS = "IN_PROGRESS"
+    STEP = "STEP"

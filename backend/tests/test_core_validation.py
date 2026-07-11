@@ -1,5 +1,7 @@
 import pytest
+
 from app.core.validation import audit_success
+
 
 @pytest.mark.parametrize("input_str, expected", [
     ('{"Verification_Status": "SUCCESS"}', True),
@@ -7,7 +9,8 @@ from app.core.validation import audit_success
     ("STATUS: SUCCESS", True),
     ("STATUS: VERIFIED", True),
     ("STATUS: ANOMALY", False),
-    ("This is a SUCCESS story", False), # Should be False because it doesn't start with SUCCESS/VERIFIED
+    ("This is a SUCCESS story", False),
+    # Should be False because it doesn't start with SUCCESS/VERIFIED
     ("SUCCESS: The data is correct", True),
     ("VERIFIED: and accurate", True),
     ("REVISION_REQUIRED: fix the citations", False),

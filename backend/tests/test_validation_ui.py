@@ -1,7 +1,9 @@
 import pytest
-from app.db.unconfirmed_session import unconfirmed_engine
-from app.db.unconfirmed_schema import UnconfirmedClaim, UnconfirmedUniverse
 from sqlmodel import Session
+
+from app.db.unconfirmed_schema import NotebookEntry, UnconfirmedUniverse
+from app.db.unconfirmed_session import unconfirmed_engine
+
 
 @pytest.fixture
 def unconfirmed_data():
@@ -10,13 +12,18 @@ def unconfirmed_data():
         session.add(u)
         session.commit()
         session.refresh(u)
-        
-        c = UnconfirmedClaim(universe_id=u.id, subject="Subject", predicate="Predicate", object_val="Object")
+
+        c = NotebookEntry(
+            universe_uuid=u.uuid,
+            title="Subject",
+            summary="Object",
+            details="Predicate"
+        )
         session.add(c)
         session.commit()
         session.refresh(c)
         yield c
-        
+
         # Cleanup
         session.delete(c)
         session.delete(u)
@@ -27,26 +34,32 @@ def test_validation_page(client):
     assert response.status_code == 200
 
 def test_approve_claim(client, unconfirmed_data):
-    response = client.post(f"/validation/claim/{unconfirmed_data.id}/approve")
+    response = client.post(f"/validation/entry/{unconfirmed_data.id}/approve")
     assert response.status_code == 200
     assert "HX-Trigger" in response.headers
-    assert '"showToast": {"value": "Claim approved and promoted", "type": "info"}' in response.headers["HX-Trigger"]
-    
+    assert (
+        '"showToast": {"value": "Entry approved and promoted", "type": "info"}'
+        in response.headers["HX-Trigger"]
+    )
+
     # Verify it's gone from unconfirmed
     with Session(unconfirmed_engine) as session:
-        claim = session.get(UnconfirmedClaim, unconfirmed_data.id)
-        assert claim is None
+        entry = session.get(NotebookEntry, unconfirmed_data.id)
+        assert entry is None
 
 def test_reject_claim(client, unconfirmed_data):
-    response = client.post(f"/validation/claim/{unconfirmed_data.id}/reject")
+    response = client.post(f"/validation/entry/{unconfirmed_data.id}/reject")
     assert response.status_code == 200
     assert "HX-Trigger" in response.headers
-    assert '"showToast": {"value": "Claim rejected", "type": "info"}' in response.headers["HX-Trigger"]
-    
+    assert (
+        '"showToast": {"value": "Entry rejected", "type": "info"}'
+        in response.headers["HX-Trigger"]
+    )
+
     # Verify it's gone from unconfirmed
     with Session(unconfirmed_engine) as session:
-        claim = session.get(UnconfirmedClaim, unconfirmed_data.id)
-        assert claim is None
+        entry = session.get(NotebookEntry, unconfirmed_data.id)
+        assert entry is None
 
 def test_merge_entity(client):
     response = client.post("/validation/entity/1/merge")

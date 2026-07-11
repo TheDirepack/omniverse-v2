@@ -1,15 +1,22 @@
 import os
+from pathlib import Path
 
 from sqlalchemy import event
 from sqlmodel import Session, create_engine
 
 from app.db.unconfirmed_schema import unconfirmed_metadata
 
-_DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "data")
-os.makedirs(_DATA_DIR, exist_ok=True)
+_DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data"
+_DATA_DIR.mkdir(parents=True, exist_ok=True)
 
-UNCONFIRMED_DB_URL = os.getenv("UNCONFIRMED_DB_URL", f"sqlite:///{os.path.join(_DATA_DIR, 'unconfirmed.db')}")
-connect_args = {"check_same_thread": False, "timeout": 30} if UNCONFIRMED_DB_URL.startswith("sqlite") else {}
+UNCONFIRMED_DB_URL = os.getenv(
+    "UNCONFIRMED_DB_URL", f"sqlite:///{_DATA_DIR / 'unconfirmed.db'}"
+)
+connect_args = (
+    {"check_same_thread": False, "timeout": 30}
+    if UNCONFIRMED_DB_URL.startswith("sqlite")
+    else {}
+)
 unconfirmed_engine = create_engine(UNCONFIRMED_DB_URL, connect_args=connect_args)
 
 

@@ -1,8 +1,9 @@
 import pytest
+from sqlmodel import Session
+
 from app.core.provider_models import fetch_live_models
 from app.db.schema import ProviderConfig, ProviderKey
 from app.db.session import engine
-from sqlmodel import Session
 
 try:
     from tests.provider_config import PROVIDER_CREDENTIALS

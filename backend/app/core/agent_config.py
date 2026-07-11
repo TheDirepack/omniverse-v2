@@ -1,4 +1,3 @@
-from typing import Any
 
 AGENT_TOOLS = {
     "Researcher": [
@@ -6,15 +5,14 @@ AGENT_TOOLS = {
         "fetchPage",
         "ocrImage",
         "compareSourceFreshness",
-        "queryClaims",
-        "queryUnconfirmedClaims",
-        "saveUnconfirmedClaim",
+        "saveNotebookEntry",
+        "loadNotebookEntry",
     ],
     "LogicAuditor": [
         "fetchPage",
         "compareSourceFreshness",
-        "queryClaims",
-        "queryUnconfirmedClaims",
+        "loadNotebookEntry",
+        "queryArtifacts",
     ],
 }
 

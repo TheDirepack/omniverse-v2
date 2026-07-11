@@ -2,9 +2,9 @@ from typing import Any
 
 from sqlmodel import Session
 
-from app.db.schema import Setting, ProviderConfig
-from app.db.settings_session import settings_engine
 from app.db.operational_session import operational_engine
+from app.db.schema import ProviderConfig, Setting
+from app.db.settings_session import settings_engine
 from app.repositories.settings import SettingsRepository
 
 PROVIDER_PRESETS = {
@@ -252,30 +252,54 @@ class SettingsService:
             general = all_settings.get("general_settings", {})
             min_turns = general.get("MIN_RESEARCH_TURNS")
             if min_turns is None:
-                issues.append({"severity": "WARNING", "message": "Setting 'MIN_RESEARCH_TURNS' is missing. Using default (6)."})
+                issues.append({
+                    "severity": "WARNING",
+                    "message": "Setting 'MIN_RESEARCH_TURNS' is missing. Using default (6).",
+                })
             elif not str(min_turns).isdigit():
-                issues.append({"severity": "ERROR", "message": f"Setting 'MIN_RESEARCH_TURNS' must be an integer. Current value: {min_turns}"})
+                issues.append({
+                    "severity": "ERROR",
+                    "message": f"Setting 'MIN_RESEARCH_TURNS' must be an integer. Current value: {min_turns}",
+                })
 
             # 2. Validate Providers
             providers = all_settings.get("providers", [])
             provider_ids = {p["id"] for p in providers}
             for p in providers:
                 if not p["keys"]:
-                    issues.append({"severity": "ERROR", "message": f"Provider '{p['name']}' has no API keys configured."})
-                for k in p["keys"]:
-                    if not k["api_key"]:
-                        issues.append({"severity": "ERROR", "message": f"Provider '{p['name']}' has an empty API key."})
+                    issues.append({
+                        "severity": "WARNING",
+                        "message": f"Provider '{p['name']}' has no API keys configured.",
+                    })
+
+                # Fix PERF401 & E501
+                issues.extend([
+                    {"severity": "WARNING", "message": f"Provider '{p['name']}' has an empty API key."}
+                    for k in p["keys"] if not k["api_key"]
+                ])
 
                 if p["provider_type"] != "custom" and not p["base_url"]:
-                    issues.append({"severity": "ERROR", "message": f"Provider '{p['name']}' is missing base_url."})
+                    issues.append({
+                        "severity": "ERROR",
+                        "message": f"Provider '{p['name']}' is missing base_url.",
+                    })
 
             # 3. Validate Agent Routes
             routes = all_settings.get("agent_routes", [])
             for r in routes:
                 if r["provider_id"] not in provider_ids:
-                    issues.append({"severity": "ERROR", "message": f"Route for '{r['task_type']}' points to non-existent provider ID {r['provider_id']}."})
+                    issues.append({
+                        "severity": "ERROR",
+                        "message": (
+                            f"Route for '{r['task_type']}' points to "
+                            f"non-existent provider ID {r['provider_id']}."
+                        ),
+                    })
                 if not r["models"]:
-                    issues.append({"severity": "WARNING", "message": f"Route for '{r['task_type']}' has no models specified."})
+                    issues.append({
+                        "severity": "WARNING",
+                        "message": f"Route for '{r['task_type']}' has no models specified.",
+                    })
 
             return issues
         finally:

@@ -1,46 +1,100 @@
-<div class="space-y-4">
-    <div class="flex justify-between items-center">
-        <h2 class="text-xl font-semibold">Model Health</h2>
-        <button class="bg-orange-500 text-white px-4 py-2 rounded text-sm hover:bg-orange-600 transition"
-                hx-post="/settings/reset-health"
-                hx-target="#settings-content"
-                hx-swap="innerHTML"
-                hx-indicator="#health-indicator">
-            Reset Circuit Breakers
-        </button>
-        <div id="health-indicator" class="htmx-indicator animate-spin inline-block ml-2">⌛</div>
+<div class="space-y-8">
+    <div class="space-y-4">
+        <div class="flex justify-between items-center">
+            <h2 class="text-xl font-semibold">Model Health</h2>
+            <button class="bg-orange-500 text-white px-4 py-2 rounded text-sm hover:bg-orange-600 transition"
+                    hx-post="/settings/reset-health"
+                    hx-target="#settings-content"
+                    hx-swap="innerHTML"
+                    hx-indicator="#health-indicator">
+                Reset Circuit Breakers
+            </button>
+            <div id="health-indicator" class="htmx-indicator animate-spin inline-block ml-2">⌛</div>
+        </div>
+
+        {% if status and status.routes %}
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead>
+                    <tr class="border-b border-gray-200 dark:border-gray-700">
+                        <th class="text-left py-2 px-3 font-medium text-gray-500">Task Type</th>
+                        <th class="text-left py-2 px-3 font-medium text-gray-500">Provider</th>
+                        <th class="text-left py-2 px-3 font-medium text-gray-500">Models</th>
+                        <th class="text-center py-2 px-3 font-medium text-gray-500">Configured</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for route in status.routes %}
+                    <tr class="border-b border-gray-100 dark:border-gray-800">
+                        <td class="py-2 px-3 font-mono text-xs">{{ route.task_type }}</td>
+                        <td class="py-2 px-3 text-xs">{{ route.provider or '—' }}</td>
+                        <td class="py-2 px-3 font-mono text-xs">{{ route.models or '—' }}</td>
+                        <td class="py-2 px-3 text-center">
+                            {% if route.configured %}
+                            <span class="text-green-500 text-xs font-medium">✓</span>
+                            {% else %}
+                            <span class="text-red-400 text-xs font-medium">✗</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="text-gray-500 dark:text-gray-400 italic">No route configuration found.</p>
+        {% endif %}
     </div>
 
-    {% if status and status.routes %}
-    <div class="overflow-x-auto">
-        <table class="w-full text-sm">
-            <thead>
-                <tr class="border-b border-gray-200 dark:border-gray-700">
-                    <th class="text-left py-2 px-3 font-medium text-gray-500">Task Type</th>
-                    <th class="text-left py-2 px-3 font-medium text-gray-500">Provider</th>
-                    <th class="text-left py-2 px-3 font-medium text-gray-500">Models</th>
-                    <th class="text-center py-2 px-3 font-medium text-gray-500">Configured</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for route in status.routes %}
-                <tr class="border-b border-gray-100 dark:border-gray-800">
-                    <td class="py-2 px-3 font-mono text-xs">{{ route.task_type }}</td>
-                    <td class="py-2 px-3 text-xs">{{ route.provider or '—' }}</td>
-                    <td class="py-2 px-3 font-mono text-xs">{{ route.models or '—' }}</td>
-                    <td class="py-2 px-3 text-center">
-                        {% if route.configured %}
-                        <span class="text-green-500 text-xs font-medium">✓</span>
-                        {% else %}
-                        <span class="text-red-400 text-xs font-medium">✗</span>
-                        {% endif %}
-                    </td>
-                </tr>
+    <div class="pt-6 border-t border-gray-200 dark:border-gray-700 space-y-4">
+        <div class="flex justify-between items-center">
+            <h2 class="text-xl font-semibold">System Snapshots</h2>
+            <button class="bg-blue-600 text-white px-4 py-2 rounded text-sm hover:bg-blue-700 transition"
+                    hx-get="/settings/snapshots"
+                    hx-target="#snapshot-container"
+                    hx-indicator="#snapshot-indicator">
+                Refresh Snapshots
+            </button>
+        </div>
+
+        <div id="snapshot-container" class="space-y-4">
+            {% if snapshots %}
+                {% for s in snapshots %}
+                <div class="flex justify-between items-center p-3 bg-gray-50 dark:bg-gray-800 rounded border border-gray-200 dark:border-gray-700">
+                    <div>
+                        <div class="font-medium">{{ s.name }}</div>
+                        <div class="text-xs text-gray-500">{{ s.snapshot_type }} • {{ s.created_at.strftime('%Y-%m-%d %H:%M') if s.created_at else 'N/A' }}</div>
+                    </div>
+                    <div class="flex gap-2">
+                        <button class="text-xs bg-green-600 text-white px-2 py-1 rounded hover:bg-green-700 transition"
+                                hx-post="/settings/snapshots/{{ s.id }}/restore"
+                                hx-confirm="Restore this snapshot? All current database state will be overwritten.">
+                            Restore
+                        </button>
+                        <button class="text-xs bg-red-600 text-white px-2 py-1 rounded hover:bg-red-700 transition"
+                                hx-delete="/settings/snapshots/{{ s.id }}"
+                                hx-confirm="Delete this snapshot?">
+                            Delete
+                        </button>
+                    </div>
+                </div>
                 {% endfor %}
-            </tbody>
-        </table>
+            {% else %}
+                <p class="text-gray-500 dark:text-gray-400 italic text-sm">No snapshots available.</p>
+            {% endif %}
+        </div>
+
+        <form hx-post="/settings/snapshots/create" 
+              hx-target="#snapshot-container" 
+              hx-swap="innerHTML" 
+              class="flex gap-2">
+            <input type="text" name="name" placeholder="Snapshot name..." required
+                   class="flex-1 border rounded px-3 py-2 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <input type="hidden" name="snapshot_type" value="FULL">
+            <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded text-sm hover:bg-blue-700 transition">
+                Create Snapshot
+            </button>
+        </form>
+        <div id="snapshot-indicator" class="htmx-indicator animate-spin inline-block ml-2">⌛</div>
     </div>
-    {% else %}
-    <p class="text-gray-500 dark:text-gray-400 italic">No route configuration found.</p>
-    {% endif %}
 </div>

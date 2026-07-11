@@ -1,29 +1,27 @@
-import json
-from pathlib import Path
 from fastapi.testclient import TestClient
-from app.main import app
+
 from app.core.agent_logger import LOG_FILE
+from app.main import app
 
 client = TestClient(app)
 
-def setup_module(module):
+def setup_module(_module):
     """Setup module-level resources."""
     LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
     LOG_FILE.write_text("")
 
-def teardown_module(module):
+def teardown_module(_module):
     """Teardown module-level resources."""
     if LOG_FILE.exists():
         LOG_FILE.unlink()
 
-def setup_function(function):
+def setup_function(_function):
     """Setup function-level resources."""
     LOG_FILE.write_text("")
 
 def write_logs(lines):
-    with open(LOG_FILE, "a", encoding="utf-8") as f:
-        for line in lines:
-            f.write(line + "\n")
+    with LOG_FILE.open("a", encoding="utf-8") as f:
+        f.writelines(line + "\n" for line in lines)
 
 def test_logs_page_renders():
     resp = client.get("/logs/")
@@ -90,7 +88,10 @@ def test_logs_filter_event_type():
 
 def test_logs_filter_tool():
     write_logs([
-        "[2026-07-07 10:00:00] [AgentA] [ModelA] [key1] [WorldA] [TOOL_RES] webSearch: result",
+        (
+            "[2026-07-07 10:00:00] [AgentA] [ModelA] [key1] [WorldA] "
+            "[TOOL_RES] webSearch: result"
+        ),
         "[2026-07-07 10:01:00] [AgentB] [ModelB] [key2] [WorldB] [INFO] Other message",
     ])
     resp = client.get("/logs/list?tool=webSearch")
@@ -100,8 +101,14 @@ def test_logs_filter_tool():
 
 def test_logs_filter_search():
     write_logs([
-        "[2026-07-07 10:00:00] [AgentA] [ModelA] [key1] [WorldA] [INFO] Important message",
-        "[2026-07-07 10:01:00] [AgentB] [ModelB] [key2] [WorldB] [ERROR] Regular message",
+        (
+            "[2026-07-07 10:00:00] [AgentA] [ModelA] [key1] [WorldA] "
+            "[INFO] Important message"
+        ),
+        (
+            "[2026-07-07 10:01:00] [AgentB] [ModelB] [key2] [WorldB] "
+            "[ERROR] Regular message"
+        ),
     ])
     resp = client.get("/logs/list?filter=Important")
     assert resp.status_code == 200
@@ -109,8 +116,11 @@ def test_logs_filter_search():
     assert "Regular message" not in resp.text
 
 def test_logs_pagination():
-    write_logs([f"[2026-07-07 10:00:{i:02d}] [AgentA] [ModelA] [k] [W] [INFO] msg {i}" for i in range(15)])
-    
+    write_logs([
+        f"[2026-07-07 10:00:{i:02d}] [AgentA] [ModelA] [k] [W] [INFO] msg {i}"
+        for i in range(15)
+    ])
+
     # Check first page (newest logs: 5 to 14)
     resp = client.get("/logs/list?limit=10&offset=0")
     assert resp.status_code == 200

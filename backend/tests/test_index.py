@@ -1,5 +1,3 @@
-from fastapi.testclient import TestClient
-from app.main import app
 
 def test_index_page(client):
     response = client.get("/")

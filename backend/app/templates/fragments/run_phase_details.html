@@ -1,0 +1,9 @@
+<div id="phase-details" class="p-4 bg-gray-800 rounded-lg border border-gray-700 text-sm font-mono space-y-2">
+    <div class="flex justify-between items-center border-b border-gray-700 pb-2 mb-2">
+        <span class="text-gray-400 uppercase text-xs font-bold">Current Phase State</span>
+        <span id="phase-status-pill" class="px-2 py-0.5 rounded-full text-[10px] bg-gray-700 text-gray-300">{{ status }}</span>
+    </div>
+    <div id="phase-state-content" class="text-gray-300 whitespace-pre-wrap">
+        {{ state_snapshot if state_snapshot else 'No state snapshot available.' }}
+    </div>
+</div>

@@ -1,47 +1,47 @@
+import asyncio
 import json
+import logging
 from typing import Any
 
 from app.agents.prompts import get_critic_prompt, get_researcher_prompt
-from app.core.agent_engine import run_agent, Capability
+from app.core.agent_engine import Capability, run_agent
 from app.core.context import set_current_universe
+from app.core.domain import ResearchTarget
 from app.core.retry_handler import RetryHandler
+from app.core.validation import audit_success
 from app.core.validators import validate_research_json
-from app.core.validation import audit_success
+
+
+class UniverseNotFoundError(ValueError):
+    def __init__(self, uuid):
+        super().__init__(f"Universe {uuid} not found")
+
 from app.services.execution_service import ExecutionService
 from app.services.research_workspace import WorkspaceService
 
-
-from app.core.validation import audit_success
-from app.services.execution_service import ExecutionService
-from app.services.research_workspace import WorkspaceService
 
 async def save_audit_artifacts(
-    _world_name: str, retry_handler: RetryHandler, final_result: str
+    universe_uuid: str, retry_handler: RetryHandler, final_result: str, workspace_service: WorkspaceService
 ):
-    from app.core.tools import tool_save_unconfirmed_claim
-
-    # Save audit history
-    await tool_save_unconfirmed_claim(
-        {
-            "subject": _world_name,
-            "predicate": "HAS_AUDIT_HISTORY",
-            "object_val": json.dumps(retry_handler.feedback_history, indent=2),
-            "confidence": "high",
-        }
+    # Save audit history as a notebook entry
+    workspace_service.upsert_notebook_entry(
+        universe_uuid=universe_uuid,
+        title="Audit History",
+        summary="Log of audit iterations and feedback.",
+        details=json.dumps(retry_handler.feedback_history, indent=2),
+        kind="Observation"
     )
 
-    # Save final knowledge graph
-    await tool_save_unconfirmed_claim(
-        {
-            "subject": _world_name,
-            "predicate": "HAS_FINAL_KNOWLEDGE_GRAPH",
-            "object_val": final_result,
-            "confidence": "high",
-        }
+    # Save final knowledge graph as a notebook entry
+    workspace_service.upsert_notebook_entry(
+        universe_uuid=universe_uuid,
+        title="Final Knowledge Graph",
+        summary="The verified consolidated data from the research cycle.",
+        details=final_result,
+        kind="Observation"
     )
 
 
-from app.core.domain import ResearchTarget
 
 async def research_single_world(
     target: ResearchTarget,
@@ -51,13 +51,13 @@ async def research_single_world(
     from app.core.runtime_state import is_aborted
 
     if await is_aborted(run_id):
-        raise RuntimeError(f"Run {run_id} was aborted by user.")
+        raise RuntimeError("Aborted")
 
+    from app.core.agent_config import get_tools_for_agent
     from app.services.knowledge_retriever import KnowledgeRetrieverService
     from app.services.settings_service import SettingsService
     from app.services.tiering_service import TieringService
     from app.services.universe_service import UniverseService
-    from app.core.agent_config import get_tools_for_agent
 
     uni_service = UniverseService()
     tier_service = TieringService()
@@ -65,14 +65,13 @@ async def research_single_world(
     retriever = KnowledgeRetrieverService()
     workspace_service = WorkspaceService()
 
+    universe = uni_service.get_universe_by_uuid(target.uuid)
+    if not universe:
+        raise UniverseNotFoundError(target.uuid)
+
+    tier_service.clear_world_tier(universe.id)
+
     try:
-        universe = uni_service.get_universe_by_uuid(target.uuid)
-        if not universe:
-            raise ValueError(f"Universe with UUID {target.uuid} not found.")
-
-        if universe:
-            tier_service.clear_world_tier(universe.id)
-
         world_name = universe.name
         stage_label = f"{world_name} focused on {focus}" if focus else world_name
         set_current_universe(world_name)
@@ -93,8 +92,8 @@ async def research_single_world(
         auditor_tools = [
             "fetchPage",
             "compareSourceFreshness",
-            "queryClaims",
-            "queryUnconfirmedClaims",
+            "queryArtifacts",
+            "queryUnconfirmedArtifacts",
         ]
 
         # Fetch existing knowledge for the first prompt
@@ -122,7 +121,7 @@ async def research_single_world(
             related_ids = []
             if universe.parent_id:
                 related_ids.append(universe.parent_id)
-            
+
             children = uni_service.get_children(universe.id)
             related_ids.extend([c.id for c in children])
 
@@ -131,10 +130,10 @@ async def research_single_world(
                     rel_u = uni_service.get_universe_by_id(rid)
                     if not rel_u:
                         return None
-                    
+
                     claims = retriever.get_semantic_claims(rid)
                     kg = retriever.get_universe_knowledge_graph(rid)
-                    
+
                     return {
                         "name": rel_u.name,
                         "claims": claims,
@@ -142,23 +141,36 @@ async def research_single_world(
                     }
 
                 # Parallelize related universe fetches
-                results = await asyncio.gather(*(fetch_related_data(rid) for rid in related_ids))
-                
+                results = await asyncio.gather(
+                    *(fetch_related_data(rid) for rid in related_ids)
+                )
+
                 rel_claims = []
                 rel_kgs = []
                 for res in results:
                     if res:
                         if res["claims"]:
-                            rel_claims.append(f"--- {res['name']} ---\n" + "\n".join(
-                                [f"({cl['subject']} --{cl['predicate']}--> {cl['object']}) | ref: {cl['reference'] or 'N/A'}" for cl in res["claims"]]
-                            ))
+                            rel_claims.append(
+                                f"--- {res['name']} ---\n" + "\n".join(
+                                    [
+                                        f"({cl['subject']} --{cl['predicate']}--> {cl['object']}) | "
+                                        f"ref: {cl['reference'] or 'N/A'}"
+                                        for cl in res["claims"]
+                                    ]
+                                )
+                            )
                         if res["kg"]:
-                            rel_kgs.append(f"--- {res['name']} ---\n{json.dumps(res['kg'], indent=2)}")
-                
+                            rel_kgs.append(
+                                f"--- {res['name']} ---\n{json.dumps(res['kg'], indent=2)}"
+                            )
+
                 multiverse_leads_str = "\n\n".join(rel_claims)
                 multiverse_kg_str = "\n\n".join(rel_kgs)
 
         retry_handler = RetryHandler(max_iterations=3)
+
+        # Initialize isolated loop history
+        loop_history = []
 
         while retry_handler.current_iteration < retry_handler.max_iterations:
             i = retry_handler.iteration_count
@@ -166,17 +178,20 @@ async def research_single_world(
             feedback_summary = retry_handler.get_feedback_summary()
 
             # Also fetch unconfirmed data for the prompt
-            from app.core.tools import tool_query_unconfirmed_claims
+            from app.core.tools import tool_query_unconfirmed_artifacts
 
-            unconfirmed_data = await tool_query_unconfirmed_claims({})
-            
+            unconfirmed_data = await tool_query_unconfirmed_artifacts({})
+
             # Fetch indexed workspace data for the prompt
             workspace_index = workspace_service.get_full_workspace_index(target.uuid)
 
             # Add notebook content to the prompt to prevent redundant searching
             notebook_content = workspace_service.get_notebook_content(run_id, target.uuid)
-            notebook_section = f"\n\n### CURRENT WORKING NOTES (From Research Notebook):\n{notebook_content or 'No notes yet.'}"
-            
+            notebook_section = (
+                f"\n\n### CURRENT WORKING NOTES (From Research Notebook):\n"
+                f"{notebook_content or 'No notes yet.'}"
+            )
+
             researcher_prompt = get_researcher_prompt(
                 entity=world_name,
                 requirements="Collect comprehensive canonical wiki data.",
@@ -219,6 +234,7 @@ async def research_single_world(
                 run_id=run_id,
                 tools_names=researcher_tools,
                 max_turns=min_turns,
+                history=loop_history,
                 required_capabilities={
                     Capability.READ_MAIN_DB,
                     Capability.READ_WORKSPACE,
@@ -226,8 +242,9 @@ async def research_single_world(
                     Capability.ACQUISITION,
                 },
             )
+            loop_history.extend(turn_history)
             if await is_aborted(run_id):
-                raise RuntimeError(f"Run {run_id} was aborted after research turn.")
+                raise RuntimeError("Aborted")
 
             # Deterministic Validation
             try:
@@ -257,7 +274,7 @@ async def research_single_world(
                             )
                             if sifted:
                                 await save_audit_artifacts(
-                                    world_name, retry_handler, sifted
+                                    target.uuid, retry_handler, sifted, workspace_service
                                 )
                                 return {
                                     "uuid": target.uuid,
@@ -284,7 +301,7 @@ async def research_single_world(
                 if retry_handler.is_final_attempt():
                     sifted = retry_handler.handle_final_attempt(deterministic_critique)
                     if sifted:
-                        await save_audit_artifacts(world_name, retry_handler, sifted)
+                        await save_audit_artifacts(target.uuid, retry_handler, sifted, workspace_service)
                         return {
                             "uuid": target.uuid,
                             "name": world_name,
@@ -300,7 +317,7 @@ async def research_single_world(
                 is_final_attempt=retry_handler.is_final_attempt(),
             )
 
-            success, critique, _ = await run_agent(
+            _success, critique, turn_history = await run_agent(
                 agent_name="Logic Auditor",
                 system_prompt=critic_prompt["system"],
                 user_prompt=critic_prompt["user"],
@@ -308,43 +325,66 @@ async def research_single_world(
                 run_id=run_id,
                 tools_names=auditor_tools,
                 submit_tool_name="submit_audit",
+                history=loop_history,
                 required_capabilities={
                     Capability.READ_MAIN_DB,
                     Capability.READ_WORKSPACE,
                     Capability.WRITE_WORKSPACE,
                 },
             )
+            loop_history.extend(turn_history)
             if await is_aborted(run_id):
-                raise RuntimeError(f"Run {run_id} was aborted after audit turn.")
+                raise RuntimeError("Aborted")
 
             if audit_success(critique):
-                import logging
-                logging.getLogger(__name__).debug(f"audit_success(critique) is True for {critique}")
-                await save_audit_artifacts(world_name, retry_handler, result)
-                return {"uuid": target.uuid, "name": world_name, "summary": result, "status": "VERIFIED"}
-            import logging
-            logging.getLogger(__name__).debug(f"audit_success(critique) is False for {critique}")
+                logging.getLogger(__name__).debug(
+                    "audit_success(critique) is True for %s", critique
+                )
+                await save_audit_artifacts(
+                    target.uuid, retry_handler, result, workspace_service
+                )
+                return {
+                    "uuid": target.uuid,
+                    "name": world_name,
+                    "summary": result,
+                    "status": "VERIFIED",
+                }
+            logging.getLogger(__name__).debug(
+                "audit_success(critique) is False for %s", critique
+            )
             retry_handler.update_state(result, critique, turn_history)
 
             if retry_handler.is_final_attempt():
                 sifted = retry_handler.handle_final_attempt(critique)
                 if sifted:
-                    await save_audit_artifacts(world_name, retry_handler, sifted)
+                    await save_audit_artifacts(
+                        target.uuid, retry_handler, sifted, workspace_service
+                    )
                     return {
+                        "uuid": target.uuid,
                         "name": world_name,
                         "summary": sifted,
                         "status": "PARTIAL",
                     }
 
-        await save_audit_artifacts(
-            world_name, retry_handler, retry_handler.last_result or ""
-        )
-        return {
-            "uuid": target.uuid,
-            "name": world_name,
-            "summary": retry_handler.last_result,
-            "status": "PARTIAL",
-        }
+
+
+        try:
+            await save_audit_artifacts(
+                target.uuid,
+                retry_handler,
+                retry_handler.last_result or "",
+                workspace_service,
+            )
+        except Exception:
+            logging.getLogger(__name__).exception("Failed to save audit artifacts")
+        else:
+            return {
+                "uuid": target.uuid,
+                "name": world_name,
+                "summary": retry_handler.last_result,
+                "status": "PARTIAL",
+            }
 
     except Exception as e:
         exec_service.log_transition(
@@ -354,6 +394,6 @@ async def research_single_world(
             "FAILED",
             {},
         )
-        raise e
+        raise
     finally:
         workspace_service.session.close()

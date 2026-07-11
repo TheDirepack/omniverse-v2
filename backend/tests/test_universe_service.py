@@ -1,9 +1,7 @@
 import json
-from unittest.mock import ANY, patch
+from unittest.mock import patch
 
-import pytest
-
-from app.db.schema import Entity, Universe, UniverseRelation
+from app.db.schema import Artifact, ArtifactRelation
 from app.services.universe_service import UniverseService
 
 
@@ -83,20 +81,20 @@ class TestGetUniverse:
 
 class TestImportFromRegistry:
     @patch("app.services.universe_service.Path.exists", return_value=False)
-    def test_no_registry_file(self, mock_exists, ephemeral_db):
+    def test_no_registry_file(self, _mock_exists, ephemeral_db):
         svc = UniverseService(session=ephemeral_db)
         assert svc.import_from_registry("pokemon") is None
 
     @patch("app.services.universe_service.Path.exists", return_value=True)
     @patch("builtins.open")
-    def test_entry_not_found(self, mock_open, mock_exists, ephemeral_db):
+    def test_entry_not_found(self, mock_open, _mock_exists, ephemeral_db):
         mock_open.return_value.__enter__.return_value.read.return_value = "[]"
         svc = UniverseService(session=ephemeral_db)
         assert svc.import_from_registry("nonexistent") is None
 
     @patch("app.services.universe_service.Path.exists", return_value=True)
     @patch("builtins.open")
-    def test_import_new_world(self, mock_open, mock_exists, ephemeral_db):
+    def test_import_new_world(self, mock_open, _mock_exists, ephemeral_db):
         mock_open.return_value.__enter__.return_value.read.return_value = json.dumps(
             [{"id": "test_world", "name": "Test World", "franchise": "TF"}]
         )
@@ -108,7 +106,7 @@ class TestImportFromRegistry:
 
     @patch("app.services.universe_service.Path.exists", return_value=True)
     @patch("builtins.open")
-    def test_import_already_exists_by_slug(self, mock_open, mock_exists, ephemeral_db):
+    def test_import_already_exists_by_slug(self, mock_open, _mock_exists, ephemeral_db):
         mock_open.return_value.__enter__.return_value.read.return_value = json.dumps(
             [{"id": "existing_slug", "name": "New Name"}]
         )
@@ -127,9 +125,12 @@ class TestImportFromRegistry:
 
     @patch("app.services.universe_service.Path.exists", return_value=True)
     @patch("builtins.open")
-    def test_import_with_parent(self, mock_open, mock_exists, ephemeral_db):
+    def test_import_with_parent(self, mock_open, _mock_exists, ephemeral_db):
         mock_open.return_value.__enter__.return_value.read.return_value = json.dumps(
-            [{"id": "parent_world", "name": "Parent"}, {"id": "child_world", "name": "Child", "parent": "parent_world"}]
+            [
+                {"id": "parent_world", "name": "Parent"},
+                {"id": "child_world", "name": "Child", "parent": "parent_world"},
+            ]
         )
         svc = UniverseService(session=ephemeral_db)
         parent = svc.import_from_registry("parent_world")
@@ -142,7 +143,7 @@ class TestImportFromRegistry:
 
 class TestImportAllFromRegistry:
     @patch("app.services.universe_service.Path.exists", return_value=False)
-    def test_no_file(self, mock_exists, ephemeral_db):
+    def test_no_file(self, _mock_exists, ephemeral_db):
         svc = UniverseService(session=ephemeral_db)
         imported, skipped = svc.import_all_from_registry()
         assert imported == 0
@@ -150,7 +151,7 @@ class TestImportAllFromRegistry:
 
     @patch("app.services.universe_service.Path.exists", return_value=True)
     @patch("builtins.open")
-    def test_import_all_success(self, mock_open, mock_exists, ephemeral_db):
+    def test_import_all_success(self, mock_open, _mock_exists, ephemeral_db):
         mock_open.return_value.__enter__.return_value.read.return_value = json.dumps(
             [
                 {"id": "w1", "name": "World 1", "franchise": "F1"},
@@ -164,7 +165,7 @@ class TestImportAllFromRegistry:
 
     @patch("app.services.universe_service.Path.exists", return_value=True)
     @patch("builtins.open")
-    def test_import_skips_existing(self, mock_open, mock_exists, ephemeral_db):
+    def test_import_skips_existing(self, mock_open, _mock_exists, ephemeral_db):
         mock_open.return_value.__enter__.return_value.read.return_value = json.dumps(
             [{"id": "dup", "name": "Duplicate"}]
         )
@@ -240,13 +241,13 @@ class TestMergeWorlds:
         svc = UniverseService(session=ephemeral_db)
         keep = svc.create_universe(name="Keep")
         merge = svc.create_universe(name="Merge")
-        e = Entity(name="SharedEntity", entity_type="T", universe_id=merge.id)
-        ephemeral_db.add(e)
+        a = Artifact(name="SharedEntity", type="entity", universe_id=merge.id)
+        ephemeral_db.add(a)
         ephemeral_db.commit()
         result = svc.merge_worlds(keep.id, merge.id)
         assert result["status"] == "success"
         moved = ephemeral_db.exec(
-            __import__("sqlmodel").select(Entity).where(Entity.name == "SharedEntity")
+            __import__("sqlmodel").select(Artifact).where(Artifact.name == "SharedEntity")
         ).first()
         assert moved.universe_id == keep.id
 
@@ -330,30 +331,32 @@ class TestClose:
         assert svc._repo is None
 
 
+
 class TestEntityCanonical:
     def test_set_entity_canonical(self, ephemeral_db):
         svc = UniverseService(session=ephemeral_db)
         u = svc.create_universe(name="Canon")
-        e = Entity(name="Hero", entity_type="Person", universe_id=u.id)
+        e = Artifact(name="Hero", type="entity", universe_id=u.id)
         ephemeral_db.add(e)
         ephemeral_db.commit()
         ephemeral_db.refresh(e)
         svc.set_entity_canonical(e.id)
-        reloaded = ephemeral_db.get(Entity, e.id)
-        assert reloaded.canonical is True
+        reloaded = ephemeral_db.get(Artifact, e.id)
+        assert json.loads(reloaded.payload_json).get("canonical") is True
 
     def test_set_entity_canonical_link(self, ephemeral_db):
         svc = UniverseService(session=ephemeral_db)
         u = svc.create_universe(name="Canon2")
-        e1 = Entity(name="HeroPrime", entity_type="Person", universe_id=u.id)
-        e2 = Entity(name="HeroAlias", entity_type="Person", universe_id=u.id)
+        e1 = Artifact(name="HeroPrime", type="entity", universe_id=u.id)
+        e2 = Artifact(name="HeroAlias", type="entity", universe_id=u.id)
         ephemeral_db.add_all([e1, e2])
         ephemeral_db.commit()
         ephemeral_db.refresh(e1)
         ephemeral_db.refresh(e2)
         svc.set_entity_canonical(e2.id, e1.id)
-        reloaded = ephemeral_db.get(Entity, e2.id)
+        reloaded = ephemeral_db.get(Artifact, e2.id)
         assert reloaded.canonical_entity_id == e1.id
+
 
 
 class TestGetRelatedUniverses:
@@ -376,12 +379,20 @@ class TestGetClaims:
     def test_get_claims(self, ephemeral_db):
         svc = UniverseService(session=ephemeral_db)
         u = svc.create_universe(name="Claims")
-        e = Entity(name="Test", entity_type="T", universe_id=u.id)
+        e = Artifact(name="Test", type="entity", universe_id=u.id)
         ephemeral_db.add(e)
         ephemeral_db.commit()
         ephemeral_db.refresh(e)
-        from app.db.schema import Claim
-        c = Claim(subject_id=e.id, predicate="test", object_literal="val", universe_scope=u.id, status="VERIFIED")
+        lit = Artifact(name="val", type="literal", universe_id=u.id)
+        ephemeral_db.add(lit)
+        ephemeral_db.commit()
+        ephemeral_db.refresh(lit)
+        c = ArtifactRelation(
+            universe_id=u.id,
+            from_artifact_id=e.id,
+            to_artifact_id=lit.id,
+            relation_type="test",
+        )
         ephemeral_db.add(c)
         ephemeral_db.commit()
         result = svc.get_claims(universe_ids=str(u.id))
@@ -390,19 +401,27 @@ class TestGetClaims:
     def test_get_claims_with_fields(self, ephemeral_db):
         svc = UniverseService(session=ephemeral_db)
         u = svc.create_universe(name="Claims2")
-        e = Entity(name="Test", entity_type="T", universe_id=u.id)
+        e = Artifact(name="Test", type="entity", universe_id=u.id)
         ephemeral_db.add(e)
         ephemeral_db.commit()
         ephemeral_db.refresh(e)
-        from app.db.schema import Claim
-        c = Claim(subject_id=e.id, predicate="test", object_literal="val", universe_scope=u.id, status="VERIFIED")
+        lit = Artifact(name="val", type="literal", universe_id=u.id)
+        ephemeral_db.add(lit)
+        ephemeral_db.commit()
+        ephemeral_db.refresh(lit)
+        c = ArtifactRelation(
+            universe_id=u.id,
+            from_artifact_id=e.id,
+            to_artifact_id=lit.id,
+            relation_type="test",
+        )
         ephemeral_db.add(c)
         ephemeral_db.commit()
-        result = svc.get_claims(universe_ids=str(u.id), fields=["predicate", "status"])
+        result = svc.get_claims(universe_ids=str(u.id), fields=["relation_type"])
         assert len(result) >= 1
         for r in result:
             assert isinstance(r, dict)
-            assert "predicate" in r or "status" in r
+            assert "relation_type" in r
 
     def test_get_claims_no_filter(self, ephemeral_db):
         svc = UniverseService(session=ephemeral_db)
@@ -412,12 +431,20 @@ class TestGetClaims:
     def test_get_verified_claims(self, ephemeral_db):
         svc = UniverseService(session=ephemeral_db)
         u = svc.create_universe(name="VC")
-        e = Entity(name="Test", entity_type="T", universe_id=u.id)
+        e = Artifact(name="Test", type="entity", universe_id=u.id)
         ephemeral_db.add(e)
         ephemeral_db.commit()
         ephemeral_db.refresh(e)
-        from app.db.schema import Claim
-        c = Claim(subject_id=e.id, predicate="test", object_literal="v", universe_scope=u.id, status="VERIFIED")
+        lit = Artifact(name="v", type="literal", universe_id=u.id)
+        ephemeral_db.add(lit)
+        ephemeral_db.commit()
+        ephemeral_db.refresh(lit)
+        c = ArtifactRelation(
+            universe_id=u.id,
+            from_artifact_id=e.id,
+            to_artifact_id=lit.id,
+            relation_type="test",
+        )
         ephemeral_db.add(c)
         ephemeral_db.commit()
         result = svc.get_verified_claims(u.id)

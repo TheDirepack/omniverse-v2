@@ -11,7 +11,47 @@ class UnconfirmedModel(SQLModel):
     metadata = unconfirmed_metadata
 
 
+class TimelineEntry(UnconfirmedModel, table=True):
+    __tablename__ = "timeline_entry"
+    id: int | None = Field(default=None, primary_key=True)
+    universe_uuid: str = Field(index=True)
+    title: str
+    date: str | None = None
+    era: str | None = None
+    summary: str | None = None
+    description: str | None = None
+    importance: int = Field(default=1)
+    confidence: float = Field(default=1.0)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+class TimelineParticipant(UnconfirmedModel, table=True):
+    __tablename__ = "timeline_participant"
+    id: int | None = Field(default=None, primary_key=True)
+    timeline_id: int = Field(foreign_key="timeline_entry.id", ondelete="CASCADE")
+    entity_id: int
+    role: str | None = None
+
+class TimelineLocation(UnconfirmedModel, table=True):
+    __tablename__ = "timeline_location"
+    id: int | None = Field(default=None, primary_key=True)
+    timeline_id: int = Field(foreign_key="timeline_entry.id", ondelete="CASCADE")
+    location_id: int
+
+class TimelineSource(UnconfirmedModel, table=True):
+    __tablename__ = "timeline_source"
+    id: int | None = Field(default=None, primary_key=True)
+    timeline_id: int = Field(foreign_key="timeline_entry.id", ondelete="CASCADE")
+    source_id: int
+
+class TimelineClaim(UnconfirmedModel, table=True):
+    __tablename__ = "timeline_claim"
+    id: int | None = Field(default=None, primary_key=True)
+    timeline_id: int = Field(foreign_key="timeline_entry.id", ondelete="CASCADE")
+    claim_id: int
+
+
 class UnconfirmedUniverse(UnconfirmedModel, table=True):
+
     __tablename__ = "unconfirmed_universe"
 
     id: int | None = Field(default=None, primary_key=True)
@@ -26,21 +66,7 @@ class UnconfirmedUniverse(UnconfirmedModel, table=True):
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
 
-class UnconfirmedClaim(UnconfirmedModel, table=True):
-    __tablename__ = "unconfirmed_claim"
 
-    id: int | None = Field(default=None, primary_key=True)
-    universe_id: int = Field(foreign_key="unconfirmed_universe.id")
-    subject: str
-    context: str | None = None
-    predicate: str
-    object_val: str
-    artifact_id: int | None = None
-    reference: str | None = None
-    wiki_source: str | None = None
-    confidence: str | None = None
-    run_id: str | None = Field(default=None, index=True)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
 class AcquisitionArtifact(UnconfirmedModel, table=True):
@@ -109,6 +135,25 @@ class ResearchSource(UnconfirmedModel, table=True):
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
+class UnconfirmedClaim(UnconfirmedModel, table=True):
+    __tablename__ = "unconfirmed_claim"
+
+    id: int | None = Field(default=None, primary_key=True)
+    universe_id: int = Field(foreign_key="unconfirmed_universe.id", index=True)
+    subject: str = Field(index=True)
+    context: str = Field(index=True)
+    predicate: str = Field(index=True)
+    object_val: str
+    source_wikis: str | None = None
+    evidence_chunk: str | None = None
+    confidence: float = Field(default=1.0)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    __table_args__ = (
+        UniqueConstraint("subject", "context", "predicate", "object_val"),
+    )
+
+
 class NotebookEntry(UnconfirmedModel, table=True):
     __tablename__ = "notebook_entry"
 
@@ -125,52 +170,14 @@ class NotebookEntry(UnconfirmedModel, table=True):
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
 
-class TimelineEntry(UnconfirmedModel, table=True):
-    __tablename__ = "timeline_entry"
+
+
+class Snapshot(UnconfirmedModel, table=True):
+    __tablename__ = "snapshot"
 
     id: int | None = Field(default=None, primary_key=True)
-    universe_uuid: str = Field(index=True)
-    era: str | None = None
-    date: str | None = None
-    calendar_system: str | None = None
-    title: str
-    summary: str | None = None
-    description: str | None = None
-    importance: int = Field(default=1)
-    confidence: float = Field(default=1.0)
-    status: str = Field(default="PROPOSED")
+    name: str = Field(index=True)
     created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
-
-
-class TimelineParticipant(UnconfirmedModel, table=True):
-    __tablename__ = "timeline_participant"
-
-    id: int | None = Field(default=None, primary_key=True)
-    timeline_id: int = Field(sa_column=Column(ForeignKey("timeline_entry.id", ondelete="CASCADE"), nullable=False))
-    entity_id: int
-    role: str | None = None
-
-
-class TimelineLocation(UnconfirmedModel, table=True):
-    __tablename__ = "timeline_location"
-
-    id: int | None = Field(default=None, primary_key=True)
-    timeline_id: int = Field(sa_column=Column(ForeignKey("timeline_entry.id", ondelete="CASCADE"), nullable=False))
-    location_id: int
-
-
-class TimelineSource(UnconfirmedModel, table=True):
-    __tablename__ = "timeline_source"
-
-    id: int | None = Field(default=None, primary_key=True)
-    timeline_id: int = Field(sa_column=Column(ForeignKey("timeline_entry.id", ondelete="CASCADE"), nullable=False))
-    source_id: int = Field(foreign_key="research_source.id")
-
-
-class TimelineClaim(UnconfirmedModel, table=True):
-    __tablename__ = "timeline_claim"
-
-    id: int | None = Field(default=None, primary_key=True)
-    timeline_id: int = Field(sa_column=Column(ForeignKey("timeline_entry.id", ondelete="CASCADE"), nullable=False))
-    claim_id: int
+    snapshot_type: str = Field(default="FULL")  # FULL, UNVERIFIED
+    data_blob: bytes | None = Field(sa_column=Column(LargeBinary, nullable=True))
+    snapshot_metadata: str | None = None

@@ -90,8 +90,8 @@ async def fetch_live_models(provider: ProviderConfig) -> list[str]:
             r = await client.get(url, headers=headers)
             r.raise_for_status()
             data = r.json()
-    except Exception as e:
-        logger.exception(f"Failed to fetch models for {ptype} at {url}: {e}")
+    except Exception:
+        logger.exception("Failed to fetch models for %s at %s", ptype, url)
         return []
 
     parser = PARSERS.get(ptype)

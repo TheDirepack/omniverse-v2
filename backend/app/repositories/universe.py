@@ -1,12 +1,14 @@
+import json
 from collections.abc import Sequence
 from typing import Any
 
 from sqlmodel import Session, select
 
-from app.db.schema import Claim, Entity, Universe, UniverseRelation
+from app.db.schema import Artifact, ArtifactRelation, Universe, UniverseRelation
 
 
 class UniverseRepository:
+
     def __init__(self, session: Session):
         self.session = session
 
@@ -40,10 +42,6 @@ class UniverseRepository:
 
     def get_by_names(self, names: list[str]) -> Sequence[Universe]:
         return self.session.exec(select(Universe).where(Universe.name.in_(names))).all()
-
-    def get_children(self, universe_id: int) -> Sequence[Universe]:
-        """Returns all universes that have the given universe as their parent."""
-        return self.session.exec(select(Universe).where(Universe.parent_id == universe_id)).all()
 
     def get_explored(
         self, limit: int = 100, offset: int = 0, fields: list[str] | None = None
@@ -83,14 +81,24 @@ class UniverseRepository:
         offset: int = 0,
         fields: list[str] | None = None,
     ) -> Sequence[Any]:
-        stmt = select(Claim).where(
-            Claim.universe_scope == universe_id, Claim.status == "VERIFIED"
+        stmt = select(ArtifactRelation).where(
+            ArtifactRelation.universe_id == universe_id,
+            # Fallback: we'll assume relations in main DB are verified
+            ArtifactRelation.relation_type == "VERIFIED",
+        )
+        # Actually, just return all relations as they are in the main DB
+        stmt = select(ArtifactRelation).where(
+            ArtifactRelation.universe_id == universe_id
         )
         if fields:
-            proj_fields = [getattr(Claim, f) for f in fields if hasattr(Claim, f)]
+            proj_fields = [
+                getattr(ArtifactRelation, f)
+                for f in fields
+                if hasattr(ArtifactRelation, f)
+            ]
             if proj_fields:
                 stmt = select(*proj_fields).where(
-                    Claim.universe_scope == universe_id, Claim.status == "VERIFIED"
+                    ArtifactRelation.universe_id == universe_id
                 )
         return self.session.exec(stmt.offset(offset).limit(limit)).all()
 
@@ -143,12 +151,20 @@ class UniverseRepository:
             select(Universe).where(Universe.id.in_(list(related_ids)))
         ).all()
 
-    def set_entity_canonical(self, entity_id: int, canonical_id: int | None = None):
-        entity = self.session.get(Entity, entity_id)
-        if entity:
-            entity.canonical_entity_id = canonical_id
-            entity.canonical = canonical_id is None
-            self.session.add(entity)
+    def get_children(self, universe_id: int) -> Sequence[Universe]:
+        """Returns universes that have this universe as a parent."""
+        return self.session.exec(
+            select(Universe).where(Universe.parent_id == universe_id)
+        ).all()
+
+    def set_entity_canonical(self, artifact_id: int, canonical_id: int | None = None):
+        artifact = self.session.get(Artifact, artifact_id)
+        if artifact and artifact.type == "entity":
+            payload = json.loads(artifact.payload_json or "{}")
+            payload["canonical_entity_id"] = canonical_id
+            payload["canonical"] = canonical_id is None
+            artifact.payload_json = json.dumps(payload)
+            self.session.add(artifact)
             self.session.commit()
-            self.session.refresh(entity)
-        return entity
+            self.session.refresh(artifact)
+        return artifact

@@ -18,15 +18,13 @@ echo "Installing backend dependencies..."
 source venv/bin/activate
 pip install --upgrade pip
 pip install -r requirements.txt
+pip install -r requirements-dev.txt
+echo "Optional OCR dependencies not installed (paddlepaddle requires GPU)."
+echo "Install manually: pip install paddlepaddle paddleocr"
 deactivate
 
-# 2. Frontend Setup
-echo "📦 Setting up Frontend..."
-cd "$BASE_DIR/frontend"
-if [ ! -d "node_modules" ]; then
-    echo "Installing frontend dependencies..."
-    npm install
-fi
+# 2. Frontend Setup - skipped (removed)
+echo "⊘ Frontend setup skipped (React frontend removed)."
 
 # 3. Environment Configuration
 echo "⚙️ Configuring environment..."

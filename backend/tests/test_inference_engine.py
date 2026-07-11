@@ -1,10 +1,9 @@
-import json
 
 import pytest
-from app.db.schema import Claim, Entity, InferenceRule, Universe
+
+from app.db.schema import Artifact, ArtifactRelation, InferenceRule, Universe
 from app.repositories.inference import InferenceRepository
 from app.services.inference_engine_service import InferenceEngineService
-from sqlmodel import select
 
 
 def _make_universe(db, name="TestUniverse"):
@@ -15,8 +14,8 @@ def _make_universe(db, name="TestUniverse"):
     return u
 
 
-def _make_entity(db, universe_id, name, entity_type="Thing"):
-    e = Entity(name=name, entity_type=entity_type, universe_id=universe_id)
+def _make_entity(db, universe_id, name, _entity_type="Thing"):
+    e = Artifact(name=name, type="entity", universe_id=universe_id)
     db.add(e)
     db.flush()
     db.refresh(e)
@@ -24,20 +23,12 @@ def _make_entity(db, universe_id, name, entity_type="Thing"):
 
 
 def _make_claim(db, subject_id, predicate, object_id, **kwargs):
-    from app.db.schema import Predicate
-
-    pred_obj = db.exec(
-        select(Predicate).where(Predicate.canonical_name == predicate)
-    ).first()
-    if not pred_obj:
-        pred_obj = Predicate(canonical_name=predicate)
-        db.add(pred_obj)
-        db.flush()
-    c = Claim(
-        subject_id=subject_id,
-        predicate_id=pred_obj.id,
-        predicate=predicate,
-        object_entity_id=object_id,
+    subj = db.get(Artifact, subject_id)
+    c = ArtifactRelation(
+        universe_id=subj.universe_id,
+        from_artifact_id=subject_id,
+        to_artifact_id=object_id,
+        relation_type=predicate,
         **kwargs,
     )
     db.add(c)

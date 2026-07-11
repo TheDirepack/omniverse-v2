@@ -1,11 +1,11 @@
-import pytest
 from fastapi.testclient import TestClient
-from app.main import app
-from app.db.session import engine
-from app.db.unconfirmed_session import unconfirmed_engine
-from sqlmodel import Session, select
+from sqlmodel import Session
+
 from app.db.schema import Universe
+from app.db.session import engine
 from app.db.unconfirmed_schema import NotebookEntry, ResearchSource, TimelineEntry
+from app.db.unconfirmed_session import unconfirmed_engine
+from app.main import app
 
 client = TestClient(app)
 
@@ -30,13 +30,13 @@ def test_workspace_notebook_view():
         entry_id = entry.id
 
     client.cookies.set("active_world_id", u_uuid)
-    
+
     # Test index page
     response = client.get("/research/workspace/notebook")
     assert response.status_code == 200
     assert "My Note" in response.text
     assert "My Summary" in response.text
-    
+
     # Test detail page
     response = client.get(f"/research/workspace/notebook/{entry_id}")
     assert response.status_code == 200

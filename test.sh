@@ -47,6 +47,7 @@ fi
 PYTHON_EXE="$VENV_PATH/bin/python"
 
 echo "=== Running Backend Tests ==="
+export PYTHONPATH=$PYTHONPATH:$BASE_DIR/backend
 TEST_MARKER="not slow"
 USE_PROD_SETTINGS=""
 if [[ "$*" == *"--slow"* ]]; then
@@ -56,8 +57,15 @@ fi
 
 CLEAN_ARGS=$(echo "$@" | sed 's/--slow//g')
 
+# Run prompt robustness tests separately if requested
+if [[ "$*" == *"--prompt-robustness"* ]]; then
+    echo "=== Running Prompt Robustness Tests ==="
+    CLEAN_PROMPT_ARGS=$(echo "$@" | sed 's/--prompt-robustness//g')
+    env $USE_PROD_SETTINGS $PYTHON_EXE -m pytest backend/tests/live/test_prompt_failure_modes.py -v --tb=short -m "slow" $CLEAN_PROMPT_ARGS
+    exit 0
+fi
+
 # Run pytest from the root, targeting the backend/tests directory
-export PYTHONPATH=$PYTHONPATH:$BASE_DIR/backend
 env $USE_PROD_SETTINGS $PYTHON_EXE -m pytest backend/tests/ -v --tb=short -m "$TEST_MARKER" $CLEAN_ARGS
 
 echo ""

@@ -1,4 +1,3 @@
-import pytest
 
 
 SETTINGS = "/settings"
@@ -34,7 +33,10 @@ class TestSettingsGeneral:
         )
         assert r.status_code == 200
         assert "HX-Trigger" in r.headers
-        assert '"showToast": {"value": "Setting updated", "type": "info"}' in r.headers["HX-Trigger"]
+        assert (
+            '"showToast": {"value": "Setting updated", "type": "info"}'
+            in r.headers["HX-Trigger"]
+        )
 
     def test_delete_setting(self, api_client):
         r = api_client.post(
@@ -57,20 +59,26 @@ class TestSettingsProviders:
         )
         assert r.status_code == 200
         assert "HX-Trigger" in r.headers
-        assert '"showToast": {"value": "Provider updated", "type": "info"}' in r.headers["HX-Trigger"]
+        assert (
+            '"showToast": {"value": "Provider updated", "type": "info"}'
+            in r.headers["HX-Trigger"]
+        )
 
-    def test_update_provider(self, api_client, clean_db):
+    def test_update_provider(self, api_client, _clean_db):
         # Create provider first via API
         api_client.post(
             f"{SETTINGS}/providers/upsert",
             data={"name": "UpdateMe", "provider_type": "anthropic"},
         )
         # Now update it — need to get its ID from settings DB
-        from app.db.settings_session import settings_engine
         from sqlmodel import Session, select
+
         from app.db.schema import ProviderConfig
+        from app.db.settings_session import settings_engine
         with Session(settings_engine) as session:
-            p = session.exec(select(ProviderConfig).where(ProviderConfig.name == "UpdateMe")).first()
+            p = session.exec(
+                select(ProviderConfig).where(ProviderConfig.name == "UpdateMe")
+            ).first()
             pid = p.id
         r = api_client.post(
             f"{SETTINGS}/providers/{pid}/update",
@@ -78,30 +86,36 @@ class TestSettingsProviders:
         )
         assert r.status_code == 200
 
-    def test_delete_provider(self, api_client, clean_db):
+    def test_delete_provider(self, api_client, _clean_db):
         api_client.post(
             f"{SETTINGS}/providers/upsert",
             data={"name": "DelMe", "provider_type": "azure"},
         )
-        from app.db.settings_session import settings_engine
         from sqlmodel import Session, select
+
         from app.db.schema import ProviderConfig
+        from app.db.settings_session import settings_engine
         with Session(settings_engine) as session:
-            p = session.exec(select(ProviderConfig).where(ProviderConfig.name == "DelMe")).first()
+            p = session.exec(
+                select(ProviderConfig).where(ProviderConfig.name == "DelMe")
+            ).first()
             pid = p.id
         r = api_client.post(f"{SETTINGS}/providers/{pid}/delete")
         assert r.status_code == 200
 
-    def test_add_key_to_provider(self, api_client, clean_db):
+    def test_add_key_to_provider(self, api_client, _clean_db):
         api_client.post(
             f"{SETTINGS}/providers/upsert",
             data={"name": "KeyProv", "provider_type": "openai"},
         )
-        from app.db.settings_session import settings_engine
         from sqlmodel import Session, select
+
         from app.db.schema import ProviderConfig
+        from app.db.settings_session import settings_engine
         with Session(settings_engine) as session:
-            p = session.exec(select(ProviderConfig).where(ProviderConfig.name == "KeyProv")).first()
+            p = session.exec(
+                select(ProviderConfig).where(ProviderConfig.name == "KeyProv")
+            ).first()
             pid = p.id
         r = api_client.post(
             f"{SETTINGS}/providers/{pid}/keys",
@@ -109,23 +123,28 @@ class TestSettingsProviders:
         )
         assert r.status_code == 200
 
-    def test_edit_key(self, api_client, clean_db):
+    def test_edit_key(self, api_client, _clean_db):
         api_client.post(
             f"{SETTINGS}/providers/upsert",
             data={"name": "EditKeyProv", "provider_type": "openai"},
         )
-        from app.db.settings_session import settings_engine
         from sqlmodel import Session, select
+
         from app.db.schema import ProviderConfig, ProviderKey
+        from app.db.settings_session import settings_engine
         with Session(settings_engine) as session:
-            p = session.exec(select(ProviderConfig).where(ProviderConfig.name == "EditKeyProv")).first()
+            p = session.exec(
+                select(ProviderConfig).where(ProviderConfig.name == "EditKeyProv")
+            ).first()
             pid = p.id
             # create a key
             from app.repositories.settings import SettingsRepository
             repo = SettingsRepository(session)
             repo.upsert_key(ProviderKey(provider_id=pid, api_key="old-key", priority=0))
             session.commit()
-            k = session.exec(select(ProviderKey).where(ProviderKey.provider_id == pid)).first()
+            k = session.exec(
+                select(ProviderKey).where(ProviderKey.provider_id == pid)
+            ).first()
             kid = k.id
         r = api_client.post(
             f"{SETTINGS}/providers/{pid}/keys/{kid}/edit",
@@ -133,39 +152,47 @@ class TestSettingsProviders:
         )
         assert r.status_code == 200
 
-    def test_delete_key(self, api_client, clean_db):
+    def test_delete_key(self, api_client, _clean_db):
         api_client.post(
             f"{SETTINGS}/providers/upsert",
             data={"name": "DelKeyProv", "provider_type": "openai"},
         )
-        from app.db.settings_session import settings_engine
         from sqlmodel import Session, select
+
         from app.db.schema import ProviderConfig, ProviderKey
+        from app.db.settings_session import settings_engine
         with Session(settings_engine) as session:
-            p = session.exec(select(ProviderConfig).where(ProviderConfig.name == "DelKeyProv")).first()
+            p = session.exec(
+                select(ProviderConfig).where(ProviderConfig.name == "DelKeyProv")
+            ).first()
             pid = p.id
             from app.repositories.settings import SettingsRepository
             repo = SettingsRepository(session)
             repo.upsert_key(ProviderKey(provider_id=pid, api_key="del-key", priority=0))
             session.commit()
-            k = session.exec(select(ProviderKey).where(ProviderKey.provider_id == pid)).first()
+            k = session.exec(
+                select(ProviderKey).where(ProviderKey.provider_id == pid)
+            ).first()
             kid = k.id
         r = api_client.post(f"{SETTINGS}/providers/{pid}/keys/{kid}/delete")
         assert r.status_code == 200
 
 
 class TestSettingsRoutes:
-    def test_create_route(self, api_client, clean_db):
+    def test_create_route(self, api_client, _clean_db):
         # Need a provider first
         api_client.post(
             f"{SETTINGS}/providers/upsert",
             data={"name": "RouteProv", "provider_type": "openai"},
         )
-        from app.db.settings_session import settings_engine
         from sqlmodel import Session, select
+
         from app.db.schema import ProviderConfig
+        from app.db.settings_session import settings_engine
         with Session(settings_engine) as session:
-            p = session.exec(select(ProviderConfig).where(ProviderConfig.name == "RouteProv")).first()
+            p = session.exec(
+                select(ProviderConfig).where(ProviderConfig.name == "RouteProv")
+            ).first()
             pid = p.id
         r = api_client.post(
             f"{SETTINGS}/routes/upsert",
@@ -178,18 +205,24 @@ class TestSettingsRoutes:
         )
         assert r.status_code == 200
         assert "HX-Trigger" in r.headers
-        assert '"showToast": {"value": "Route updated", "type": "info"}' in r.headers["HX-Trigger"]
+        assert (
+            '"showToast": {"value": "Route updated", "type": "info"}'
+            in r.headers["HX-Trigger"]
+        )
 
-    def test_delete_route(self, api_client, clean_db):
+    def test_delete_route(self, api_client, _clean_db):
         api_client.post(
             f"{SETTINGS}/providers/upsert",
             data={"name": "DelRouteProv", "provider_type": "openai"},
         )
-        from app.db.settings_session import settings_engine
         from sqlmodel import Session, select
-        from app.db.schema import ProviderConfig, AgentRouteFallback
+
+        from app.db.schema import AgentRouteFallback, ProviderConfig
+        from app.db.settings_session import settings_engine
         with Session(settings_engine) as session:
-            p = session.exec(select(ProviderConfig).where(ProviderConfig.name == "DelRouteProv")).first()
+            p = session.exec(
+                select(ProviderConfig).where(ProviderConfig.name == "DelRouteProv")
+            ).first()
             pid = p.id
             from app.repositories.settings import SettingsRepository
             repo = SettingsRepository(session)
@@ -197,7 +230,11 @@ class TestSettingsRoutes:
                 task_type="del_route", provider_id=pid, models="gpt-4", priority=0
             ))
             session.commit()
-            route = session.exec(select(AgentRouteFallback).where(AgentRouteFallback.task_type == "del_route")).first()
+            route = session.exec(
+                select(AgentRouteFallback).where(
+                    AgentRouteFallback.task_type == "del_route"
+                )
+            ).first()
             rid = route.id
         r = api_client.post(f"{SETTINGS}/routes/{rid}/delete")
         assert r.status_code == 200
@@ -206,7 +243,7 @@ class TestSettingsRoutes:
         r = api_client.post(f"{SETTINGS}/routes/Researcher/override")
         assert r.status_code == 200
 
-    def test_route_reorder(self, api_client, clean_db):
+    def test_route_reorder(self, api_client, _clean_db):
         r = api_client.post(
             f"{SETTINGS}/routes/reorder",
             data={"route_ids": "[]"},

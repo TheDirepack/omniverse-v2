@@ -1,6 +1,6 @@
 from unittest.mock import AsyncMock, patch
 
-from app.db.schema import InferenceRule
+from app.db.schema import Artifact, ArtifactRelation, InferenceRule
 
 
 class TestDepthEndpoints:
@@ -148,16 +148,16 @@ class TestMaterializationEndpoint:
         assert data["created_count"] == 0
 
     def test_materialize_with_approved_rule(self, ephemeral_db, client):
-        from app.db.schema import Claim, Entity, Universe
+        from app.db.schema import Universe
 
         u = Universe(name="TestUniverse", is_explored=True)
         ephemeral_db.add(u)
         ephemeral_db.commit()
         ephemeral_db.refresh(u)
 
-        a = Entity(name="A", entity_type="X", universe_id=u.id)
-        b = Entity(name="B", entity_type="X", universe_id=u.id)
-        c = Entity(name="C", entity_type="X", universe_id=u.id)
+        a = Artifact(name="A", type="entity", universe_id=u.id)
+        b = Artifact(name="B", type="entity", universe_id=u.id)
+        c = Artifact(name="C", type="entity", universe_id=u.id)
         ephemeral_db.add_all([a, b, c])
         ephemeral_db.commit()
         for e in [a, b, c]:
@@ -165,8 +165,18 @@ class TestMaterializationEndpoint:
 
         ephemeral_db.add_all(
             [
-                Claim(subject_id=a.id, predicate="USES", object_entity_id=b.id),
-                Claim(subject_id=b.id, predicate="GENERATES", object_entity_id=c.id),
+                ArtifactRelation(
+                    universe_id=u.id,
+                    from_artifact_id=a.id,
+                    to_artifact_id=b.id,
+                    relation_type="USES",
+                ),
+                ArtifactRelation(
+                    universe_id=u.id,
+                    from_artifact_id=b.id,
+                    to_artifact_id=c.id,
+                    relation_type="GENERATES",
+                ),
             ]
         )
         ephemeral_db.commit()

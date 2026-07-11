@@ -7,10 +7,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.routers.inference import router as inference_router
 from app.api.routers.providers import router as providers_router
 from app.api.routers.research import router as research_router
-from app.api.routers.unconfirmed import router as unconfirmed_router
 from app.api.routers.routes import router as routes_router
 from app.api.routers.runs import router as runs_router
 from app.api.routers.settings import router as settings_router
+from app.api.routers.unconfirmed import router as unconfirmed_router
 from app.api.routers.worlds import router as worlds_router
 from app.core.browser import browser_manager
 from app.db.session import init_db
@@ -31,18 +31,19 @@ BASE_DIR = Path(__file__).resolve().parent
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     init_db()
-    
+
     # DB Connectivity check
     try:
         from sqlmodel import Session, text
+
         from app.db.session import engine
         with Session(engine) as session:
             session.exec(text("SELECT 1"))
         import logging
         logging.getLogger("startup").info("Database connectivity verified.")
-    except Exception as e:
+    except Exception:
         import logging
-        logging.getLogger("startup").error(f"Database connectivity check failed: {e}")
+        logging.getLogger("startup").exception("Database connectivity check failed")
 
     # Reconcile stale runs on startup
     from app.services.execution_service import ExecutionService
@@ -57,8 +58,10 @@ async def lifespan(_app: FastAPI):
     for issue in issues:
         import logging
         level = logging.ERROR if issue["severity"] == "ERROR" else logging.WARNING
-        logging.getLogger("startup").log(level, f"Settings Validation {issue['severity']}: {issue['message']}")
-    
+        logging.getLogger("startup").log(
+            level, "Settings Validation %s: %s", issue["severity"], issue["message"]
+        )
+
     await browser_manager.start()
     yield
     await browser_manager.stop()
@@ -80,7 +83,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-# CSRF removed — local dev tool, cookie/header check adds friction without proportional benefit
+# CSRF removed — local dev tool, cookie/header check adds friction without
+# proportional benefit
 
 @app.get("/api/health")
 async def health():

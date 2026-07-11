@@ -63,19 +63,28 @@
                 <p class="italic text-gray-600">Connecting to log stream...</p>
             </div>
         </div>
-
-        <!-- Acquisition Column -->
+        
+        <!-- Acquisition & Phase Column -->
         <div class="space-y-4">
-            <h2 class="text-xl font-semibold">Acquisition Pipeline</h2>
-             <div id="acquisition-panel" 
-                  hx-get="{{ url_for('run_acquisition', run_id=run_id) }}" 
+            <div id="phase-details-container" 
+                 hx-get="{{ url_for('run_phase_details', run_id=run_id) }}" 
                  hx-trigger="load" 
                  hx-swap="innerHTML"
                  class="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+                <p class="text-gray-500 dark:text-gray-400 italic">Loading phase details...</p>
+            </div>
+            
+            <h2 class="text-xl font-semibold">Acquisition Pipeline</h2>
+             <div id="acquisition-panel" 
+                  hx-get="{{ url_for('run_acquisition', run_id=run_id) }}" 
+                  hx-trigger="load" 
+                  hx-swap="innerHTML"
+                  class="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
                 <p class="text-gray-500 dark:text-gray-400 italic">Loading acquisition artifacts...</p>
             </div>
         </div>
     </div>
+
 </div>
 
 <script>

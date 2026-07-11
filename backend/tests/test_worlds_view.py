@@ -1,8 +1,6 @@
 import pytest
-from sqlmodel import Session, text
 
 from app.db.schema import Universe
-from app.db.session import engine
 
 
 class TestWorldsViews:
@@ -66,14 +64,14 @@ class TestWorldsViews:
         # 13 sub-entries remain (14 total minus 1 filtered by name)
         assert "Import all 13 worlds" in r.text
 
-    def test_worlds_import_shows_new_entries(self, api_client, clean_db):
+    def test_worlds_import_shows_new_entries(self, api_client, _clean_db):
         # Search by franchise name (space-separated) to find Metal Gear entries
         r = api_client.get(f"{self.ENDPOINT}/import", params={"q": "metal gear"})
         assert r.status_code == 200
         assert "Metal Gear" in r.text
         assert "Snake Eater" in r.text
 
-    def test_worlds_import_all_action(self, api_client, clean_db):
+    def test_worlds_import_all_action(self, api_client, _clean_db):
         r = api_client.post(f"{self.ENDPOINT}/import-all")
         assert r.status_code == 200
 
@@ -89,8 +87,11 @@ class TestWorldsViews:
         r = api_client.get(f"{self.ENDPOINT}/nonexistent-uuid/neighborhood")
         assert r.status_code == 404
 
-    @pytest.mark.xfail(reason="DetachedInstanceError in UniverseService.import_from_registry", strict=False)
-    def test_world_import_action(self, api_client, clean_db):
+    @pytest.mark.xfail(
+        reason="DetachedInstanceError in UniverseService.import_from_registry",
+        strict=False
+    )
+    def test_world_import_action(self, api_client, _clean_db):
         r = api_client.post(f"{self.ENDPOINT}/import/metal_gear")
         assert r.status_code == 200
 
@@ -100,7 +101,12 @@ class TestKnowledgeWorldRow:
 
     def test_world_row_format(self, api_client, clean_db):
         session = clean_db
-        u = Universe(name="TestUniverse", franchise="TestFran", continuity="TestCont", era="TestEra")
+        u = Universe(
+            name="TestUniverse",
+            franchise="TestFran",
+            continuity="TestCont",
+            era="TestEra"
+        )
         session.add(u)
         session.commit()
         session.close()
@@ -123,7 +129,11 @@ class TestKnowledgeWorldRow:
     def test_world_row_display_name_logic(self, api_client, clean_db):
         session = clean_db
         # Case 1: Name is a timeline marker (name == era)
-        u1 = Universe(name="1995 Film Timeline", franchise="Ghost in the Shell", era="1995 Film Timeline")
+        u1 = Universe(
+            name="1995 Film Timeline",
+            franchise="Ghost in the Shell",
+            era="1995 Film Timeline"
+        )
         # Case 2: Normal name
         u2 = Universe(name="Pokemon Red", franchise="Pokemon")
         session.add_all([u1, u2])
@@ -142,7 +152,11 @@ class TestKnowledgeWorldRow:
     def test_world_row_deduplication(self, api_client, clean_db):
         session = clean_db
         # Name is same as era - should not appear in subtitle
-        u = Universe(name="1995 Film Timeline", franchise="Ghost in the Shell", era="1995 Film Timeline")
+        u = Universe(
+            name="1995 Film Timeline",
+            franchise="Ghost in the Shell",
+            era="1995 Film Timeline"
+        )
         session.add(u)
         session.commit()
         session.close()

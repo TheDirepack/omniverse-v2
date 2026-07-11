@@ -1,9 +1,8 @@
-import io
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from app.services.ocr_service import OcrService, _resolve_gpu, _GPU_SETTING_KEY
+from app.services.ocr_service import _GPU_SETTING_KEY, OcrService, _resolve_gpu
 
 
 @pytest.fixture(autouse=True)
@@ -20,7 +19,11 @@ def svc():
     return OcrService()
 
 
-SAMPLE_IMAGE = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x02\x00\x00\x00\x90wS\xde\x00\x00\x00\x0cIDATx\x9cc\xf8\x0f\x00\x00\x01\x01\x00\x05\x18\xd8N\x00\x00\x00\x00IEND\xaeB`\x82"
+SAMPLE_IMAGE = (
+    b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x02\x00\x00"
+    b"\x00\x90wS\xde\x00\x00\x00\x0cIDATx\x9cc\xf8\x0f\x00\x00\x01\x01\x00\x05\x18\xd8N"
+    b"\x00\x00\x00\x00IEND\xaeB`\x82"
+)
 
 
 class TestCache:
@@ -72,6 +75,7 @@ class TestCache:
 class TestGpuResolution:
     async def _upsert_setting(self, key: str, value: str):
         from sqlalchemy import text
+
         from app.db.settings_session import get_settings_session
         session = get_settings_session()
         existing = session.execute(
@@ -79,7 +83,7 @@ class TestGpuResolution:
         ).fetchone()
         if existing:
             session.execute(
-                text("UPDATE setting SET value = :value WHERE key = :key"), 
+                text("UPDATE setting SET value = :value WHERE key = :key"),
                 {"value": value, "key": key}
             )
         else:
@@ -90,6 +94,7 @@ class TestGpuResolution:
 
     async def _delete_setting(self, key: str):
         from sqlalchemy import text
+
         from app.db.settings_session import get_settings_session
         session = get_settings_session()
         session.execute(text("DELETE FROM setting WHERE key = :key"), {"key": key})
@@ -154,18 +159,21 @@ class TestEngineLoaders:
             assert cpu_reader is not gpu_reader
 
     async def test_load_docling_singleton(self, svc):
-        mock_conv = MagicMock()
-        with patch.dict("sys.modules", {"docling": MagicMock(), "docling.document_converter": MagicMock()}):
-            with patch(
-                "app.services.ocr_service.OcrService._docling_pipeline", None
-            ):
-                import importlib
-                import app.services.ocr_service as ocr_mod
-                importlib.reload(ocr_mod)
-                OcrService._docling_pipeline = None
-                d1 = svc._load_docling()
-                d2 = svc._load_docling()
-                assert d1 is d2
+        with (
+            patch.dict(
+                "sys.modules",
+                {"docling": MagicMock(), "docling.document_converter": MagicMock()},
+            ),
+            patch("app.services.ocr_service.OcrService._docling_pipeline", None),
+        ):
+            import importlib
+
+            import app.services.ocr_service as ocr_mod
+            importlib.reload(ocr_mod)
+            OcrService._docling_pipeline = None
+            d1 = svc._load_docling()
+            d2 = svc._load_docling()
+            assert d1 is d2
 
     async def test_load_paddleocr_gpu_flag(self, svc):
         fake_mod = MagicMock(spec=object())
@@ -200,10 +208,10 @@ class TestEngineOrdering:
 class TestRunOcr:
     async def test_all_engines_fail_import_returns_error_doc(self, svc):
         with (
-            patch.object(svc, "_load_tesseract", side_effect=ImportError("no tesseract")),
-            patch.object(svc, "_load_easyocr", side_effect=ImportError("no easyocr")),
-            patch.object(svc, "_load_docling", side_effect=ImportError("no docling")),
-            patch.object(svc, "_load_paddleocr", side_effect=ImportError("no paddleocr")),
+            patch.object(svc, "_load_tesseract", side_effect=ImportError("tess-err")),
+            patch.object(svc, "_load_easyocr", side_effect=ImportError("easy-err")),
+            patch.object(svc, "_load_docling", side_effect=ImportError("docl-err")),
+            patch.object(svc, "_load_paddleocr", side_effect=ImportError("padd-err")),
         ):
             doc = await svc._run_ocr(SAMPLE_IMAGE, None, None)
             assert doc.content_type == "image/pending_ocr"

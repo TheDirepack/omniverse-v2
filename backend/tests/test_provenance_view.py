@@ -1,5 +1,4 @@
-import pytest
-from app.db.schema import Claim, Entity, Universe
+from app.db.schema import Artifact, ArtifactRelation, Universe
 
 
 class TestProvenanceForClaim:
@@ -15,11 +14,20 @@ class TestProvenanceForClaim:
         session.add(u)
         session.commit()
         session.refresh(u)
-        e = Entity(name="ProvEnt", entity_type="T", universe_id=u.id)
+        e = Artifact(name="ProvEnt", type="entity", universe_id=u.id)
         session.add(e)
         session.commit()
         session.refresh(e)
-        c = Claim(subject_id=e.id, predicate="test", object_literal="val")
+        lit = Artifact(name="val", type="literal", universe_id=u.id)
+        session.add(lit)
+        session.commit()
+        session.refresh(lit)
+        c = ArtifactRelation(
+            universe_id=u.id,
+            from_artifact_id=e.id,
+            to_artifact_id=lit.id,
+            relation_type="test",
+        )
         session.add(c)
         session.commit()
         session.refresh(c)

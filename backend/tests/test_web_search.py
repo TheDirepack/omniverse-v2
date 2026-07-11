@@ -1,9 +1,10 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from bs4 import BeautifulSoup
+
 from app.core.browser import browser_manager
 from app.core.web_search import WebSearcher
-from bs4 import BeautifulSoup
 
 
 @pytest.mark.asyncio
@@ -149,7 +150,10 @@ async def test_perform_search_detects_bot_check_page():
         mock_page = AsyncMock()
         mock_context = AsyncMock()
         mock_get_page.return_value = (mock_page, mock_context)
-        mock_page.content.return_value = "<html><body>Our systems have detected unusual traffic from your network.</body></html>"
+        mock_page.content.return_value = (
+            "<html><body>Our systems have detected unusual traffic from your network."
+            "</body></html>"
+        )
         mock_page.goto = AsyncMock()
 
         result = await searcher.perform_search("query", engine="google")

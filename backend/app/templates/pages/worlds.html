@@ -1,44 +1,51 @@
 {% extends "base.html" %}
-
+ 
 {% block title %}Worlds - Omniverse{% endblock %}
-
+ 
 {% block content %}
 <div class="space-y-6">
     <div class="flex justify-between items-center">
         <h1 class="text-3xl font-bold">Worlds</h1>
     </div>
-
-    <div class="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
-        <div class="flex border-b border-gray-200 dark:border-gray-700">
-            <button class="world-tab-btn px-6 py-3 text-sm font-medium border-b-2 border-blue-600 text-blue-600"
-                    hx-get="{{ url_for('worlds_import_fragment') }}"
-                    hx-target="#world-modal-content"
-                    hx-swap="innerHTML"
-                    hx-indicator="#worlds-indicator">
-                Import World
-            </button>
-            <button class="world-tab-btn px-6 py-3 text-sm font-medium text-gray-500 hover:text-gray-700 border-b-2 border-transparent hover:border-gray-300"
-                    hx-get="{{ url_for('worlds_create_fragment') }}"
-                    hx-target="#world-modal-content"
-                    hx-swap="innerHTML"
-                    hx-indicator="#worlds-indicator">
-                Create Custom
-            </button>
-            <button class="world-tab-btn px-6 py-3 text-sm font-medium text-gray-500 hover:text-gray-700 border-b-2 border-transparent hover:border-gray-300"
-                    hx-get="{{ url_for('worlds_graph_fragment') }}"
-                    hx-target="#world-modal-content"
-                    hx-swap="innerHTML"
-                    hx-indicator="#worlds-indicator">
-                World Graph
-            </button>
-            <div id="worlds-indicator" class="htmx-indicator flex items-center ml-auto px-4">
-                <span class="animate-spin inline-block">⌛</span>
+ 
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <!-- World Hub (Main List) -->
+        <div class="lg:col-span-2 bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-xl font-semibold">Universe Registry</h2>
+                <div id="db-worlds-indicator" class="htmx-indicator flex items-center text-xs text-gray-500">
+                    <span class="animate-spin inline-block mr-1">⌛</span> Loading...
+                </div>
+            </div>
+            <div id="database-worlds" hx-get="/worlds/database-worlds" hx-trigger="load" hx-swap="outerHTML">
+                <p class="text-gray-500 dark:text-gray-400 italic">Loading universes...</p>
+            </div>
+        </div>
+ 
+        <!-- Management Sidebar -->
+        <div class="space-y-6">
+            <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+                <h2 class="text-lg font-semibold mb-4">Manage Universes</h2>
+                <div class="flex flex-col gap-2">
+                    <button class="w-full text-left px-4 py-2 rounded text-sm font-medium border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 transition"
+                            data-action="open-world-modal"
+                            data-type="import">
+                        Import from Registry
+                    </button>
+                    <button class="w-full text-left px-4 py-2 rounded text-sm font-medium border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 transition"
+                            data-action="open-world-modal"
+                            data-type="create">
+                        Create Custom Universe
+                    </button>
+                    <button class="w-full text-left px-4 py-2 rounded text-sm font-medium border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 transition"
+                            data-action="open-world-modal"
+                            data-type="graph">
+                        Explore World Graph
+                    </button>
+                </div>
             </div>
         </div>
     </div>
-
-    <!-- Modal for Worlds Content -->
-    <!-- Modal is now globally managed in base.html -->
-
 </div>
 {% endblock %}
+

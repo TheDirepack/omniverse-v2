@@ -2,7 +2,10 @@ class TestWorldsResetExplored:
     ENDPOINT = "/api/worlds"
 
     def test_reset_explored_single_world(self, api_client):
-        """Create a world, mark it explored via DB, then reset via API and verify flag clears."""
+        """
+        Create a world, mark it explored via DB, then reset via API
+        and verify flag clears.
+        """
         api_client.post(
             self.ENDPOINT, json={"world_name": "SingleReset", "auto_research": False}
         )
@@ -18,7 +21,7 @@ class TestWorldsResetExplored:
         world = next(w for w in worlds if w["name"] == "SingleReset")
         assert world["is_explored"] is False
 
-    def test_reset_all_explored_filters_and_clears_flag(self, api_client, clean_db):
+    def test_reset_all_explored_filters_and_clears_flag(self, api_client, _clean_db):
         """Create a world, hit reset-all-explored, and verify the count is accurate."""
         api_client.post(
             self.ENDPOINT, json={"world_name": "FilterTest", "auto_research": False}

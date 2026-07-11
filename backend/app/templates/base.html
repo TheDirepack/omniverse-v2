@@ -34,7 +34,11 @@
             const content = document.getElementById('world-modal-content');
             modal.classList.remove('hidden');
 
-            const endpoint = type === 'import' ? '/worlds/import' : '/worlds/create';
+            const endpoint = {
+                'import': '/worlds/import',
+                'create': '/worlds/create',
+                'graph': '/worlds/graph'
+            }[type] || '/worlds/import';
             
             htmx.ajax('GET', endpoint, {
                 target: '#world-modal-content',

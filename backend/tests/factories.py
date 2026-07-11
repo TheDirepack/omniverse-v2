@@ -1,5 +1,7 @@
-from app.db.schema import AgentRouteFallback, ProviderConfig, Universe
 from sqlmodel import Session
+
+from app.core.enums import RunPhase
+from app.db.schema import AgentRouteFallback, ProviderConfig, Universe
 
 
 def make_universe(session: Session, name: str = "TestUniverse") -> Universe:
@@ -19,10 +21,13 @@ def make_provider(session: Session, name: str = "TestProvider") -> ProviderConfi
 
 
 def make_route(
-    session: Session, task_type: str = "RESEARCH", provider_id: int | None = None
+    session: Session,
+    task_type: RunPhase = RunPhase.RESEARCH,
+    provider_id: int | None = None
 ) -> AgentRouteFallback:
     r = AgentRouteFallback(task_type=task_type, provider_id=provider_id)
     session.add(r)
     session.commit()
     session.refresh(r)
     return r
+

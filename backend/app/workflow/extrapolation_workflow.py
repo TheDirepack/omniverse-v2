@@ -1,12 +1,13 @@
 from typing import Any
 
 from app.agents.prompts import get_extrapolation_prompt, get_theory_auditor_prompt
-from app.core.agent_engine import run_agent, Capability
+from app.core.agent_engine import Capability, run_agent
 from app.core.context import set_current_universe
+from app.core.enums import RunPhase, RunStatus
 from app.services.execution_service import ExecutionService
+from app.services.knowledge_retriever import KnowledgeRetrieverService
 from app.services.theory_service import TheoryService
 from app.services.universe_service import UniverseService
-from app.services.knowledge_retriever import KnowledgeRetrieverService
 
 
 async def extrapolation_node(state: dict[str, Any]) -> dict[str, Any]:
@@ -26,7 +27,7 @@ async def extrapolation_node(state: dict[str, Any]) -> dict[str, Any]:
         run_id,
         "Ontological Theorist",
         "Starting theoretical scaling projections",
-        "EXTRAPOLATING",
+        RunStatus.IN_PROGRESS,
         state,
     )
 
@@ -62,13 +63,13 @@ async def extrapolation_node(state: dict[str, Any]) -> dict[str, Any]:
             theory_prompt = get_extrapolation_prompt(
                 universe.name, uni_context, comparison_context
             )
-            
+
             # If it's a revision, we need to tell the agent what was wrong
             user_prompt = theory_prompt["user"]
             if current_attempt > 0:
                 user_prompt += f"\n\nPREVIOUS REJECTION FEEDBACK:\n{final_audit}"
-        
-            success, speculation, _ = await run_agent(
+
+            _, speculation, _ = await run_agent(
                 agent_name="Ontological Theorist",
                 system_prompt=theory_prompt["system"],
                 user_prompt=theory_prompt["user"],
@@ -79,9 +80,9 @@ async def extrapolation_node(state: dict[str, Any]) -> dict[str, Any]:
                 required_capabilities={Capability.READ_MAIN_DB},
             )
 
-        
+
             audit_prompt = get_theory_auditor_prompt(speculation)
-            success_audit, audit_result, _ = await run_agent(
+            _, audit_result, _ = await run_agent(
                 agent_name="Theoretical Auditor",
                 system_prompt=audit_prompt["system"],
                 user_prompt=audit_prompt["user"],
@@ -92,12 +93,12 @@ async def extrapolation_node(state: dict[str, Any]) -> dict[str, Any]:
                 required_capabilities={Capability.READ_MAIN_DB},
             )
 
-        
+
             if audit_result.strip().upper().startswith("VERIFIED"):
                 verified_theory = speculation
                 final_audit = audit_result
                 break
-            
+
             final_audit = audit_result
             current_attempt += 1
 
@@ -106,8 +107,9 @@ async def extrapolation_node(state: dict[str, Any]) -> dict[str, Any]:
             exec_service.log_transition(
                 run_id,
                 "Theoretical Auditor",
-                f"Discarded theory for {universe.name} after {max_revisions} failed revisions.",
-                "REJECTED",
+                f"Discarded theory for {universe.name} after "
+                f"{max_revisions} failed revisions.",
+                RunStatus.FAILED,
                 {"last_audit": final_audit},
             )
             continue
@@ -126,8 +128,8 @@ async def extrapolation_node(state: dict[str, Any]) -> dict[str, Any]:
         run_id,
         "Ontological Theorist",
         "Completed interaction theories generation successfully",
-        "COMPLETED",
+        RunStatus.COMPLETED,
         state,
     )
 
-    return {"generated_theories": generated_theories, "active_task": "FINISHED"}
+    return {"generated_theories": generated_theories, "active_task": RunPhase.FINISHED}

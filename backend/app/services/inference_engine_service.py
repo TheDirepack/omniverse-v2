@@ -2,7 +2,7 @@ from collections.abc import Sequence
 
 from sqlmodel import Session
 
-from app.db.schema import Claim, InferredClaim
+from app.db.schema import ArtifactRelation, InferredClaim
 from app.db.session import engine
 from app.repositories.inference import InferenceRepository
 from app.repositories.settings import SettingsRepository
@@ -38,7 +38,9 @@ class InferenceEngineService:
 
     def set_max_depth(self, depth: int) -> None:
         if depth < 1:
-            raise ValueError("max_composition_depth must be at least 1")
+            raise ValueError(
+                "max_composition_depth must be at least 1"
+            )
         session = self.session or Session(engine)
         try:
             SettingsRepository(session).upsert_setting(
@@ -61,75 +63,44 @@ class InferenceEngineService:
         """
         max_depth = self.get_max_depth()
         if max_depth < 2:
-            # depth 1 means "no composition at all" -- a single asserted
-            # claim isn't an inference, so there is nothing to materialize.
             return []
-        
+
         session = self.session or Session(engine)
         try:
             repo = InferenceRepository(session)
             approved_rules = list(repo.get_approved_rules())
             created: list[InferredClaim] = []
-        
-            # Depth 2: direct composition over asserted Claims.
+
+            # Depth 2: direct composition over asserted ArtifactRelations.
             for rule in approved_rules:
                 first_hop = repo.get_claims_by_predicate(rule.predicate_1)
-                if not first_hop:
-                    continue
-                
-                # Batch the second hop lookup
-                mid_ids = [
-                    (c1.object_entity_id if c1.object_entity_id else c1.subject_id)
-                    for c1 in first_hop
-                ]
-                
-                # Get all second hops for this predicate in one query
-                all_second_hops = repo.find_claims_with_subject_predicate_batch(
-                    mid_ids, rule.predicate_2
-                )
-                
-                # Map mid_id -> list of claims
-                second_hop_map = {}
-                for c2 in all_second_hops:
-                    mid_id = c2.subject_id
-                    second_hop_map.setdefault(mid_id, []).append(c2)
-                
                 for c1 in first_hop:
-                    mid_id = (
-                        c1.object_entity_id if c1.object_entity_id else c1.subject_id
+                    mid_id = c1.to_artifact_id
+                    second_hops = repo.find_claims_with_subject_predicate(
+                        mid_id, rule.predicate_2
                     )
-                    for c2 in second_hop_map.get(mid_id, []):
+                    for c2 in second_hops:
                         ic = self._materialize_edge(
                             repo, rule.id, rule.implied_predicate, c1, c2
                         )
                         if ic:
                             created.append(ic)
-        
+
             # Depth > 2: compose an InferredClaim (as the "first hop") with a
-            # further asserted Claim, one additional hop per iteration,
+            # further asserted ArtifactRelation, one additional hop per iteration,
             # bounded by max_depth.
             current_depth = 2
             frontier = created
             while current_depth < max_depth and frontier:
                 next_frontier = []
                 for rule in approved_rules:
-                    # Filter frontier for matching predicate
-                    matching_frontier = [ic for ic in frontier if ic.predicate == rule.predicate_1]
-                    if not matching_frontier:
-                        continue
-                        
-                    mid_ids = [ic.object_id for ic in matching_frontier]
-                    all_second_hops = repo.find_claims_with_subject_predicate_batch(
-                        mid_ids, rule.predicate_2
-                    )
-                    
-                    second_hop_map = {}
-                    for c2 in all_second_hops:
-                        mid_id = c2.subject_id
-                        second_hop_map.setdefault(mid_id, []).append(c2)
-                    
-                    for ic in matching_frontier:
-                        for c2 in second_hop_map.get(ic.object_id, []):
+                    for ic in frontier:
+                        if ic.predicate != rule.predicate_1:
+                            continue
+                        second_hops = repo.find_claims_with_subject_predicate(
+                            ic.object_id, rule.predicate_2
+                        )
+                        for c2 in second_hops:
                             new_ic = self._materialize_edge_from_inferred(
                                 repo, rule.id, rule.implied_predicate, ic, c2
                             )
@@ -138,12 +109,10 @@ class InferenceEngineService:
                 created.extend(next_frontier)
                 frontier = next_frontier
                 current_depth += 1
-        
-            # Refresh all created objects so callers can safely read
-            # attributes without hitting DetachedInstanceError.
+
             for ic in created:
                 session.refresh(ic)
-        
+
             session.commit()
             return created
         finally:
@@ -155,26 +124,28 @@ class InferenceEngineService:
         repo: InferenceRepository,
         rule_id: int,
         implied_predicate: str,
-        c1: Claim,
-        c2: Claim,
+        c1: ArtifactRelation,
+        c2: ArtifactRelation,
     ) -> InferredClaim | None:
-        obj_id = c2.object_entity_id if c2.object_entity_id else c2.subject_id
+        obj_id = c2.to_artifact_id
         assert obj_id is not None
-        existing = repo.get_inferred_claim(c1.subject_id, implied_predicate, obj_id)
+        existing = repo.get_inferred_claim(
+            c1.from_artifact_id, implied_predicate, obj_id
+        )
         if existing:
-            return None  # already materialized, skip
+            return None
         contradicts_id = self._find_contradiction(
-            repo, c1.subject_id, implied_predicate, obj_id
+            repo, c1.from_artifact_id, implied_predicate, obj_id
         )
         ic = InferredClaim(
-            subject_id=c1.subject_id,
+            subject_id=c1.from_artifact_id,
             predicate=implied_predicate,
             object_id=obj_id,
             derived_from_rule_id=rule_id,
             contradicts_claim_id=contradicts_id,
         )
         res = repo.create_inferred_claim(ic)
-        repo.session.flush()  # Need ID
+        repo.session.flush()
         repo.add_inferred_claim_paths(res.id, [c1.id, c2.id])
         return res
 
@@ -184,9 +155,9 @@ class InferenceEngineService:
         rule_id: int,
         implied_predicate: str,
         ic_prev: InferredClaim,
-        c2: Claim,
+        c2: ArtifactRelation,
     ) -> InferredClaim | None:
-        obj_id = c2.object_entity_id if c2.object_entity_id else c2.subject_id
+        obj_id = c2.to_artifact_id
         assert obj_id is not None
         existing = repo.get_inferred_claim(
             ic_prev.subject_id, implied_predicate, obj_id
@@ -206,7 +177,7 @@ class InferenceEngineService:
         )
         res = repo.create_inferred_claim(ic)
         session = repo.session
-        session.flush()  # Need ID
+        session.flush()
         repo.add_inferred_claim_paths(res.id, [*prev_path, c2.id])
         return res
 
@@ -217,22 +188,15 @@ class InferenceEngineService:
         predicate: str,
         object_id: int,
     ) -> int | None:
-        """
-        Structural check only: same subject+predicate, different object.
-        This is a FLAG for semantic review, never an auto-resolution — a
-        mismatch may mean the asserted claim is a legitimate exception to the
-        general chain, not an error in either claim.
-        """
-        existing_claims = repo.find_claims_with_subject_predicate(subject_id, predicate)
-        for existing in existing_claims:
-            existing_obj_id = (
-                existing.object_entity_id
-                if existing.object_entity_id
-                else existing.subject_id
-            )
+        existing_relations = repo.find_claims_with_subject_predicate(
+            subject_id, predicate
+        )
+        for existing in existing_relations:
+            existing_obj_id = existing.to_artifact_id
             if existing_obj_id != object_id:
                 return existing.id
         return None
+
 
     def get_unreviewed_contradictions(self) -> Sequence[InferredClaim]:
         session = self.session or Session(engine)

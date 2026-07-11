@@ -77,7 +77,10 @@ class AcquisitionCacheRepository:
         run_id: str | None = None,
         session: Session | None = None,
     ) -> ProvenanceEdge:
-        print(f"DEBUG: store_provenance called: artifact={source_artifact_id}, target={target_id}, type={target_type}")
+        print(
+            f"DEBUG: store_provenance called: artifact={source_artifact_id}, "
+            f"target={target_id}, type={target_type}"
+        )
         edge = ProvenanceEdge(
             source_artifact_id=source_artifact_id,
             target_type=target_type,

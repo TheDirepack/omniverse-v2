@@ -1,4 +1,5 @@
 import pytest
+
 from app.db.schema import InferenceRule
 
 

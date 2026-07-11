@@ -4,7 +4,7 @@ from app.core.agent_logger import LOG_FILE
 def test_get_file_logs_basic(client):
     # Setup: Create a dummy log file
     LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
-    with open(LOG_FILE, "w", encoding="utf-8") as f:
+    with LOG_FILE.open("w", encoding="utf-8") as f:
         f.write("Line 1: Error\nLine 2: Success\nLine 3: Warning\n")
 
     # Test fetching all logs
@@ -20,7 +20,7 @@ def test_get_file_logs_basic(client):
 def test_get_file_logs_filter(client):
     # Setup: Create dummy log file
     LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
-    with open(LOG_FILE, "w", encoding="utf-8") as f:
+    with LOG_FILE.open("w", encoding="utf-8") as f:
         f.write("Line 1: Error in auth\nLine 2: Success in db\nLine 3: Error in api\n")
 
     # Test filtering for "Error"
@@ -41,9 +41,8 @@ def test_get_file_logs_filter(client):
 def test_get_file_logs_limit(client):
     # Setup: Create a log file with many lines
     LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
-    with open(LOG_FILE, "w", encoding="utf-8") as f:
-        for i in range(150):
-            f.write(f"Log line {i}\n")
+    with LOG_FILE.open("w", encoding="utf-8") as f:
+        f.writelines(f"Log line {i}\n" for i in range(150))
 
     # Test limit of 100 (default)
     response = client.get("/api/runs/logs/file")

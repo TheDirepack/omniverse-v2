@@ -1,16 +1,15 @@
 import pytest
+
 from app.db.schema import Universe
-from app.db.session import engine
-from sqlmodel import Session, select
 
 
 @pytest.mark.asyncio
 async def test_pipeline_auto_registers_worlds(client, clean_db):
     """
-    Tests that run_pipeline_in_background registers worlds in the DB if they don't exist.
+    Tests that run_pipeline_in_background registers worlds in the DB if they
+    don't exist.
     """
     # Create universes first to get their UUIDs
-    from app.db.schema import Universe
     u1 = Universe(name="NewWorldA")
     u2 = Universe(name="NewWorldB")
     clean_db.add_all([u1, u2])
@@ -21,7 +20,7 @@ async def test_pipeline_auto_registers_worlds(client, clean_db):
     test_uuids = [str(u1.id), str(u2.id)]
 
     # Action: Start orchestration with valid UUIDs
-    response = client.post("/api/runs/orchestrate", json={"universe_uuids": test_uuids})
+    response = client.post("/api/runs/workflow", json={"universe_uuids": test_uuids})
     assert response.status_code == 200
 
     # Verification: check if run was started

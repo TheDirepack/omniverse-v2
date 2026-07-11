@@ -1,11 +1,13 @@
-"""Tests for workflow modules: tiering_workflow, consolidation_workflow, extrapolation_workflow."""
+"""
+Tests for workflow modules: tiering_workflow,
+consolidation_workflow, extrapolation_workflow.
+"""
 
 import json
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from app.db.schema import Universe
 from app.workflow.tiering_workflow import _parse_stability_result, audit_success
 
 
@@ -57,8 +59,7 @@ class TestAuditSuccess:
 
     def test_non_string_input(self):
         # Should not crash on non-string
-        with pytest.raises((AttributeError, TypeError)):
-            audit_success(None)  # noqa
+        assert audit_success(None) is False
 
 
 class TestParseStabilityResult:
@@ -118,9 +119,8 @@ class TestExtrapolationNode:
         with patch(
             "app.core.runtime_state.is_aborted",
             new=AsyncMock(return_value=True),
-        ):
-            with pytest.raises(RuntimeError, match="aborted"):
-                await extrapolation_node({"run_id": "aborted-extrap"})
+        ), pytest.raises(RuntimeError, match="aborted"):
+            await extrapolation_node({"run_id": "aborted-extrap"})
 
     async def test_no_verified_worlds(self):
         from app.workflow.extrapolation_workflow import extrapolation_node
@@ -144,7 +144,8 @@ class TestExtrapolationNode:
                 "run_id": "test-extrap",
                 "verified_worlds": [],
             })
-            assert result["active_task"] == "FINISHED"
+            from app.core.enums import RunPhase
+            assert result["active_task"] == RunPhase.FINISHED
 
 
 class TestTieringArchitectureNode:
@@ -156,9 +157,8 @@ class TestTieringArchitectureNode:
         with patch(
             "app.core.runtime_state.is_aborted",
             new=AsyncMock(return_value=True),
-        ):
-            with pytest.raises(RuntimeError, match="aborted"):
-                await architecture_node({"run_id": "aborted-tier"})
+        ), pytest.raises(RuntimeError, match="aborted"):
+            await architecture_node({"run_id": "aborted-tier"})
 
 
 class TestTieringWorkflowPureFunctions:

@@ -1,28 +1,24 @@
-import json
-from unittest.mock import ANY, AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from sqlmodel import Session, select
 
-from app.core.acquisition_cache import acquisition_cache
 from app.core.context import set_current_universe
 from app.core.runtime_state import set_current_run_id
 from app.core.tools import (
-    AGENT_TOOLS,
     _get_run_id,
     _get_universe_uuid,
     _store_artifact,
     build_freshness_comparison_report,
     tool_compare_source_freshness,
-    tool_delete_unconfirmed_claim,
+    tool_delete_unconfirmed_artifact,
     tool_link_entity_to_canonical,
     tool_link_universes,
-    tool_save_unconfirmed_claim,
-    tool_upsert_claims,
+    tool_save_notebook_entry,
+    tool_upsert_artifacts,
 )
-from app.db.schema import Entity, Universe
-from app.db.session import engine
-from app.db.unconfirmed_schema import UnconfirmedClaim, UnconfirmedUniverse
+from app.db.schema import Artifact, Universe
+from app.db.unconfirmed_schema import NotebookEntry, UnconfirmedUniverse
 from app.db.unconfirmed_session import unconfirmed_engine
 
 
@@ -36,8 +32,14 @@ def _clear_active_context():
 class TestBuildFreshnessReport:
     def test_all_available(self):
         report = build_freshness_comparison_report({
-            "http://a.com": "[SOURCE FRESHNESS SIGNALS]\nStaleness warning: none detected\n[END SIGNALS]\nBody",
-            "http://b.com": "[SOURCE FRESHNESS SIGNALS]\nLast-Modified: 2024\n[END SIGNALS]\nOther",
+            "http://a.com": (
+                "[SOURCE FRESHNESS SIGNALS]\nStaleness warning: none detected"
+                "\n[END SIGNALS]\nBody"
+            ),
+            "http://b.com": (
+                "[SOURCE FRESHNESS SIGNALS]\nLast-Modified: 2024\n[END SIGNALS]"
+                "\nOther"
+            ),
         })
         assert "CANDIDATE: http://a.com" in report
         assert "CANDIDATE: http://b.com" in report
@@ -52,7 +54,9 @@ class TestBuildFreshnessReport:
 
     def test_content_is_dict(self):
         report = build_freshness_comparison_report({
-            "http://dict.com": {"main_content": "[SOURCE FRESHNESS SIGNALS]\nFresh\n[END SIGNALS]"},
+            "http://dict.com": {
+                "main_content": "[SOURCE FRESHNESS SIGNALS]\nFresh\n[END SIGNALS]"
+            },
         })
         assert "Fresh" in report
 
@@ -69,7 +73,7 @@ class TestBuildFreshnessReport:
                 return False
             def __getitem__(self, key):
                 if isinstance(key, slice):
-                    raise RuntimeError("nope")
+                    raise TypeError("nope")
                 return "x"
 
         with pytest.raises(TypeError):
@@ -142,7 +146,7 @@ class TestToolLinkEntityToCanonical:
         u = Universe(name="ECanon")
         ephemeral_db.add(u)
         ephemeral_db.commit()
-        e = Entity(name="Hero", entity_type="Person", universe_id=u.id)
+        e = Artifact(name="Hero", type="entity", universe_id=u.id)
         ephemeral_db.add(e)
         ephemeral_db.commit()
         set_current_universe("ECanon")
@@ -156,8 +160,8 @@ class TestToolLinkEntityToCanonical:
         u = Universe(name="ELink")
         ephemeral_db.add(u)
         ephemeral_db.commit()
-        e1 = Entity(name="HeroCanon", entity_type="Person", universe_id=u.id)
-        e2 = Entity(name="HeroLink", entity_type="Person", universe_id=u.id)
+        e1 = Artifact(name="HeroCanon", type="entity", universe_id=u.id)
+        e2 = Artifact(name="HeroLink", type="entity", universe_id=u.id)
         ephemeral_db.add_all([e1, e2])
         ephemeral_db.commit()
         ephemeral_db.refresh(e1)
@@ -169,64 +173,47 @@ class TestToolLinkEntityToCanonical:
         assert "linked to canonical" in result
 
 
-class TestToolSaveUnconfirmedClaim:
+class TestToolSaveNotebookEntry:
     async def test_no_active_context(self):
-        result = await tool_save_unconfirmed_claim({"items": []})
+        result = await tool_save_notebook_entry({"title": "T", "summary": "S"})
         assert "No active universe context" in result
 
-    async def test_single_item(self):
+    async def test_single_item(self, ephemeral_db):
+        u = Universe(name="SaveTest")
+        ephemeral_db.add(u)
+        ephemeral_db.commit()
         set_current_universe("SaveTest")
-        result = await tool_save_unconfirmed_claim({
-            "subject": "S",
-            "predicate": "P",
-            "object_val": "O",
+        result = await tool_save_notebook_entry({
+            "title": "S",
+            "summary": "O",
+            "details": "P",
         })
-        assert "Saved 1 unconfirmed claim" in result
+        assert "saved successfully" in result
         with Session(unconfirmed_engine) as s:
-            uc = s.exec(
-                select(UnconfirmedClaim).where(UnconfirmedClaim.subject == "S")
+            ne = s.exec(
+                select(NotebookEntry).where(NotebookEntry.title == "S")
             ).first()
-            assert uc is not None
+            assert ne is not None
 
-    async def test_missing_fields_in_single_item(self):
+    async def test_missing_fields(self, ephemeral_db):
+        u = Universe(name="Missing")
+        ephemeral_db.add(u)
+        ephemeral_db.commit()
         set_current_universe("Missing")
-        result = await tool_save_unconfirmed_claim({
-            "subject": "S",
-            "predicate": "",
-            "object_val": "",
+        result = await tool_save_notebook_entry({
+            "title": "S",
+            "summary": "",
         })
-        assert "Skipped claim" in result
-        assert "Errors" in result
-
-    async def test_batch_items(self):
-        set_current_universe("Batch")
-        result = await tool_save_unconfirmed_claim({
-            "items": [
-                {"subject": "S1", "predicate": "P1", "object_val": "O1"},
-                {"subject": "S2", "predicate": "P2", "object_val": "O2"},
-            ]
-        })
-        assert "2 unconfirmed claim" in result
-
-    async def test_partial_batch_items(self):
-        set_current_universe("Partial")
-        result = await tool_save_unconfirmed_claim({
-            "items": [
-                {"subject": "S1", "predicate": "P1", "object_val": "O1"},
-                {"subject": "S2", "predicate": "", "object_val": "O2"},
-            ]
-        })
-        assert "1 unconfirmed claim" in result
-        assert "Errors" in result
+        assert "Error: Missing title or summary" in result
 
 
-class TestToolDeleteUnconfirmedClaim:
-    async def test_no_claim_id(self):
-        result = await tool_delete_unconfirmed_claim({})
+class TestToolDeleteUnconfirmedArtifact:
+    async def test_no_artifact_id(self):
+        result = await tool_delete_unconfirmed_artifact({})
         assert "Missing" in result
 
     async def test_no_active_context(self):
-        result = await tool_delete_unconfirmed_claim({"claim_id": 1})
+        result = await tool_delete_unconfirmed_artifact({"claim_id": 1})
         assert "No active universe context" in result
 
     async def test_delete_nonexistent(self):
@@ -235,49 +222,60 @@ class TestToolDeleteUnconfirmedClaim:
         with Session(unconfirmed_engine) as s:
             s.add(u)
             s.commit()
-        result = await tool_delete_unconfirmed_claim({"claim_ids": [999]})
-        assert "not found" in result
+        result = await tool_delete_unconfirmed_artifact({"claim_ids": [999]})
+        assert "Deleted 0" in result
 
     async def test_delete_wrong_universe(self):
-        u1 = UnconfirmedUniverse(name="DelA")
-        u2 = UnconfirmedUniverse(name="DelB")
+        u1 = UnconfirmedUniverse(name="DelA", universe_uuid="uuid-a")
+        u2 = UnconfirmedUniverse(name="DelB", universe_uuid="uuid-b")
         with Session(unconfirmed_engine) as s:
             s.add_all([u1, u2])
             s.commit()
             s.refresh(u1)
-            c = UnconfirmedClaim(universe_id=u1.id, subject="S", predicate="P", object_val="O")
-            s.add(c)
+            ne = NotebookEntry(
+                universe_uuid=u1.universe_uuid, title="S", summary="O", kind="Observation"
+            )
+
+
+            s.add(ne)
             s.commit()
-            cid = c.id
+            nid = ne.id
         set_current_universe("DelB")
-        result = await tool_delete_unconfirmed_claim({"claim_ids": [cid]})
-        assert "does not belong" in result
+        result = await tool_delete_unconfirmed_artifact({"claim_ids": [nid]})
+        assert "Deleted 0" in result
+        assert "does not belong to current universe" in result
 
     async def test_delete_success(self):
         set_current_universe("DelOk")
         with Session(unconfirmed_engine) as s:
-            u = s.exec(select(UnconfirmedUniverse).where(UnconfirmedUniverse.name == "DelOk")).first()
+            u = s.exec(
+                select(UnconfirmedUniverse).where(UnconfirmedUniverse.name == "DelOk")
+            ).first()
             if not u:
-                u = UnconfirmedUniverse(name="DelOk")
+                u = UnconfirmedUniverse(name="DelOk", universe_uuid="uuid-ok")
                 s.add(u)
                 s.commit()
                 s.refresh(u)
-            c = UnconfirmedClaim(universe_id=u.id, subject="S", predicate="P", object_val="O")
-            s.add(c)
+            ne = NotebookEntry(
+                universe_uuid=u.universe_uuid, title="S", summary="O", kind="Observation"
+            )
+
+
+            s.add(ne)
             s.commit()
-            cid = c.id
-        result = await tool_delete_unconfirmed_claim({"claim_id": cid})
+            nid = ne.id
+        result = await tool_delete_unconfirmed_artifact({"claim_ids": [nid]})
         assert "Deleted 1" in result
 
 
-class TestToolUpsertClaims:
+class TestToolUpsertArtifacts:
     async def test_no_active_context(self):
-        result = await tool_upsert_claims({})
+        result = await tool_upsert_artifacts({})
         assert "No active universe context" in result
 
     async def test_universe_not_found(self):
         set_current_universe("NoUni")
-        result = await tool_upsert_claims({"items": []})
+        result = await tool_upsert_artifacts({"items": [{"type": "entity", "name": "E"}]})
         assert "not found" in result
 
     async def test_basic_upsert(self, ephemeral_db):
@@ -285,76 +283,82 @@ class TestToolUpsertClaims:
         ephemeral_db.add(u)
         ephemeral_db.commit()
         set_current_universe("UpsertBasic")
-        result = await tool_upsert_claims({
-            "items": [{"subject": "Char", "predicate": "has_power", "object_val": "Flight"}]
+        result = await tool_upsert_artifacts({
+            "items": [
+                {"type": "entity", "name": "Char", "payload": {"power": "Flight"}}
+            ]
         })
-        assert "Created: 1" in result
+        assert "Integrated 1 new" in result
 
     async def test_upsert_with_evidence(self, ephemeral_db):
         u = Universe(name="UpsertEv")
         ephemeral_db.add(u)
         ephemeral_db.commit()
         set_current_universe("UpsertEv")
-        result = await tool_upsert_claims({
+        result = await tool_upsert_artifacts({
             "items": [{
-                "subject": "Char",
-                "predicate": "has_power",
-                "object_val": "Strength",
+                "type": "entity",
+                "name": "Char",
+                "confidence": "High",
                 "source_wiki": "http://wiki.example",
                 "source_reference": "#section1",
+                "payload": {"power": "Strength"},
             }]
         })
-        assert "Created: 1" in result
+        assert "Integrated 1 new" in result
 
     async def test_upsert_with_attributes(self, ephemeral_db):
         u = Universe(name="UpsertAttr")
         ephemeral_db.add(u)
         ephemeral_db.commit()
         set_current_universe("UpsertAttr")
-        result = await tool_upsert_claims({
+        result = await tool_upsert_artifacts({
             "items": [{
-                "subject": "Char",
-                "predicate": "has_power",
-                "object_val": "Speed",
-                "attributes": {"level": "10", "type": "physical"},
+                "type": "entity",
+                "name": "Char",
+                "payload": {"level": "10", "type": "physical"},
             }]
         })
-        assert "Created: 1" in result
+        assert "Integrated 1 new" in result
 
     async def test_upsert_existing_updates(self, ephemeral_db):
         u = Universe(name="UpsertDup")
         ephemeral_db.add(u)
         ephemeral_db.commit()
         set_current_universe("UpsertDup")
-        await tool_upsert_claims({
-            "items": [{"subject": "Char", "predicate": "has_power", "object_val": "Flight"}]
+        await tool_upsert_artifacts({
+            "items": [
+                {"type": "entity", "name": "Char", "payload": {"power": "Flight"}}
+            ]
         })
-        result = await tool_upsert_claims({
-            "items": [{"subject": "Char", "predicate": "has_power", "object_val": "Flight"}]
+        result = await tool_upsert_artifacts({
+            "items": [
+                {"type": "entity", "name": "Char", "payload": {"power": "Flight"}}
+            ]
         })
-        assert "Updated: 1" in result
+        assert "1 updated" in result
 
     async def test_upsert_missing_fields_skipped(self, ephemeral_db):
         u = Universe(name="UpsertSkip")
         ephemeral_db.add(u)
         ephemeral_db.commit()
         set_current_universe("UpsertSkip")
-        result = await tool_upsert_claims({
-            "items": [{"subject": "", "predicate": "", "object_val": ""}]
+        result = await tool_upsert_artifacts({
+            "items": [{"name": "NoType"}]
         })
-        assert "Skipped: 1" in result
+        assert "Integrated 0 new and 0 updated" in result
 
     async def test_single_item_not_items(self, ephemeral_db):
         u = Universe(name="UpsertSingle")
         ephemeral_db.add(u)
         ephemeral_db.commit()
         set_current_universe("UpsertSingle")
-        result = await tool_upsert_claims({
-            "subject": "Char",
-            "predicate": "is_a",
-            "object_val": "Hero",
+        result = await tool_upsert_artifacts({
+            "type": "entity",
+            "name": "Char",
+            "payload": {"role": "Hero"},
         })
-        assert "Created: 1" in result
+        assert "Error: Missing `items` list" in result
 
 
 class TestStoreArtifact:
@@ -393,55 +397,65 @@ class TestGetRunIdAndUniverseUuid:
         assert uuid_val is not None
 
 
-class TestToolQueryUnconfirmedClaims:
-    async def test_no_active_context(self):
-        from app.core.tools import tool_query_unconfirmed_claims
-        result = await tool_query_unconfirmed_claims({})
-        assert "No active universe context" in result
+class TestToolQueryArtifacts:
+    async def test_query_all(self, ephemeral_db):
+        set_current_universe("QAll")
+        u = Universe(name="QAll")
+        ephemeral_db.add(u)
+        ephemeral_db.commit()
 
-    async def test_no_unconfirmed_data(self):
-        set_current_universe("NoData")
-        from app.core.tools import tool_query_unconfirmed_claims
-        result = await tool_query_unconfirmed_claims({})
-        assert "No unconfirmed data" in result
+        e = Artifact(name="E1", type="entity", universe_id=u.id)
+        ephemeral_db.add(e)
+        ephemeral_db.commit()
 
-    async def test_has_unconfirmed_claims(self):
-        set_current_universe("HasUnc")
-        with Session(unconfirmed_engine) as s:
-            u = UnconfirmedUniverse(name="HasUnc")
-            s.add(u)
-            s.commit()
-            s.refresh(u)
-            s.add(UnconfirmedClaim(universe_id=u.id, subject="S", predicate="P", object_val="O"))
-            s.commit()
-        from app.core.tools import tool_query_unconfirmed_claims
-        result = await tool_query_unconfirmed_claims({})
-        assert "S" in result
-        assert "P" in result
-        assert "O" in result
+        import json
+        c = Artifact(
+            name="E1 HAS_POWER Flying",
+            type="claim",
+            universe_id=u.id,
+            payload_json=json.dumps({
+                "subject_id": e.id,
+                "predicate": "HAS_POWER",
+                "object_literal": "Flying"
+            })
+        )
+        ephemeral_db.add(c)
+        ephemeral_db.commit()
 
+        from app.core.tools import tool_query_artifacts
+        result = await tool_query_artifacts({})
+        assert "E1" in result
 
-class TestToolQueryClaimsWithFilter:
-    async def test_filter_by_predicate(self, ephemeral_db):
+    async def test_filter_by_type(self, ephemeral_db):
         set_current_universe("QFilt")
         u = Universe(name="QFilt")
         ephemeral_db.add(u)
         ephemeral_db.commit()
 
-        e = Entity(name="E1", entity_type="T", universe_id=u.id)
-        ephemeral_db.add(e)
-        ephemeral_db.commit()
-        ephemeral_db.refresh(e)
-
-        from app.db.schema import Claim
-        ephemeral_db.add(Claim(subject_id=e.id, predicate="power", object_literal="flight", universe_scope=u.id, status="VERIFIED"))
-        ephemeral_db.add(Claim(subject_id=e.id, predicate="speed", object_literal="100", universe_scope=u.id, status="VERIFIED"))
+        e = Artifact(name="E1", type="entity", universe_id=u.id)
+        lit1 = Artifact(name="flight", type="literal", universe_id=u.id)
+        ephemeral_db.add_all([e, lit1])
         ephemeral_db.commit()
 
-        from app.core.tools import tool_query_claims
-        result = await tool_query_claims({"predicate": "power"})
-        assert "flight" in result
-        assert "100" not in result
+        import json
+        c = Artifact(
+            name="E1 HAS_POWER Flying",
+            type="claim",
+            universe_id=u.id,
+            payload_json=json.dumps({
+                "subject_id": e.id,
+                "predicate": "HAS_POWER",
+                "object_literal": "Flying"
+            })
+        )
+        ephemeral_db.add(c)
+        ephemeral_db.commit()
+
+        from app.core.tools import tool_query_artifacts
+        result = await tool_query_artifacts({"type": "entity"})
+        assert "E1" in result
+        assert "flight" not in result
+
 
     async def test_filter_no_match(self, ephemeral_db):
         set_current_universe("QFilt2")
@@ -449,18 +463,9 @@ class TestToolQueryClaimsWithFilter:
         ephemeral_db.add(u)
         ephemeral_db.commit()
 
-        e = Entity(name="E1", entity_type="T", universe_id=u.id)
-        ephemeral_db.add(e)
-        ephemeral_db.commit()
-        ephemeral_db.refresh(e)
-
-        from app.db.schema import Claim
-        ephemeral_db.add(Claim(subject_id=e.id, predicate="power", object_literal="flight", universe_scope=u.id, status="VERIFIED"))
-        ephemeral_db.commit()
-
-        from app.core.tools import tool_query_claims
-        result = await tool_query_claims({"predicate": "nonexistent"})
-        assert "no verified claims" in result.lower()
+        from app.core.tools import tool_query_artifacts
+        result = await tool_query_artifacts({"name": "nonexistent"})
+        assert "no verified claims found" in result.lower()
 
 
 class TestToolFetchPageErrors:
@@ -534,14 +539,18 @@ class TestToolWebSearchDetailed:
     async def test_engines_string(self, mock_search):
         mock_search.return_value = {"status": "SUCCESS", "results": []}
         from app.core.tools import tool_web_search
-        result = await tool_web_search({"search_query": "test", "engine": "google,brave"})
+        result = await tool_web_search({
+            "search_query": "test", "engine": "google,brave"
+        })
         assert "test" in result
 
     @patch("app.core.tools.web_searcher.perform_search", new_callable=AsyncMock)
     async def test_engines_list(self, mock_search):
         mock_search.return_value = {"status": "SUCCESS", "results": []}
         from app.core.tools import tool_web_search
-        result = await tool_web_search({"search_query": "test", "engine": ["google", "brave"]})
+        result = await tool_web_search({
+            "search_query": "test", "engine": ["google", "brave"]
+        })
         assert "test" in result
 
     @patch("app.core.tools.web_searcher.perform_search", new_callable=AsyncMock)
@@ -550,10 +559,9 @@ class TestToolWebSearchDetailed:
         from app.core.tools import tool_web_search
         result = await tool_web_search({"search_query": "test"})
         assert isinstance(result, str)
-
-
 class TestToolWebSearchMissingQuery:
     async def test_no_query(self):
         from app.core.tools import tool_web_search
         result = await tool_web_search({})
         assert "Missing" in result
+

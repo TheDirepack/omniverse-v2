@@ -1,5 +1,5 @@
 import json
-import pytest
+
 from app.core.retry_handler import RetryHandler
 
 
@@ -45,7 +45,9 @@ class TestRetryHandlerUpdateState:
         rh = RetryHandler()
         rh.update_state("result", None, "hist")
         assert len(rh.feedback_history) == 1
-        assert "General revision required" in rh.feedback_history[0]["corrections"][0]["Required_Fix"]
+        assert "General revision required" in (
+            rh.feedback_history[0]["corrections"][0]["Required_Fix"]
+        )
 
     def test_multiple_updates_accumulate(self):
         rh = RetryHandler()

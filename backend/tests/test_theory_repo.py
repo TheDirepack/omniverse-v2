@@ -1,7 +1,8 @@
 import pytest
 from sqlmodel import Session
-from app.repositories.theory import TheoryRepository
+
 from app.db.extrapolation_schema import ExtrapolationModel, Theory
+from app.repositories.theory import TheoryRepository
 from tests.conftest import extrapolation_engine
 
 

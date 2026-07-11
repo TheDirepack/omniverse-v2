@@ -18,6 +18,20 @@ if [ -d ".venv" ]; then
     source .venv/bin/activate
 elif [ -d "venv" ]; then
     source venv/bin/activate
+else
+    echo "ERROR: No virtual environment found. Run './setup.sh' first."
+    exit 1
 fi
 
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+if [ -n "$VIRTUAL_ENV" ]; then
+    venv_uvicorn="$VIRTUAL_ENV/bin/uvicorn"
+    if command -v "$venv_uvicorn" &> /dev/null; then
+        "$venv_uvicorn" app.main:app --reload --host 0.0.0.0 --port 8000
+    else
+        echo "ERROR: uvicorn not found in venv."
+        exit 1
+    fi
+else
+    echo "ERROR: No virtual environment active. Run './setup.sh' first."
+    exit 1
+fi

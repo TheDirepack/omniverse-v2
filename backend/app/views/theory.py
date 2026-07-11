@@ -25,5 +25,9 @@ async def theory_page(request: Request):
 
 
 @router.post("/reevaluate", response_class=HTMLResponse)
-async def reevaluate_theory_view(request: Request, universe_id: int = Form(...)):
-    return '<div class="p-2 bg-blue-50 text-blue-700 text-sm rounded border border-blue-200">Re-evaluation triggered. This may take a few minutes.</div>'
+async def reevaluate_theory_view(_request: Request, universe_id: int = Form(...)):
+    return (
+        '<div class="p-2 bg-blue-50 text-blue-700 text-sm rounded border '
+        'border-blue-200">'
+        'Re-evaluation triggered. This may take a few minutes.</div>'
+    )

@@ -23,6 +23,7 @@ Tests utilize ephemeral SQLite at `/dev/shm/omniverse_tests/`. An autouse fixtur
 ```sh
 ./test.sh              # Run all standard tests
 ./test.sh --slow       # Run tests including LLM/network interactions
+./test.sh --prompt-robustness  # Run prompt failure mode & robustness tests
 ./test.sh path/to/test.py  # Run a specific test file
 ```
 

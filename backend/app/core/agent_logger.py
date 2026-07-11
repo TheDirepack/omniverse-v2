@@ -5,7 +5,8 @@ from pathlib import Path
 from app.core.agent_event_types import AgentEventType
 from app.core.context import get_current_universe
 
-# Define log file path relative to this file: backend/app/core/agent_logger.py -> backend/logs/agents.log
+# Define log file path relative to this file:
+# backend/app/core/agent_logger.py -> backend/logs/agents.log
 LOG_FILE = Path(__file__).parent.parent.parent / "logs" / "agents.log"
 
 # Ensure directory exists
@@ -33,8 +34,8 @@ class AgentLogger:
                 if setting is None:
                     return True
                 return setting.value.lower() != "false"
-        except Exception as e:
-            logging.error(f"Error checking AGENT_LOGGING setting: {e}")
+        except Exception:
+            agent_sys_logger.exception("Error checking AGENT_LOGGING setting")
             return True
 
     @staticmethod
@@ -55,7 +56,10 @@ class AgentLogger:
         world_name = get_current_universe() or "unknown"
 
         # [Timestamp] [Agent] [Model] [KeyID] [WorldName] [Type] Content
-        log_line = f"[{timestamp}] [{agent}] [{model}] [{key_id}] [{world_name}] [{event_type_str}] {content}"
+        log_line = (
+            f"[{timestamp}] [{agent}] [{model}] [{key_id}] "
+            f"[{world_name}] [{event_type_str}] {content}"
+        )
 
         # Use the configured logger instead of direct file writing
         agent_sys_logger.info(log_line)

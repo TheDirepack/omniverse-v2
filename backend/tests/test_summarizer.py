@@ -1,5 +1,5 @@
-import pytest
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
+
 from app.research.summarizer import summarize_universe
 
 
@@ -7,7 +7,9 @@ class TestSummarizer:
     @patch("app.research.summarizer.UniverseService")
     @patch("app.research.summarizer.run_agent", new_callable=AsyncMock)
     @patch("app.research.summarizer.set_current_universe")
-    async def test_summarize_success(self, mock_set_ctx, mock_run_agent, mock_uni_service):
+    async def test_summarize_success(
+        self, mock_set_ctx, mock_run_agent, mock_uni_service
+    ):
         uni = MagicMock()
         uni.name = "TestUniverse"
         mock_service = MagicMock()
@@ -47,7 +49,9 @@ class TestSummarizer:
     @patch("app.research.summarizer.UniverseService")
     @patch("app.research.summarizer.run_agent", new_callable=AsyncMock)
     @patch("app.research.summarizer.set_current_universe")
-    async def test_summarize_no_claims(self, mock_set_ctx, mock_run_agent, mock_uni_service):
+    async def test_summarize_no_claims(
+        self, mock_set_ctx, mock_run_agent, mock_uni_service
+    ):
         uni = MagicMock()
         uni.name = "EmptyUniverse"
         mock_service = MagicMock()
@@ -60,4 +64,7 @@ class TestSummarizer:
 
         assert result == "Empty summary"
         mock_set_ctx.assert_called_once_with("EmptyUniverse")
-        assert any("No verified claims" in str(v) for v in mock_run_agent.call_args.kwargs.values())
+        assert any(
+            "No verified claims" in str(v)
+            for v in mock_run_agent.call_args.kwargs.values()
+        )

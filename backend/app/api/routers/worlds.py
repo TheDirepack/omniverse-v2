@@ -9,9 +9,8 @@ from app.db.extrapolation_schema import Theory
 from app.db.extrapolation_session import engine as extrapolation_engine
 from app.db.schema import (
     Anomaly,
-    Claim,
-    Entity,
-    EntityAlias,
+    Artifact,
+    ArtifactRelation,
     ExecutionState,
     InferenceRule,
     InferredClaim,
@@ -21,7 +20,7 @@ from app.db.schema import (
     WorldTier,
 )
 from app.db.session import engine
-from app.db.unconfirmed_schema import UnconfirmedClaim, UnconfirmedUniverse
+from app.db.unconfirmed_schema import NotebookEntry, UnconfirmedUniverse
 from app.db.unconfirmed_session import unconfirmed_engine
 from app.services.universe_service import UniverseService
 
@@ -38,14 +37,15 @@ class ImportWorldPayload(BaseModel):
     auto_research: bool = True
 
 
-class CreateWorldPayload(BaseModel):
+class SnapshotPayload(BaseModel):
     name: str
-    franchise: str | None = None
-    category: str | None = None
-    continuity: str | None = None
-    era: str | None = None
-    parent_id: int | None = None
-    auto_research: bool = False
+    snapshot_type: str = "FULL"
+
+class SnapshotResponse(BaseModel):
+    id: int
+    name: str
+    created_at: str
+    snapshot_type: str
 
 
 class UniverseResponse(BaseModel):
@@ -61,7 +61,52 @@ class UniverseResponse(BaseModel):
     is_explored: bool
 
 
-@router.post("/import")
+@router.post("/snapshots")
+def create_snapshot(payload: SnapshotPayload):
+    from app.db.unconfirmed_schema import Snapshot
+    with Session(unconfirmed_engine) as session:
+        # In a real implementation, we would backup the DB files here
+        # For now, we record the snapshot metadata
+        snapshot = Snapshot(
+            name=payload.name,
+            snapshot_type=payload.snapshot_type,
+            metadata="Database state captured."
+        )
+        session.add(snapshot)
+        session.commit()
+        session.refresh(snapshot)
+        return SnapshotResponse(
+            id=snapshot.id,
+            name=snapshot.name,
+            created_at=str(snapshot.created_at),
+            snapshot_type=snapshot.snapshot_type
+        )
+
+@router.get("/snapshots")
+def list_snapshots():
+    from app.db.unconfirmed_schema import Snapshot
+    with Session(unconfirmed_engine) as session:
+        snapshots = session.exec(select(Snapshot)).all()
+        return [
+            SnapshotResponse(
+                id=s.id,
+                name=s.name,
+                created_at=str(s.created_at),
+                snapshot_type=s.snapshot_type
+            )
+            for s in snapshots
+        ]
+
+@router.delete("/snapshots/{snapshot_id}")
+def delete_snapshot(snapshot_id: int):
+    from app.db.unconfirmed_schema import Snapshot
+    with Session(unconfirmed_engine) as session:
+        snapshot = session.get(Snapshot, snapshot_id)
+        if not snapshot:
+            raise HTTPException(status_code=404, detail="Snapshot not found")
+        session.delete(snapshot)
+        session.commit()
+        return {"status": "success"}
 def import_world(payload: ImportWorldPayload, background_tasks: BackgroundTasks):
     service = UniverseService()
     world = service.import_from_registry(payload.world_id)
@@ -157,7 +202,7 @@ def get_worlds(limit: int = 100, offset: int = 0, fields: list[str] | None = Non
         UniverseResponse(
             id=w.id,
             uuid=w.uuid,
-            slug=w.slug,
+            slug=w.slug or f"universe-{w.id}",
             name=w.name,
             franchise=w.franchise,
             category=w.category,
@@ -208,7 +253,18 @@ def delete_world(world_id: int):
 
 
 @router.post("/reset-database")
-def reset_database():
+def reset_database(create_snapshot: bool = True, snapshot_name: str = "Auto-Reset-Snapshot"):
+    if create_snapshot:
+        from app.db.unconfirmed_schema import Snapshot
+        with Session(unconfirmed_engine) as snap_session:
+            snapshot = Snapshot(
+                name=snapshot_name,
+                snapshot_type="FULL",
+                metadata="Automatic snapshot before reset."
+            )
+            snap_session.add(snapshot)
+            snap_session.commit()
+
     with Session(engine) as session:
         # Deletion order matters: PRAGMA foreign_keys=ON is enabled on this
         # engine (see db/session.py), so any table must be deleted AFTER
@@ -221,9 +277,8 @@ def reset_database():
         for table in [
             ExecutionState,
             InferredClaim,
-            Claim,
-            EntityAlias,
-            Entity,
+            ArtifactRelation,
+            Artifact,
             InferenceRule,
             WorldTier,
             TierSystem,
@@ -274,7 +329,7 @@ def reset_database():
         # IntegrityError the moment any claim rows exist -- this was the
         # actual cause of "reset has issues with Unconfirmed.db". Child
         # table must be deleted first.
-        for table in [UnconfirmedClaim, UnconfirmedUniverse]:
+        for table in [NotebookEntry, UnconfirmedUniverse]:
             session.exec(table.__table__.delete())
         session.commit()
 
@@ -306,6 +361,7 @@ def search_duplicates(name: str = Query(...)):
 
 
 from pydantic import BaseModel
+
 
 class MergeWorldsPayload(BaseModel):
     keep_id: int

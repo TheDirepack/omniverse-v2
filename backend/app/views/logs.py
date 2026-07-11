@@ -51,7 +51,7 @@ def _get_filter_options():
     try:
         uni_service = UniverseService()
         worlds = uni_service.get_all_universes(limit=500)
-        world_names = sorted(set(w.name for w in worlds))
+        world_names = sorted({w.name for w in worlds})
     except Exception:
         world_names = []
 

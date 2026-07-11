@@ -63,6 +63,7 @@ class BrowserManager:
         self._context_slot: dict[int, int] = {}
         self._context_slot_lock = asyncio.Lock()
         self._initialized = False
+        self._initialize_pool(BROWSER_POOL_SIZE, BROWSER_MAX_CONCURRENCY_PER_INSTANCE)
 
     @property
     def browser(self):
@@ -72,13 +73,13 @@ class BrowserManager:
         return self.pool[0].browser if self.pool else None
 
     async def start(self):
-        # Intentionally a no-op: browsers are launched lazily, on first
-        # get_page() call, exactly as before -- just applied per-slot now.
+        # Browsers are launched lazily, on first get_page() call.
         return
 
     async def stop(self):
         for slot in self.pool:
             await slot.close()
+        self.pool = []
         self._initialized = False
 
     def _initialize_pool(self, pool_size: int, max_concurrency: int):
@@ -93,11 +94,10 @@ class BrowserManager:
 
     async def get_page(self):
         if not self._initialized:
-            # This should ideally be called during app startup, 
-            # but we provide a fallback lazy init.
-            # Since we can't easily access SettingsService here without a session,
-            # we use defaults if not already configured.
-            self._initialize_pool(BROWSER_POOL_SIZE, BROWSER_MAX_CONCURRENCY_PER_INSTANCE)
+            # Fallback lazy init if for some reason pool wasn't initialized.
+            self._initialize_pool(
+                BROWSER_POOL_SIZE, BROWSER_MAX_CONCURRENCY_PER_INSTANCE
+            )
 
         slot = self._pick_least_loaded_slot()
         await slot.ensure_launched()
@@ -120,7 +120,6 @@ class BrowserManager:
 
             async with self._context_slot_lock:
                 self._context_slot[id(context)] = slot.index
-
             return page, context
         except Exception:
             logger.exception(
@@ -139,7 +138,11 @@ class BrowserManager:
         await self.stop()
         # Re-initialize with new config
         self._initialize_pool(pool_size, max_concurrency)
-        logger.info("Browser pool reconfigured: size=%d, concurrency=%d", pool_size, max_concurrency)
+        logger.info(
+            "Browser pool reconfigured: size=%d, concurrency=%d",
+            pool_size,
+            max_concurrency,
+        )
 
     @asynccontextmanager
     async def page(self) -> AsyncGenerator[Any, None]:
@@ -158,6 +161,9 @@ class BrowserManager:
         # Look up (and forget) which slot this context belonged to. Falls
         # back to slot 0 if somehow untracked, to avoid a hard crash on
         # double-release or stale references.
+        if not self.pool:
+            return
+
         ctx_id = id(context)
         slot_index = self._context_slot.pop(ctx_id, None)
         slot = self.pool[slot_index] if slot_index is not None else self.pool[0]
@@ -175,6 +181,7 @@ class BrowserManager:
             }
             for s in self.pool
         ]
+
 
 
 browser_manager = BrowserManager()

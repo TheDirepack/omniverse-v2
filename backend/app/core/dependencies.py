@@ -1,3 +1,5 @@
+from typing import Annotated
+
 from fastapi import Depends
 from sqlmodel import Session
 
@@ -17,7 +19,7 @@ def get_unconfirmed_session() -> Session:
         yield session
 
 def get_settings_service(
-    session: Session = Depends(get_settings_session),
+    session: Annotated[Session, Depends(get_settings_session)],
 ) -> SettingsService:
     return SettingsService(session=session)
 
@@ -25,10 +27,10 @@ def get_main_session() -> Session:
     with Session(engine) as session:
         yield session
 
-def get_universe_session(session: Session = Depends(get_main_session)) -> Session:
+def get_universe_session(session: Annotated[Session, Depends(get_main_session)]) -> Session:
     return session
 
 def get_universe_service(
-    session: Session = Depends(get_universe_session),
+    session: Annotated[Session, Depends(get_universe_session)],
 ) -> UniverseService:
     return UniverseService(session=session)

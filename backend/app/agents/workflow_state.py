@@ -1,5 +1,8 @@
 from typing import Any, TypedDict
+
 from app.core.domain import ResearchTarget
+from app.core.enums import RunPhase
+
 
 class OmniverseState(TypedDict):
     run_id: str
@@ -12,7 +15,9 @@ class OmniverseState(TypedDict):
     system_stable: bool
     anomalies: list[str]
     generated_theories: list[Any]
-    active_task: str
+    active_task: RunPhase
     errors: list[str]
     architecture_retries: int
     architecture_attempts: int
+    pending_effects: list[dict[str, Any]] # Commands for the execution layer
+

@@ -1,10 +1,6 @@
 import pytest
-from app.core.context import set_current_universe
-from app.db.session import engine
-from app.db.unconfirmed_session import unconfirmed_engine
-from app.db.unconfirmed_session import init_unconfirmed_db
-from sqlmodel import Session, select
 
+from app.db.unconfirmed_session import init_unconfirmed_db
 
 
 @pytest.fixture(autouse=True)
@@ -17,7 +13,10 @@ def test_build_freshness_comparison_report_prefers_fresh_over_none():
 
     report = build_freshness_comparison_report(
         {
-            "http://fresh.example": "[SOURCE FRESHNESS SIGNALS]\nStaleness warning: none detected\n[END SIGNALS]\nBody text here",
+            "http://fresh.example": (
+                "[SOURCE FRESHNESS SIGNALS]\nStaleness warning: none detected"
+                "\n[END SIGNALS]\nBody text here"
+            ),
             "http://unavailable.example": None,
         }
     )

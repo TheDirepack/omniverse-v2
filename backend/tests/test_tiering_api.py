@@ -1,9 +1,8 @@
 from unittest.mock import AsyncMock, patch
 
 import pytest
+
 from app.db.schema import Setting
-from app.main import app
-from fastapi.testclient import TestClient
 
 
 @pytest.mark.asyncio
@@ -51,7 +50,8 @@ async def test_run_tiering_in_background_execution(seeded_db):
         state = mock_node.call_args[0][0]
         assert state["run_id"] == run_id
         assert state["verified_worlds"] == [u.name]
-        assert state["active_task"] == "ARCHITECTURE"
+        from app.core.enums import RunPhase
+        assert state["active_task"] == RunPhase.ARCHITECTURE
         assert state["current_tier_system"] is None
 
     # Verify run was removed from active runs (mocked or real)

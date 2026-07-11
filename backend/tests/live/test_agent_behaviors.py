@@ -1,16 +1,17 @@
-import pytest
 import json
-from unittest.mock import patch
-from app.research.researcher import research_single_world
+
+import pytest
+from sqlmodel import Session
+
 from app.agents.prompts import get_critic_prompt, get_extrapolation_prompt
 from app.core.agent_engine import run_agent
-from app.services.universe_service import UniverseService
 from app.db.schema import Universe
-from sqlmodel import Session
 from app.db.session import engine
+from app.research.researcher import research_single_world
+from app.services.universe_service import UniverseService
 
 try:
-    from tests.provider_config import PROVIDER_CREDENTIALS
+    import tests.provider_config
 except ImportError:
     pytest.importorskip("tests.provider_config")
 
@@ -20,16 +21,16 @@ async def test_researcher_smoke_end_to_end():
     """
     Symmetry Test: Run researcher on a real page and verify JSON round-trips.
     """
-    uni_service = UniverseService()
+    _uni_service = UniverseService()
     # Use a real, stable wiki page for testing
     u = Universe(name="Test World Live", slug="test-world-live")
     with Session(engine) as session:
         session.add(u)
         session.commit()
-    
+
     # This tests the whole loop: run_agent -> tools -> validator
     result = await research_single_world(u.uuid, "live-run")
-    
+
     assert "name" in result
     assert "summary" in result
     # Verify it's valid JSON and matches schema
@@ -44,11 +45,20 @@ async def test_critic_judgment_depth():
     """
     Behavioral Test: Verify Critic discriminates between shallow and deep research.
     """
-    shallow_data = '{"Verified_Claims": [{"subject": "Hero", "predicate": "is", "object": "strong", "reference": "wiki:1"}]}'
-    deep_data = '{"Verified_Claims": [{"subject": "Hero", "predicate": "has_strength", "object": "100 tons", "reference": "wiki:1", "attributes": {"peak": "120 tons"}}]}'
-    
+    shallow_data = (
+        '{"Verified_Claims": [{"subject": "Hero", "predicate": "is", '
+        '"object": "strong", "reference": "wiki:1"}]}'
+    )
+    deep_data = (
+        '{"Verified_Claims": [{"subject": "Hero", "predicate": "has_strength", '
+        '"object": "100 tons", "reference": "wiki:1", '
+        '"attributes": {"peak": "120 tons"}}]}'
+    )
+
     # We test the actual prompt + real model judgment
-    critic_prompt = get_critic_prompt(data=shallow_data, criteria="Technical specifications required")
+    critic_prompt = get_critic_prompt(
+        data=shallow_data, criteria="Technical specifications required"
+    )
     res_shallow, _ = await run_agent(
         agent_name="Logic Auditor",
         system_prompt=critic_prompt["system"],
@@ -56,8 +66,10 @@ async def test_critic_judgment_depth():
         run_id="test-depth-1",
         submit_tool_name="submit_audit"
     )
-    
-    critic_prompt_deep = get_critic_prompt(data=deep_data, criteria="Technical specifications required")
+
+    critic_prompt_deep = get_critic_prompt(
+        data=deep_data, criteria="Technical specifications required"
+    )
     res_deep, _ = await run_agent(
         agent_name="Logic Auditor",
         system_prompt=critic_prompt_deep["system"],
@@ -65,8 +77,8 @@ async def test_critic_judgment_depth():
         run_id="test-depth-2",
         submit_tool_name="submit_audit"
     )
-    
-    # Assert that the deeper data is more likely to be SUCCESS and shallow is REVISION_REQUIRED
+
+    # Assert deeper data likely SUCCESS, shallow REVISION_REQUIRED
     assert "REVISION_REQUIRED" in res_shallow.upper()
     assert "SUCCESS" in res_deep.upper()
 
@@ -76,12 +88,14 @@ async def test_theorist_no_new_powers():
     """
     Behavioral Test: Ensure Theorist does not invent powers from sparse data.
     """
-    sparse_data = '{"Verified_Claims": [{"subject": "Char", "predicate": "is", "object": "human"}]}'
+    sparse_data = (
+        '{"Verified_Claims": [{"subject": "Char", "predicate": "is", '
+        '"object": "human"}]}'
+    )
     comparison = '{"Verified_Claims": []}'
-    
-    from app.agents.prompts import get_extrapolation_prompt
+
     prompt = get_extrapolation_prompt("Test Char", sparse_data, comparison)
-    
+
     theory, _ = await run_agent(
         agent_name="Ontological Theorist",
         system_prompt=prompt["system"],
@@ -89,7 +103,7 @@ async def test_theorist_no_new_powers():
         run_id="test-no-powers",
         submit_tool_name="submit_theory"
     )
-    
+
     # Assert no "super" or "magic" or "power" keywords appear if not in input
     # (This is a heuristic check for prompt compliance)
     forbidden = ["superpower", "magical", "omnipotent", "god-like"]
@@ -109,16 +123,15 @@ async def test_db_architect_contradiction_handling():
             {"subject": "X", "predicate": "is", "object_val": "B"},
         ]
     }
-    
-    from app.core.tools import tool_upsert_claims
+
     # We use a real agent session to see if it identifies the contradiction in its plan
     from app.agents.prompts import get_db_agent_prompt
     prompt = get_db_agent_prompt()
-    
+
     # We mock the actual DB part but use a real LLM to see if it plans a contradiction
-    # Actually, just testing the tool logic is enough for the DB part, 
+    # Actually, just testing the tool logic is enough for the DB part,
     # but the prompt's "Intelligent Merging" is what we want to test.
-    
+
     # For a behavioral test, we'd run the agent and check its reasoning.
     res, _ = await run_agent(
         agent_name="DB Architect",
@@ -128,5 +141,5 @@ async def test_db_architect_contradiction_handling():
         tools_names=["upsertClaims"],
         submit_tool_name="submit_integration"
     )
-    
+
     assert "contradiction" in res.lower() or "duplicate" in res.lower()

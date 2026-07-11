@@ -1,7 +1,9 @@
 import pytest
-from app.db.schema import Claim, Entity
-from app.services.universe_service import UniverseService
 from sqlmodel import select
+
+from app.db.schema import Artifact, ArtifactRelation
+from app.services.universe_service import UniverseService
+
 
 @pytest.mark.slow
 def test_import_all_from_registry_real_file(ephemeral_db):
@@ -36,12 +38,18 @@ def test_merge_worlds_integration(ephemeral_db):
     u2 = svc.create_universe(name="Verse B")
 
     # Setup entities and claims in u2
-    e_u2 = Entity(name="EntityB", entity_type="TypeB", universe_id=u2.id)
+    e_u2 = Artifact(name="EntityB", type="entity", universe_id=u2.id)
     ephemeral_db.add(e_u2)
     ephemeral_db.commit()
     ephemeral_db.refresh(e_u2)
 
-    c_u2 = Claim(subject_id=e_u2.id, predicate="is_a", object_literal="Something", universe_scope=u2.id, status="VERIFIED")
+    lit_u2 = Artifact(name="Something", type="literal", universe_id=u2.id)
+    ephemeral_db.add(lit_u2)
+    ephemeral_db.flush()
+    c_u2 = ArtifactRelation(
+        universe_id=u2.id, from_artifact_id=e_u2.id,
+        to_artifact_id=lit_u2.id, relation_type="is_a"
+    )
     ephemeral_db.add(c_u2)
     ephemeral_db.commit()
 
@@ -50,12 +58,19 @@ def test_merge_worlds_integration(ephemeral_db):
     assert result["status"] == "success"
 
     # Verify EntityB moved to Verse A
-    moved_e = ephemeral_db.exec(select(Entity).where(Entity.name == "EntityB")).first()
+    moved_e = ephemeral_db.exec(
+        select(Artifact).where(Artifact.type == 'entity', Artifact.name == "EntityB")
+    ).first()
     assert moved_e.universe_id == u1.id
 
     # Verify Claim moved to Verse A
-    moved_c = ephemeral_db.exec(select(Claim).where(Claim.object_literal == "Something")).first()
-    assert moved_c.universe_scope == u1.id
+    lit = ephemeral_db.exec(
+        select(Artifact).where(Artifact.name == "Something")
+    ).first()
+    moved_c = ephemeral_db.exec(
+        select(ArtifactRelation).where(ArtifactRelation.to_artifact_id == lit.id)
+    ).first()
+    assert moved_c.universe_id == u1.id
 
     # Verify u2 is deleted
     assert svc.get_universe_by_id(u2.id) is None

@@ -1,20 +1,20 @@
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from app.core.gpu_detection import (
-    detect_gpu_backend,
-    gpu_device_name,
-    get_optimal_device,
-    gpu_backend_label,
-    is_gpu_available,
-    is_amd_gpu,
     GPU_BACKEND_CUDA,
+    GPU_BACKEND_MPS,
+    GPU_BACKEND_NONE,
     GPU_BACKEND_ROCM,
     GPU_BACKEND_VULKAN,
-    GPU_BACKEND_MPS,
     GPU_BACKEND_XPU,
-    GPU_BACKEND_NONE,
+    detect_gpu_backend,
+    get_optimal_device,
+    gpu_backend_label,
+    gpu_device_name,
+    is_amd_gpu,
+    is_gpu_available,
 )
 
 
@@ -97,6 +97,7 @@ class TestDetectGpuBackend:
     def test_no_torch(self):
         with patch.dict("sys.modules", {"torch": None}):
             import importlib
+
             import app.core.gpu_detection as gd
             importlib.reload(gd)
             assert gd.detect_gpu_backend() == GPU_BACKEND_NONE
@@ -133,13 +134,19 @@ class TestGpuHelpers:
             assert is_amd_gpu() is False
 
     def test_gpu_device_name_cuda(self):
-        fake_torch = _mock_torch({"cuda.is_available": lambda: True, "cuda.get_device_name": lambda x: "RTX 4090"})
+        fake_torch = _mock_torch({
+            "cuda.is_available": lambda: True,
+            "cuda.get_device_name": lambda _: "RTX 4090",
+        })
         fake_torch.version.hip = None
         with patch.dict("sys.modules", {"torch": fake_torch}):
             assert gpu_device_name() == "RTX 4090"
 
     def test_gpu_device_name_rocm(self):
-        fake_torch = _mock_torch({"cuda.is_available": lambda: True, "cuda.get_device_name": lambda x: "AMD Radeon RX 7900 XTX"})
+        fake_torch = _mock_torch({
+            "cuda.is_available": lambda: True,
+            "cuda.get_device_name": lambda _: "AMD Radeon RX 7900 XTX",
+        })
         fake_torch.version.hip = "6.0"
         with patch.dict("sys.modules", {"torch": fake_torch}):
             name = gpu_device_name()

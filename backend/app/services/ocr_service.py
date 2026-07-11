@@ -2,13 +2,11 @@ from __future__ import annotations
 
 import hashlib
 import time
+from typing import Any, ClassVar, Optional
 
-from app.core.document import Document
 from app.core.acquisition_cache import acquisition_cache
+from app.core.document import Document
 from app.core.gpu_detection import (
-    detect_gpu_backend,
-    gpu_backend_label,
-    gpu_device_name,
     is_gpu_available,
 )
 from app.db.unconfirmed_schema import AcquisitionArtifact
@@ -18,9 +16,10 @@ _GPU_SETTING_KEY = "ocr_use_gpu"
 
 async def _gpu_setting() -> bool | None:
     try:
-        from app.db.settings_session import get_settings_session
-        from app.db.schema import Setting
         from sqlmodel import select
+
+        from app.db.schema import Setting
+        from app.db.settings_session import get_settings_session
 
         session = get_settings_session()
         try:
@@ -35,7 +34,7 @@ async def _gpu_setting() -> bool | None:
         return None
 
 
-def _resolve_gpu(preferred: bool | None, engine: str) -> bool:
+def _resolve_gpu(preferred: bool | None, _engine: str) -> bool:
     if preferred is not None:
         return preferred
     setting = getattr(_resolve_gpu, "_cached_setting", None)
@@ -50,9 +49,9 @@ async def _cache_gpu_setting():
 
 
 class OcrService:
-    _docling_pipeline = None
-    _easyocr_reader = {}
-    _paddleocr_reader = {}
+    _docling_pipeline: ClassVar[Optional[Any]] = None
+    _easyocr_reader: ClassVar[dict[str, Any]] = {}
+    _paddleocr_reader: ClassVar[dict[str, Any]] = {}
 
     async def ocr_image(
         self,
@@ -111,15 +110,16 @@ class OcrService:
                 gpu = _resolve_gpu(use_gpu, name)
                 engine = loader(gpu=gpu)
                 return await self._ocr_with(name, engine, image_bytes)
-            except ImportError:
-                continue
-            except Exception as e:
+            except (ImportError, Exception) as e:
                 last_error = e
                 continue
         return Document(
             content_type="image/pending_ocr",
             extracted_text="",
-            metadata={"error": f"OCR unavailable: {last_error}" if last_error else "No OCR engines installed"},
+            metadata={
+                "error": f"OCR unavailable: {last_error}"
+                if last_error else "No OCR engines installed"
+            },
         )
 
     def _resolve_engine_order(self, preferred: str | None) -> list:
@@ -132,10 +132,16 @@ class OcrService:
         if preferred and preferred in engines:
             return [engines[preferred]]
         if is_gpu_available():
-            return [engines["easyocr"], engines["paddleocr"], engines["docling"], engines["tesseract"]]
-        return [engines["tesseract"], engines["easyocr"], engines["docling"], engines["paddleocr"]]
+            return [
+                engines["easyocr"], engines["paddleocr"],
+                engines["docling"], engines["tesseract"]
+            ]
+        return [
+            engines["tesseract"], engines["easyocr"],
+            engines["docling"], engines["paddleocr"]
+        ]
 
-    def _load_docling(self, gpu: bool = False):
+    def _load_docling(self, _gpu: bool = False):
         if OcrService._docling_pipeline is None:
             from docling.document_converter import DocumentConverter
             OcrService._docling_pipeline = DocumentConverter()
@@ -159,7 +165,7 @@ class OcrService:
             )
         return OcrService._paddleocr_reader[gpu_key]
 
-    def _load_tesseract(self, gpu: bool = False):
+    def _load_tesseract(self, _gpu: bool = False):
         import pytesseract
         return pytesseract
 
@@ -169,24 +175,28 @@ class OcrService:
         structured = None
 
         if name == "docling":
-            from pathlib import Path
             import tempfile
+            from pathlib import Path
 
             def _run():
-                tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".png")
-                try:
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmp:
                     tmp.write(image_bytes)
-                    tmp.flush()
-                    result = engine.convert(Path(tmp.name))
+                    tmp_path = tmp.name
+                try:
+                    result = engine.convert(Path(tmp_path))
                     text = result.document.export_to_text()
-                    tables = []
-                    for table in result.document.tables:
-                        tables.append(table.export_to_dataframe().to_string())
+                    tables = [
+                        table.export_to_dataframe().to_string()
+                        for table in result.document.tables
+                    ]
                     headings = [h.text for h in result.document.headings]
-                    structured = {"headings": headings, "tables": tables} if tables else None
+                    structured = {
+                        "headings": headings,
+                        "tables": tables
+                    } if tables else None
                     return text, structured
                 finally:
-                    Path(tmp.name).unlink(missing_ok=True)
+                    Path(tmp_path).unlink(missing_ok=True)
 
             extracted_text, structured = await asyncio.to_thread(_run)
             return Document(
@@ -196,7 +206,7 @@ class OcrService:
                 engine_name="docling",
             )
 
-        elif name == "easyocr":
+        if name == "easyocr":
 
             def _run():
                 results = engine.readtext(image_bytes)
@@ -211,14 +221,18 @@ class OcrService:
                 metadata={"gpu": _resolve_gpu._cached_setting or is_gpu_available()},
             )
 
-        elif name == "paddleocr":
+        if name == "paddleocr":
 
             def _run():
                 result = engine.ocr(image_bytes)
                 lines = []
                 if result and result[0]:
                     for line in result[0]:
-                        text = line[1][0] if isinstance(line, list) and len(line) > 1 else str(line)
+                        text = (
+                            line[1][0]
+                            if isinstance(line, list) and len(line) > 1
+                            else str(line)
+                        )
                         lines.append(text)
                 return "\n".join(lines)
 
@@ -230,11 +244,12 @@ class OcrService:
                 metadata={"gpu": _resolve_gpu._cached_setting or is_gpu_available()},
             )
 
-        elif name == "tesseract":
+        if name == "tesseract":
 
             def _run():
-                from PIL import Image
                 import io
+
+                from PIL import Image
                 img = Image.open(io.BytesIO(image_bytes))
                 return engine.image_to_string(img)
 

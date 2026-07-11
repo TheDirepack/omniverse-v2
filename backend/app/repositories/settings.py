@@ -105,3 +105,46 @@ class SettingsRepository:
     def reset_candidate_health(self):
         self.session.exec(delete(CandidateHealth))
         self.session.commit()
+
+    def bootstrap_default_settings(self):
+        """Initialize default settings if not present."""
+        existing = self.get_all_settings()
+        existing_keys = {s.key for s in existing}
+
+        defaults = {
+            "MIN_RESEARCH_TURNS": "6",
+            "MAX_PARALLEL_AGENTS": "5",
+            "AGENT_LOGGING": "false",
+            "HIDE_WEBFETCH_CONTENT": "false",
+            "HIDE_WEBSEARCH_CONTENT": "false",
+            "BROWSER_POOL_SIZE": "2",
+            "BROWSER_MAX_CONCURRENCY_PER_INSTANCE": "5",
+        }
+
+        for key, value in defaults.items():
+            if key not in existing_keys:
+                setting = Setting(key=key, value=value)
+                self.session.add(setting)
+
+        # Bootstrap default provider if no providers exist
+        existing_providers = self.get_providers()
+        if not existing_providers:
+            provider = ProviderConfig(
+                name="DEFAULT",
+                provider_type="custom",
+                base_url="http://localhost:8001",
+                models="gpt-4o,gpt-4o-mini,claude-3.5",
+            )
+            self.session.add(provider)
+            provider_id = provider.id
+            self.session.flush()
+
+            # Bootstrap default route
+            self.upsert_route(
+                AgentRouteFallback(
+                    task_type="DEFAULT",
+                    priority=0,
+                    provider_id=provider_id,
+                    models="gpt-4o,gpt-4o-mini,claude-3.5",
+                )
+            )

@@ -3,7 +3,7 @@ from typing import Any
 
 def validate_research_json(data: Any) -> tuple[bool, list[str]]:
     """
-    Validates research JSON against the expected schema and checks for required fields and citations.
+    Validates research JSON against expected schema and checks for required fields.
     Returns (is_valid, errors).
     """
     if not isinstance(data, dict):
@@ -20,9 +20,9 @@ def validate_research_json(data: Any) -> tuple[bool, list[str]]:
         "Missing_Info",
         "Provisional_Conclusions",
     ]
-    for key in required_root:
-        if key not in data:
-            errors.append(f"Missing root key: {key}")
+    errors.extend(
+        f"Missing root key: {key}" for key in required_root if key not in data
+    )
 
     # Validate Data_Categories
     categories = data.get("Data_Categories", [])
@@ -42,7 +42,8 @@ def validate_research_json(data: Any) -> tuple[bool, list[str]]:
                 "Other",
             ]:
                 errors.append(
-                    f"Category {i} must have a valid 'Category' (Hard Tech | Soft Tech | Magic System | Cosmology | Other)"
+                    f"Category {i} must have a valid 'Category' "
+                    "(Hard Tech | Soft Tech | Magic System | Cosmology | Other)"
                 )
 
             items = cat.get("Items", [])
@@ -62,11 +63,10 @@ def validate_research_json(data: Any) -> tuple[bool, list[str]]:
                         "Reference",
                         "Wiki_Source",
                     ]
-                    for r_key in required_item:
-                        if r_key not in item:
-                            errors.append(
-                                f"Item {j} in category {i} missing key: {r_key}"
-                            )
+                    errors.extend(
+                        f"Item {j} in category {i} missing key: {r_key}"
+                        for r_key in required_item if r_key not in item
+                    )
 
                     # Canon_Status validation
                     status = item.get("Canon_Status")
@@ -77,15 +77,18 @@ def validate_research_json(data: Any) -> tuple[bool, list[str]]:
                         "Unclear",
                     ]:
                         errors.append(
-                            f"Item {j} in category {i} has invalid Canon_Status: {status}"
+                            f"Item {j} in category {i} has invalid Canon_Status: "
+                            f"{status}"
                         )
 
                     # Reference validation: "url: section/line"
                     ref = item.get("Reference", "")
                     if not ref or not isinstance(ref, str) or ":" not in ref:
                         errors.append(
-                            f"Item {j} in category {i} has invalid Reference format. Expected 'url: section/line'"
+                            f"Item {j} in category {i} has invalid Reference format. "
+                            "Expected 'url: section/line'"
                         )
+
 
     # Validate Knowledge_Graph
     graph = data.get("Knowledge_Graph", [])
@@ -96,9 +99,11 @@ def validate_research_json(data: Any) -> tuple[bool, list[str]]:
             if not isinstance(lead, dict):
                 errors.append(f"Lead {i} in Knowledge_Graph must be an object")
                 continue
-            for r_key in ["Lead", "Reason", "Expected_Value"]:
-                if r_key not in lead:
-                    errors.append(f"Lead {i} in Knowledge_Graph missing key: {r_key}")
+            errors.extend(
+                f"Lead {i} in Knowledge_Graph missing key: {r_key}"
+                for r_key in ["Lead", "Reason", "Expected_Value"]
+                if r_key not in lead
+            )
 
     # Validate Provisional_Conclusions
     conclusions = data.get("Provisional_Conclusions", [])
@@ -111,16 +116,21 @@ def validate_research_json(data: Any) -> tuple[bool, list[str]]:
                     f"Conclusion {i} in Provisional_Conclusions must be an object"
                 )
                 continue
-            for r_key in ["Conclusion", "Reasoning", "Confidence", "Verification_Need"]:
-                if r_key not in conc:
-                    errors.append(
-                        f"Conclusion {i} in Provisional_Conclusions missing key: {r_key}"
-                    )
+                errors.extend(
+                    f"Conclusion {i} in Provisional_Conclusions missing key: {r_key}"
+                    for r_key in [
+                        "Conclusion", "Reasoning", "Confidence", "Verification_Need"
+                    ]
+                    if r_key not in conc
+                )
+
 
             conf = conc.get("Confidence")
             if conf and conf not in ["Low", "Medium", "High"]:
                 errors.append(
-                    f"Conclusion {i} in Provisional_Conclusions has invalid Confidence: {conf}"
+                    f"Conclusion {i} in Provisional_Conclusions has "
+                    f"invalid Confidence: {conf}"
                 )
+
 
     return len(errors) == 0, errors

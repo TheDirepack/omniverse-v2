@@ -1,4 +1,3 @@
-import json
 import logging
 import re
 from typing import Any
@@ -10,17 +9,17 @@ from app.agents.prompts import (
     get_rubric_amendment_prompt,
     get_stability_prompt,
 )
-from app.core.agent_engine import run_agent, Capability
+from app.core.agent_engine import Capability, run_agent
+from app.core.enums import RunPhase, RunStatus
 from app.core.validation import audit_success
 from app.db.session import engine
 from app.services.execution_service import ExecutionService
-from app.services.settings_service import SettingsService
+from app.services.knowledge_retriever import KnowledgeRetrieverService
 from app.services.tiering_service import TieringService
 from app.services.universe_service import UniverseService
-from app.services.knowledge_retriever import KnowledgeRetrieverService
 
+logger = logging.getLogger(__name__)
 
-# Removed local audit_success function
 
 async def _audit_tier_system(
     tier_system_definition: str, dataset: str, run_id: str
@@ -33,7 +32,7 @@ PROCESS
 2. Use `fetchPage` and `webSearch` to verify specific threshold claims.
 3. Look for semantic overlaps, gaps in scaling, or contradictions with canonical data.
 4. Check that thresholds are phrased as durable, measurable properties (not as
-   lists of    specific worlds), since this rubric must remain valid for worlds
+   lists of specific worlds), since this rubric must remain valid for worlds
    not yet in the database.
 
 5. Specifically check if the relative progression (Tier 0 lowest, Tier 10 highest) is
@@ -49,11 +48,11 @@ Correction Queue.
 
     audit_result, _ = await run_agent(
         agent_name="Logic Auditor",
-        system_prompt=audit_prompt["system"],
-        user_prompt=audit_prompt["user"],
+        system_prompt=critic_system_prompt,
+        user_prompt=critic_user_prompt,
         step="Audit Tiering Proposal",
         run_id=run_id,
-        tools_names=auditor_tools,
+        tools_names=["webSearch", "fetchPage"],
         submit_tool_name="submit_audit",
         required_capabilities={Capability.READ_MAIN_DB},
     )
@@ -76,15 +75,22 @@ def _parse_stability_result(stability_result: str) -> dict[str, Any]:
     if tier_match:
         try:
             tier_num = max(0, min(10, int(tier_match.group(1))))
-        except Exception as e:
-            logging.exception(f"Failed to parse tier number from stability result: {e}")
+        except Exception:
+            logger.exception("Failed to parse tier number from stability result")
 
     anomaly_details = None
-    details_match = re.search(r"ANOMALY_DETAILS:\s*(.*)", stability_result, re.IGNORECASE | re.MULTILINE)
+    details_match = re.search(
+        r"ANOMALY_DETAILS:\s*(.*)", stability_result, re.IGNORECASE | re.MULTILINE
+    )
     if details_match:
         anomaly_details = details_match.group(1).strip()
 
-    return {"status": status, "tier": tier_num, "justification": stability_result, "anomaly_details": anomaly_details}
+    return {
+        "status": status,
+        "tier": tier_num,
+        "justification": stability_result,
+        "anomaly_details": anomaly_details,
+    }
 
 
 MAX_ARCHITECTURE_ATTEMPTS = 5
@@ -95,14 +101,13 @@ async def architecture_node(state: dict[str, Any]) -> dict[str, Any]:
     from app.core.runtime_state import is_aborted
 
     if await is_aborted(run_id):
-        raise RuntimeError(f"Run {run_id} was aborted by user.")
+        raise RuntimeError("Run aborted by user")
 
     anomalies = state.get("anomalies", [])
     attempt = state.get("architecture_attempts", 0) + 1
     exec_service = ExecutionService()
     tier_service = TieringService()
     uni_service = UniverseService()
-    settings_service = SettingsService()
 
     if attempt > MAX_ARCHITECTURE_ATTEMPTS:
         exec_service.log_transition(
@@ -114,14 +119,11 @@ async def architecture_node(state: dict[str, Any]) -> dict[str, Any]:
                 f"Aborting run to avoid an unbounded retry loop. "
                 f"Last anomalies: {anomalies}"
             ),
-            "FAILED",
+            RunStatus.FAILED,
             state,
         )
 
-        raise RuntimeError(
-            f"Architecture design failed to stabilize after "
-            f"{MAX_ARCHITECTURE_ATTEMPTS} attempts."
-        )
+        raise RuntimeError("Architecture design failed to stabilize")
 
     dataset = ""
     verified_world_names = state.get("verified_worlds", [])
@@ -131,7 +133,9 @@ async def architecture_node(state: dict[str, Any]) -> dict[str, Any]:
         for name in verified_world_names:
             u = uni_service.get_universe(name)
             if u:
-                world_datasets.append(f"--- {u.name} ---\n{retriever.get_claims_dataset(u.id)}")
+                world_datasets.append(
+                    f"--- {u.name} ---\n{retriever.get_claims_dataset(u.id)}"
+                )
         dataset = "\n\n".join(world_datasets)
 
     with Session(engine):
@@ -148,7 +152,7 @@ async def architecture_node(state: dict[str, Any]) -> dict[str, Any]:
         )
 
         architect_prompts = get_architect_prompt(dataset, anomalies)
-        success_arch, tier_system_definition, _ = await run_agent(
+        _, tier_system_definition, _ = await run_agent(
             agent_name="Tier Architect",
             system_prompt=architect_prompts["system"],
             user_prompt=architect_prompts["user"],
@@ -176,7 +180,7 @@ async def architecture_node(state: dict[str, Any]) -> dict[str, Any]:
             return {
                 "anomalies": [f"System Design Error: {audit_result}"],
                 "system_stable": False,
-                "active_task": "RE_ARCHITECTURE",
+                "active_task": RunPhase.RE_ARCHITECTURE,
                 "architecture_attempts": attempt,
             }
 
@@ -205,7 +209,7 @@ async def architecture_node(state: dict[str, Any]) -> dict[str, Any]:
         world_data = retriever.get_claims_dataset(universe.id)
         stability_prompts = get_stability_prompt(world_data, rubric_text)
 
-        success, stability_result, _ = await run_agent(
+        _success, stability_result, _ = await run_agent(
             agent_name="Stability Unit",
             system_prompt=stability_prompts["system"],
             user_prompt=stability_prompts["user"],
@@ -275,9 +279,10 @@ async def architecture_node(state: dict[str, Any]) -> dict[str, Any]:
                 "Manager",
                 f"Max amendment attempts reached for {len(anomalous)} anomalies. "
                 "Recording as untiered and proceeding.",
-                "SLOTTING_WORLDS",
+                RunStatus.COMPLETED,
                 state,
             )
+
             for universe, res in anomalous:
                 assert universe.id is not None
                 tier_service.clear_world_tier(universe.id)
@@ -292,7 +297,7 @@ async def architecture_node(state: dict[str, Any]) -> dict[str, Any]:
                 "anomalies": anomaly_descriptions,
                 "system_stable": False,
                 "current_tier_system": rubric_text,
-                "active_task": "EXTRAPOLATION",
+                "active_task": RunPhase.EXTRAPOLATION,
                 "architecture_retries": retries,
             }
 
@@ -339,7 +344,7 @@ async def architecture_node(state: dict[str, Any]) -> dict[str, Any]:
                     *anomaly_descriptions,
                 ],
                 "system_stable": False,
-                "active_task": "RE_ARCHITECTURE",
+                "active_task": RunPhase.RE_ARCHITECTURE,
                 "architecture_attempts": attempt,
             }
 
@@ -371,7 +376,7 @@ async def architecture_node(state: dict[str, Any]) -> dict[str, Any]:
             stability_prompts = get_stability_prompt(
                 world_data, new_rubric_text
             )
-        success, stability_result, _ = await run_agent(
+        _, stability_result, _ = await run_agent(
             agent_name="Stability Unit",
             system_prompt=stability_prompts["system"],
             user_prompt=stability_prompts["user"],
@@ -384,9 +389,8 @@ async def architecture_node(state: dict[str, Any]) -> dict[str, Any]:
         tier_val = parsed["tier"] if parsed["tier"] is not None else -1
         assert universe.id is not None
         tier_service.slot_world(
-
-                universe.id, new_rubric_id, tier_val, parsed["justification"]
-            )
+            universe.id, new_rubric_id, tier_val, parsed["justification"]
+        )
 
         exec_service.log_transition(
             run_id,
@@ -397,7 +401,9 @@ async def architecture_node(state: dict[str, Any]) -> dict[str, Any]:
         )
 
         next_task = (
-            "EXTRAPOLATION" if not state.get("is_focused_search") else "FINISHED"
+            RunPhase.EXTRAPOLATION
+            if not state.get("is_focused_search")
+            else RunPhase.FINISHED
         )
         return {
             "current_tier_system": new_rubric_text,
@@ -414,11 +420,15 @@ async def architecture_node(state: dict[str, Any]) -> dict[str, Any]:
         run_id,
         "Manager",
         "Completed tiering under persistent rubric.",
-        "COMPLETED",
+        RunStatus.COMPLETED,
         state,
     )
 
-    next_task = "EXTRAPOLATION" if not state.get("is_focused_search") else "FINISHED"
+    next_task = (
+        RunPhase.EXTRAPOLATION
+        if not state.get("is_focused_search")
+        else RunPhase.FINISHED
+    )
     return {
         "current_tier_system": rubric_text,
         "system_stable": True,

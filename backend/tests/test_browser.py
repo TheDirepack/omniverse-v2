@@ -2,10 +2,11 @@ import asyncio
 import importlib
 import os
 from unittest.mock import AsyncMock, patch
-from typing import Any
 
 import pytest
-from app.core.browser import BrowserManager, BROWSER_MAX_CONCURRENCY_PER_INSTANCE
+
+from app.core.browser import BROWSER_MAX_CONCURRENCY_PER_INSTANCE, BrowserManager
+
 
 @pytest.mark.asyncio
 async def test_browser_manager_start_stop():
@@ -93,9 +94,7 @@ async def test_semaphore_limiting_per_slot():
         await manager.start()
 
         limit = BROWSER_MAX_CONCURRENCY_PER_INSTANCE
-        pages_and_contexts = []
-        for _ in range(limit):
-            pages_and_contexts.append(await manager.get_page())
+        pages_and_contexts = [await manager.get_page() for _ in range(limit)]
 
         assert manager.pool[0].semaphore._value == 0
 
@@ -164,7 +163,7 @@ async def test_relaunch_on_dead_browser():
         # 3. relaunch -> fresh_browser
         # 4. new_context -> success
         page, context = await manager.get_page()
-        
+
         assert page == fresh_page
         assert context == fresh_ctx
         assert mock_launch.call_count == 2
@@ -181,10 +180,11 @@ async def test_pool_status_reports_slots():
 
 @pytest.mark.asyncio
 async def test_browser_config_env_vars():
-    """Verify that BROWSER_POOL_SIZE and BROWSER_MAX_CONCURRENCY_PER_INSTANCE are respected."""
+    """Verify that BROWSER_POOL_SIZE and BROWSER_MAX_CONCURRENCY_PER_INSTANCE
+    are respected."""
     custom_pool_size = "4"
     custom_concurrency = "10"
-    
+
     with patch.dict(os.environ, {
         "BROWSER_POOL_SIZE": custom_pool_size,
         "BROWSER_MAX_CONCURRENCY_PER_INSTANCE": custom_concurrency
@@ -192,7 +192,7 @@ async def test_browser_config_env_vars():
         # Reload the module to pick up new env vars
         import app.core.browser
         importlib.reload(app.core.browser)
-        
+
         manager = app.core.browser.BrowserManager()
         assert len(manager.pool) == int(custom_pool_size)
         assert manager.pool[0].semaphore._value == int(custom_concurrency)
@@ -202,9 +202,9 @@ async def test_browser_update_config():
     """Verify that update_config dynamically rebuilds the pool."""
     manager = BrowserManager()
     initial_size = len(manager.pool)
-    
+
     await manager.update_config(pool_size=5, max_concurrency=12)
-    
+
     assert len(manager.pool) == 5
     assert manager.pool[0].semaphore._value == 12
     assert initial_size != 5

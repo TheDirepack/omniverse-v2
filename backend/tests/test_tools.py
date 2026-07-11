@@ -6,6 +6,7 @@ are automatically treated as coroutines without needing @pytest.mark.asyncio.
 """
 
 import pytest
+
 from app.core.browser import browser_manager
 from app.core.tools import AGENT_TOOLS
 
@@ -32,7 +33,10 @@ class TestWebSearchTool:
         assert result == "Error: Missing search_query or queries argument."
 
     async def test_empty_query(self):
-        """Empty string query should not raise — returns a string (possibly empty or error)."""
+        """
+        Empty string query should not raise — returns a string (possibly
+        empty or error).
+        """
         tool = AGENT_TOOLS["webSearch"]
         result = await tool["func"]({"search_query": ""})
         # Missing query guard triggers on falsy empty string
@@ -90,7 +94,7 @@ class TestOcrImageTool:
         assert "Error: Provide either image_url or image_data" in result
 
     async def test_with_image_url_mocked(self):
-        from unittest.mock import patch, AsyncMock, MagicMock
+        from unittest.mock import AsyncMock, MagicMock, patch
         fake_doc = MagicMock()
         fake_doc.extracted_text = "ocr result text"
         fake_doc.engine_name = "tesseract"
@@ -103,12 +107,14 @@ class TestOcrImageTool:
             new=AsyncMock(return_value=fake_doc),
         ):
             tool = AGENT_TOOLS["ocrImage"]
-            result = await tool["func"]({"image_url": "http://img.png", "use_gpu": False})
+            result = await tool["func"]({
+                "image_url": "http://img.png", "use_gpu": False
+            })
             assert "ocr result text" in result
             assert "tesseract" in result
 
     async def test_with_image_data_mocked(self):
-        from unittest.mock import patch, AsyncMock, MagicMock
+        from unittest.mock import AsyncMock, MagicMock, patch
         fake_doc = MagicMock()
         fake_doc.extracted_text = "base64 text"
         fake_doc.engine_name = "easyocr"
@@ -127,7 +133,7 @@ class TestOcrImageTool:
             assert "[GPU]" in result
 
     async def test_returns_error_on_exception(self):
-        from unittest.mock import patch, AsyncMock
+        from unittest.mock import AsyncMock, patch
         with patch(
             "app.core.tools.ocr_importer.fetch",
             new=AsyncMock(side_effect=RuntimeError("fail")),
@@ -156,7 +162,7 @@ class TestRegistry:
         # DB tools that should remain
         for name in [
             "queryClaims",
-            "upsertClaims",
+            "upsertArtifacts",
             "queryUnconfirmedClaims",
             "saveUnconfirmedClaim",
             "deleteUnconfirmedClaim",

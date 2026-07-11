@@ -1,10 +1,12 @@
-import pytest
-from app.views.logs import _parse_log_line, EVENT_COLORS
+from app.views.logs import EVENT_COLORS, _parse_log_line
 
 
 class TestParseLogLine:
     def test_valid_line_parses_all_fields(self):
-        line = "[2024-01-01 12:00:00] [Researcher] [gpt-4] [key1] [World1] [THOUGHT] Some content"
+        line = (
+            "[2024-01-01 12:00:00] [Researcher] [gpt-4] [key1] [World1] [THOUGHT] "
+            "Some content"
+        )
         result = _parse_log_line(line)
         assert result is not None
         assert result["timestamp"] == "2024-01-01 12:00:00"
@@ -95,7 +97,7 @@ class TestLogsPage:
         r = api_client.get("/logs/list", params={"tool": "webSearch"})
         assert r.status_code == 200
 
-    def test_logs_list_excludes_system_reminder(self, api_client, clean_db):
+    def test_logs_list_excludes_system_reminder(self, api_client, _clean_db):
         # Create a log entry to ensure the endpoint processes it
         r = api_client.get("/logs/list", params={"limit": 5})
         assert r.status_code == 200

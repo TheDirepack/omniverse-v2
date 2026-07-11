@@ -1,9 +1,10 @@
 import pytest
+from fastapi.testclient import TestClient
+from sqlmodel import Session, create_engine
+
 from app.db.schema import Universe
 from app.main import app
 from app.services.universe_service import UniverseService
-from fastapi.testclient import TestClient
-from sqlmodel import Session, create_engine
 
 # Use a temporary sqlite database for tests
 TEST_DATABASE_URL = "sqlite:////tmp/omniverse_test_metadata.db"

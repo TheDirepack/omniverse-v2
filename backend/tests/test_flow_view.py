@@ -1,5 +1,4 @@
-import pytest
-from app.db.schema import Claim, Entity, Predicate, Evidence, EvidenceChunk, Universe
+from app.db.schema import Artifact, ArtifactRelation, Evidence, EvidenceChunk, Universe
 
 
 class TestFlowPage:
@@ -25,19 +24,19 @@ class TestTraceClaim:
         session.commit()
         session.refresh(u)
 
-        e = Entity(name="FlowEntity", entity_type="T", universe_id=u.id)
+        e = Artifact(name="FlowEntity", type="entity", universe_id=u.id)
         session.add(e)
         session.commit()
         session.refresh(e)
 
-        p = Predicate(canonical_name="flow_pred")
-        session.add(p)
+        lit = Artifact(name="obj_val", type="literal", universe_id=u.id)
+        session.add(lit)
         session.commit()
-        session.refresh(p)
+        session.refresh(lit)
 
-        c = Claim(
-            subject_id=e.id, predicate="flow_pred",
-            object_literal="obj_val", predicate_id=p.id
+        c = ArtifactRelation(
+            universe_id=u.id, from_artifact_id=e.id,
+            to_artifact_id=lit.id, relation_type="flow_pred"
         )
         session.add(c)
         session.commit()
@@ -63,14 +62,19 @@ class TestTraceClaim:
         session.commit()
         session.refresh(chunk)
 
-        e = Entity(name="EvidEnt", entity_type="T", universe_id=u.id)
+        e = Artifact(name="EvidEnt", type="entity", universe_id=u.id)
         session.add(e)
         session.commit()
         session.refresh(e)
 
-        c = Claim(
-            subject_id=e.id, predicate="test_pred",
-            object_literal="val", evidence_chunk_id=chunk.id
+        lit = Artifact(name="val", type="literal", universe_id=u.id)
+        session.add(lit)
+        session.commit()
+        session.refresh(lit)
+
+        c = ArtifactRelation(
+            universe_id=u.id, from_artifact_id=e.id,
+            to_artifact_id=lit.id, relation_type="test_pred"
         )
         session.add(c)
         session.commit()
@@ -86,16 +90,16 @@ class TestTraceClaim:
         session.commit()
         session.refresh(u)
 
-        subj = Entity(name="Subject", entity_type="T", universe_id=u.id)
-        obj = Entity(name="Object", entity_type="T", universe_id=u.id)
+        subj = Artifact(name="Subject", type="entity", universe_id=u.id)
+        obj = Artifact(name="Object", type="entity", universe_id=u.id)
         session.add_all([subj, obj])
         session.commit()
         session.refresh(subj)
         session.refresh(obj)
 
-        c = Claim(
-            subject_id=subj.id, predicate="RELATES_TO",
-            object_entity_id=obj.id, object_literal=None
+        c = ArtifactRelation(
+            universe_id=u.id, from_artifact_id=subj.id,
+            to_artifact_id=obj.id, relation_type="RELATES_TO"
         )
         session.add(c)
         session.commit()

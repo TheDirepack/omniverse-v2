@@ -2,6 +2,12 @@ import logging
 import os
 from datetime import datetime
 from pathlib import Path
+from typing import Any
+
+import pytest
+from fastapi.testclient import TestClient
+from sqlalchemy import event as sa_event
+from sqlmodel import Session, create_engine, select, text
 
 # Use /dev/shm for RAM-disk speed in tests
 SHM_DIR = Path("/dev/shm/omniverse_tests")
@@ -12,7 +18,6 @@ worker_id = os.getenv("PYTEST_XDIST_WORKER")
 suffix = f"_{worker_id}" if worker_id else ""
 
 # Test database URLs
-# Use longer timeout to avoid 'database is locked' errors in parallel tests
 DB_TIMEOUT = 60
 TEST_DB_URL = f"sqlite:///{SHM_DIR}/omniverse_test{suffix}.db?timeout={DB_TIMEOUT}"
 TEST_UNCONFIRMED_URL = f"sqlite:///{SHM_DIR}/omniverse_test_unconfirmed{suffix}.db?timeout={DB_TIMEOUT}"
@@ -27,15 +32,10 @@ os.environ["EXTRAPOLATION_DB_URL"] = TEST_EXTRAPOLATION_URL
 os.environ["SETTINGS_DATABASE_URL"] = TEST_SETTINGS_URL
 os.environ["OPERATIONAL_DATABASE_URL"] = TEST_OPERATIONAL_URL
 
-import pytest
-from fastapi.testclient import TestClient
-from sqlalchemy import event as sa_event
-from sqlmodel import Session, SQLModel, create_engine, select, text
 from app.main import app
-from typing import Any
 
 
-def _enable_fks(dbapi_connection, connection_record):
+def _enable_fks(dbapi_connection, _connection_record):
     cursor = dbapi_connection.cursor()
     cursor.execute("PRAGMA foreign_keys=ON")
     cursor.close()
@@ -44,12 +44,22 @@ def _enable_fks(dbapi_connection, connection_record):
 # Create test engines
 engine = create_engine(TEST_DB_URL, connect_args={"check_same_thread": False})
 sa_event.listens_for(engine, "connect")(_enable_fks)
-unconfirmed_engine = create_engine(TEST_UNCONFIRMED_URL, connect_args={"check_same_thread": False})
+unconfirmed_engine = create_engine(
+    TEST_UNCONFIRMED_URL, connect_args={"check_same_thread": False}
+)
 sa_event.listens_for(unconfirmed_engine, "connect")(_enable_fks)
-extrapolation_engine = create_engine(TEST_EXTRAPOLATION_URL, connect_args={"check_same_thread": False})
+extrapolation_engine = create_engine(
+    TEST_EXTRAPOLATION_URL, connect_args={"check_same_thread": False}
+)
 sa_event.listens_for(extrapolation_engine, "connect")(_enable_fks)
-settings_engine = create_engine(TEST_SETTINGS_URL, connect_args={"check_same_thread": False})
+settings_engine = create_engine(
+    TEST_SETTINGS_URL, connect_args={"check_same_thread": False}
+)
 sa_event.listens_for(settings_engine, "connect")(_enable_fks)
+operational_engine = create_engine(
+    TEST_OPERATIONAL_URL, connect_args={"check_same_thread": False}
+)
+sa_event.listens_for(operational_engine, "connect")(_enable_fks)
 
 
 class _CSRFClient:
@@ -59,7 +69,7 @@ class _CSRFClient:
         self._init_csrf()
 
     def _init_csrf(self):
-        resp = self._client.get("/")
+        _resp = self._client.get("/")
         csrf = self._client.cookies.get("csrf_token")
         if csrf:
             self._csrf_token = csrf
@@ -105,23 +115,72 @@ class _CSRFClient:
 @pytest.fixture(scope="session", autouse=True)
 def setup_databases():
     from app.db.session import init_db
-    
+
     # First, create all tables across all DBs
     init_db()
-    
+
     # Clean settings DB before seeding to remove stale data from past runs
-    from app.db.settings_session import settings_engine, init_settings_db
     from sqlmodel import Session, text
+
+    from app.db.settings_session import init_settings_db, settings_engine
     with Session(settings_engine) as s:
         s.execute(text("DELETE FROM agentroutefallback"))
         s.execute(text("DELETE FROM providerkey"))
         s.execute(text("DELETE FROM providerconfig"))
         s.execute(text("DELETE FROM setting"))
         s.commit()
-    
+
     # Re-seed DEFAULT route after cleaning
     init_settings_db()
     yield
+
+@pytest.fixture(scope="session", autouse=True)
+def seed_providers(setup_databases):
+    """Seeds the test settings DB with credentials from provider_config.py."""
+    from sqlmodel import Session
+
+    from app.db.schema import AgentRouteFallback, ProviderConfig, ProviderKey
+    from app.db.settings_session import settings_engine
+    from tests.provider_config import PROVIDER_CREDENTIALS
+
+    with Session(settings_engine) as session:
+        for provider_type, config in PROVIDER_CREDENTIALS.items():
+            # 1. Upsert ProviderConfig
+            provider = session.exec(
+                select(ProviderConfig).where(ProviderConfig.name == provider_type)
+            ).first()
+            if not provider:
+                provider = ProviderConfig(
+                    name=provider_type,
+                    provider_type=provider_type,
+                    base_url=config.get("base_url"),
+                    models=config.get("model"),
+                )
+                session.add(provider)
+                session.flush()
+
+            # 2. Upsert ProviderKey
+            if config.get("api_key"):
+                key = ProviderKey(
+                    provider_id=provider.id,
+                    api_key=config["api_key"],
+                    priority=0,
+                )
+                session.add(key)
+
+            # 3. Seed a route for common tasks to ensure they can use this provider
+            # In a real system, this would be more complex.
+            tasks = ["Researcher", "Logic Auditor", "DB Architect", "DEFAULT"]
+            for task in tasks:
+                fallback = AgentRouteFallback(
+                    task_type=task,
+                    priority=10,
+                    provider_id=provider.id,
+                    models=config.get("model"),
+                )
+                session.add(fallback)
+
+        session.commit()
 
 @pytest.fixture
 def ephemeral_db(clean_db):
@@ -138,20 +197,22 @@ def client():
     with TestClient(app) as c:
         yield _CSRFClient(c)
 
+
 @pytest.fixture
 def session():
     with Session(engine) as session:
         yield session
 
+
 @pytest.fixture
 def clean_db(session):
     tables = [
         "inferredclaimpath", "inferredclaim",
+        "artifactrelation", "artifact",
         "claimattribute",
         "claim",
         "evidencechunk", "evidence",
         "entityalias", "entity",
-        "predicatealias",
         "worldtier", "anomaly", "universerelation",
         "modelconfig", "providerkey", "agentroutefallback",
         "providerconfig", "setting",
@@ -178,8 +239,10 @@ def clean_db(session):
 
 @pytest.fixture(autouse=True)
 def _clear_acquisition_cache():
-    from app.core.acquisition_cache import acquisition_cache
+    from sqlmodel import Session, text
+
     from app.core import agent_engine as _ae
+    from app.core.acquisition_cache import acquisition_cache
     from app.db.unconfirmed_session import unconfirmed_engine
 
     _ae._current_run_id = None
@@ -194,25 +257,36 @@ def _clear_acquisition_cache():
     repo.session.commit()
 
     with Session(unconfirmed_engine) as us:
-        us.exec(text("DELETE FROM unconfirmed_claim"))
+        # Delete child tables first to avoid IntegrityError
+        us.exec(text("DELETE FROM timeline_source"))
+        us.exec(text("DELETE FROM timeline_participant"))
+        us.exec(text("DELETE FROM timeline_location"))
+        us.exec(text("DELETE FROM timeline_claim"))
+        us.exec(text("DELETE FROM timeline_entry"))
+        us.exec(text("DELETE FROM research_source"))
+        us.exec(text("DELETE FROM notebook_entry"))
+        us.exec(text("DELETE FROM provenance_edge"))
+        us.exec(text("DELETE FROM world_acquisition_usage"))
+        us.exec(text("DELETE FROM acquisition_artifact"))
         us.exec(text("DELETE FROM unconfirmed_universe"))
         us.commit()
 
     yield
 
+
 @pytest.fixture
 def seeded_db(clean_db):
-    from app.db.schema import Universe, Entity, Claim
+    from app.db.schema import Artifact, Universe
     session = clean_db
     u1 = Universe(name="U1", is_explored=True)
     session.add(u1)
     session.commit()
     session.refresh(u1)
-    
-    e1 = Entity(name="E1", entity_type="T1", universe_id=u1.id)
+
+    e1 = Artifact(name="E1", type="entity", universe_id=u1.id)
     session.add(e1)
     session.commit()
-    
+
     return session, u1, e1, None
 
 

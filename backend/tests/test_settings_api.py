@@ -312,10 +312,17 @@ class TestAgentRouting:
 
     def test_default_route_exists(self, api_client):
         # Seed a default route
-        pid = api_client.post("/api/providers", json={"name": "def"}).json()["provider"]["id"]
+        pid = api_client.post(
+            "/api/providers", json={"name": "def"}
+        ).json()["provider"]["id"]
         api_client.post(
             self.ENDPOINT,
-            json={"task_type": "DEFAULT", "provider_id": pid, "models": "gpt-4", "priority": 0},
+            json={
+                "task_type": "DEFAULT",
+                "provider_id": pid,
+                "models": "gpt-4",
+                "priority": 0,
+            },
         )
         r = api_client.get(self.ENDPOINT)
         assert r.status_code == 200

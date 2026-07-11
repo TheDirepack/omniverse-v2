@@ -2,9 +2,10 @@ import asyncio
 from collections import OrderedDict
 from enum import Enum
 
+from sqlmodel import Session
+
 from app.db.unconfirmed_schema import AcquisitionArtifact
 from app.repositories.acquisition_cache import AcquisitionCacheRepository
-from sqlmodel import Session
 
 
 class FreshnessPolicy(Enum):
@@ -21,6 +22,7 @@ class AcquisitionCache:
         self.repo = repo or AcquisitionCacheRepository()
         self._lru: OrderedDict[str, AcquisitionArtifact] = OrderedDict()
         self._pending: dict[str, asyncio.Future] = {}
+        self._pending_hash: dict[str, asyncio.Future] = {}
 
     def get_from_lru(self, url: str) -> AcquisitionArtifact | None:
         if url in self._lru:

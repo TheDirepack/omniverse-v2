@@ -1,5 +1,5 @@
 import json
-import logging
+
 
 def audit_success(audit_result: str | None) -> bool:
     """

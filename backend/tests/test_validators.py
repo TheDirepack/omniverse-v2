@@ -1,4 +1,3 @@
-import pytest
 from app.core.validators import validate_research_json
 
 
@@ -262,9 +261,16 @@ class TestValidateResearchJson:
         data["Provisional_Conclusions"] = [{"Conclusion": "c"}]
         is_valid, errors = validate_research_json(data)
         assert not is_valid
-        assert "Conclusion 0 in Provisional_Conclusions missing key: Reasoning" in errors
-        assert "Conclusion 0 in Provisional_Conclusions missing key: Confidence" in errors
-        assert "Conclusion 0 in Provisional_Conclusions missing key: Verification_Need" in errors
+        assert (
+            "Conclusion 0 in Provisional_Conclusions missing key: Reasoning" in errors
+        )
+        assert (
+            "Conclusion 0 in Provisional_Conclusions missing key: Confidence" in errors
+        )
+        assert (
+            "Conclusion 0 in Provisional_Conclusions "
+            "missing key: Verification_Need" in errors
+        )
 
     def test_provisional_conclusions_invalid_confidence(self):
         data = get_valid_data()
@@ -307,7 +313,9 @@ class TestValidateResearchJson:
         assert "Missing root key: Provisional_Conclusions" in errors
 
     def test_all_category_types_valid(self):
-        for cat_type in ["Hard Tech", "Soft Tech", "Magic System", "Cosmology", "Other"]:
+        for cat_type in [
+            "Hard Tech", "Soft Tech", "Magic System", "Cosmology", "Other"
+        ]:
             data = get_valid_data()
             data["Data_Categories"] = [
                 {

@@ -1,24 +1,30 @@
 import os
+from pathlib import Path
 
 from sqlalchemy import event
-from sqlmodel import Session, SQLModel, create_engine
-
-from app.db.extrapolation_session import init_extrapolation_db
-from app.db.unconfirmed_session import init_unconfirmed_db
+from sqlmodel import SQLModel, create_engine
 
 # Import schema to register models with SQLModel.metadata
 import app.db.schema  # noqa: F401
+from app.db.extrapolation_session import init_extrapolation_db
+from app.db.unconfirmed_session import init_unconfirmed_db
 
-_DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "data")
-os.makedirs(_DATA_DIR, exist_ok=True)
+_DATA_DIR = Path(__file__).resolve().parents[2] / "data"
+_DATA_DIR.mkdir(parents=True, exist_ok=True)
 
-sqlite_url = os.getenv("DATABASE_URL", f"sqlite:///{os.path.join(_DATA_DIR, 'omniverse_v2.db')}")
-connect_args = {"check_same_thread": False, "timeout": 30} if sqlite_url.startswith("sqlite") else {}
+sqlite_url = os.getenv(
+    "DATABASE_URL", f"sqlite:///{_DATA_DIR / 'omniverse_v2.db'}"
+)
+connect_args = (
+    {"check_same_thread": False, "timeout": 30}
+    if sqlite_url.startswith("sqlite")
+    else {}
+)
 engine = create_engine(sqlite_url, connect_args=connect_args)
 
 
 @event.listens_for(engine, "connect")
-def _enable_foreign_keys(dbapi_connection, connection_record):
+def _enable_foreign_keys(dbapi_connection, _connection_record):
     cursor = dbapi_connection.cursor()
     cursor.execute("PRAGMA foreign_keys=ON")
     cursor.close()

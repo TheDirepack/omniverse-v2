@@ -9,7 +9,7 @@ _bad_keys: set[str] = set()
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(_app: FastAPI):
     env_bad = os.environ.get("FAKE_LLM_BAD_KEYS", "")
     if env_bad:
         _bad_keys.update(k for k in env_bad.split(",") if k)
@@ -36,7 +36,7 @@ async def set_bad_keys(body: ControlBody):
 
 
 @app.post("/{path:path}")
-async def chat_completions(path: str, request: Request):
+async def chat_completions(_path: str, request: Request):
     auth = request.headers.get("authorization", "")
     key = auth.removeprefix("Bearer ").strip()
     if not key:

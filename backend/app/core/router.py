@@ -137,6 +137,7 @@ class ModelRouter:
                 .where(AgentRouteFallback.task_type == task)
                 .order_by(AgentRouteFallback.priority)
             ).all()
+            print(f"[ModelRouter] Routes for task '{task}': {[r.task_type for r in routes]}")
 
             # If a specific provider was requested, restrict the fallback chain to
             # routes pointing at that provider (falling back to all routes if none match,
@@ -254,7 +255,7 @@ class ModelRouter:
                     response = await litellm.acompletion(
                         model=full_model,
                         messages=messages,
-                        tools=tools if tools else None,
+                        tools=tools or None,
                         tool_choice="auto" if tools else None,
                         api_key=candidate["key"].api_key,
                         api_base=candidate["provider"].base_url,

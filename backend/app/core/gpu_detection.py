@@ -72,8 +72,8 @@ def gpu_device_name() -> str | None:
             return "Apple MPS"
         if backend == GPU_BACKEND_VULKAN:
             return "Vulkan"
-    except Exception as e:
-        logger.exception("Failed to get GPU device name: %s", e)
+    except Exception:
+        logger.exception("Failed to get GPU device name")
     return None
 
 

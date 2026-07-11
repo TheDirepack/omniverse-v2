@@ -5,6 +5,7 @@ Offline, mocked unit tests for core/provider_models.py
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+
 from app.core.provider_models import fetch_live_models
 from app.db.schema import ProviderConfig
 

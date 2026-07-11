@@ -1,6 +1,7 @@
 import pytest
-from app.core.web_fetch import WebFetcher
 from bs4 import BeautifulSoup
+
+from app.core.web_fetch import WebFetcher
 
 
 @pytest.fixture
@@ -36,8 +37,11 @@ def test_extract_internal_links(fetcher):
     # Test default (max 20)
     links = fetcher._extract_internal_links(soup, base_url="http://example.com")
 
-    # Fusion Engine should be High value and have score 2, and section "Technical Specifications"
-    fusion_engine = next((l for l in links if l["title"] == "Fusion Engine"), None)
+    # Fusion Engine should be High value and have score 2, and section
+    # "Technical Specifications"
+    fusion_engine = next(
+        (link for link in links if link["title"] == "Fusion Engine"), None
+    )
     assert fusion_engine is not None
     assert fusion_engine["tier"] == "High"
     assert fusion_engine["score"] == 2
@@ -45,20 +49,22 @@ def test_extract_internal_links(fetcher):
     assert fusion_engine["url"] == "http://example.com/fusion-engine"
 
     # Heat Sink should be High value and score 1
-    heat_sink = next((l for l in links if l["title"] == "Heat Sinks"), None)
+    heat_sink = next((link for link in links if link["title"] == "Heat Sinks"), None)
     assert heat_sink is not None
     assert heat_sink["tier"] == "High"
     assert heat_sink["score"] == 1
     assert "Technical Specifications" in heat_sink["sections"]
 
     # Categories should be Medium value
-    mechs_cat = next((l for l in links if l["title"] == "Mechs Category"), None)
+    mechs_cat = next(
+        (link for link in links if link["title"] == "Mechs Category"), None
+    )
     assert mechs_cat is not None
     assert mechs_cat["tier"] == "Medium"
 
     # Junk links should be filtered
-    assert not any(l["title"] == "Privacy Policy" for l in links)
-    assert not any(l["title"] == "About Us" for l in links)
+    assert not any(link["title"] == "Privacy Policy" for link in links)
+    assert not any(link["title"] == "About Us" for link in links)
 
 
 def test_extract_internal_links_max(fetcher):
@@ -76,7 +82,9 @@ def test_extract_internal_links_max(fetcher):
     soup = BeautifulSoup(html, "html.parser")
 
     # Test capping at 2
-    links = fetcher._extract_internal_links(soup, base_url="http://example.com", max_links=2)
+    links = fetcher._extract_internal_links(
+        soup, base_url="http://example.com", max_links=2
+    )
     assert len(links) == 2
 
 
@@ -88,13 +96,19 @@ def test_normalize_whitespace(fetcher):
 
 def test_is_cookie_page_positive(fetcher):
     # Text dominated by cookie keywords
-    text = "We value your privacy. Please accept all cookies to continue. Manage cookies in settings. Your privacy choices matter."
+    text = (
+        "We value your privacy. Please accept all cookies to continue. "
+        "Manage cookies in settings. Your privacy choices matter."
+    )
     assert fetcher._is_cookie_page(text) is True
 
 
 def test_is_cookie_page_negative(fetcher):
     # Normal article text
-    text = "The BattleMech is a giant robot used in the Inner Sphere. It uses a fusion engine and neurohelmet."
+    text = (
+        "The BattleMech is a giant robot used in the Inner Sphere. "
+        "It uses a fusion engine and neurohelmet."
+    )
     assert fetcher._is_cookie_page(text) is False
 
 
@@ -117,7 +131,10 @@ def test_detect_page_type_404(fetcher):
 
 
 def test_detect_page_type_login(fetcher):
-    html = "<html><body>Login: <input name='username'><input name='password'></body></html>"
+    html = (
+        "<html><body>Login: <input name='username'>"
+        "<input name='password'></body></html>"
+    )
     text = "Login username password"
     assert fetcher._detect_page_type(html, text) == "LOGIN PAGE"
 

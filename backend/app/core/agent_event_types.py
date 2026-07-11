@@ -1,5 +1,7 @@
 from enum import Enum
 
+from app.core.enums import RunStatus
+
 
 class AgentEventType(str, Enum):
     """Canonical event types for agent logging."""
@@ -10,9 +12,10 @@ class AgentEventType(str, Enum):
     PROMPT = "PROMPT"
     MODEL_CALL = "MODEL_CALL"
     ERROR = "ERROR"
-    FAILED = "FAILED"
+    FAILED = RunStatus.FAILED
     INFO = "INFO"
     WARNING = "WARNING"
-    COMPLETED = "COMPLETED"
+    COMPLETED = RunStatus.COMPLETED
     IN_PROGRESS = "IN_PROGRESS"
     STEP = "STEP"
+

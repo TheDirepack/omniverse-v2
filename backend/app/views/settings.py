@@ -1,13 +1,15 @@
 import json
-
-import json
+import shutil
+from pathlib import Path
 
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 from app.core.templates import templates
 from app.db.settings_session import settings_engine
+from app.db.unconfirmed_schema import Snapshot
+from app.db.unconfirmed_session import unconfirmed_engine
 from app.repositories.settings import SettingsRepository
 from app.services.settings_service import PROVIDER_PRESETS, SettingsService
 
@@ -36,7 +38,7 @@ async def settings_general_update(
 ):
     service = SettingsService()
     service.update_general_setting(key, value)
-    
+
     # Special handling for browser pool configuration
     if key == "BROWSER_POOL_SIZE" or key == "BROWSER_MAX_CONCURRENCY_PER_INSTANCE":
         from app.core.browser import browser_manager
@@ -51,7 +53,9 @@ async def settings_general_update(
     response = HTMLResponse(
         content=template.render(request=request, settings=data["general_settings"])
     )
-    response.headers["HX-Trigger"] = '{"showToast": {"value": "Setting updated", "type": "info"}}'
+    response.headers["HX-Trigger"] = (
+        '{"showToast": {"value": "Setting updated", "type": "info"}}'
+    )
     return response
 
 
@@ -115,7 +119,9 @@ async def settings_provider_upsert(
             presets=PROVIDER_PRESETS,
         )
     )
-    response.headers["HX-Trigger"] = '{"showToast": {"value": "Provider updated", "type": "info"}}'
+    response.headers["HX-Trigger"] = (
+        '{"showToast": {"value": "Provider updated", "type": "info"}}'
+    )
     return response
 
 
@@ -211,7 +217,7 @@ async def settings_provider_add_key(
     "/providers/{provider_id}/keys/{key_id}/delete", response_class=HTMLResponse
 )
 async def settings_provider_delete_key(
-    request: Request, provider_id: int, key_id: int
+    request: Request, _provider_id: int, key_id: int
 ):
     service = SettingsService()
     service.delete_provider_key(key_id)
@@ -295,7 +301,9 @@ async def settings_route_upsert(
             agent_names=AGENT_NAMES,
         )
     )
-    response.headers["HX-Trigger"] = '{"showToast": {"value": "Route updated", "type": "info"}}'
+    response.headers["HX-Trigger"] = (
+        '{"showToast": {"value": "Route updated", "type": "info"}}'
+    )
     return response
 
 
@@ -379,8 +387,13 @@ def _get_model_status():
 async def settings_tab_health(request: Request):
     status = _get_model_status()
     template = templates.env.get_template("fragments/settings_health.html")
+
+    # Include snapshots in the health tab
+    with Session(unconfirmed_engine) as session:
+        snapshots = session.exec(select(Snapshot)).all()
+
     return HTMLResponse(
-        content=template.render(request=request, status=status)
+        content=template.render(request=request, status=status, snapshots=snapshots)
     )
 
 
@@ -390,6 +403,108 @@ async def settings_reset_health(request: Request):
     service.reset_candidate_health()
     status = _get_model_status()
     template = templates.env.get_template("fragments/settings_health.html")
+
+    with Session(unconfirmed_engine) as session:
+        snapshots = session.exec(select(Snapshot)).all()
+
     return HTMLResponse(
-        content=template.render(request=request, status=status)
+        content=template.render(request=request, status=status, snapshots=snapshots)
+    )
+
+@router.get("/snapshots", response_class=HTMLResponse)
+async def settings_snapshots_fragment(request: Request):
+    with Session(unconfirmed_engine) as session:
+        snapshots = session.exec(select(Snapshot)).all()
+
+    template = templates.env.get_template("fragments/world_snapshots.html")
+    return HTMLResponse(content=template.render(request=request, snapshots=snapshots))
+
+
+@router.post("/snapshots/create", response_class=HTMLResponse)
+async def settings_snapshots_create_action(
+    request: Request,
+    name: str = Form(...),
+    snapshot_type: str = Form("FULL")
+):
+    data_dir = Path(__file__).parent.parent.parent / "data"
+    snapshot_dir = data_dir / "snapshots"
+    snapshot_dir.mkdir(parents=True, exist_ok=True)
+
+    with Session(unconfirmed_engine) as session:
+        snapshot = Snapshot(
+            name=name,
+            snapshot_type=snapshot_type,
+            metadata="Database state captured via UI."
+        )
+        session.add(snapshot)
+        session.commit()
+        session.refresh(snapshot)
+
+        s_dir = snapshot_dir / str(snapshot.id)
+        s_dir.mkdir(exist_ok=True)
+        for db_file in [
+            "omniverse_v2.db",
+            "settings.db",
+            "operational.db",
+            "unconfirmed.db",
+            "extrapolation.db",
+        ]:
+            src = data_dir / db_file
+            if src.exists():
+                shutil.copy2(src, s_dir / db_file)
+
+    return await settings_snapshots_fragment(request)
+
+
+@router.delete("/snapshots/{snapshot_id}", response_class=HTMLResponse)
+async def settings_snapshots_delete_action(request: Request, snapshot_id: int):
+    data_dir = Path(__file__).parent.parent.parent / "data"
+
+    with Session(unconfirmed_engine) as session:
+        snapshot = session.get(Snapshot, snapshot_id)
+        if snapshot:
+            s_dir = data_dir / "snapshots" / str(snapshot.id)
+            if s_dir.exists():
+                shutil.rmtree(s_dir)
+            session.delete(snapshot)
+            session.commit()
+
+    return await settings_snapshots_fragment(request)
+
+
+@router.post("/snapshots/{snapshot_id}/restore", response_class=HTMLResponse)
+async def settings_snapshots_restore_action(_request: Request, snapshot_id: int):
+    data_dir = Path(__file__).parent.parent.parent / "data"
+
+    with Session(unconfirmed_engine) as session:
+        snapshot = session.get(Snapshot, snapshot_id)
+        if not snapshot:
+            return HTMLResponse(
+                "<p class='text-red-500'>Snapshot not found.</p>", status_code=404
+            )
+
+        s_dir = data_dir / "snapshots" / str(snapshot.id)
+        if not s_dir.exists():
+            return HTMLResponse(
+                "<p class='text-red-500'>Snapshot files missing.</p>", status_code=404
+            )
+
+        for db_file in [
+            "omniverse_v2.db",
+            "settings.db",
+            "operational.db",
+            "unconfirmed.db",
+            "extrapolation.db",
+        ]:
+            src = s_dir / db_file
+            if src.exists():
+                shutil.copy2(src, data_dir / db_file)
+
+    return HTMLResponse(
+        content=(
+            f'<div class="p-4 bg-green-900 text-white rounded">'
+            f'Snapshot "{snapshot.name}" restored successfully. '
+            f'Page will reload.</div>'
+        ),
+        headers={"HX-Refresh": "true"}
     )

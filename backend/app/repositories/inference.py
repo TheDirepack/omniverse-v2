@@ -3,7 +3,7 @@ from typing import Any
 
 from sqlmodel import Session, func, select
 
-from app.db.schema import Claim, InferenceRule, InferredClaim
+from app.db.schema import ArtifactRelation, InferenceRule, InferredClaim
 
 
 class InferenceRepository:
@@ -13,7 +13,7 @@ class InferenceRepository:
     def __init__(self, session: Session):
         self.session = session
 
-    # --- Claim graph ---
+    # --- Artifact Relation graph ---
 
     def get_claims_by_predicate(
         self,
@@ -22,38 +22,20 @@ class InferenceRepository:
         offset: int = 0,
         fields: list[str] | None = None,
     ) -> Sequence[Any]:
-        # Try finding by predicate_id first if it's been migrated
-        from app.db.schema import Predicate
-
-        # Check if any results exist for the migrated path
-        exists_query = (
-            select(Claim.id)
-            .join(Predicate)
-            .where(Predicate.canonical_name == predicate)
+        stmt = select(ArtifactRelation).where(
+            ArtifactRelation.relation_type == predicate
         )
-        if self.session.exec(exists_query.limit(1)).first() is not None:
-            stmt = (
-                select(Claim)
-                .join(Predicate, Claim.predicate_id == Predicate.id)
-                .where(Predicate.canonical_name == predicate)
-            )
-            if fields:
-                proj_fields = [getattr(Claim, f) for f in fields if hasattr(Claim, f)]
-                if proj_fields:
-                    stmt = (
-                        select(*proj_fields)
-                        .join(Predicate)
-                        .where(Predicate.canonical_name == predicate)
-                    )
-            return self.session.exec(stmt.offset(offset).limit(limit)).all()
-        else:
-            # Fallback to deprecated string predicate column
-            stmt = select(Claim).where(Claim.predicate == predicate)
-            if fields:
-                proj_fields = [getattr(Claim, f) for f in fields if hasattr(Claim, f)]
-                if proj_fields:
-                    stmt = select(*proj_fields).where(Claim.predicate == predicate)
-            return self.session.exec(stmt.offset(offset).limit(limit)).all()
+        if fields:
+            proj_fields = [
+                getattr(ArtifactRelation, f)
+                for f in fields
+                if hasattr(ArtifactRelation, f)
+            ]
+            if proj_fields:
+                stmt = select(*proj_fields).where(
+                    ArtifactRelation.relation_type == predicate
+                )
+        return self.session.exec(stmt.offset(offset).limit(limit)).all()
 
     def get_claims_for_subject(
         self,
@@ -62,39 +44,30 @@ class InferenceRepository:
         offset: int = 0,
         fields: list[str] | None = None,
     ) -> Sequence[Any]:
-        stmt = select(Claim).where(Claim.subject_id == subject_id)
+        stmt = select(ArtifactRelation).where(
+            ArtifactRelation.from_artifact_id == subject_id
+        )
         if fields:
-            proj_fields = [getattr(Claim, f) for f in fields if hasattr(Claim, f)]
+            proj_fields = [
+                getattr(ArtifactRelation, f)
+                for f in fields
+                if hasattr(ArtifactRelation, f)
+            ]
             if proj_fields:
-                stmt = select(*proj_fields).where(Claim.subject_id == subject_id)
+                stmt = select(*proj_fields).where(
+                    ArtifactRelation.from_artifact_id == subject_id
+                )
         return self.session.exec(stmt.offset(offset).limit(limit)).all()
 
     def find_claim(
         self, subject_id: int, predicate: str, object_id: int
-    ) -> Claim | None:
-        from app.db.schema import Predicate
-
-        # Try migrated path
-        stmt = (
-            select(Claim)
-            .join(Predicate, Claim.predicate_id == Predicate.id)
-            .where(
-                Claim.subject_id == subject_id,
-                Predicate.canonical_name == predicate,
-                Claim.object_id == object_id,
-            )
+    ) -> ArtifactRelation | None:
+        stmt = select(ArtifactRelation).where(
+            ArtifactRelation.from_artifact_id == subject_id,
+            ArtifactRelation.relation_type == predicate,
+            ArtifactRelation.to_artifact_id == object_id,
         )
-        res = self.session.exec(stmt).first()
-        if res:
-            return res
-        # Fallback
-        return self.session.exec(
-            select(Claim).where(
-                Claim.subject_id == subject_id,
-                Claim.predicate == predicate,
-                Claim.object_id == object_id,
-            )
-        ).first()
+        return self.session.exec(stmt).first()
 
     def find_claims_with_subject_predicate(
         self,
@@ -104,92 +77,30 @@ class InferenceRepository:
         offset: int = 0,
         fields: list[str] | None = None,
     ) -> Sequence[Any]:
-        from app.db.schema import Predicate
-        
-        stmt = (
-            select(Claim)
-            .join(Predicate, Claim.predicate_id == Predicate.id)
-            .where(
-                Claim.subject_id == subject_id, Predicate.canonical_name == predicate
-            )
+        stmt = select(ArtifactRelation).where(
+            ArtifactRelation.from_artifact_id == subject_id,
+            ArtifactRelation.relation_type == predicate,
         )
         if fields:
-            proj_fields = [getattr(Claim, f) for f in fields if hasattr(Claim, f)]
+            proj_fields = [
+                getattr(ArtifactRelation, f)
+                for f in fields
+                if hasattr(ArtifactRelation, f)
+            ]
             if proj_fields:
                 stmt = (
                     select(*proj_fields)
-                    .join(Predicate)
                     .where(
-                        Claim.subject_id == subject_id,
-                        Predicate.canonical_name == predicate,
+                        ArtifactRelation.from_artifact_id == subject_id,
+                        ArtifactRelation.relation_type == predicate,
                     )
                 )
-        
+
         res = self.session.exec(stmt.offset(offset).limit(limit)).all()
         if res:
             return res
-        
-        # Fallback
-        stmt_fallback = select(Claim).where(
-            Claim.subject_id == subject_id, Claim.predicate == predicate
-        )
-        if fields:
-            proj_fields = [getattr(Claim, f) for f in fields if hasattr(Claim, f)]
-            if proj_fields:
-                stmt_fallback = select(*proj_fields).where(
-                    Claim.subject_id == subject_id, Claim.predicate == predicate
-                )
-        return self.session.exec(stmt_fallback.offset(offset).limit(limit)).all()
 
-    def find_claims_with_subject_predicate_batch(
-        self,
-        subject_ids: list[int],
-        predicate: str,
-        fields: list[str] | None = None,
-    ) -> Sequence[Any]:
-        """Batch version of find_claims_with_subject_predicate to avoid N+1 queries."""
-        if not subject_ids:
-            return []
-        from app.db.schema import Predicate
-        
-        # Try migrated path
-        stmt = (
-            select(Claim)
-            .join(Predicate, Claim.predicate_id == Predicate.id)
-            .where(
-                Claim.subject_id.in_(subject_ids), 
-                Predicate.canonical_name == predicate
-            )
-        )
-        if fields:
-            proj_fields = [getattr(Claim, f) for f in fields if hasattr(Claim, f)]
-            if proj_fields:
-                stmt = (
-                    select(*proj_fields)
-                    .join(Predicate)
-                    .where(
-                        Claim.subject_id.in_(subject_ids),
-                        Predicate.canonical_name == predicate,
-                    )
-                )
-        
-        res = self.session.exec(stmt).all()
-        if res:
-            return res
-        
-        # Fallback
-        stmt_fallback = select(Claim).where(
-            Claim.subject_id.in_(subject_ids), 
-            Claim.predicate == predicate
-        )
-        if fields:
-            proj_fields = [getattr(Claim, f) for f in fields if hasattr(Claim, f)]
-            if proj_fields:
-                stmt_fallback = select(*proj_fields).where(
-                    Claim.subject_id.in_(subject_ids), 
-                    Claim.predicate == predicate
-                )
-        return self.session.exec(stmt_fallback).all()
+        return []
 
     def frequent_predicate_pairs(
         self, min_count: int = 3
@@ -201,34 +112,29 @@ class InferenceRepository:
         """
         from sqlalchemy import alias
 
-        from app.db.schema import Predicate
-
-        p1_alias = alias(Predicate.__table__, name="p1")
-        p2_alias = alias(Predicate.__table__, name="p2")
-        c1_table = Claim.__table__
-        c2_alias = alias(Claim.__table__, name="c2")
+        rel1 = ArtifactRelation.__table__
+        rel2 = alias(ArtifactRelation.__table__, name="rel2")
 
         stmt = (
             select(
-                func.coalesce(p1_alias.c.canonical_name, c1_table.c.predicate),
-                func.coalesce(p2_alias.c.canonical_name, c2_alias.c.predicate),
+                rel1.c.relation_type,
+                rel2.c.relation_type,
                 func.count(),
             )
             .select_from(
-                c1_table.join(
-                    c2_alias, c1_table.c.object_entity_id == c2_alias.c.subject_id
+                rel1.join(
+                    rel2, rel1.c.to_artifact_id == rel2.c.from_artifact_id
                 )
-                .outerjoin(p1_alias, c1_table.c.predicate_id == p1_alias.c.id)
-                .outerjoin(p2_alias, c2_alias.c.predicate_id == p2_alias.c.id)
             )
             .group_by(
-                func.coalesce(p1_alias.c.canonical_name, c1_table.c.predicate),
-                func.coalesce(p2_alias.c.canonical_name, c2_alias.c.predicate),
+                rel1.c.relation_type,
+                rel2.c.relation_type,
             )
             .having(func.count() >= min_count)
         )
         rows = self.session.exec(stmt).all()
         return [(r[0], r[1], r[2]) for r in rows]
+
 
     # --- InferenceRule lifecycle ---
 

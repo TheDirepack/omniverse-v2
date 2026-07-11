@@ -1,8 +1,9 @@
 from pathlib import Path
+
 import pytest
+from sqlmodel import Session, SQLModel, create_engine, select
 
 from app.db.schema import AgentRouteFallback, ProviderConfig, ProviderKey, Universe
-from sqlmodel import Session, SQLModel, create_engine, select
 
 try:
     from tests.provider_config import PROVIDER_CREDENTIALS
@@ -59,9 +60,11 @@ def create_test_db(db_dir: str | Path, db_filename: str = "omniverse_v2.db"):
             ).fetchall()
         ]
         if "provider_type" in provider_columns and "base_url" in provider_columns:
-            conn.exec_driver_sql(
-                "UPDATE providerconfig SET provider_type = 'custom' WHERE provider_type = 'openai' AND base_url IS NOT NULL AND base_url != ''"
-            )
+                conn.exec_driver_sql(
+                    "UPDATE providerconfig SET provider_type = 'custom' "
+                    "WHERE provider_type = 'openai' AND base_url IS NOT NULL "
+                    "AND base_url != ''"
+                )
 
     # Seed providers
     with Session(engine) as session:
@@ -75,7 +78,7 @@ def create_test_db(db_dir: str | Path, db_filename: str = "omniverse_v2.db"):
             p = ProviderConfig(
                 name=f"test-{ptype}",
                 provider_type=ptype,
-                base_url=base_url if base_url else None,
+                base_url=base_url or None,
                 models=model,
             )
             session.add(p)

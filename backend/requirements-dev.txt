@@ -1,0 +1,10 @@
+pytest
+pytest-cov
+pytest-xdist
+black
+ruff
+mypy
+bandit
+pylint
+isort
+pre-commit

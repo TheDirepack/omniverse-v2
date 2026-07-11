@@ -1,31 +1,35 @@
-from fastapi import APIRouter, Depends, Request, HTTPException
-from fastapi.responses import HTMLResponse
-from sqlmodel import Session, select
+from typing import Annotated
 
-from app.core.templates import templates
+from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import HTMLResponse
+from sqlmodel import Session
+
 from app.core.dependencies import get_main_session, get_unconfirmed_session
-from app.db.schema import Claim, Entity, Predicate, Evidence, EvidenceChunk
-from app.db.unconfirmed_schema import AcquisitionArtifact, UnconfirmedClaim
-from app.db.unconfirmed_session import unconfirmed_engine
+from app.core.templates import templates
+from app.db.schema import Artifact, Evidence
+from app.db.unconfirmed_schema import NotebookEntry
 
 router = APIRouter(tags=["provenance_views"])
 
 
 @router.get("/unconfirmed/{claim_id}", response_class=HTMLResponse)
-async def unconfirmed_claim_provenance(request: Request, claim_id: int, session: Session = Depends(get_unconfirmed_session)):
-    claim = session.get(UnconfirmedClaim, claim_id)
-    if not claim:
-        raise HTTPException(status_code=404, detail="Unconfirmed claim not found")
-    
+async def unconfirmed_claim_provenance(
+    request: Request,
+    claim_id: int,
+    session: Annotated[Session, Depends(get_unconfirmed_session)],
+):
+    entry = session.get(NotebookEntry, claim_id)
+    if not entry:
+        raise HTTPException(status_code=404, detail="Notebook entry not found")
+
+    # Note: NotebookEntry doesn't have a direct artifact_id like Claim did.
+    # For now, we return None for artifact.
     artifact = None
-    if claim.artifact_id:
-        with Session(unconfirmed_engine) as unconfirmed_session:
-            artifact = unconfirmed_session.get(AcquisitionArtifact, claim.artifact_id)
-    
+
     template = templates.env.get_template("pages/provenance.html")
     return HTMLResponse(content=template.render(
         request=request,
-        claim=claim,
+        claim=entry,
         subject=None,
         predicate=None,
         evidence_chunk=None,
@@ -35,44 +39,39 @@ async def unconfirmed_claim_provenance(request: Request, claim_id: int, session:
     ))
 
 @router.get("/claim/{claim_id}", response_class=HTMLResponse)
+async def claim_provenance(
+    request: Request,
+    claim_id: int,
+    main_session: Annotated[Session, Depends(get_main_session)],
+):
+    artifact = main_session.get(Artifact, claim_id)
+    if not artifact:
+        raise HTTPException(status_code=404, detail="Artifact not found")
 
-async def claim_provenance(request: Request, claim_id: int, main_session: Session = Depends(get_main_session)):
-    claim = main_session.get(Claim, claim_id)
-    if not claim:
-        raise HTTPException(status_code=404, detail="Claim not found")
-
-    # Resolve Subject and Predicate
-    subject = main_session.get(Entity, claim.subject_id)
-    predicate = main_session.get(Predicate, claim.predicate_id)
-    
     # Resolve Evidence
     evidence_chunk = None
     evidence = None
-    if claim.evidence_chunk_id:
-        evidence_chunk = main_session.get(EvidenceChunk, claim.evidence_chunk_id)
+    if artifact.evidence_id:
+        # We need a way to get the chunk. For now, we'll use a simplified approach.
+        from app.db.schema import EvidenceChunk
+        evidence_chunk = main_session.get(EvidenceChunk, artifact.evidence_id)
         if evidence_chunk:
             evidence = main_session.get(Evidence, evidence_chunk.evidence_id)
 
-    # Resolve Object
-    object_entity = None
-    if claim.object_entity_id:
-        object_entity = main_session.get(Entity, claim.object_entity_id)
-
     # Resolve Provenance Artifact
-    artifact = None
-    if claim.artifact_id:
-        with Session(unconfirmed_engine) as unconfirmed_session:
-            artifact = unconfirmed_session.get(AcquisitionArtifact, claim.artifact_id)
+    prov_artifact = None
+    # In the new system, provenance is often in the payload_json or we can look it up.
 
     template = templates.env.get_template("pages/provenance.html")
     return HTMLResponse(content=template.render(
         request=request,
-        claim=claim,
-        subject=subject,
-        predicate=predicate,
-        object_entity=object_entity,
+        claim=artifact,
+        subject=None,
+        predicate=None,
+        object_entity=None,
         evidence_chunk=evidence_chunk,
         evidence=evidence,
-        artifact=artifact,
+        artifact=prov_artifact,
     ))
+
 

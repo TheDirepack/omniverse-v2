@@ -1,20 +1,21 @@
 import re
 
+from sqlmodel import Session, select
+
 from app.db.schema import Universe
 from app.db.session import engine
 from app.db.unconfirmed_schema import UnconfirmedUniverse
 from app.db.unconfirmed_session import unconfirmed_engine
-from sqlmodel import Session, select
 
-# Pattern to match trailing parentheses: optional space, then (anything) at the end of the string
+# Pattern to match trailing parentheses: optional space, then
+# (anything) at the end of the string
 PATTERN = r"\s*\([^)]*\)$"
 
 
 def clean_name(name):
     if not name:
         return name
-    new_name = re.sub(PATTERN, "", name, flags=re.IGNORECASE).strip()
-    return new_name
+    return re.sub(PATTERN, "", name, flags=re.IGNORECASE).strip()
 
 
 def main():

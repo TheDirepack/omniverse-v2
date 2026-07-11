@@ -1,6 +1,7 @@
-from app.db.schema import CandidateHealth
-from app.db.operational_session import operational_engine
 from sqlmodel import Session, select, text
+
+from app.db.operational_session import operational_engine
+from app.db.schema import CandidateHealth
 
 
 def test_reset_candidate_health(client):

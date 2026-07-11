@@ -1,4 +1,5 @@
 import pytest
+
 from app.db.schema import Universe
 from app.services.universe_service import UniverseService
 
@@ -13,13 +14,13 @@ class TestUniverseServiceRepoProperty:
     in production: 'Manager[FAILED] Critical Execution Failure:
     UniverseService object has no attribute repo'."""
 
-    def test_repo_property_exists_and_returns_repository(self, ephemeral_db):
+    def test_repo_property_exists_and_returns_repository(self, _ephemeral_db):
         svc = UniverseService()
         from app.repositories.universe import UniverseRepository
 
         assert isinstance(svc.repo, UniverseRepository)
 
-    def test_repo_is_cached_across_accesses(self, ephemeral_db):
+    def test_repo_is_cached_across_accesses(self, _ephemeral_db):
         """Multiple .repo accesses on the same instance must reuse the same
         underlying repo/session -- the crash sites call .repo multiple times
         in sequence within a single function (get_by_names then
@@ -48,7 +49,7 @@ class TestUniverseServiceRepoProperty:
         via_repo_again = svc.repo.get_by_names(["TEST_RepoCoexist"])
         assert len(via_repo_again) == 1
 
-    def test_get_repo_backward_compat_delegates_to_repo(self, ephemeral_db):
+    def test_get_repo_backward_compat_delegates_to_repo(self, _ephemeral_db):
         svc = UniverseService()
         assert svc._get_repo() is svc.repo
 

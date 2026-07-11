@@ -1,6 +1,6 @@
+
 from fastapi import APIRouter
 from pydantic import BaseModel
-from typing import List
 
 from app.services.theory_service import TheoryService
 from app.services.tiering_service import TieringService
@@ -40,8 +40,8 @@ class AnomalyResponse(BaseModel):
 
 class ResearchResultsResponse(BaseModel):
     tier_system: str | None = None
-    worlds: List[ResearchWorldResult]
-    anomalies: List[AnomalyResponse]
+    worlds: list[ResearchWorldResult]
+    anomalies: list[AnomalyResponse]
 
 
 class TheoryResponse(BaseModel):
@@ -63,7 +63,7 @@ def get_claims(
     return service.get_claims(universe_ids, limit=limit, offset=offset, fields=fields)
 
 
-@router.get("/claims/unconfirmed", response_model=List[UnconfirmedClaimResponse])
+@router.get("/claims/unconfirmed", response_model=list[UnconfirmedClaimResponse])
 def get_unconfirmed_claims(universe_ids: str | None = None):
     from sqlmodel import Session, select
 
@@ -148,7 +148,7 @@ def get_tiers():
     return get_results()
 
 
-@router.get("/theories", response_model=List[TheoryResponse])
+@router.get("/theories", response_model=list[TheoryResponse])
 def get_theories():
     service = TheoryService()
     theories = service.repo.get_all_theories()

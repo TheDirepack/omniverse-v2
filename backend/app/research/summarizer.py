@@ -1,5 +1,5 @@
 from app.agents.prompts import get_summary_prompt
-from app.core.agent_engine import run_agent, Capability
+from app.core.agent_engine import Capability, run_agent
 from app.core.context import set_current_universe
 from app.services.universe_service import UniverseService
 
@@ -34,7 +34,7 @@ async def summarize_universe(universe_id: int, run_id: str) -> str:
         structured_context = "Verified Knowledge Graph:\n" + "\n".join(claims_list)
 
     prompt = get_summary_prompt(universe.name, structured_context)
-    
+
     summary, _ = await run_agent(
         agent_name="Universe Chronicler",
         system_prompt=prompt["system"],

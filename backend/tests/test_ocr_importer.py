@@ -1,7 +1,5 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
-
 from app.core.importers.ocr_importer import OcrImporter, ocr_importer
 
 

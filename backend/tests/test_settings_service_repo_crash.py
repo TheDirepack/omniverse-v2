@@ -1,6 +1,7 @@
 from unittest.mock import AsyncMock, patch
 
 import pytest
+
 from app.db.schema import Setting
 from app.services.settings_service import SettingsService
 
@@ -14,13 +15,14 @@ class TestSettingsServiceGetSetting:
     repo'). This adds a proper session-scoped passthrough method instead of
     re-exposing .repo."""
 
-    def test_get_setting_returns_none_when_missing(self, ephemeral_db):
+    def test_get_setting_returns_none_when_missing(self, _ephemeral_db):
         svc = SettingsService()
         assert svc.get_setting("DOES_NOT_EXIST") is None
 
-    def test_get_setting_returns_value(self, ephemeral_db):
-        from app.db.settings_session import settings_engine
+    def test_get_setting_returns_value(self, _ephemeral_db):
         from sqlmodel import Session
+
+        from app.db.settings_session import settings_engine
 
         with Session(settings_engine) as s:
             s.add(Setting(key="MAX_PARALLEL_AGENTS", value="7"))
@@ -47,10 +49,11 @@ class TestResearchNodeSettingsLookup:
     repo', which happened at the MAX_PARALLEL_AGENTS lookup in research_node
     before any actual research/network call occurred."""
 
-    async def test_research_node_reads_batch_size_without_crashing(self, ephemeral_db):
+    async def test_research_node_reads_batch_size_without_crashing(self, _ephemeral_db):
+        from sqlmodel import Session
+
         from app.agents.nodes import research_node
         from app.db.settings_session import settings_engine
-        from sqlmodel import Session
 
         with Session(settings_engine) as s:
             s.add(Setting(key="MAX_PARALLEL_AGENTS", value="2"))
@@ -83,7 +86,7 @@ class TestResearchNodeSettingsLookup:
         assert len(result["research_results"]) == 2
 
     async def test_research_node_defaults_batch_size_when_setting_absent(
-        self, ephemeral_db
+        self, _ephemeral_db
     ):
         """No MAX_PARALLEL_AGENTS row at all -- must default to 5, not crash."""
         from app.agents.nodes import research_node

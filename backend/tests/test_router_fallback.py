@@ -8,16 +8,17 @@ from pathlib import Path
 
 import httpx
 import pytest
+from sqlmodel import Session, select
+
 from app.core.router import calculate_candidate_hash, router
+from app.db.operational_session import init_operational_db, operational_engine
 from app.db.schema import (
     AgentRouteFallback,
     CandidateHealth,
     ProviderConfig,
     ProviderKey,
 )
-from app.db.settings_session import settings_engine, init_settings_db
-from app.db.operational_session import operational_engine, init_operational_db
-from sqlmodel import Session, select
+from app.db.settings_session import init_settings_db, settings_engine
 
 init_settings_db()
 
@@ -103,7 +104,9 @@ def fake_llm_server():
     else:
         proc.kill()
         proc.wait(timeout=5)
-        raise RuntimeError("Fake LLM server did not start")
+        raise RuntimeError(
+            "Fake LLM server did not start"
+        )
 
     yield base_url
 
@@ -235,7 +238,7 @@ class TestKeyFallback:
             )
 
     @pytest.mark.asyncio
-    async def test_no_routes_for_task(self, fake_llm_server):
+    async def test_no_routes_for_task(self, _fake_llm_server):
         with pytest.raises(
             ValueError, match="No routing configured for task 'NONEXISTENT'"
         ):
@@ -245,7 +248,7 @@ class TestKeyFallback:
             )
 
     @pytest.mark.asyncio
-    async def test_provider_without_provider_type_skipped(self, fake_llm_server):
+    async def test_provider_without_provider_type_skipped(self, _fake_llm_server):
         with Session(settings_engine) as session:
             p = ProviderConfig(
                 name="no-type-provider",
@@ -444,7 +447,7 @@ class TestCandidateHealth:
         # 6th call should still fail, but verify it's disabled in DB
         with Session(operational_engine) as session:
             from app.db.schema import CandidateHealth
-    
+
             health = session.exec(select(CandidateHealth)).first()
 
             assert health is not None
@@ -462,13 +465,13 @@ class TestCandidateHealth:
             # We need the specific key id. Seed provider does this.
             # Let's just find the one for 'bad-key'
             from app.db.schema import ProviderKey
-    
+
             key = s_session.exec(
                 select(ProviderKey).where(ProviderKey.api_key == "bad-key")
             ).first()
             provider = s_session.get(ProviderConfig, key.provider_id)
             c_hash = calculate_candidate_hash(provider.id, key.id, "gpt-4")
-        
+
         with Session(operational_engine) as o_session:
             from app.db.schema import CandidateHealth
             health = CandidateHealth(
@@ -514,8 +517,8 @@ class TestCandidateHealth:
             health = session.exec(
                 select(CandidateHealth).where(CandidateHealth.model == "gpt-4")
             ).all()
-            # Check that at least one candidate (the successful one) has
-            # failure_count == 0
+            # Check that at least one candidate (the successful one)
+            # has failure_count == 0
             assert any(h.failure_count == 0 for h in health)
 
 

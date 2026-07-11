@@ -43,6 +43,9 @@ AI_CONTAINER_SELECTORS = [
 
 
 class WebSearcher:
+    def __init__(self):
+        self.logger = logging.getLogger(__name__)
+
     async def perform_search(
         self,
         query: str,
@@ -57,7 +60,10 @@ class WebSearcher:
         if not url_template:
             return {
                 "status": "ERROR",
-                "message": f"Unsupported engine: {engine}. Supported: {', '.join(SEARCH_URLS)}.",
+                "message": (
+                    f"Unsupported engine: {engine}. "
+                    f"Supported: {', '.join(SEARCH_URLS)}."
+                ),
             }
 
         search_url = url_template.format(q=urllib.parse.quote(query))
@@ -67,7 +73,7 @@ class WebSearcher:
             try:
                 await page.goto(search_url, wait_until="networkidle", timeout=20000)
             except Exception as e:
-                logging.warning(f"Search page load failed, retrying: {e}")
+                self.logger.warning("Search page load failed, retrying: %s", e)
                 await page.goto(
                     search_url, wait_until="domcontentloaded", timeout=15000
                 )
@@ -80,8 +86,10 @@ class WebSearcher:
                     "engine": engine,
                     "message": (
                         f"Search engine {engine} appears to have shown a bot-verification "
-                        f"page instead of search results for this query. Try a different engine "
-                        f"({', '.join(e for e in SEARCH_URLS if e != engine)}) or a fetchPage on a known relevant URL."
+                        f"page instead of search results for this query. "
+                        f"Try a different engine "
+                        f"({', '.join(k for k in SEARCH_URLS if k != engine)}) "
+                        f"or a fetchPage on a known relevant URL."
                     ),
                 }
 
@@ -107,7 +115,10 @@ class WebSearcher:
                 "status": "NO_RESULTS",
                 "engine": engine,
                 "query": query,
-                "message": f"No results found for {query} on {engine}. Try a different engine.",
+                "message": (
+                    f"No results found for {query} on {engine}. "
+                    "Try a different engine."
+                ),
             }
         finally:
             await page.close()

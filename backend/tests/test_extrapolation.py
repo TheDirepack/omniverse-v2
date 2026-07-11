@@ -1,10 +1,10 @@
-from app.db.schema import Universe, WorldTier
-from app.db.session import engine
-from app.main import app
-from fastapi.testclient import TestClient
 from sqlmodel import Session
 
-def test_extrapolate_all_scope(client, clean_db):
+from app.db.schema import Universe, WorldTier
+from app.db.session import engine
+
+
+def test_extrapolate_all_scope(client, _clean_db):
     # Setup: Create some verified worlds
     with Session(engine) as session:
         u1 = Universe(name="U1", is_explored=True)
@@ -23,7 +23,7 @@ def test_extrapolate_all_scope(client, clean_db):
     assert "U2" in data["worlds"]
     assert "U3" not in data["worlds"]
 
-def test_extrapolate_worlds_scope(client, clean_db):
+def test_extrapolate_worlds_scope(client, _clean_db):
     # Setup: Create some verified worlds
     with Session(engine) as session:
         u1 = Universe(name="U1", is_explored=True)
@@ -47,7 +47,7 @@ def test_extrapolate_worlds_missing_list(client):
     assert response.status_code == 400
     assert "worlds list required" in response.json()["detail"]
 
-def test_extrapolate_tier_scope(client, clean_db):
+def test_extrapolate_tier_scope(client, _clean_db):
     # Setup: Create worlds and assign them to a tier
     with Session(engine) as session:
         u1 = Universe(name="T1_U1", is_explored=True)

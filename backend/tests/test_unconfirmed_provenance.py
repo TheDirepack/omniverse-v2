@@ -1,8 +1,14 @@
 from fastapi.testclient import TestClient
-from app.main import app
-from app.db.unconfirmed_schema import UnconfirmedClaim, ProvenanceEdge, AcquisitionArtifact, UnconfirmedUniverse
 from sqlmodel import Session, select
+
+from app.db.unconfirmed_schema import (
+    AcquisitionArtifact,
+    NotebookEntry,
+    ProvenanceEdge,
+    UnconfirmedUniverse,
+)
 from app.db.unconfirmed_session import unconfirmed_engine
+from app.main import app
 
 client = TestClient(app)
 
@@ -31,40 +37,39 @@ def test_save_unconfirmed_claim_with_provenance():
             session.refresh(universe)
         universe_name = universe.name
 
-    # 3. Save unconfirmed claim with artifact_id
+    # 3. Save unconfirmed entry with artifact_id
     payload = {
         "universe_name": universe_name,
         "items": [
             {
-                "subject": "Test Subject",
-                "context": "Test Context",
-                "predicate": "TEST_PRED",
-                "object_val": "Test Object",
+                "title": "Test Subject",
+                "summary": "Test Context",
+                "details": "Test Object",
                 "artifact_id": artifact_id
             }
         ]
     }
 
-    resp = client.post("/api/unconfirmed/claims", json=payload)
+    resp = client.post("/api/unconfirmed/entries", json=payload)
     if resp.status_code != 200:
         print(f"Error response: {resp.text}")
     assert resp.status_code == 200
 
-    assert "Saved 1 unconfirmed claim(s)" in resp.text
+    assert "success" in resp.text
 
-    # 4. Verify claim and provenance
+    # 4. Verify entry and provenance
     with Session(unconfirmed_engine) as session:
-        claim = session.exec(
-            select(UnconfirmedClaim).where(
-                UnconfirmedClaim.subject == "Test Subject"
+        entry = session.exec(
+            select(NotebookEntry).where(
+                NotebookEntry.title == "Test Subject"
             )
         ).first()
-        assert claim is not None
+        assert entry is not None
 
         provenance = session.exec(
             select(ProvenanceEdge).where(
-                ProvenanceEdge.target_type == "unconfirmed_claim",
-                ProvenanceEdge.target_id == claim.id
+                ProvenanceEdge.target_type == "notebook_entry",
+                ProvenanceEdge.target_id == entry.id
             )
         ).first()
 

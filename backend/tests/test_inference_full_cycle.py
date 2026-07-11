@@ -15,16 +15,15 @@ tests/provider_config.py.
 """
 
 import asyncio
-import json
 import logging
 
 import pytest
+from sqlmodel import Session
 
-logger = logging.getLogger(__name__)
 from app.db.schema import (
     AgentRouteFallback,
-    Claim,
-    Entity,
+    Artifact,
+    ArtifactRelation,
     ProviderConfig,
     ProviderKey,
     Universe,
@@ -33,7 +32,8 @@ from app.db.settings_session import settings_engine
 from app.repositories.inference import InferenceRepository
 from app.services.inference_engine_service import InferenceEngineService
 from app.services.inference_rule_service import InferenceRuleService
-from sqlmodel import Session
+
+logger = logging.getLogger(__name__)
 
 try:
     from tests.provider_config import PROVIDER_CREDENTIALS
@@ -102,21 +102,22 @@ class TestFullCycleAgainstGroq:
             "=== GOAL: Propose+Critique ==="
         )
         logger.info(
-            "Goal: real proposer call -> real critic call (2 rounds: blind + with rationale), "
-            "two separate Groq providers for independence guard. "
-            "Expected rule: predicate_1=USES, predicate_2=GENERATES, status in {CRITIQUED,REJECTED}, "
-            "proposer_model and critic_model non-null, proposer_rationale and critic_rationale non-empty, "
-            "human_approved=False. "
-            "Critic verdict may be APPROVE, REJECT, or REVISE — all valid."
+            "Goal: real proposer call -> real critic call (2 rounds: blind + "
+            "with rationale), two separate Groq providers for independence "
+            "guard. Expected rule: predicate_1=USES, predicate_2=GENERATES, "
+            "status in {CRITIQUED,REJECTED}, proposer_model and critic_model "
+            "non-null, proposer_rationale and critic_rationale non-empty, "
+            "human_approved=False. Critic verdict may be APPROVE, REJECT, "
+            "or REVISE — all valid."
         )
         u = Universe(name="TEST_FullCycle", is_explored=True)
         ephemeral_db.add(u)
         ephemeral_db.commit()
         ephemeral_db.refresh(u)
 
-        a = Entity(name="BattleMech", entity_type="Unit", universe_id=u.id)
-        b = Entity(name="Fusion Engine", entity_type="Component", universe_id=u.id)
-        c = Entity(name="Heat", entity_type="Concept", universe_id=u.id)
+        a = Artifact(name="BattleMech", type="entity", universe_id=u.id)
+        b = Artifact(name="Fusion Engine", type="entity", universe_id=u.id)
+        c = Artifact(name="Heat", type="entity", universe_id=u.id)
         ephemeral_db.add_all([a, b, c])
         ephemeral_db.commit()
         for e in [a, b, c]:
@@ -124,11 +125,18 @@ class TestFullCycleAgainstGroq:
 
         ephemeral_db.add_all(
             [
-                Claim(subject_id=a.id, predicate="USES", object_entity_id=b.id),
-                Claim(subject_id=b.id, predicate="GENERATES", object_entity_id=c.id),
+                ArtifactRelation(
+                    from_artifact_id=a.id, to_artifact_id=b.id,
+                    relation_type="USES", universe_id=u.id
+                ),
+                ArtifactRelation(
+                    from_artifact_id=b.id, to_artifact_id=c.id,
+                    relation_type="GENERATES", universe_id=u.id
+                ),
             ]
         )
         ephemeral_db.commit()
+
 
         # Two separate providers for independence guard
         with Session(settings_engine) as s:
@@ -138,7 +146,9 @@ class TestFullCycleAgainstGroq:
             _register_route(s, "Rule Critic", provider_b.id)
 
         svc = InferenceRuleService()
-        rule = await svc.propose_and_critique("USES", "GENERATES", run_id="full-cycle-groq")
+        rule = await svc.propose_and_critique(
+            "USES", "GENERATES", run_id="full-cycle-groq"
+        )
 
         assert rule.id is not None
         assert rule.predicate_1 == "USES"
@@ -160,22 +170,23 @@ class TestFullCycleAgainstGroq:
             "=== GOAL: Full Pipeline (propose -> approve -> materialize) ==="
         )
         logger.info(
-            "Goal: propose POWERS->EMITS, human-approve the rule (regardless of critic verdict), "
-            "materialize InferredClaims. Single provider for both proposer and critic — "
-            "exercises independence-guard warning path (no alternative to exclude). "
-            "Expected: rule status=APPROVED after approve_rule(), human_approved=True, "
-            "InferredClaim from Reactor to Waste Heat with predicate matching implied_predicate, "
-            "non-empty path from get_inferred_claim_paths(). "
-            "Skips if model REJECTs or implied_predicate is empty."
+            "Goal: propose POWERS->EMITS, human-approve the rule (regardless of critic "
+            "verdict), materialize InferredClaims. Single provider for both proposer "
+            "and critic — exercises independence-guard warning path (no alternative "
+            "to exclude). Expected: rule status=APPROVED after approve_rule(), "
+            "human_approved=True, InferredClaim from Reactor to Waste Heat with "
+            "predicate matching implied_predicate, non-empty path from "
+            "get_inferred_claim_paths(). Skips if model REJECTs or implied_predicate "
+            "is empty."
         )
         u = Universe(name="TEST_FullPipeline", is_explored=True)
         ephemeral_db.add(u)
         ephemeral_db.commit()
         ephemeral_db.refresh(u)
 
-        a = Entity(name="Reactor", entity_type="Component", universe_id=u.id)
-        b = Entity(name="Coolant System", entity_type="Component", universe_id=u.id)
-        c = Entity(name="Waste Heat", entity_type="Concept", universe_id=u.id)
+        a = Artifact(name="Reactor", type="entity", universe_id=u.id)
+        b = Artifact(name="Coolant System", type="entity", universe_id=u.id)
+        c = Artifact(name="Waste Heat", type="entity", universe_id=u.id)
         ephemeral_db.add_all([a, b, c])
         ephemeral_db.commit()
         for e in [a, b, c]:
@@ -183,11 +194,18 @@ class TestFullCycleAgainstGroq:
 
         ephemeral_db.add_all(
             [
-                Claim(subject_id=a.id, predicate="POWERS", object_entity_id=b.id),
-                Claim(subject_id=b.id, predicate="EMITS", object_entity_id=c.id),
+                ArtifactRelation(
+                    from_artifact_id=a.id, to_artifact_id=b.id,
+                    relation_type="POWERS", universe_id=u.id
+                ),
+                ArtifactRelation(
+                    from_artifact_id=b.id, to_artifact_id=c.id,
+                    relation_type="EMITS", universe_id=u.id
+                ),
             ]
         )
         ephemeral_db.commit()
+
 
         with Session(settings_engine) as s:
             provider = _register_groq_provider(s, "groq-single")
@@ -259,7 +277,7 @@ class TestFullCycleAgainstGroq:
         ephemeral_db.refresh(u)
 
         entities = [
-            Entity(name=f"E{i}", entity_type="X", universe_id=u.id)
+            Artifact(name=f"E{i}", type="entity", universe_id=u.id)
             for i in range(6)
         ]
         ephemeral_db.add_all(entities)
@@ -268,18 +286,20 @@ class TestFullCycleAgainstGroq:
             ephemeral_db.refresh(e)
 
         pairs = [(0, 1), (1, 2), (2, 3), (3, 4), (4, 5), (5, 0)]
-        claims = []
+        relations = []
         for i, (s, o) in enumerate(pairs):
             predicate = "USES" if i % 2 == 0 else "GENERATES"
-            claims.append(
-                Claim(
-                    subject_id=entities[s].id,
-                    predicate=predicate,
-                    object_entity_id=entities[o].id,
+            relations.append(
+                ArtifactRelation(
+                    from_artifact_id=entities[s].id,
+                    to_artifact_id=entities[o].id,
+                    relation_type=predicate,
+                    universe_id=u.id
                 )
             )
-        ephemeral_db.add_all(claims)
+        ephemeral_db.add_all(relations)
         ephemeral_db.commit()
+
 
         with Session(settings_engine) as s:
             provider = _register_groq_provider(s, "groq-discovery")

@@ -1,14 +1,13 @@
-import pytest
-from sqlmodel import Session, text
+from sqlmodel import Session
 
-from app.db.schema import Universe, UniverseRelation, Entity
+from app.db.schema import Universe, UniverseRelation
 from app.db.session import engine
 
 
 def test_research_page(client):
+    from sqlmodel import select
+
     from app.db.schema import Universe
-    from app.db.session import engine
-    from sqlmodel import Session, select
 
     with Session(engine) as session:
         u = session.exec(select(Universe)).first()
@@ -33,7 +32,7 @@ def test_research_queue(client):
 
 
 def test_database_worlds_empty(client, clean_db):
-    response = client.get("/research/database-worlds")
+    response = client.get("/worlds/database-worlds")
     assert response.status_code == 200
     assert "0 world(s)" in response.text
     assert "No worlds in database" in response.text
@@ -51,20 +50,20 @@ def _fresh_ids(clean_db):
 
 
 def test_database_worlds_with_worlds(client, clean_db):
-    uid = _fresh_ids(clean_db)
-    response = client.get("/research/database-worlds")
+    _ = _fresh_ids(clean_db)
+    response = client.get("/worlds/database-worlds")
     assert response.status_code == 200
     assert "1 world(s)" in response.text
     assert "TestWorld" in response.text
 
 
 def test_database_worlds_filter_by_name(client, clean_db):
-    uid = _fresh_ids(clean_db)
-    response = client.get("/research/database-worlds", params={"q": "TestWorld"})
+    _ = _fresh_ids(clean_db)
+    response = client.get("/worlds/database-worlds", params={"q": "TestWorld"})
     assert response.status_code == 200
     assert "TestWorld" in response.text
 
-    response = client.get("/research/database-worlds", params={"q": "NONEXISTENT"})
+    response = client.get("/worlds/database-worlds", params={"q": "NONEXISTENT"})
     assert response.status_code == 200
     assert 'No worlds matching "NONEXISTENT"' in response.text
 
@@ -78,12 +77,12 @@ def test_database_worlds_filter_explored(client, clean_db):
     session.add(u2)
     session.commit()
 
-    response = client.get("/research/database-worlds", params={"explored": "yes"})
+    response = client.get("/worlds/database-worlds", params={"explored": "yes"})
     assert response.status_code == 200
     assert "ExploredOne" in response.text
     assert "UnexploredOne" not in response.text
 
-    response = client.get("/research/database-worlds", params={"explored": "no"})
+    response = client.get("/worlds/database-worlds", params={"explored": "no"})
     assert response.status_code == 200
     assert "ExploredOne" not in response.text
     assert "UnexploredOne" in response.text
@@ -96,12 +95,12 @@ def test_database_worlds_filter_franchise(client, clean_db):
     session.add(Universe(name="DCHero", franchise="DC"))
     session.commit()
 
-    response = client.get("/research/database-worlds", params={"franchise": "Marvel"})
+    response = client.get("/worlds/database-worlds", params={"franchise": "Marvel"})
     assert response.status_code == 200
     assert "MarvelHero" in response.text
     assert "DCHero" not in response.text
 
-    response = client.get("/research/database-worlds", params={"franchise": "dc"})
+    response = client.get("/worlds/database-worlds", params={"franchise": "dc"})
     assert response.status_code == 200
     assert "DCHero" in response.text
     assert "MarvelHero" not in response.text
@@ -110,41 +109,41 @@ def test_database_worlds_filter_franchise(client, clean_db):
 def test_database_worlds_toggle_explored(client, clean_db):
     uid = _fresh_ids(clean_db)
 
-    response = client.post(f"/research/worlds/{uid}/toggle-explored")
+    response = client.post(f"/worlds/{uid}/toggle-explored")
     assert response.status_code == 200
 
-    response = client.get("/research/database-worlds", params={"explored": "no"})
+    response = client.get("/worlds/database-worlds", params={"explored": "no"})
     assert "TestWorld" in response.text
 
-    response = client.get("/research/database-worlds", params={"explored": "yes"})
+    response = client.get("/worlds/database-worlds", params={"explored": "yes"})
     assert "TestWorld" not in response.text
 
 
 def test_database_worlds_delete(client, clean_db):
     uid = _fresh_ids(clean_db)
 
-    response = client.post(f"/research/worlds/{uid}/delete")
+    response = client.post(f"/worlds/{uid}/delete")
     assert response.status_code == 200
     assert "0 world(s)" in response.text
     assert "TestWorld" not in response.text
 
 
 def test_database_worlds_add_world(client, clean_db):
-    response = client.post("/research/add-world", data={"world_name": "NewTestWorld"})
+    response = client.post("/worlds/create", data={"name": "NewTestWorld"})
     assert response.status_code == 200
     assert "NewTestWorld" in response.text
 
 
 def test_database_worlds_add_world_with_metadata(client, clean_db):
-    response = client.post("/research/add-world", data={
-        "world_name": "FullMetaWorld",
+    response = client.post("/worlds/create", data={
+        "name": "FullMetaWorld",
         "franchise": "TestFranchise",
         "category": "TestCategory",
         "continuity": "TestContinuity",
         "era": "TestEra",
     })
     assert response.status_code == 200
-    assert "TestFranchise" in response.text
+    assert "FullMetaWorld" in response.text
 
 
 def test_database_worlds_batch_research(client, clean_db):
@@ -153,7 +152,9 @@ def test_database_worlds_batch_research(client, clean_db):
         session.add(Universe(name=name))
     session.commit()
 
-    response = client.post("/research/batch-research", data={"world_names": "BatchA,BatchB"})
+    response = client.post(
+        "/worlds/batch-research", data={"world_names": "BatchA,BatchB"}
+    )
     assert response.status_code == 200
     assert "Started research for 2 world(s)" in response.text
 
@@ -167,7 +168,9 @@ def test_database_worlds_focused_search_fragment(client):
 
 
 def test_focused_search_submit_empty(client):
-    response = client.post("/research/focused-search", data={"worlds": "TestWorld", "features": ","})
+    response = client.post(
+        "/research/focused-search", data={"worlds": "TestWorld", "features": ","}
+    )
     assert response.status_code == 200
     assert "Provide at least one world and one feature" in response.text
 

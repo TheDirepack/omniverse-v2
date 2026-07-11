@@ -6,14 +6,16 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
-from app.core.templates import templates
 from app.agents.workflow import app_graph
+from app.core.domain import ResearchTarget
+from app.core.enums import RunPhase
 from app.core.runtime_state import (
     abort_run,
     add_active_run,
     get_active_runs,
     remove_run,
 )
+from app.core.templates import templates
 from app.services.execution_service import ExecutionService
 from app.services.universe_service import UniverseService
 
@@ -55,8 +57,6 @@ class AgentActivityResponse(BaseModel):
     logs: list[AgentLogResponse]
 
 
-from app.core.domain import ResearchTarget
-
 async def run_pipeline_in_background(run_id: str, universe_uuids: list[str]):
     exec_service = ExecutionService()
     uni_service = UniverseService()
@@ -65,7 +65,7 @@ async def run_pipeline_in_background(run_id: str, universe_uuids: list[str]):
 
     if await is_aborted(run_id):
         exec_service.log_transition(
-            run_id, "Manager", "Run aborted before initiation.", "FAILED", {}
+            run_id, "Manager", "Run aborted before initiation.", RunPhase.FAILED, {}
         )
         return
 
@@ -83,7 +83,7 @@ async def run_pipeline_in_background(run_id: str, universe_uuids: list[str]):
                 slug=u.slug,
                 parent_id=u.parent_id
             ))
-    
+
     await add_active_run(run_id)
     inputs = {
         "target_worlds": target_worlds,
@@ -94,7 +94,7 @@ async def run_pipeline_in_background(run_id: str, universe_uuids: list[str]):
         "anomalies": [],
         "generated_theories": [],
         "run_id": run_id,
-        "active_task": "RESEARCH",
+        "active_task": RunPhase.RESEARCH,
         "errors": [],
         "architecture_retries": 0,
         "architecture_attempts": 0,
@@ -105,10 +105,11 @@ async def run_pipeline_in_background(run_id: str, universe_uuids: list[str]):
         exec_service.log_transition(
             run_id,
             "Manager",
-            f"Critical Execution Failure: {e!s}",
-            "FAILED",
+            f"Critical Extrapolation Failure: {e!s}",
+            RunPhase.FAILED,
             {"error": str(e)},
         )
+
     finally:
         await remove_run(run_id)
 
@@ -121,8 +122,10 @@ async def run_focused_search_in_background(
     from app.core.runtime_state import is_aborted
 
     if await is_aborted(run_id):
-        raise RuntimeError("Run aborted before start")
-    
+        raise RuntimeError(
+            "Run aborted before start"
+        )
+
     # Resolve UUIDs to ResearchTarget domain objects
     target_worlds = []
     for uuid_val in universe_uuids:
@@ -150,7 +153,7 @@ async def run_focused_search_in_background(
         "anomalies": [],
         "generated_theories": [],
         "run_id": run_id,
-        "active_task": "RESEARCH",
+        "active_task": RunPhase.RESEARCH,
         "errors": [],
         "architecture_retries": 0,
     }
@@ -161,9 +164,12 @@ async def run_focused_search_in_background(
             run_id,
             "Focused Search",
             f"Focused search failed: {e!s}",
-            "FAILED",
+            RunPhase.FAILED,
             {"error": str(e)},
         )
+
+
+
     finally:
         await remove_run(run_id)
 
@@ -178,7 +184,7 @@ async def run_tiering_in_background(run_id: str):
 
     if await is_aborted(run_id):
         exec_service.log_transition(
-            run_id, "Manager", "Run aborted before initiation.", "FAILED", {}
+            run_id, "Manager", "Run aborted before initiation.", RunPhase.FAILED, {}
         )
         return
 
@@ -199,7 +205,7 @@ async def run_tiering_in_background(run_id: str):
         "errors": [],
         "architecture_retries": 0,
         "architecture_attempts": 0,
-        "active_task": "ARCHITECTURE",
+        "active_task": RunPhase.ARCHITECTURE,
     }
     try:
         await architecture_node(state)
@@ -215,7 +221,7 @@ async def run_extrapolation_in_background(run_id: str, target_worlds: list[str])
         "target_worlds": target_worlds,
         "verified_worlds": target_worlds,
         "run_id": run_id,
-        "active_task": "EXTRAPOLATION",
+        "active_task": RunPhase.EXTRAPOLATION,
         "generated_theories": [],
     }
     try:
@@ -228,14 +234,16 @@ async def run_extrapolation_in_background(run_id: str, target_worlds: list[str])
             run_id,
             "Manager",
             f"Critical Extrapolation Failure: {e!s}",
-            "FAILED",
+            RunPhase.FAILED,
             {"error": str(e)},
         )
+
+
     finally:
         await remove_run(run_id)
 
 
-@router.post("/orchestrate")
+@router.post("/workflow")
 def trigger_orchestration(
     payload: OrchestratePayload, background_tasks: BackgroundTasks
 ):
@@ -244,7 +252,9 @@ def trigger_orchestration(
             status_code=400, detail="Must provide at least one target universe UUID."
         )
     run_id = str(uuid.uuid4())
-    background_tasks.add_task(run_pipeline_in_background, run_id, payload.universe_uuids)
+    background_tasks.add_task(
+        run_pipeline_in_background, run_id, payload.universe_uuids
+    )
     return {"status": "started", "run_id": run_id, "uuids": payload.universe_uuids}
 
 
@@ -270,7 +280,9 @@ def trigger_extrapolation(
             raise HTTPException(
                 status_code=400, detail="worlds list required for 'worlds' scope"
             )
-        verified_names = [u.name for u in uni_service.get_all_universes() if u.is_explored]
+        verified_names = [
+            u.name for u in uni_service.get_all_universes() if u.is_explored
+        ]
         target_worlds = [w for w in payload.worlds if w in verified_names]
         if not target_worlds:
             return {
@@ -312,7 +324,10 @@ def trigger_extrapolation(
 def focused_search(payload: FocusedSearchPayload, background_tasks: BackgroundTasks):
     run_id = str(uuid.uuid4())
     background_tasks.add_task(
-        run_focused_search_in_background, run_id, payload.universe_uuids, payload.features
+        run_focused_search_in_background,
+        run_id,
+        payload.universe_uuids,
+        payload.features,
     )
     return {
         "status": "started",
@@ -328,8 +343,10 @@ async def abort_run_endpoint(payload: AbortRunPayload):
     await abort_run(run_id)
     exec_service = ExecutionService()
     exec_service.log_transition(
-        run_id, "Manager", "Abort requested", "ABORT_REQUESTED", {}
+        run_id, "Manager", "Abort requested", RunPhase.ABORT_REQUESTED, {}
     )
+
+
     return {"status": "abort_requested", "run_id": run_id}
 
 
@@ -364,7 +381,7 @@ def reset_activity():
 async def runs_history(request: Request):
     exec_service = ExecutionService()
     runs = exec_service.repo.get_all_runs()
-    
+
     results = []
     for run in runs:
         import json
@@ -374,7 +391,7 @@ async def runs_history(request: Request):
             goal = ", ".join(target_worlds) if target_worlds else "Unknown Goal"
         except (json.JSONDecodeError, TypeError, AttributeError):
             goal = "Unknown Goal"
-            
+
         results.append({
             "run_id": run.run_id,
             "world": goal,
@@ -382,7 +399,7 @@ async def runs_history(request: Request):
             "node": run.node_name,
             "created_at": str(run.created_at),
         })
-    
+
     template = templates.env.get_template("fragments/research_history.html")
     return HTMLResponse(content=template.render(request=request, runs=results))
 
@@ -395,9 +412,10 @@ async def run_details(request: Request, run_id: str):
 
 @router.get("/{run_id}/acquisition", response_class=HTMLResponse)
 async def run_acquisition(request: Request, run_id: str):
-    from app.db.unconfirmed_session import unconfirmed_session_factory
-    from app.db.schema import WorldAcquisitionUsage, AcquisitionArtifact
     from sqlmodel import Session, select
+
+    from app.db.schema import AcquisitionArtifact, WorldAcquisitionUsage
+    from app.db.unconfirmed_session import unconfirmed_session_factory
 
     with Session(unconfirmed_session_factory()) as session:
         stmt = (
@@ -409,7 +427,41 @@ async def run_acquisition(request: Request, run_id: str):
         artifacts = session.exec(stmt).all()
 
     template = templates.env.get_template("fragments/acquisition_panel.html")
-    return HTMLResponse(content=template.render(request=request, artifacts=artifacts, run_id=run_id))
+    return HTMLResponse(
+        content=template.render(
+            request=request, artifacts=artifacts, run_id=run_id
+        )
+    )
+
+@router.get("/{run_id}/phase-details", response_class=HTMLResponse)
+async def run_phase_details(request: Request, run_id: str):
+    from sqlmodel import Session, select
+
+    from app.db.schema import ExecutionState
+    from app.db.session import engine
+
+    with Session(engine) as session:
+        last_state = session.exec(
+            select(ExecutionState)
+            .where(ExecutionState.run_id == run_id)
+            .order_by(ExecutionState.created_at.desc())
+        ).first()
+
+    if not last_state:
+        return HTMLResponse(
+            "<p class='text-gray-500 italic'>No execution state found for this run.</p>",
+            status_code=404,
+        )
+
+    template = templates.env.get_template("fragments/run_phase_details.html")
+    return HTMLResponse(
+        content=template.render(
+            request=request,
+            status=last_state.status,
+            state_snapshot=last_state.state_snapshot
+        )
+    )
+
 
 @router.get("/logs/file")
 def get_file_logs(
@@ -429,8 +481,7 @@ def get_file_logs(
         return {"logs": [], "total": 0, "has_more": False}
     try:
         has_filters = any([filter, agent, world, model, event_type, tool])
-
-        with open(LOG_FILE, encoding="utf-8") as f:
+        with LOG_FILE.open(encoding="utf-8") as f:
             lines = f.readlines()
 
         settings_service = SettingsService()
@@ -523,10 +574,11 @@ async def get_realtime_logs(run_id: str):
                 for log in new_logs:
                     yield f"data: {json.dumps({'id': log.id, 'node_name': log.node_name, 'thought': log.thought, 'status': log.status, 'created_at': str(log.created_at)})}\n\n"
                     last_id = log.id
-                    if log.status in {"FAILED", "ABORT_REQUESTED"}:
-                        yield f"data: {json.dumps({'finished': True, 'failed': log.status == 'FAILED', 'aborted': log.status != 'FAILED'})}\n\n"
+                    if log.status in {RunPhase.FAILED, RunPhase.ABORT_REQUESTED}:
+
+                        yield f"data: {json.dumps({'finished': True, 'failed': log.status == RunPhase.FAILED, 'aborted': log.status != RunPhase.FAILED})}\n\n"
                         return
-                    if log.status == "COMPLETED" and log.node_name in {
+                    if log.status == RunPhase.COMPLETED and log.node_name in {
                         "Ontological Theorist",
                         "Focused Search",
                     }:
@@ -538,3 +590,18 @@ async def get_realtime_logs(run_id: str):
             pass
 
     return StreamingResponse(log_generator(), media_type="text/event-stream")
+
+
+@router.delete("/claims")
+async def delete_all_claims():
+    """Delete all claims from the database."""
+    from sqlmodel import Session
+
+    from app.repositories.execution import ExecutionRepository
+
+    with Session() as session:
+        repo = ExecutionRepository(session)
+        result = repo.delete_all_claims()
+        print(f"Delete result: {result}")
+
+    return {"detail": "All claims deleted"}

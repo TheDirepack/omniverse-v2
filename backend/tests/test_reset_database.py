@@ -1,15 +1,13 @@
+from sqlmodel import Session, select
+
 from app.db.schema import (
-    Claim,
-    Entity,
-    EntityAlias,
+    Artifact,
+    ArtifactRelation,
     InferenceRule,
     InferredClaim,
     Universe,
 )
 from app.db.session import engine
-from app.db.unconfirmed_schema import UnconfirmedUniverse
-from app.db.unconfirmed_session import unconfirmed_engine
-from sqlmodel import Session, select
 
 
 class TestResetDatabaseInferenceTables:
@@ -25,20 +23,28 @@ class TestResetDatabaseInferenceTables:
         db.commit()
         db.refresh(u)
 
-        a = Entity(name="A", entity_type="X", universe_id=u.id)
-        b = Entity(name="B", entity_type="X", universe_id=u.id)
-        c = Entity(name="C", entity_type="X", universe_id=u.id)
+        a = Artifact(name="A", type="entity", universe_id=u.id)
+        b = Artifact(name="B", type="entity", universe_id=u.id)
+        c = Artifact(name="C", type="entity", universe_id=u.id)
         db.add_all([a, b, c])
         db.commit()
         for e in [a, b, c]:
             db.refresh(e)
 
-        alias = EntityAlias(entity_id=a.id, alias="Alt Name", universe_id=u.id)
-        db.add(alias)
-        db.commit()
+        # EntityAlias removed from schema
 
-        c1 = Claim(subject_id=a.id, predicate="USES", object_entity_id=b.id)
-        c2 = Claim(subject_id=b.id, predicate="GENERATES", object_entity_id=c.id)
+        c1 = ArtifactRelation(
+            universe_id=u.id,
+            from_artifact_id=a.id,
+            to_artifact_id=b.id,
+            relation_type="USES",
+        )
+        c2 = ArtifactRelation(
+            universe_id=u.id,
+            from_artifact_id=b.id,
+            to_artifact_id=c.id,
+            relation_type="GENERATES",
+        )
         db.add_all([c1, c2])
         db.commit()
         for c_ in [c1, c2]:
@@ -82,13 +88,12 @@ class TestResetDatabaseInferenceTables:
         assert r.status_code == 200
 
         with Session(engine) as session:
-            assert session.exec(select(Entity)).all() == [], (
-                "Entity rows survived reset"
+            assert session.exec(select(Artifact)).all() == [], (
+                "Artifact rows survived reset"
             )
-            assert session.exec(select(EntityAlias)).all() == [], (
-                "EntityAlias rows survived reset"
+            assert session.exec(select(ArtifactRelation)).all() == [], (
+                "ArtifactRelation rows survived reset"
             )
-            assert session.exec(select(Claim)).all() == [], "Claim rows survived reset"
             assert session.exec(select(InferenceRule)).all() == [], (
                 "InferenceRule rows survived reset"
             )
@@ -112,6 +117,6 @@ class TestResetDatabaseInferenceTables:
             # Universe itself persists (reset clears summary/explored flags,
             # doesn't delete the row) -- but nothing should still reference it.
             remaining_entities = session.exec(
-                select(Entity).where(Entity.universe_id == u.id)
+                select(Artifact).where(Artifact.universe_id == u.id)
             ).all()
             assert remaining_entities == []

@@ -1,8 +1,11 @@
 import os
 import sys
+from pathlib import Path
 
 # Add backend to path for imports
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+sys.path.append(str(Path(__file__).resolve().parent))
+
+from sqlmodel import Session, SQLModel, create_engine, select
 
 from app.db.schema import (
     AgentRouteFallback,
@@ -12,7 +15,6 @@ from app.db.schema import (
     ProviderKey,
     Setting,
 )
-from sqlmodel import Session, SQLModel, create_engine, select
 
 
 def migrate():

@@ -1,4 +1,7 @@
 import pytest
+from sqlalchemy.exc import IntegrityError
+from sqlmodel import select
+
 from app.db.schema import (
     AgentRouteFallback,
     Anomaly,
@@ -11,8 +14,6 @@ from app.db.schema import (
     Universe,
     WorldTier,
 )
-from sqlalchemy.exc import IntegrityError
-from sqlmodel import select
 
 
 class TestUniverse:

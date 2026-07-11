@@ -1,7 +1,8 @@
-from unittest.mock import patch
 import uuid
+from unittest.mock import patch
 
 import pytest
+
 from app.agents.nodes import db_integrator_node
 from app.core.runtime_state import ABORTED_RUNS, check_abort
 from app.research.researcher import audit_success
@@ -15,8 +16,9 @@ class TestLogTransition:
         exec_service.log_transition(
             "test-run", "TestNode", "test thought", "IN_PROGRESS", {"key": "val"}
         )
-        from app.db.schema import ExecutionState
         from sqlmodel import select
+
+        from app.db.schema import ExecutionState
 
         rows = session.exec(
             select(ExecutionState).where(ExecutionState.run_id == "test-run")
@@ -32,9 +34,10 @@ class TestLogTransition:
         run_id = f"multi-{uuid.uuid4()}"
         exec_service.log_transition(run_id, "A", "t1", "IN_PROGRESS", {})
         exec_service.log_transition(run_id, "B", "t2", "COMPLETED", {})
+        from sqlmodel import Session, select
+
         from app.db.schema import ExecutionState
         from app.db.session import engine
-        from sqlmodel import Session, select
 
         with Session(engine) as session:
             rows = session.exec(
@@ -110,7 +113,9 @@ class TestAuditSuccess:
 
 
 class TestDBIntegratorNode:
-    """Tests that the DB integrator runs integration then cleanup in a stateful session."""
+    """
+    Tests that the DB integrator runs integration then cleanup in a stateful session.
+    """
 
     @pytest.mark.asyncio
     async def test_chained_session_execution(self):
@@ -128,7 +133,7 @@ class TestDBIntegratorNode:
 
         call_count = 0
 
-        async def mock_run_agent(*args, **kwargs):
+        async def mock_run_agent(*_args, **_kwargs):
             nonlocal call_count
             call_count += 1
             if call_count == 1:
@@ -136,14 +141,15 @@ class TestDBIntegratorNode:
             return True, "Cleaned U1", cleanup_history
 
         with (
+            patch("sqlmodel.Session"),
             patch("app.agents.nodes.run_agent", side_effect=mock_run_agent),
             patch("app.agents.nodes.set_current_universe"),
             patch("app.services.execution_service.ExecutionService.log_transition"),
-            patch("app.db.session.Session"),
         ):
             result = await db_integrator_node(state)
 
-            assert result["active_task"] == "SUMMARY"
+            from app.core.enums import RunPhase
+            assert result["active_task"] == RunPhase.SUMMARY
             assert call_count == 2
     @pytest.mark.asyncio
     async def test_integration_failure_detection(self):
@@ -155,7 +161,7 @@ class TestDBIntegratorNode:
         }
 
         call_count = 0
-        async def mock_run_agent(*args, **kwargs):
+        async def mock_run_agent(*_args, **_kwargs):
             nonlocal call_count
             call_count += 1
             if call_count == 1:
@@ -167,13 +173,12 @@ class TestDBIntegratorNode:
             patch("app.agents.nodes.run_agent", side_effect=mock_run_agent),
             patch("app.agents.nodes.set_current_universe"),
             patch("app.services.execution_service.ExecutionService.log_transition"),
-            patch("app.db.session.Session"),
+            patch("sqlmodel.Session"),
         ):
             # We don't care about the return value here as much as the call count
-            try:
+            from contextlib import suppress
+            with suppress(Exception):
                 await db_integrator_node(state)
-            except Exception:
-                pass
-            
+
             # Should only have called run_agent ONCE (integration failed, so no cleanup)
             assert call_count == 1

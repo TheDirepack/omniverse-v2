@@ -2,10 +2,11 @@ import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+
 from app.db.schema import (
     AgentRouteFallback,
-    Claim,
-    Entity,
+    Artifact,
+    ArtifactRelation,
     InferenceRule,
     ProviderConfig,
     Universe,
@@ -21,8 +22,8 @@ def _make_universe(db, name="TestUniverse"):
     return u
 
 
-def _make_entity(db, universe_id, name, entity_type="Thing"):
-    e = Entity(name=name, entity_type=entity_type, universe_id=universe_id)
+def _make_entity(db, universe_id, name, _entity_type="Thing"):
+    e = Artifact(name=name, type="entity", universe_id=universe_id)
     db.add(e)
     db.commit()
     db.refresh(e)
@@ -30,7 +31,11 @@ def _make_entity(db, universe_id, name, entity_type="Thing"):
 
 
 def _make_claim(db, subject_id, predicate, object_id):
-    c = Claim(subject_id=subject_id, predicate=predicate, object_entity_id=object_id)
+    subj = db.get(Artifact, subject_id)
+    c = ArtifactRelation(
+        universe_id=subj.universe_id, from_artifact_id=subject_id,
+        to_artifact_id=object_id, relation_type=predicate
+    )
     db.add(c)
     db.commit()
     db.refresh(c)
@@ -64,7 +69,9 @@ class TestProposeAndCritique:
                 "predicate_2": "GENERATES",
                 "implied_predicate": "PRODUCES",
                 "rule_type": "compose",
-                "rationale": "USES then GENERATES composes to a direct production relationship.",
+                "rationale": (
+                    "USES then GENERATES composes to a direct production relationship."
+                ),
             }
         )
         critic_blind_reply = _fake_llm_response(
@@ -128,7 +135,9 @@ class TestProposeAndCritique:
                 "verdict": "REJECT",
                 "revised_implied_predicate": None,
                 "revised_rule_type": None,
-                "rationale": "Counterexample: USES does not always imply causal generation.",
+                "rationale": (
+                    "Counterexample: USES does not always imply causal generation."
+                ),
             }
         )
         critic_final_reply = _fake_llm_response(
@@ -326,6 +335,6 @@ class TestRuleApprovalLifecycle:
         assert rejected.human_approved is False
         assert rejected.status == "REJECTED"
 
-    def test_approve_nonexistent_rule_returns_none(self, ephemeral_db):
+    def test_approve_nonexistent_rule_returns_none(self, _ephemeral_db):
         svc = InferenceRuleService()
         assert svc.approve_rule(99999) is None

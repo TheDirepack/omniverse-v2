@@ -1,4 +1,4 @@
-<div class="space-y-3">
+<div id="database-worlds" class="space-y-3">
     {% if batch_started is defined and batch_started %}
     <div class="bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300 px-4 py-2 rounded text-sm">
         ✅ Started research for {{ batch_started }} world(s).
@@ -49,14 +49,9 @@
             </button>
         </div>
         <div class="flex gap-2">
-                     <button id="focus-selected-btn"
-                     class="bg-purple-600 text-white px-3 py-1.5 rounded text-xs hover:bg-purple-700 transition hidden"
-                     data-action="add-checked-focused-search">
-                Add to Focused Search (0)
-            </button>
             <button id="research-selected-btn"
                     class="bg-indigo-600 text-white px-3 py-1.5 rounded text-xs hover:bg-indigo-700 transition hidden"
-                     hx-post="{{ url_for('batch_research') }}"
+                    hx-post="{{ url_for('batch_research') }}"
                     hx-target="#database-worlds"
                     hx-swap="outerHTML"
                     hx-indicator="#db-worlds-indicator"
@@ -108,26 +103,21 @@
                 </div>
             </div>
             <div class="flex items-center gap-1 shrink-0 ml-2">
-                                <button class="text-xs bg-blue-600 text-white px-2 py-1 rounded hover:bg-blue-700 transition"
-                                         hx-post="{{ url_for('set_active_world') }}"
-                                        hx-vals='{"world_id": "{{ world.uuid }}"}'
-                                        hx-target="body"
-                                        hx-swap="none"
-                                         hx-on::after-request="if (event.detail.successful) { window.location.href='/research' }"
-                                        hx-indicator="#db-worlds-indicator">
-                                    Research
-                                        </button>
-                                 <button class="text-xs bg-purple-600 text-white px-1.5 py-1 rounded hover:bg-purple-700 transition"
-                                                        title="Add to Focused Search"
-                                                         data-action="add-to-focused-search" data-uuid="{{ world.uuid|e }}">
-                                    Focus
-                                </button>
+                <button class="text-xs bg-blue-600 text-white px-2 py-1 rounded hover:bg-blue-700 transition"
+                         hx-post="{{ url_for('set_active_world') }}"
+                         hx-vals='{"world_id": "{{ world.uuid }}"}'
+                         hx-target="body"
+                         hx-swap="none"
+                         hx-on::after-request="if (event.detail.successful) { window.location.href='/research' }"
+                         hx-indicator="#db-worlds-indicator">
+                    Open Knowledge
+                </button>
                 <button class="text-xs bg-red-600 text-white px-1.5 py-1 rounded hover:bg-red-700 transition"
                          hx-post="{{ url_for('delete_world', world_id=world.id) }}"
-                        hx-target="#database-worlds"
-                        hx-swap="outerHTML"
-                        hx-confirm="Delete {{ world.name }} and all associated data?"
-                        hx-indicator="#db-worlds-indicator">
+                         hx-target="#database-worlds"
+                         hx-swap="outerHTML"
+                         hx-confirm="Delete {{ world.name }} and all associated data?"
+                         hx-indicator="#db-worlds-indicator">
                     ✕
                 </button>
             </div>
@@ -152,30 +142,11 @@
         }, 400);
     };
 
-    window.addToFocusedSearch = function(uuid) {
-        const ws = document.querySelector('textarea[name=worlds]');
-        if (ws) {
-            const val = ws.value.trim();
-            ws.value = val ? val + ', ' + uuid : uuid;
-            ws.focus();
-            document.getElementById('focused-search-panel')?.scrollIntoView({ behavior: 'smooth' });
-        }
-    };
-
-    window.addCheckedToFocusedSearch = function() {
-        const checkboxes = document.querySelectorAll('.world-checkbox:checked');
-        const uuids = Array.from(checkboxes).map(function(cb) { return cb.getAttribute('data-uuid'); });
-        uuids.forEach(function(u) { window.addToFocusedSearch(u); });
-        checkboxes.forEach(function(cb) { cb.checked = false; });
-        window.updateBatchResearch();
-    };
-
     window.updateBatchResearch = function() {
         const checkboxes = document.querySelectorAll('.world-checkbox:checked');
         const uuids = Array.from(checkboxes).map(function(cb) { return cb.getAttribute('data-uuid'); });
         const hidden = document.getElementById('batch-world-uuids');
         const researchBtn = document.getElementById('research-selected-btn');
-        const focusBtn = document.getElementById('focus-selected-btn');
         if (hidden) hidden.value = uuids.join(',');
         var show = uuids.length > 0;
         if (researchBtn) {
@@ -184,14 +155,6 @@
                 researchBtn.textContent = 'Research Selected (' + uuids.length + ')';
             } else {
                 researchBtn.classList.add('hidden');
-            }
-        }
-        if (focusBtn) {
-            if (show) {
-                focusBtn.classList.remove('hidden');
-                focusBtn.textContent = 'Add to Focused Search (' + uuids.length + ')';
-            } else {
-                focusBtn.classList.add('hidden');
             }
         }
     };

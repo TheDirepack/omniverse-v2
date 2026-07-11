@@ -42,10 +42,10 @@ async def approve_rule_view(request: Request, rule_id: int):
 
     template = templates.env.get_template("fragments/all_rules_updated.html")
     return HTMLResponse(content=template.render(
-        request=request, 
-        proposed=proposed, 
-        critiqued=critiqued, 
-        approved=approved, 
+        request=request,
+        proposed=proposed,
+        critiqued=critiqued,
+        approved=approved,
         rejected=rejected
     ))
 
@@ -65,16 +65,16 @@ async def reject_rule_view(request: Request, rule_id: int):
 
     template = templates.env.get_template("fragments/all_rules_updated.html")
     return HTMLResponse(content=template.render(
-        request=request, 
-        proposed=proposed, 
-        critiqued=critiqued, 
-        approved=approved, 
+        request=request,
+        proposed=proposed,
+        critiqued=critiqued,
+        approved=approved,
         rejected=rejected
     ))
 
 
 @router.post("/materialize", response_class=HTMLResponse)
-async def materialize_view(request: Request):
+async def materialize_view(_request: Request):
     engine_service = InferenceEngineService()
     created = engine_service.materialize_inferred_claims()
     return f"Successfully materialized {len(created)} new inferred claims."

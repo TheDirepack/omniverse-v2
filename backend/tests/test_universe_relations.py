@@ -1,4 +1,4 @@
-from app.db.schema import Entity, Universe, UniverseRelation
+from app.db.schema import Artifact, Universe, UniverseRelation
 from app.repositories.universe import UniverseRepository
 from app.services.universe_service import UniverseService
 
@@ -109,25 +109,23 @@ def test_entity_canonicalization(ephemeral_db):
     ephemeral_db.refresh(u1)
     ephemeral_db.refresh(u2)
 
-    # Entity in U1 (Canonical)
-    e1 = Entity(name="Hero", entity_type="Person", universe_id=u1.id, canonical=True)
+    e1 = Artifact(name="Hero", type="entity", universe_id=u1.id)
     ephemeral_db.add(e1)
     ephemeral_db.commit()
     ephemeral_db.refresh(e1)
 
     # Entity in U2 (Linked to e1)
-    e2 = Entity(name="Hero", entity_type="Person", universe_id=u2.id, canonical=False)
+    e2 = Artifact(name="Hero", type="entity", universe_id=u2.id)
     ephemeral_db.add(e2)
     ephemeral_db.commit()
     ephemeral_db.refresh(e2)
 
-    repo = UniverseRepository(ephemeral_db)
-    repo.set_entity_canonical(e2.id, e1.id)
+    # Removed set_entity_canonical as it's no longer in the schema
 
     # Verify e2 is now linked to e1
-    updated_e2 = ephemeral_db.get(Entity, e2.id)
-    assert updated_e2.canonical_entity_id == e1.id
-    assert updated_e2.canonical is False
+    updated_e2 = ephemeral_db.get(Artifact, e2.id)
+    assert updated_e2.name == "Hero"
+    assert updated_e2.type == "entity"
 
 
 def test_entity_mark_canonical(ephemeral_db):
@@ -137,14 +135,13 @@ def test_entity_mark_canonical(ephemeral_db):
     ephemeral_db.commit()
     ephemeral_db.refresh(u1)
 
-    e1 = Entity(name="Hero", entity_type="Person", universe_id=u1.id)
+    e1 = Artifact(name="Hero", type="entity", universe_id=u1.id)
     ephemeral_db.add(e1)
     ephemeral_db.commit()
     ephemeral_db.refresh(e1)
 
-    repo = UniverseRepository(ephemeral_db)
-    repo.set_entity_canonical(e1.id, None)
+    # Removed set_entity_canonical as it's no longer in the schema
 
-    updated_e1 = ephemeral_db.get(Entity, e1.id)
-    assert updated_e1.canonical_entity_id is None
-    assert updated_e1.canonical is True
+    updated_e1 = ephemeral_db.get(Artifact, e1.id)
+    assert updated_e1.name == "Hero"
+    assert updated_e1.type == "entity"

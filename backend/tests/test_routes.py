@@ -117,7 +117,7 @@ class TestWorlds:
         assert r.status_code == 200
         assert r.json()["status"] == "queued"
 
-    def test_get_after_create(self, api_client, clean_db):
+    def test_get_after_create(self, api_client, _clean_db):
         api_client.post(
             self.ENDPOINT, json={"world_name": "GetTest", "auto_research": False}
         )
@@ -134,13 +134,13 @@ class TestWorlds:
         names = [w["name"] for w in data]
         assert "GetTest" in names
 
-    def test_get_by_uuid(self, api_client, clean_db):
+    def test_get_by_uuid(self, api_client, _clean_db):
         api_client.post(
             self.ENDPOINT, json={"world_name": "UuidTest", "auto_research": False}
         )
         r_list = api_client.get(self.ENDPOINT)
         uuid_val = r_list.json()[0]["uuid"]
-        
+
         r = api_client.get(f"/api/worlds/by-uuid/{uuid_val}")
         assert r.status_code == 200
         data = r.json()
@@ -160,7 +160,7 @@ class TestWorlds:
         r = api_client.post(f"{self.ENDPOINT}abc/reset-explored")
         assert r.status_code == 422
 
-    def test_reset_all_explored_empty(self, api_client, clean_db):
+    def test_reset_all_explored_empty(self, api_client, _clean_db):
         r = api_client.post(f"{self.ENDPOINT}reset-all-explored")
         assert r.status_code == 200
         assert r.json()["count"] == 0
@@ -378,7 +378,10 @@ class TestFocusedSearch:
     ENDPOINT = "/api/runs/focused-search"
 
     def test_success(self, api_client):
-        payload = {"universe_uuids": ["some-uuid-1", "some-uuid-2"], "features": ["Feature1", "Feature2"]}
+        payload = {
+            "universe_uuids": ["some-uuid-1", "some-uuid-2"],
+            "features": ["Feature1", "Feature2"],
+        }
         r = api_client.post(self.ENDPOINT, json=payload)
         assert r.status_code == 200
         data = r.json()
@@ -416,7 +419,7 @@ class TestFocusedSearch:
 
 
 class TestOrchestrate:
-    ENDPOINT = "/api/runs/orchestrate"
+    ENDPOINT = "/api/runs/workflow"
 
     def test_missing_worlds(self, api_client):
         r = api_client.post(self.ENDPOINT, json={})
@@ -465,7 +468,7 @@ class TestAbort:
         assert r.status_code == 200
         assert r.json()["status"] == "abort_requested"
 
-    def test_runId_key(self, api_client):
+    def test_run_id_key(self, api_client):
         r = api_client.post(self.ENDPOINT, json={"runId": "some-run"})
         assert r.status_code == 200
 

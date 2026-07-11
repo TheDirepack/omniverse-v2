@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import logging
 import re
 import socket
@@ -9,6 +10,28 @@ import trafilatura
 from bs4 import BeautifulSoup
 
 from app.core.browser import browser_manager
+from app.core.runtime_state import is_aborted
+
+
+class WebFetchError(ValueError):
+    """Base exception for web fetch errors."""
+    pass
+
+class InvalidProtocolError(WebFetchError):
+    def __init__(self, message="Invalid protocol"):
+        super().__init__(message)
+
+class HostnameMissingError(WebFetchError):
+    def __init__(self, message="Hostname missing"):
+        super().__init__(message)
+
+class InternalResourceError(WebFetchError):
+    def __init__(self, message="Internal resource forbidden"):
+        super().__init__(message)
+
+class PrivateIPError(WebFetchError):
+    def __init__(self, message="Private IP forbidden"):
+        super().__init__(message)
 
 # Patterns for detecting cookie/consent pages
 COOKIE_PATTERNS = [
@@ -141,26 +164,26 @@ def _extract_freshness_signals(
     if canon_match:
         lines.append(f"Canonical link tag points to: {canon_match.group(1)}")
 
-    edited_dates = []
-    for pat in LAST_EDITED_PATTERNS:
-        for m in re.finditer(pat, text):
-            edited_dates.append(m.group(1).strip())
+    edited_dates = [
+        m.group(1).strip()
+        for pat in LAST_EDITED_PATTERNS
+        for m in re.finditer(pat, text)
+    ]
     if edited_dates:
         lines.append(f"On-page 'last edited' text found: {edited_dates[:3]}")
     else:
         lines.append("On-page 'last edited' text found: none detected")
 
-    stale_hits = []
-    for pat in MOVED_OR_STALE_PATTERNS:
-        if re.search(pat, text):
-            stale_hits.append(pat)
+    stale_hits = [pat for pat in MOVED_OR_STALE_PATTERNS if re.search(pat, text)]
     if stale_hits:
         lines.append(
-            "STALENESS WARNING: page text suggests this source has moved, is archived, or is no longer maintained. "
-"Prefer the actively maintained source if one is found elsewhere."
+            "STALENESS WARNING: page text suggests this source has moved, "
+            "is archived, or is no longer maintained. Prefer the actively "
+            "maintained source if one is found elsewhere."
         )
     else:
         lines.append("Staleness warning: none detected")
+
 
     return "[SOURCE FRESHNESS SIGNALS]\n" + "\n".join(lines) + "\n[END SIGNALS]\n"
 
@@ -182,7 +205,7 @@ class WebFetcher:
             await page.keyboard.press("Escape")
             await asyncio.sleep(0.5)
         except Exception as e:
-            logger.debug(f"Error dismissing cookie banners: {e}")
+            logger.debug("Error dismissing cookie banners: %s", e)
         return False
 
     def _is_cookie_page(self, text: str) -> bool:
@@ -203,134 +226,271 @@ class WebFetcher:
         text = re.sub(r" {2,}", " ", text)
         return text.strip()
 
-    def _extract_internal_links(
-        self, soup: BeautifulSoup, base_url: str, max_links: int = 20
+    def _apply_html_filtering(
+        self, soup: BeautifulSoup, filtering: dict[str, Any] | None
+    ) -> BeautifulSoup:
+        """Apply domain-specific or custom filtering to the soup."""
+        if not filtering:
+            return soup
+
+        # Copy soup to avoid mutating original
+        work_soup = BeautifulSoup(str(soup), "html.parser")
+
+        preset = filtering.get("preset")
+        if preset == "trafilatura":
+            return soup # handled separately in fetch_page
+
+        # Preset Cleanup Profiles
+        if preset == "wiki":
+            wiki_selectors = [
+                ".mw-editsection", ".mw-jump-link", ".navbox", ".catlinks"
+            ]
+            for selector in wiki_selectors:
+                for el in work_soup.select(selector):
+                    el.decompose()
+        elif preset == "forum":
+            for selector in [".user-profile", ".forum-nav", ".footer-links"]:
+                for el in work_soup.select(selector):
+                    el.decompose()
+        elif preset == "official_docs":
+            for selector in [".sidebar", ".toc", ".footer"]:
+                for el in work_soup.select(selector):
+                    el.decompose()
+
+        # Custom filtering
+        include_tags = filtering.get("include_tags")
+        if include_tags:
+            for tag in work_soup.find_all():
+                if tag.name not in include_tags and tag.name not in ["body", "html"]:
+                    tag.decompose()
+
+        css_selectors = filtering.get("css_selectors")
+        if css_selectors:
+            for selector in css_selectors:
+                for el in work_soup.select(selector):
+                    el.decompose()
+
+        exclude_tags = filtering.get("exclude_tags")
+        if exclude_tags:
+            for tag_name in exclude_tags:
+                for tag in work_soup.find_all(tag_name):
+                    tag.decompose()
+
+        return work_soup
+
+    def _extract_infobox(self, soup: BeautifulSoup) -> dict[str, str]:
+        """Extract key-value pairs from common infobox classes."""
+        infobox = soup.find("table", class_=["infobox", "portable-infobox"])
+        if not infobox:
+            return {}
+
+        data = {}
+        rows = infobox.find_all("tr")
+        for row in rows:
+            th = row.find("th")
+            td = row.find("td")
+            if th and td:
+                key = th.get_text(strip=True)
+                val = td.get_text(strip=True)
+                if key and val:
+                    data[key] = val
+        return data
+
+    def _extract_tables(self, soup: BeautifulSoup) -> list[dict[str, Any]]:
+        """Convert HTML tables into high-fidelity markdown tables."""
+        tables = []
+        for table in soup.find_all("table"):
+            # Skip infoboxes as they are handled separately
+            if "infobox" in table.get("class", []):
+                continue
+
+            caption = table.find("caption")
+            caption_text = caption.get_text(strip=True) if caption else ""
+
+            rows = table.find_all("tr")
+            if not rows:
+                continue
+
+            headers = []
+            # Try to find headers in the first row
+            first_row = rows[0]
+            th_elements = first_row.find_all(["th", "td"])
+            headers = [th.get_text(strip=True) for th in th_elements]
+
+            # Simple markdown conversion
+            md_rows = []
+            for row in rows:
+                cells = [td.get_text(strip=True) for td in row.find_all(["td", "th"])]
+                md_rows.append("| " + " | ".join(cells) + " |")
+
+            if len(headers) > 0:
+                separator = "| " + " | ".join(["---"] * len(headers)) + " |"
+                md_rows.insert(1, separator)
+
+            tables.append({
+                "caption": caption_text,
+                "headers": headers,
+                "markdown": "\n".join(md_rows)
+            })
+        return tables
+
+    def _extract_references(self, soup: BeautifulSoup) -> list[str]:
+        """Extract footnotes, citations, and external links."""
+        refs = []
+        # Common reference containers
+        ref_pattern = re.compile(r"references|footnotes", re.IGNORECASE)
+        ref_sections = soup.find_all("div", id=ref_pattern)
+        if not ref_sections:
+            ref_sections = soup.find_all("ol", class_=ref_pattern)
+
+        for section in ref_sections:
+            refs.extend(
+                li.get_text(strip=True) for li in section.find_all("li")
+            )
+
+        return refs
+
+    def _extract_weighted_links(
+        self, soup: BeautifulSoup, base_url: str
     ) -> list[dict[str, Any]]:
-        """Extract, classify, and score internal links for research discovery."""
-        links_data = {}  # (url, title) -> {"score": 0, "tier": "Low", "sections": set()}
-
-        # Identify high-value areas
-        high_value_selectors = [
-            "main",
-            "article",
-            ".infobox",
-            ".mw-parser-output",
-            "[id*='seealso']",
-            "[class*='seealso']",
-            "[id*='references']",
-            "[class*='references']",
-        ]
-        medium_value_selectors = [".catlinks", ".navbox", ".navmenu", ".category-list"]
-
-        # To avoid duplicates and junk
-        discard_keywords = {
-            "privacy",
-            "terms",
-            "policy",
-            "help",
-            "login",
-            "signup",
-            "register",
-            "about",
-            "contact",
-            "discord",
-            "twitter",
-            "facebook",
-        }
-
+        """
+        Score links based on location:
+        Citation=10, See Also=8, Body=5, Nav=1, Footer=0.
+        """
+        links = []
         all_links = soup.find_all("a", href=True)
 
         for a in all_links:
-            href = a["href"]
-            absolute_url = urljoin(base_url, href)
+            url = urljoin(base_url, a["href"])
             title = a.get_text(strip=True)
-            if not title or not href:
+            if not title:
                 continue
 
-            # 1. FILTER: Infrastructure/Meta links
-            if any(
-                re.search(pat, href, re.IGNORECASE) for pat in IGNORE_LINK_PATTERNS
-            ) or any(
-                re.search(pat, title, re.IGNORECASE) for pat in IGNORE_LINK_PATTERNS
-            ):
-                continue
+            score = 5 # Default: Body
 
-            # Only internal links (relative or same domain)
-            if absolute_url.startswith("http") and not absolute_url.startswith(
-                soup.find("base")["href"] if soup.find("base") else ""
-            ):
-                if not any(
-                    sel in str(a.find_parent()).lower()
-                    for sel in ["references", "citations"]
-                ):
-                    continue
-
-            # Filter out junk by title/href
-            if any(
-                kw in title.lower() or kw in href.lower() for kw in discard_keywords
-            ):
-                continue
-
-            # 2. CLASSIFY & TIER
-            tier = "Low"
-            parent = a.find_parent()
-            parent_html = str(parent).lower() if parent else ""
-            
-            if (
-                any(sel in parent_html for sel in high_value_selectors)
-                or (parent and parent.name == "main")
-                or (parent and parent.name == "article")
-            ):
-                tier = "High"
-            elif (
-                any(sel in parent_html for sel in medium_value_selectors)
-                or "category" in parent_html
-            ):
-                tier = "Medium"
-
-            # Scoring and aggregation
-            key = (absolute_url, title)
-            if key not in links_data:
-                links_data[key] = {"score": 0, "tier": tier, "sections": set()}
-
-            links_data[key]["score"] += 1
-
-            # Try to find a section heading for this link
-            curr = a
-            while curr and curr.name != "body":
-                if curr.name in ["h1", "h2", "h3", "h4", "h5", "h6"]:
-                    links_data[key]["sections"].add(curr.get_text(strip=True))
-                    break
-                if curr.name in ["p", "div", "li", "table", "ul", "ol"]:
-                    prev = curr.find_previous_sibling()
-                    while prev and prev.name != "body":
-                        if prev.name in ["h1", "h2", "h3", "h4", "h5", "h6"]:
-                            links_data[key]["sections"].add(prev.get_text(strip=True))
-                            break
-                        prev = prev.find_previous_sibling()
-                curr = curr.find_parent()
-
-        # Sort by tier (High > Medium > Low) and then by score
-        tier_priority = {"High": 3, "Medium": 2, "Low": 1}
-        sorted_links = sorted(
-            links_data.items(),
-            key=lambda x: (tier_priority.get(x[1]["tier"], 0), x[1]["score"]),
-            reverse=True,
-        )
-
-        results = []
-        for (url, title), data in sorted_links[:max_links]:
-            results.append(
-                {
-                    "url": url,
-                    "title": title,
-                    "tier": data["tier"],
-                    "score": data["score"],
-                    "sections": list(data["sections"])[:2],
-                }
+            # Check context for scoring
+            parent_text = str(a.find_parent()).lower()
+            grandparent_text = (
+                str(a.find_parent().find_parent()).lower()
+                if a.find_parent()
+                else ""
             )
 
-        return results
+            full_context = (parent_text + grandparent_text).lower()
+
+            if any(kw in full_context for kw in ["reference", "citation", "footnote"]):
+                score = 10
+            elif any(
+                kw in full_context
+                for kw in ["see also", "related links", "further reading"]
+            ):
+                score = 8
+            elif any(
+                kw in full_context for kw in ["nav", "navigation", "menu", "sidebar"]
+            ):
+                score = 1
+            elif any(kw in full_context for kw in ["footer", "copyright", "bottom"]):
+                score = 0
+
+            links.append({
+                "url": url,
+                "title": title,
+                "score": score
+            })
+
+        return sorted(links, key=lambda x: x["score"], reverse=True)[:50]
+
+    def _parse_structured_document(
+        self, soup: BeautifulSoup, base_url: str, filtering: dict[str, Any] | None
+    ) -> dict[str, Any]:
+        """Main structural parsing logic."""
+        filtered_soup = self._apply_html_filtering(soup, filtering)
+
+        # 1. Extract global elements
+        infobox = self._extract_infobox(filtered_soup)
+        tables = self._extract_tables(filtered_soup)
+        references = self._extract_references(filtered_soup)
+        internal_links = self._extract_weighted_links(filtered_soup, base_url)
+
+        # 2. Sectioning
+        sections = []
+        # Find all headings (h1, h2, h3)
+        headings = filtered_soup.find_all(["h1", "h2", "h3"])
+
+        if not headings:
+            # If no headings, treat the whole body as one section
+            body = filtered_soup.find("body") or filtered_soup
+            sections.append({
+                "title": "Main Content",
+                "heading_level": 1,
+                "content": self._extract_text_from_soup(body),
+                "importance": "High"
+            })
+        else:
+            for i, heading in enumerate(headings):
+                level = int(heading.name[1])
+                title = heading.get_text(strip=True)
+
+                # Content is everything between this heading and the next
+                content_parts = []
+                curr = heading.find_next_sibling()
+                while curr and (i + 1 == len(headings) or curr != headings[i+1]):
+                    if curr.name in ["h1", "h2", "h3"]:
+                        break
+                    content_parts.append(curr.get_text(separator="\n", strip=True))
+                    curr = curr.find_next_sibling()
+
+                content = "\n\n".join(content_parts)
+
+                # De-duplication of paragraphs
+                unique_paragraphs = []
+                seen_hashes = set()
+                for p in content.split("\n\n"):
+                    p_clean = p.strip()
+                    if not p_clean:
+                        continue
+                    h = hashlib.md5(p_clean.encode()).hexdigest()
+                    if h not in seen_hashes:
+                        unique_paragraphs.append(p_clean)
+                        seen_hashes.add(h)
+
+                content = "\n\n".join(unique_paragraphs)
+
+                sections.append({
+                    "title": title,
+                    "heading_level": level,
+                    "content": content,
+                    "importance": (
+                        "High" if level == 1 else "Medium" if level == 2 else "Low"
+                    )
+                })
+
+        # Overview: first paragraph of first section or first 500 chars of text
+        overview = ""
+        if sections:
+            first_sec_content = sections[0]["content"]
+            overview = first_sec_content.split("\n\n")[0] if first_sec_content else ""
+        if not overview:
+            overview = self._extract_text_from_soup(filtered_soup)[:500]
+
+        # Word count
+        total_text = " ".join([s["content"] for s in sections])
+        word_count = len(total_text.split())
+
+        return {
+            "metadata": {
+                "url": base_url,
+                "word_count": word_count,
+                "page_type": "ARTICLE", # simplified for now
+            },
+            "overview": overview,
+            "sections": sections,
+            "tables": tables,
+            "infobox": infobox,
+            "references": references,
+            "internal_links": internal_links,
+        }
+
 
     def _extract_text_from_soup(self, soup: BeautifulSoup) -> str:
         """Basic text extraction with noise stripping for cookie detection."""
@@ -367,7 +527,8 @@ class WebFetcher:
                 if sibling:
                     sep = '\n'
                     signals.append(
-                        f"--- {heading.get_text().strip()} ---\n{sibling.get_text(separator=sep, strip=True)}"
+                        f"--- {heading.get_text().strip()} ---\n"
+                        f"{sibling.get_text(separator=sep, strip=True)}"
                     )
 
         # 2. Extract Categories (common in wikis)
@@ -388,20 +549,22 @@ class WebFetcher:
         )
         if breadcrumb:
             signals.append(
-                f"--- Breadcrumbs ---\n{breadcrumb.get_text(separator=' > ', strip=True)}"
+                f"--- Breadcrumbs ---\n"
+                f"{breadcrumb.get_text(separator=' > ', strip=True)}"
             )
 
         # 4. Extract Infobox links (common in wikis)
         infobox = soup.find("table", {"class": "infobox"})
         if infobox:
             text = infobox.get_text(separator="\n", strip=True)
-            # Omit hollow infoboxes (containing only placeholders or very little content)
+            # Omit hollow infoboxes
+            # (containing only placeholders or very little content)
             if len(text) > 50 and not (text.count("{{{") > text.count("word")):
                 signals.append(f"--- Infobox Summary ---\n{text}")
 
         return "\n\n".join(signals)
 
-    def _detect_page_type(self, html: str, text: str) -> str:
+    def _detect_page_type(self, _html: str, text: str) -> str:
         """Detect if the page is a known non-article type."""
         text_low = text.lower()
         if "captcha" in text_low or ("robot" in text_low and "verify" in text_low):
@@ -419,26 +582,32 @@ class WebFetcher:
         return "ARTICLE"
 
     async def fetch_page(
-        self, url: str, include_freshness: bool = True, max_links: int = 20
+        self,
+        url: str,
+        include_freshness: bool = True,
+        _max_links: int = 20,
+        run_id: str | None = None,
+        html_filtering: dict[str, Any] | None = None
     ) -> dict[str, Any]:
         # SSRF Protection
         parsed = urlparse(url)
         if parsed.scheme not in ("http", "https"):
-            raise ValueError(
-                f"Invalid protocol: {parsed.scheme}. Only http and https are allowed."
-            )
+            raise InvalidProtocolError()
 
         hostname = parsed.hostname
         if not hostname:
-            raise ValueError("Invalid URL: hostname missing.")
+            raise HostnameMissingError()
 
         internal_hostnames = {"localhost", "127.0.0.1", "0.0.0.0", "169.254.169.254"}
         if hostname.lower() in internal_hostnames or hostname.lower().endswith(
             ".local"
         ):
-            raise ValueError(f"Access to internal resource {hostname} is forbidden.")
+            raise InternalResourceError()
 
         try:
+            if run_id and await is_aborted(run_id):
+                raise RuntimeError("Aborted")
+
             ip = socket.gethostbyname(hostname)
             if (
                 ip.startswith(
@@ -466,7 +635,7 @@ class WebFetcher:
                 )
                 or ip == "169.254.169.254"
             ):
-                raise ValueError(f"Access to private IP {ip} is forbidden.")
+                raise PrivateIPError()
         except socket.gaierror:
             pass
 
@@ -477,13 +646,16 @@ class WebFetcher:
                 response = await page.goto(url, wait_until="networkidle", timeout=20000)
             except Exception as e:
                 logger.debug(
-                    f"networkidle timeout for {url}, falling back to domcontentloaded: {e}"
+                    "networkidle timeout for %s, falling back to domcontentloaded: %s",
+                    url, e
                 )
                 response = await page.goto(
                     url, wait_until="domcontentloaded", timeout=15000
                 )
 
             # 1. Initial cookie dismissal attempt
+            if run_id and await is_aborted(run_id):
+                raise RuntimeError("Aborted")
             await self._dismiss_cookie_banners(page)
 
             html = await page.content()
@@ -493,16 +665,20 @@ class WebFetcher:
                 try:
                     last_modified_header = response.headers.get("last-modified")
                 except Exception as e:
-                    logger.debug(f"Failed to get last-modified header for {url}: {e}")
+                    logger.debug(
+                        "Failed to get last-modified header for %s: %s", url, e
+                    )
                     last_modified_header = None
 
             soup = BeautifulSoup(html, "html.parser")
 
             # 2. Detect if it's still a cookie page
+            if run_id and await is_aborted(run_id):
+                raise RuntimeError("Aborted")
             text_for_detection = self._extract_text_from_soup(soup)
             if self._is_cookie_page(text_for_detection):
                 logger.info(
-                    f"Cookie page detected for {url}. Attempting second dismissal..."
+                    "Cookie page detected for %s. Attempting second dismissal...", url
                 )
                 await self._dismiss_cookie_banners(page)
                 html = await page.content()
@@ -515,41 +691,53 @@ class WebFetcher:
                 return {
                     "page_type": page_type,
                     "main_content": text_for_detection[:1000],
-                    "error": f"Page is identified as {page_type}, not a standard article.",
+                     "error": (
+                         f"Page is identified as {page_type}, "
+                         "not a standard article."
+                     ),
                 }
 
-            # 4. Semantic Extraction
-            # Main Article via trafilatura
-            main_article = trafilatura.extract(html) or ""
-            if not main_article:
-                # Fallback to basic extraction if trafilatura fails
-                main_article = text_for_detection
+            # 4. Extraction
+            preset = (html_filtering or {}).get("preset")
+            if preset == "trafilatura":
+                # Basic flat extraction via trafilatura
+                main_article = trafilatura.extract(html) or text_for_detection
+                main_article = main_article.replace("\\n", "\n")
 
-            # Clean up literal \n sequences that may have been escaped in source or by extraction
-            main_article = main_article.replace("\\n", "\n")
+                result = {
+                    "metadata": {
+                        "url": final_url,
+                        "word_count": len(main_article.split()),
+                        "page_type": page_type,
+                    },
+                    "main_content": main_article,
+                    "internal_links": self._extract_weighted_links(soup, final_url),
+                     "research_signals": (
+                         self._extract_research_signals(soup).replace("\\n", "\n")
+                     ),
+                      "freshness": (
+                          None if not include_freshness else
+                          _extract_freshness_signals(
+                              url, final_url, html, main_article, last_modified_header
+                          )
+                      ),
 
-            # Internal Links (The Topology)
-            links = self._extract_internal_links(soup, final_url, max_links=max_links)
+                }
+            else:
+                # Structured parsing
+                result = self._parse_structured_document(
+                    soup, final_url, html_filtering
+                )
 
-            # Research Signals via custom logic
-            signals = self._extract_research_signals(soup)
-            signals = signals.replace("\\n", "\n")
-
-            result = {
-                "metadata": {
-                    "url": final_url,
-                    "word_count": len(main_article.split()),
-                    "page_type": page_type,
-                },
-                "main_content": main_article,
-                "internal_links": links,
-                "research_signals": signals,
-                "freshness": None
-                if not include_freshness
-                else _extract_freshness_signals(
-                    url, final_url, html, main_article, last_modified_header
-                ),
-            }
+                if include_freshness:
+                    # Use a placeholder text for freshness signals because
+                    # _extract_freshness_signals expects 'text'
+                    combined_text = " ".join([s["content"] for s in result["sections"]])
+                    result["freshness"] = _extract_freshness_signals(
+                        url, final_url, html, combined_text, last_modified_header
+                    )
+                else:
+                    result["freshness"] = None
 
             return result
         finally:

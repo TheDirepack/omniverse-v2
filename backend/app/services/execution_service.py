@@ -1,6 +1,7 @@
 from sqlmodel import Session
 
 from app.core.agent_logger import agent_logger
+from app.core.enums import RunPhase
 from app.db.schema import ExecutionState
 from app.db.session import engine
 from app.repositories.execution import ExecutionRepository
@@ -60,10 +61,15 @@ class ExecutionService:
 
     def reconcile_stale_runs(self):
         """Mark runs that were interrupted by server restart as FAILED."""
-        from sqlmodel import select, func
+        from sqlmodel import func, select
 
         # Active statuses that should be considered 'stale' if they are the latest
-        active_statuses = {"RESEARCHING", "INTEGRATING", "CLEANING_UP", "SUMMARIZING"}
+        active_statuses = {
+            RunPhase.RESEARCHING,
+            RunPhase.INTEGRATING,
+            "CLEANING_UP",
+            RunPhase.SUMMARIZING,
+        }
 
         # Find all unique run_ids
         run_ids = self.repo.session.exec(
@@ -88,7 +94,7 @@ class ExecutionService:
                     run_id=rid,
                     node_name="System",
                     thought="Run was abandoned due to server restart.",
-                    status="FAILED",
+                    status=RunPhase.FAILED,
                     state={},
                 )
 

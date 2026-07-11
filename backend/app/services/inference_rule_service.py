@@ -2,8 +2,6 @@ import json
 import logging
 from collections.abc import Sequence
 
-logger = logging.getLogger(__name__)
-
 from sqlmodel import Session, select
 
 from app.agents.agent_names import (
@@ -14,6 +12,8 @@ from app.core.router import router as model_router
 from app.db.schema import AgentRouteFallback, InferenceRule
 from app.db.session import engine
 from app.repositories.inference import InferenceRepository
+
+logger = logging.getLogger(__name__)
 
 RULE_PROPOSER_TASK = "Rule Proposer"
 RULE_CRITIC_TASK = "Rule Critic"
@@ -26,8 +26,7 @@ def _safe_json(text: str) -> dict:
     text = text.strip()
     if text.startswith("```"):
         text = text.strip("`")
-        if text.startswith("json"):
-            text = text[4:]
+        text = text.removeprefix("json")
     start = text.find("{")
     end = text.rfind("}")
     if start >= 0 and end > start:
@@ -39,9 +38,10 @@ def _safe_json(text: str) -> dict:
     try:
         decoder = json.JSONDecoder()
         obj, _ = decoder.raw_decode(text)
-        return obj
     except json.JSONDecodeError:
         return {}
+    else:
+        return obj
 
 
 class InferenceRuleService:
@@ -142,12 +142,13 @@ class InferenceRuleService:
             f"PREDICATE_1: {predicate_1}\nPREDICATE_2: {predicate_2}\n"
             f"EXAMPLE CHAINS (entity ids, resolve meaning from context if needed): "
             f"{json.dumps(examples)}\n"
-            "These predicates are drawn from whatever fictional universe produced them - "
-            "do not assume any specific setting (mecha, fantasy, sci-fi, etc). Judge the "
-            "composition purely on the logical/causal relationship the predicate names imply, "
-            "so the rule generalizes to any universe using this same predicate vocabulary.\n"
-            "Propose whether subject--PREDICATE_1-->mid--PREDICATE_2-->object justifies "
-            "a direct subject->object edge."
+            "These predicates are drawn from whatever fictional universe produced "
+            "them - do not assume any specific setting (mecha, fantasy, sci-fi, "
+            "etc). Judge the composition purely on the logical/causal "
+            "relationship the predicate names imply, so the rule generalizes to "
+            "any universe using this same predicate vocabulary.\n"
+            "Propose whether subject--PREDICATE_1-->mid--PREDICATE_2-->object "
+            "justifies a direct subject->object edge."
         )
         proposer_resp, proposer_model, _ = await model_router.call_llm(
             RULE_PROPOSER_TASK, RULE_PROPOSER_SYSTEM, proposer_prompt, run_id=run_id
@@ -223,7 +224,9 @@ class InferenceRuleService:
             assert rule_id is not None
             rule = repo.get_rule(rule_id)
             if not rule:
-                raise RuntimeError(f"Rule {rule_id} not found in database.")
+                raise RuntimeError(
+                    f"Rule {rule_id} not found in database."
+                )
             rule.critic_model = critic_model
             rule.critic_verdict = final_verdict.get("verdict")
             rule.critic_rationale = final_verdict.get("rationale")

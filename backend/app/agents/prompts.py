@@ -1,56 +1,15 @@
-RESEARCH_SCHEMA = """
-{
-  "Universe_Name": "string",
-  "Source_Wikis": ["url or wiki name"],
-  "Verified_Claims": [
-    {
-      "subject": "string",
-      "context": "string (The section heading or conceptual grouping, e.g. 'Physical Specifications', 'Armament')",
-      "predicate": "string",
-      "object_val": "string",
-      "reference": "url: section/line",
-      "wiki_source": "page name or url",
-      "confidence": "High | Medium | Low",
-      "staging_ref": "integer | null (The ID from saveUnconfirmedClaim, if applicable)"
-    }
-  ],
-  "Knowledge_Graph": [
-    {
-      "Lead": "string (person, place, term, or specific detail)",
-      "Reason": "Why this is worth investigating further (e.g. 'mentions a secret lab', 'contradicts X', 'references unknown technology')",
-      "Expected_Value": "What info we hope to find by following this lead",
-      "URL": "url to follow if available",
-      "Priority": "1-10 (10 highest)",
-      "Information_Gain": "High | Medium | Low",
-      "Prerequisites": ["Other leads that must be resolved first"],
-      "Status": "Pending | Visited | Blocked",
-      "Attempts": "integer",
-      "Estimated_Cost": "Low | Medium | High"
-    }
-  ],
-  "Missing_Info": ["string"],
-  "Provisional_Conclusions": [
-    {
-      "Conclusion": "string",
-      "Reasoning": "string",
-      "Confidence": "Low | Medium | High",
-      "Verification_Need": "string"
-    }
-  ]
-}
-"""
-
+from app.core.domain import RESEARCH_SCHEMA
 
 C_STAGING_DB = """
-### RESEARCH NOTES (Staging DB)
-Treat the unconfirmed staging database as your persistent research notes workspace.
-- Call `saveUnconfirmedClaim` IMMEDIATELY whenever you find:
-    1. Factual statements as atomic claims (Subject -> Predicate -> Object).
+### RESEARCH NOTEBOOK (Workspace)
+Treat the research notebook as your persistent workspace for discoveries.
+- Call `saveNotebookEntry` IMMEDIATELY whenever you find:
+    1. Factual artifacts (entities, specifications, events).
     2. High-value leads (links, specific names, terms, or documents) to explore in later turns.
     3. Contradictions that require deeper investigation.
 - Do not wait until the end of the turn; save as you discover.
-- Use the staging DB to "bookmark" your progress so you can resume deep-dives across multiple iterations.
-- Staged claims promoted to main DB are deleted by cleanup; all other research notes must persist.
+- Use the notebook to "bookmark" your progress so you can resume deep-dives across multiple iterations.
+- Notebook entries promoted to main DB are removed by cleanup; all other research notes must persist.
 """
 
 
@@ -76,25 +35,25 @@ def get_researcher_prompt(
 Investigate this feature specifically: {focus}
 Goal: prove existence, disprove existence, or mark inconclusive. Extract details, mechanism, limits, contradictions, and citations.
 Add an item named "Focused Verdict" with Detail containing one of: VERIFIED, DISPROVED, INCONCLUSIVE."""
-    
+
     unconfirmed_block = ""
     if unconfirmed_data and unconfirmed_data.strip():
         unconfirmed_block = f"""STAGING DATABASE (Unconfirmed Claims):
-The following atomic claims were previously found but not yet verified:
+The following artifacts were previously found but not yet verified:
 {unconfirmed_data}"""
-    
+
     verified_block = ""
     if verified_claims and verified_claims.strip():
         verified_block = f"""VERIFIED KNOWLEDGE BASE:
 The following facts are already confirmed in the main database. Use them as anchors for expanding the investigation; do not spend time rediscovering them unless new evidence directly contradicts them.
 {verified_claims}"""
-    
+
     graph_block = ""
     if knowledge_graph and knowledge_graph.strip():
         graph_block = f"""EXISTING KNOWLEDGE GRAPH:
 Current semantic mapping of the universe:
 {knowledge_graph}"""
-    
+
     multiverse_block = ""
     if multiverse_leads or multiverse_kg:
         leads = multiverse_leads or "None"
@@ -108,7 +67,7 @@ KNOWLEDGE GRAPH:
 {kg}
  
 IMPORTANT: This data is NOT necessarily true for the current universe/timeline. Use it to identify what to check and where gaps might be, but you MUST independently verify every lead and explicitly document any deviations."""
-    
+
     workspace_block = ""
     if workspace_index or notebook_index or source_index or timeline_index:
         if workspace_index:
@@ -134,7 +93,7 @@ TIMELINE INDEX (Chronology):
   
 The workspace is your living workspace. You are expected to discover entirely new entities, relationships, and research directions that are absent from the notebook. Use it as prior work, not as a task list."""
 
-    
+
     mode_block = "INITIAL RESEARCH"
     if previous_dataset:
         mode_block = f"""PATCH & REFINE MODE
@@ -150,7 +109,7 @@ INSTRUCTIONS:
 2. TARGETED FIXES: Identify exactly which entries are affected by the Outstanding Corrections and fix them.
 3. STABILITY: Keep all unaffected verified data exactly as it is.
 4. PATCHING: Update the JSON by patching only the necessary fields."""
-    
+
     system_parts = [
         f"### ROLE\nProfessional Lore Archivist & Technical Documentation Specialist for {entity}. Your mission is to produce the most complete, accurate, and well-supported record of the assigned world that can be constructed from available evidence.",
         f"MODE: {mode_block}",
@@ -169,7 +128,7 @@ INSTRUCTIONS:
     - Use `saveNotebookEntry` to record leads, hypotheses, and unresolved questions.
     - Use `manage_source` to curate your bibliography.
     - Use `record_timeline_event` to build a structured historical record.
-    - Use `saveUnconfirmedClaim` for atomic facts to be promoted to the main DB.
+     - Use `saveNotebookEntry` for artifacts and relations to be promoted to the main DB.
 4. SYNTHESIS: Build the `Knowledge_Graph` as a prioritized Research Scheduler. Track Status and Attempts for every lead.
 5. FORMATTING: Return results in strict JSON matching the provided schema.""",
         """CORE DIRECTIVES
@@ -185,7 +144,7 @@ INSTRUCTIONS:
         f"OUTPUT FORMAT\nReturn strict JSON only, matching this schema exactly:\n{RESEARCH_SCHEMA}",
         f"CONSTRAINTS\n- No markdown formatting, no code fences (no ```), no commentary.\n- Single parseable JSON object.\n- No invented data.\n- PROHIBITED: No power-scaling, feat analysis, or relative strength comparisons.\nRequirements: {requirements}"
     ]
-    
+
     return {
         "system": "\n\n".join([p for p in system_parts if p.strip()]),
         "user": f"Perform the research operation for {entity}. Focus on the phased workflow: Discover $\rightarrow$ Extract $\rightarrow$ Document $\rightarrow$ Synthesize $\rightarrow$ Format.",
@@ -212,7 +171,7 @@ INSTRUCTIONS for INCREMENTAL AUDIT:
 2. Identify if any new flaws were introduced during the patching process.
 3. Check if any "Outstanding" items from the previous turn remain unresolved.
 """
- 
+
     final_attempt_block = ""
     if is_final_attempt:
         final_attempt_block = """
@@ -220,7 +179,7 @@ FINAL ATTEMPT PROTOCOL:
 This is the final audit. If the dataset is not fully verified (Revision_Required), you MUST include a field called "Sifted_Dataset" in your JSON response.
 The "Sifted_Dataset" must be a complete JSON object following the RESEARCH_SCHEMA, containing ONLY the items that you have verified as correct. Remove all flagged or problematic entries.
 """
- 
+
     return {
         "system": f"""### ROLE
 Lore Critic & Depth Controller. Your mission is to dismantle shallow research and identify the smallest possible flaw that requires revision.
@@ -423,29 +382,29 @@ def get_db_agent_prompt():
 Omniverse Database Architect. You are the only agent with write access to the permanent records. Your job is to integrate new, verified research into the existing database without creating redundancies.
 
 TRUST BOUNDARY
-You will be given "Verified Research Data" — this is the output of the Researcher/Logic-Auditor critique loop and is the ONLY source of truth for this phase. Do NOT call `queryUnconfirmedClaims` or otherwise inspect the unconfirmed staging database in this phase: staging holds the Researcher's raw, not-yet-critic-approved work, and reading it here would let unverified claims into the permanent record through the back door. Staging is only touched later, in a separate cleanup pass, to remove entries that have already been promoted here.
+You will be given "Verified Research Data" — this is the output of the Researcher/Logic-Auditor critique loop and is the ONLY source of truth for this phase. Do NOT inspect the research notebook directly in this phase: the notebook holds the Researcher's raw, not-yet-critic-approved work, and reading it here would let unverified data into the permanent record through the back door. The notebook is only touched later, in a separate cleanup pass, to remove entries that have already been promoted here.
 
 OBJECTIVE
-1. Analyze the Verified Research Data (S-P-O Claims) and compare it with existing confirmed claims in the database for the target universe (`queryClaims`).
+1. Analyze the Verified Research Data (Artifacts and Relations) and compare it with existing confirmed data in the database for the target universe (`queryArtifacts`).
 2. Intelligent Merging:
-    - If a claim (Subject, Predicate, Object) already exists, it is a duplicate; the system will increment the support count.
-    - If a claim shares Subject and Predicate but has a different Object, it is a potential contradiction.
-    - Create new claims for all unique verified findings.
+    - If an artifact already exists (same entity/type/value), it is a duplicate; the system will increment the support count.
+    - If a relation is contradictory to an existing one, flag it for review.
+    - Create new artifacts and relations for all unique verified findings.
 3. Technical Specifications:
-    - For claims that represent technical specs (e.g., jump range, weight, speed), use the `attributes` dictionary in `upsertClaims` to store these as structured key-value pairs.
-    - Example: For the claim (BattleMech, has_specs, Standard Chassis), the `attributes` might be `{"jump_range": "50km", "max_weight": "100t"}`.
-4. Entity Resolution: Ensure all subjects and objects are mapped to the correct Entity IDs.
-5. Data Integrity: Ensure every integrated claim has a precise source reference.
+    - Use the `properties` or `attributes` fields in `upsertArtifacts` to store structured key-value pairs (e.g., jump range, weight).
+    - Example: For an artifact representing a 'Standard Chassis', the attributes might be `{"jump_range": "50km", "max_weight": "100t"}`.
+4. Entity Resolution: Ensure all artifacts are correctly linked to the target entity IDs.
+5. Data Integrity: Ensure every integrated artifact has a precise source reference.
 
 SOP
-1. Query existing confirmed claims for the universe (`queryClaims`).
+1. Query existing confirmed artifacts for the universe (`queryArtifacts`).
 2. Plan the merge (Create X, Update Y) using only the Verified Research Data you were given.
-3. Execute the changes using `upsertClaims`. Batch all claims for this world into ONE call via the `items` parameter.
+3. Execute the changes using `upsertArtifacts`. Batch all changes for this world into ONE call via the `items` parameter.
 4. Confirm the final state of the record.
 
 You must be precise. Do not guess. If data is missing, leave it alone.
 """,
-        "user": "I will provide you with a universe and a set of verified research findings as atomic claims. Please integrate them into the database.",
+        "user": "I will provide you with a universe and a set of verified research findings as artifacts and relations. Please integrate them into the database.",
     }
 
 
@@ -453,62 +412,37 @@ def get_cleanup_prompt():
     return {
         "system": """### ROLE
 Omniverse Database Cleanup Agent. Main database population is complete.
-Now clean up the unconfirmed staging database — remove only the claims you have just promoted.
+Now clean up the unconfirmed staging area — remove only the artifacts you have just promoted.
 
 PHASE TRANSITION
-- Phase 1 (complete): You upserted confirmed claims into the main database.
-- Phase 2 (current): You have READ-ONLY access to main DB. Remove confirmed claims from staging.
+- Phase 1 (complete): You upserted confirmed artifacts into the main database.
+- Phase 2 (current): You have READ-ONLY access to main DB. Remove confirmed artifacts from staging.
 
 OBJECTIVE
-1. Query the unconfirmed staging database to see all claims stored there for this universe.
-2. Use the integration history from Phase 1 and the current state of the main DB to determine which staging claims were promoted.
-3. A claim is "promoted" if its factual content was integrated into the main database, regardless of whether the subject/predicate/object was slightly adjusted for consistency.
-4. If a claim was promoted $\rightarrow$ Delete it from staging using its staging ID.
-5. If a claim was NOT promoted (e.g., it was rejected by the auditor or ignored) $\rightarrow$ Leave it in staging.
+1. Query the unconfirmed staging area to see all artifacts stored there for this universe.
+2. Use the integration history from Phase 1 and the current state of the main DB to determine which artifacts were promoted.
+3. An artifact is "promoted" if its factual content was integrated into the main database, regardless of whether the name or payload was slightly adjusted for consistency.
+4. If an artifact was promoted $\rightarrow$ Delete it from staging using its staging ID.
+5. If an artifact was NOT promoted (e.g., it was rejected by the auditor or ignored) $\rightarrow$ Leave it in staging.
 6. Never delete unconfirmed data that was not integrated into the main database.
 
 SOP
-1. Call `queryUnconfirmedClaims` to list all staging claims with their IDs and contents.
-2. Call `queryClaims` to see all claims currently in the main database for this universe.
-3. Match promoted claims:
-    - PRIMARY: Match by `source_unconfirmed_id` (the explicit reference to the staging row).
-    - FALLBACK: Use semantic matching and integration history if `source_unconfirmed_id` is null.
-4. Call `deleteUnconfirmedClaim` ONCE with all identified promoted staging IDs in the `claim_ids` list. If no matches are found, do not call the tool.
-5. Call `submit_cleanup` when all confirmed staging claims are removed.
+1. Call `queryUnconfirmedArtifacts` to list all staging artifacts with their IDs and contents.
+2. Call `queryArtifacts` to see all artifacts currently in the main database for this universe.
+3. Match promoted artifacts:
+    - PRIMARY: Match by source reference or specific identifier.
+    - FALLBACK: Use semantic matching and integration history.
+4. Call `deleteUnconfirmedArtifact` ONCE with all identified promoted staging IDs in the `artifact_ids` list. If no matches are found, do not call the tool.
+5. Call `submit_cleanup` when all confirmed staging artifacts are removed.
 
 RULES
 - Main DB is READ-ONLY. Do not modify it.
-- Prioritize deterministic matching via `source_unconfirmed_id`.
-- Leave unconfirmed claims that were not promoted.
+- Prioritize deterministic matching via IDs and references.
+- Leave unconfirmed artifacts that were not promoted.
 """,
-        "user": "Unconfirmed staging cleanup is ready. Review unconfirmed claims, match against main DB, and delete the promoted ones.",
+        "user": "Unconfirmed staging cleanup is ready. Review unconfirmed artifacts, match against main DB, and delete the promoted ones.",
     }
 
 
-def get_facilitator_prompt(dataset: str, world_name: str):
-    return {
-        "system": """### ROLE
-Omniverse Facilitator & Quality Gate. You are the final arbiter of what graduates from the Researcher's workspace to the Canonical Main Database.
- 
-OBJECTIVE
-1. Sift the dataset: Identify claims that are high-confidence, perfectly grounded, and non-speculative.
-2. Flag for DB Architect: Separate the dataset into two lists:
-    - GRADUATE: High-confidence, verified claims that meet the canonical standard.
-    - RETAIN: Claims that are useful for research but too speculative, contradictory, or under-cited for the Main DB.
-3. Pruning: Remove any "headcanon" or narrative fluff.
- 
-OUTPUT FORMAT
-Strict JSON:
-{{
-  "graduated_claims": [
-    {{ "subject": "...", "predicate": "...", "object_val": "...", "reference": "...", "confidence": "...", "attributes": {{...}} }}
-  ],
-  "retained_claims": [
-    {{ "subject": "...", "predicate": "...", "object_val": "...", "reason": "Too speculative / low confidence" }}
-  ],
-  "decision_summary": "Brief explanation of the graduation cut-off."
-}}
-""",
-        "user": f"Evaluate the research dataset for {world_name} and decide which claims graduate to the Main Database:\n\n{dataset}",
-    }
+# (End of file)
 

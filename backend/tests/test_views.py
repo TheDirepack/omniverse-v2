@@ -1,6 +1,3 @@
-from fastapi.testclient import TestClient
-from app.main import app
-from app.db.schema import Universe
 
 
 def test_knowledge_page(client):
@@ -21,7 +18,7 @@ def test_inference_page(client):
     assert "Inference Rules" in response.text
 
 
-def test_knowledge_world_list(client, seeded_db):
+def test_knowledge_world_list(client, _seeded_db):
     response = client.get("/knowledge/worlds")
     assert response.status_code == 200
     assert "U1" in response.text
@@ -44,7 +41,7 @@ def test_knowledge_world_detail_not_found(client):
 
 
 def test_knowledge_entity_detail(client, seeded_db):
-    _, u1, e1, _ = seeded_db
+    _, _u1, e1, _ = seeded_db
     response = client.get(f"/knowledge/entities/{e1.id}")
     assert response.status_code == 200
     assert e1.name in response.text

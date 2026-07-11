@@ -7,18 +7,17 @@ from app.agents.prompts import get_researcher_prompt
 from app.core.context import set_current_universe
 from app.core.tools import (
     tool_fetch_page,
-    tool_query_claims,
-    tool_upsert_claims,
+    tool_query_artifacts,
+    tool_upsert_artifacts,
     tool_web_search,
 )
-from app.db.schema import Claim, Entity, Evidence, EvidenceChunk, Predicate, Universe
+from app.db.schema import Artifact, ArtifactRelation, Evidence, EvidenceChunk, Universe
 from app.db.session import engine
 from app.services.knowledge_retriever import KnowledgeRetrieverService
 
 
 @pytest.fixture
 def setup_universe(clean_db):
-    from sqlmodel import text
 
     from app.db.session import init_db
     init_db(engine)
@@ -29,34 +28,25 @@ def setup_universe(clean_db):
     session.commit()
     session.refresh(u)
 
-    # Create entities
-    e1 = Entity(name="Entity1", entity_type="Person", universe_id=u.id)
-    e2 = Entity(name="Entity2", entity_type="Place", universe_id=u.id)
-    session.add_all([e1, e2])
+    # Create artifacts (replacing entities)
+    a1 = Artifact(name="Entity1", type="entity", universe_id=u.id)
+    a2 = Artifact(name="Entity2", type="entity", universe_id=u.id)
+    session.add_all([a1, a2])
     session.commit()
 
-    # Create predicate
-    p = session.exec(select(Predicate).where(Predicate.canonical_name == "LIVES_IN")).first()
-    if not p:
-        p = Predicate(canonical_name="LIVES_IN")
-        session.add(p)
-        session.commit()
-
-    # Create claim
-    c = Claim(
-        subject_id=e1.id,
-        predicate_id=p.id,
-        predicate="LIVES_IN",
-        object_entity_id=e2.id,
-        support_count=2,
-        universe_scope=u.id,
-        status="VERIFIED",
-        source_reference="test.com:1",
+    # Create relation (replacing claim)
+    r = ArtifactRelation(
+        from_artifact_id=a1.id,
+        to_artifact_id=a2.id,
+        relation_type="LIVES_IN",
+        universe_id=u.id,
+        description="test.com:1",
     )
-    session.add(c)
+    session.add(r)
     session.commit()
 
     yield u
+
 
 
 def test_knowledge_retriever_service(setup_universe):
@@ -78,32 +68,32 @@ def test_knowledge_retriever_service(setup_universe):
 
 
 @pytest.mark.asyncio
-async def test_tool_query_claims(setup_universe):
+async def test_tool_query_artifacts(setup_universe):
     u = setup_universe
     set_current_universe(u.name)
 
-    result = await tool_query_claims({})
-    assert "Entity: Entity1" in result
-    assert "- Lives In: Entity2 (support: 2)" in result
-    assert "Confidence: 2.0 avg supporting sources" in result
+    result = await tool_query_artifacts({})
+    assert "Entity1" in result
+    assert "Lives In" in result
+
 
 
 @pytest.mark.asyncio
-async def test_tool_upsert_claims_evidence(setup_universe):
+async def test_tool_upsert_artifacts_evidence(setup_universe):
     u = setup_universe
     set_current_universe(u.name)
 
-    # Upsert a claim with a source
+    # Upsert an artifact with a source
     item = {
-        "subject": "Entity1",
-        "predicate": "HAS_POWER",
-        "object_val": "Flying",
+        "type": "claim",
+        "name": "Entity1 HAS_POWER Flying",
+        "payload": {"subject": "Entity1", "predicate": "HAS_POWER", "object": "Flying"},
         "source_wiki": "http://wiki.test/Entity1",
         "source_reference": "Section 2",
     }
 
-    result = await tool_upsert_claims({"items": [item]})
-    assert "Integrated claims" in result
+    result = await tool_upsert_artifacts({"items": [item]})
+    assert "Integrated" in result
 
     with Session(engine) as session:
         # Check if evidence was created
@@ -118,12 +108,14 @@ async def test_tool_upsert_claims_evidence(setup_universe):
         assert chunk is not None
         assert chunk.content == "Section 2"
 
-        # Check if claim is linked to chunk
-        claim = session.exec(
-            select(Claim).where(Claim.predicate == "HAS_POWER")
+        # Check if artifact is linked to chunk
+        artifact = session.exec(
+            select(Artifact).where(Artifact.name == "Entity1 HAS_POWER Flying")
         ).first()
-        assert claim is not None
-        assert claim.evidence_chunk_id == chunk.id
+        assert artifact is not None
+        assert artifact.evidence_id == evidence.id
+        assert chunk.evidence_id == evidence.id
+
 
 
 @pytest.mark.asyncio

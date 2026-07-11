@@ -1,8 +1,5 @@
-import pytest
-from sqlmodel import Session
+from app.db.schema import TierSystem, Universe
 from app.services.tiering_service import TieringService
-from app.db.schema import Universe, TierSystem
-from app.db.session import engine
 
 
 class TestTieringService:

@@ -1,7 +1,5 @@
-import pytest
-from sqlmodel import Session, select
+from app.db.schema import Anomaly, TierSystem, Universe, WorldTier
 from app.repositories.tiering import TieringRepository
-from app.db.schema import TierSystem, WorldTier, Anomaly, Universe
 
 
 class TestTieringRepository:
@@ -39,7 +37,9 @@ class TestTieringRepository:
         repo.create_rubric(ts)
         clean_db.commit()
         clean_db.refresh(ts)
-        wt = WorldTier(universe_id=u.id, system_id=ts.id, tier_number=5, justification="ok")
+        wt = WorldTier(
+            universe_id=u.id, system_id=ts.id, tier_number=5, justification="ok"
+        )
         result = repo.upsert_world_tier(wt)
         clean_db.commit()
         assert result.id is not None
@@ -54,7 +54,11 @@ class TestTieringRepository:
         repo.create_rubric(ts)
         clean_db.commit()
         clean_db.refresh(ts)
-        repo.upsert_world_tier(WorldTier(universe_id=u.id, system_id=ts.id, tier_number=3, justification="j"))
+        repo.upsert_world_tier(
+            WorldTier(
+                universe_id=u.id, system_id=ts.id, tier_number=3, justification="j"
+            )
+        )
         clean_db.commit()
         results = repo.get_world_tiers_by_universe_ids([u.id, 999])
         assert len(results) >= 1
@@ -69,7 +73,11 @@ class TestTieringRepository:
         repo.create_rubric(ts)
         clean_db.commit()
         clean_db.refresh(ts)
-        repo.upsert_world_tier(WorldTier(universe_id=u.id, system_id=ts.id, tier_number=1, justification="j"))
+        repo.upsert_world_tier(
+            WorldTier(
+                universe_id=u.id, system_id=ts.id, tier_number=1, justification="j"
+            )
+        )
         clean_db.commit()
         repo.delete_world_tier(u.id)
         clean_db.commit()

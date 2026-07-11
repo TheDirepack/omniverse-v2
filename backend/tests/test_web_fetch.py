@@ -1,6 +1,7 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+
 from app.core.web_fetch import WebFetcher
 
 
@@ -129,7 +130,7 @@ async def test_fetch_page_internal_hostname():
         await fetcher.fetch_page("http://localhost")
 
     with pytest.raises(
-        ValueError, match="Access to internal resource example.local is forbidden"
+        ValueError, match=r"Access to internal resource example.local is forbidden"
     ):
         await fetcher.fetch_page("http://example.local")
 
@@ -137,17 +138,15 @@ async def test_fetch_page_internal_hostname():
 @pytest.mark.asyncio
 async def test_fetch_page_private_ip():
     fetcher = WebFetcher()
-    with patch("socket.gethostbyname", return_value="192.168.1.1"):
-        with pytest.raises(
-            ValueError, match="Access to private IP 192.168.1.1 is forbidden"
-        ):
-            await fetcher.fetch_page("http://192.168.1.1")
+    with patch("socket.gethostbyname", return_value="192.168.1.1"), pytest.raises(
+        ValueError, match=r"Access to private IP 192.168.1.1 is forbidden"
+    ):
+        await fetcher.fetch_page("http://192.168.1.1")
 
-    with patch("socket.gethostbyname", return_value="169.254.169.254"):
-        with pytest.raises(
-            ValueError, match="Access to internal resource 169.254.169.254 is forbidden"
-        ):
-            await fetcher.fetch_page("http://169.254.169.254")
+    with patch("socket.gethostbyname", return_value="169.254.169.254"), pytest.raises(
+        ValueError, match=r"Access to internal resource 169.254.169.254 is forbidden"
+    ):
+        await fetcher.fetch_page("http://169.254.169.254")
 
 
 @pytest.mark.asyncio

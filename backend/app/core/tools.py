@@ -307,14 +307,16 @@ def _store_artifact(
         universe_uuid = _get_universe_uuid()
         run_id = _get_run_id()
         if universe_uuid and run_id:
-            try:
-                acquisition_cache.repo.record_usage(
-                    artifact_id=stored.id,
-                    universe_uuid=universe_uuid,
-                    run_id=run_id,
-                )
-            except Exception:
-                pass
+                try:
+                    acquisition_cache.repo.record_usage(
+                        artifact_id=stored.id,
+                        universe_uuid=universe_uuid,
+                        run_id=run_id,
+                    )
+                except Exception as e:
+                    import logging
+                    logging.getLogger("tools").error(f"Failed to record artifact usage: {e!s}")
+
     return stored.id
 
 
@@ -418,8 +420,9 @@ async def tool_fetch_page(args: dict[str, Any]) -> str:
                         run_id=run_id,
                         usage_type="direct_fetch"
                     )
-                except Exception:
-                    pass
+                except Exception as e:
+                    import logging
+                    logging.getLogger("tools").error(f"Failed to record fetch usage: {e!s}")
 
     return output
 

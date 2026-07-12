@@ -81,7 +81,8 @@ class SettingsService:
 
             provider_details = []
             for p in providers:
-                assert p.id is not None
+                if p.id is None:
+                    raise ValueError("Provider record missing ID")
                 keys = keys_by_provider.get(p.id, [])
                 provider_details.append(
                     {
@@ -176,7 +177,8 @@ class SettingsService:
             key.priority = priority
             updated = repo.upsert_key(key)
             session.commit()
-            assert updated.id is not None
+            if updated.id is None:
+                raise ValueError("Provider key failed to generate ID after upsert")
             return updated.id
         finally:
             if not self.session:
@@ -401,7 +403,8 @@ class SettingsService:
             providers = repo.get_providers()
             provider_list = []
             for p in providers:
-                assert p.id is not None
+                if p.id is None:
+                    raise ValueError("Provider record missing ID")
                 keys = repo.get_keys_for_provider(p.id)
                 provider_list.append(
                     {

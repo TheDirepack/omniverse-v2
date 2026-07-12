@@ -204,7 +204,8 @@ async def architecture_node(state: dict[str, Any]) -> dict[str, Any]:
     universes = uni_service.get_by_names(verified_world_names)
 
     for universe in universes:
-        assert universe.id is not None
+        if universe.id is None:
+            raise ValueError("Universe record missing ID")
         retriever = KnowledgeRetrieverService()
         world_data = retriever.get_claims_dataset(universe.id)
         stability_prompts = get_stability_prompt(world_data, rubric_text)
@@ -265,7 +266,8 @@ async def architecture_node(state: dict[str, Any]) -> dict[str, Any]:
         elif status == "INSUFFICIENT_DATA":
             continue
         else:
-            assert universe.id is not None
+            if universe.id is None:
+                raise ValueError("Universe record missing ID")
             tier_service.create_anomaly(universe.id, stability_result)
             anomalous.append((universe, stability_result))
 
@@ -284,11 +286,13 @@ async def architecture_node(state: dict[str, Any]) -> dict[str, Any]:
             )
 
             for universe, res in anomalous:
-                assert universe.id is not None
+                if universe.id is None:
+                    raise ValueError("Universe record missing ID")
                 tier_service.clear_world_tier(universe.id)
                 tier_service.slot_world(universe.id, rubric_id, -1, res)
             for wt in world_tier_mappings:
-                assert wt["universe_id"] is not None
+                if wt["universe_id"] is None:
+                    raise ValueError("World tier mapping missing universe_id")
                 tier_service.slot_world(
                     wt["universe_id"], rubric_id, wt["tier"], wt["justification"]
                 )
@@ -350,7 +354,8 @@ async def architecture_node(state: dict[str, Any]) -> dict[str, Any]:
 
         # Persist confirmed worlds under the OLD rubric first
         for wt in world_tier_mappings:
-            assert wt["universe_id"] is not None
+            if wt["universe_id"] is None:
+                raise ValueError("World tier mapping missing universe_id")
             tier_service.slot_world(
                 wt["universe_id"], rubric_id, wt["tier"], wt["justification"]
             )
@@ -387,7 +392,8 @@ async def architecture_node(state: dict[str, Any]) -> dict[str, Any]:
         )
         parsed = _parse_stability_result(stability_result)
         tier_val = parsed["tier"] if parsed["tier"] is not None else -1
-        assert universe.id is not None
+        if universe.id is None:
+            raise ValueError("Universe record missing ID")
         tier_service.slot_world(
             universe.id, new_rubric_id, tier_val, parsed["justification"]
         )

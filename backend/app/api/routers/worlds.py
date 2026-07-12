@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, Request
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
@@ -257,7 +257,16 @@ def delete_world(world_id: int):
 
 
 @router.post("/reset-database")
-def reset_database(create_snapshot: bool = True, snapshot_name: str = "Auto-Reset-Snapshot"):
+def reset_database(
+    request: Request,
+    create_snapshot: bool = True,
+    snapshot_name: str = "Auto-Reset-Snapshot"
+):
+    if request.headers.get("X-Omniverse-Confirm-Reset") != "true":
+        raise HTTPException(
+            status_code=403, 
+            detail="Destructive operation requires X-Omniverse-Confirm-Reset: true header"
+        )
     if create_snapshot:
         from app.db.unconfirmed_schema import Snapshot
         with Session(unconfirmed_engine) as snap_session:

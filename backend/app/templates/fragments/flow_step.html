@@ -48,26 +48,4 @@
         </div>
     </div>
 
-    <div class="text-gray-400">↓</div>
-
-    <!-- 4. Theory / Inference -->
-    <div class="w-full max-w-md space-y-3">
-        <div class="text-center text-xs font-bold text-gray-500 dark:text-gray-400 uppercase">Inferences Derived</div>
-        {% if inferences %}
-            {% for inf in inferences %}
-                <div class="p-3 border rounded-lg bg-purple-50 dark:bg-purple-900/30 border-purple-200 dark:border-purple-800 flex items-center gap-4">
-                    <div class="text-xl">🧠</div>
-                    <div class="flex-1 text-sm">
-                        <span class="font-medium">Inferred Claim:</span> 
-                        {{ inf.subject_id }} {{ inf.predicate }} {{ inf.object_id }}
-                        <div class="text-xs text-purple-600 dark:text-purple-400">Rule ID: {{ inf.derived_from_rule_id }}</div>
-                    </div>
-                </div>
-            {% endfor %}
-        {% else %}
-            <div class="p-4 border rounded-lg bg-gray-50 dark:bg-gray-700 text-center text-gray-400 dark:text-gray-500 italic text-sm">
-                No inferences derived from this claim
-            </div>
-        {% endif %}
-    </div>
 </div>

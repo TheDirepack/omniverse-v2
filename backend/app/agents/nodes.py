@@ -10,6 +10,7 @@ from app.research.researcher import research_single_world
 from app.research.summarizer import summarize_universe
 from app.services.execution_service import ExecutionService
 from app.services.settings_service import SettingsService
+from app.core.runtime_state import is_aborted
 from app.workflow.extrapolation_workflow import extrapolation_node as extrapolation_impl
 from app.workflow.tiering_workflow import architecture_node as architecture_impl
 
@@ -110,7 +111,7 @@ async def db_integrator_node(state: OmniverseState) -> dict[str, Any]:
         verified_data = json.dumps(artifacts)
         status = result.get("status", "VERIFIED")
 
-        from app.agents.prompts import get_cleanup_prompt, get_db_agent_prompt
+        from app.agents.prompts import get_db_agent_prompt
 
         prompt = get_db_agent_prompt()
         user_prompt_data = f"Universe: {world_name}\nVerification Status: {status}\n\nVerified Research Data:\n{verified_data}"
@@ -135,37 +136,11 @@ async def db_integrator_node(state: OmniverseState) -> dict[str, Any]:
         if await is_aborted(run_id):
             raise RuntimeError(f"Run {run_id} was aborted during integration of {world_name}.")
 
-        # Only proceed to cleanup if integration was successful
-        if success:
-            cleanup_prompt = get_cleanup_prompt()
-            # Truncate history to only include the last 5 messages to avoid context bloat
-            truncated_history = history[-5:] if history else []
-            await run_agent(
-                agent_name="DB Architect",
-                system_prompt=cleanup_prompt["system"],
-                user_prompt=f"Clean up unconfirmed staging for {world_name}",
-                step=f"Cleanup {world_name}",
-                run_id=run_id,
-                tools_names=[
-                    "queryArtifacts",
-                    "queryUnconfirmedArtifacts",
-                    "deleteUnconfirmedArtifact",
-                ],
-                submit_tool_name="submit_cleanup",
-                history=truncated_history,
-                required_capabilities={
-                    Capability.READ_MAIN_DB,
-                    Capability.READ_WORKSPACE,
-                    Capability.WRITE_WORKSPACE,
-                },
-            )
-            if await is_aborted(run_id):
-                raise RuntimeError(f"Run {run_id} was aborted during cleanup of {world_name}.")
-        else:
+        if not success:
             exec_service.log_transition(
                 run_id,
                 "DB Integrator",
-                f"Integration failed for {world_name} ({final_ans}). Skipping cleanup to preserve staging data.",
+                f"Integration failed for {world_name} ({final_ans}).",
                 RunStatus.FAILED,
                 state,
             )
@@ -173,7 +148,7 @@ async def db_integrator_node(state: OmniverseState) -> dict[str, Any]:
     exec_service.log_transition(
         run_id,
         "DB Integrator",
-        "All research integrated and staging cleaned.",
+        "All research integrated.",
         RunStatus.COMPLETED,
         state,
     )

@@ -7,6 +7,8 @@ AGENT_TOOLS = {
         "compareSourceFreshness",
         "saveNotebookEntry",
         "loadNotebookEntry",
+        "deleteNotebookEntry",
+        "modifyNotebookEntry",
     ],
     "LogicAuditor": [
         "fetchPage",

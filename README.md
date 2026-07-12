@@ -42,12 +42,12 @@ Tests utilize ephemeral SQLite at `/dev/shm/omniverse_tests/`. An autouse fixtur
 For detailed architectural information, refer to `AGENTS.md`.
 
 - **Backend Layered Structure**: Organized into `api/`, `services/`, `repositories/`, `agents/`, `workflow/`, `research/`, `core/`, `db/`, and `views/`.
-- **Knowledge Graph & Inference**: Utilizes Atomic Claims (Subject -> Predicate -> Object), Predicate Normalization, Typed Objects, and a Confidence Model. Inference involves Rule Discovery and Materialization.
+- **Knowledge Graph & Provenance**: Utilizes an Artifact-based Knowledge Graph (Entities, Claims, Specifications, and Events) with a robust provenance system based on Evidence links and Artifact Versioning.
 - **Databases**: Main DB (`backend/data/omniverse_v2.db`), Settings DB (`backend/data/settings.db`), Operational DB (`backend/data/operational.db`), Staging DB (`backend/data/unconfirmed.db`), Extrapolation DB (`backend/data/extrapolation.db`).
-- **Pipeline (LangGraph)**: `research` -> `db_integrator` -> `summary` -> `FINISHED`. Traits replaced by Claims.
+- **Pipeline (LangGraph)**: `research` -> `db_integrator` -> `summary` -> `FINISHED`. Research results are promoted directly to the canonical Knowledge Graph.
 - **LLM Routing**: DB-driven fallback chain in `core/router.py` with various named agents.
 - **Browser**: `cloakbrowser` via `BrowserManager` singleton.
-- **State Management**: Global `ACTIVE_RUNS` / `ABORTED_RUNS` in `core/state.py`.
+- **State Management**: Global `ACTIVE_RUNS` / `ABORTED_RUNS` in `core/state.py`. Session state (`run_id`) is isolated via `ContextVar`.
 
 ## Key Conventions
 

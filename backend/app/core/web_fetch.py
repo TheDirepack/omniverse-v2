@@ -3,6 +3,7 @@ import hashlib
 import logging
 import re
 import socket
+import ipaddress
 from typing import Any
 from urllib.parse import urljoin, urlparse
 
@@ -395,7 +396,9 @@ class WebFetcher:
             links.append({
                 "url": url,
                 "title": title,
-                "score": score
+                "score": score,
+                "tier": "High" if score >= 8 else "Medium" if score >= 5 else "Low",
+                "sections": [] # To be populated by sectioning logic if needed
             })
 
         return sorted(links, key=lambda x: x["score"], reverse=True)[:50]
@@ -608,33 +611,9 @@ class WebFetcher:
             if run_id and await is_aborted(run_id):
                 raise RuntimeError("Aborted")
 
-            ip = socket.gethostbyname(hostname)
-            if (
-                ip.startswith(
-                    (
-                        "127.",
-                        "10.",
-                        "172.16.",
-                        "172.17.",
-                        "172.18.",
-                        "172.19.",
-                        "172.20.",
-                        "172.21.",
-                        "172.22.",
-                        "172.23.",
-                        "172.24.",
-                        "172.25.",
-                        "172.26.",
-                        "172.27.",
-                        "172.28.",
-                        "172.29.",
-                        "172.30.",
-                        "172.31.",
-                        "192.168.",
-                    )
-                )
-                or ip == "169.254.169.254"
-            ):
+            ip_str = socket.gethostbyname(hostname)
+            ip = ipaddress.ip_address(ip_str)
+            if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast:
                 raise PrivateIPError()
         except socket.gaierror:
             pass

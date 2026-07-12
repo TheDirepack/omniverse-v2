@@ -44,7 +44,6 @@ async def trace_claim(
         claim=artifact,
         source=None,
         unconfirmed=None,
-        inferences=[],
         subject=None,
         predicate=None,
         object_name=None

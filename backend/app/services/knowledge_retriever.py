@@ -68,13 +68,13 @@ class KnowledgeRetrieverService:
 
                 # Add fact
                 graph[subj_name]["facts"].append(
-                    {
-                        "predicate": payload.get("predicate", "related_to"),
-                        "object": obj_val,
-                        "support": 1,  # TODO: Artifact should have support count if needed
-                        "status": c.verification_status,
-                        "reference": c.source_reference,
-                    }
+                                        {
+                                            "predicate": payload.get("predicate", "related_to"),
+                                            "object": obj_val,
+                                            "support": art.support_count,
+                                            "status": c.verification_status,
+                                            "reference": c.source_reference,
+                                        }
                 )
 
             # 3b. Add relations from ArtifactRelation

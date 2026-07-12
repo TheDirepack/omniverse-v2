@@ -22,14 +22,10 @@ async def summarize_universe(universe_id: int, run_id: str) -> str:
         # Example: Subject -> Predicate -> Object
         claims_list = []
         for c in claims:
-            # Use the predicate string if predicate_id isn't mapped back yet,
-            # or fetch the canonical name.
-            pred = c.predicate or "unknown"
-            obj = c.object_literal or f"Entity({c.object_entity_id})"
+            pred = c.relation_type or "unknown"
+            obj = f"Artifact({c.to_artifact_id})"
 
-            # To be more robust, we should resolve subject_id to a name
-            # but for the prompt, IDs are often acceptable or we can use a simple lookup
-            claims_list.append(f"Entity({c.subject_id}) -> {pred} -> {obj}")
+            claims_list.append(f"Artifact({c.from_artifact_id}) -> {pred} -> {obj}")
 
         structured_context = "Verified Knowledge Graph:\n" + "\n".join(claims_list)
 

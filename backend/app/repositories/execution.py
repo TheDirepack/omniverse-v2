@@ -2,7 +2,7 @@ from collections.abc import Sequence
 
 from sqlmodel import Session, delete, select
 
-from app.db.schema import Claim, ClaimAttribute, ExecutionState, UnconfirmedClaim
+from app.db.schema import ExecutionState
 
 
 class ExecutionRepository:
@@ -39,11 +39,3 @@ class ExecutionRepository:
     def clear_logs(self):
         self.session.exec(delete(ExecutionState))
 
-    def delete_all_claims(self):
-        # Delete ClaimAttributes first (foreign key constraint)
-        self.session.exec(delete(ClaimAttribute))
-        # Delete claims
-        self.session.exec(delete(Claim))
-        # Delete unconfirmed claims
-        self.session.exec(delete(UnconfirmedClaim))
-        return {"status": "success"}

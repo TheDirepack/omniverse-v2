@@ -129,14 +129,14 @@ def test_database_worlds_delete(client, clean_db):
 
 
 def test_database_worlds_add_world(client, clean_db):
-    response = client.post("/worlds/create", data={"name": "NewTestWorld"})
+    response = client.post("/worlds/create", data={"world_name": "NewTestWorld"})
     assert response.status_code == 200
     assert "NewTestWorld" in response.text
 
 
 def test_database_worlds_add_world_with_metadata(client, clean_db):
     response = client.post("/worlds/create", data={
-        "name": "FullMetaWorld",
+        "world_name": "FullMetaWorld",
         "franchise": "TestFranchise",
         "category": "TestCategory",
         "continuity": "TestContinuity",

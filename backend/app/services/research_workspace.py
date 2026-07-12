@@ -48,12 +48,17 @@ class WorkspaceService:
         ]
         return "RESEARCH NOTES:\n" + "\n".join(lines)
 
-    def get_notebook_content(self, run_id: str, universe_uuid: str) -> str:
-        """Returns the concatenated summaries of all notebook entries for a run."""
+    def get_notebook_content(self, run_id: Optional[str], universe_uuid: str) -> str:
+        """Returns the concatenated summaries of notebook entries for a world.
+        If run_id is provided, it filters by run; otherwise, it returns all persistent notes.
+        """
         statement = select(NotebookEntry.summary).where(
-            NotebookEntry.run_id == run_id,
             NotebookEntry.universe_uuid == universe_uuid
-        ).order_by(NotebookEntry.priority)
+        )
+        if run_id:
+            statement = statement.where(NotebookEntry.run_id == run_id)
+        
+        statement = statement.order_by(NotebookEntry.priority)
         summaries = self.session.exec(statement).all()
         return "\n".join(filter(None, summaries))
 

@@ -77,6 +77,35 @@ class TestGetUniverse:
         svc.create_universe(name="FieldTest")
         results = svc.get_all_universes(fields=["name"])
         assert len(results) >= 1
+        for r in results:
+            assert isinstance(r, dict)
+            assert "name" in r
+
+    def test_get_all_pagination(self, ephemeral_db):
+        # Setup 15 universes
+        svc = UniverseService(session=ephemeral_db)
+        for i in range(15):
+            svc.create_universe(name=f"U{i:02d}")
+        
+        # Test limit
+        res = svc.get_all_universes(limit=5, offset=0)
+        assert len(res) == 5
+        
+        # Test offset
+        res_offset = svc.get_all_universes(limit=5, offset=5)
+        assert len(res_offset) == 5
+        assert res[0]["name"] != res_offset[0]["name"]
+
+    def test_get_all_projection(self, ephemeral_db):
+        svc = UniverseService(session=ephemeral_db)
+        svc.create_universe(name="Test")
+        
+        # Test field projection
+        res = svc.get_all_universes(fields=["name"])
+        assert len(res) == 1
+        row = res[0]
+        val = row["name"] if isinstance(row, dict) else row
+        assert val == "Test"
 
 
 class TestImportFromRegistry:

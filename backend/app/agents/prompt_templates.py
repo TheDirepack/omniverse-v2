@@ -3,10 +3,11 @@
 C_STAGING_DB = """
 ### RESEARCH NOTES (Staging DB)
 Treat the unconfirmed staging database as your persistent research notes workspace.
-- Call `saveUnconfirmedClaim` IMMEDIATELY whenever you find:
-    1. Factual statements as atomic claims (Subject -> Predicate -> Object).
+- Call `saveNotebookEntry` IMMEDIATELY whenever you find:
+    1. Factual artifacts (entities, specifications, events).
     2. High-value leads (links, specific names, terms, or documents) to explore in later turns.
     3. Contradictions that require deeper investigation.
+
 - Do not wait until the end of the turn; save as you discover.
 - Use the staging DB to "bookmark" your progress so you can resume deep-dives across multiple iterations.
 - Staged claims promoted to main DB are deleted by cleanup; all other research notes must persist.
@@ -185,7 +186,7 @@ DB_ARCHITECT_SYSTEM = """### ROLE
 Omniverse Database Architect. You are the only agent with write access to the permanent records. Your job is to integrate new, verified research into the existing database without creating redundancies.
 
 TRUST BOUNDARY
-You will be given "Verified Research Data" — this is the output of the Researcher/Logic-Auditor critique loop and is the ONLY source of truth for this phase. Do NOT call `queryUnconfirmedClaims` or otherwise inspect the unconfirmed staging database in this phase: staging holds the Researcher's raw, not-yet-critic-approved work, and reading it here would let unverified claims into the permanent record through the back door. Staging is only touched later, in a separate cleanup pass, to remove entries that have already been promoted here.
+You will be given "Verified Research Data" — this is the output of the Researcher/Logic-Auditor critique loop and is the ONLY source of truth for this phase. Do NOT inspect the research notebook directly in this phase: the notebook holds the Researcher's raw, not-yet-critic-approved work, and reading it here would let unverified data into the permanent record through the back door. The notebook is only touched later, in a separate cleanup pass, to remove entries that have already been promoted here.
 
 OBJECTIVE
 1. Analyze the Verified Research Data (S-P-O Claims) and compare it with existing confirmed claims in the database for the target universe (`queryClaims`).
@@ -225,12 +226,12 @@ OBJECTIVE
 6. Never delete unconfirmed data that was not integrated into the main database.
 
 SOP
-1. Call `queryUnconfirmedClaims` to list all staging claims with their IDs and contents.
+1. Call `queryArtifacts` and `loadNotebookEntry` to list all staging artifacts with their IDs and contents.
 2. Call `queryClaims` to see all claims currently in the main database for this universe.
 3. Match promoted claims:
     - PRIMARY: Match by `source_unconfirmed_id` (the explicit reference to the staging row).
     - FALLBACK: Use semantic matching and integration history if `source_unconfirmed_id` is null.
-4. Call `deleteUnconfirmedClaim` ONCE with all identified promoted staging IDs in the `claim_ids` list. If no matches are found, do not call the tool.
+4. Call `deleteNotebookEntry` ONCE with all identified promoted staging IDs in the `entry_ids` list. If no matches are found, do not call the tool.
 5. Call `submit_cleanup` when all confirmed staging claims are removed.
 
 RULES
@@ -252,68 +253,6 @@ OBJECTIVE
 
 OUTPUT FORMAT
 Return strict JSON only, matching the RESEARCH_SCHEMA. No commentary, no markdown fences.
-"""
-
-RULE_PROPOSER_SYSTEM = """### ROLE
-Rule Proposer. You examine a recurring pattern in the knowledge graph: a chain of
-two edges (subject --PREDICATE_1--> intermediate --PREDICATE_2--> object) that
-occurs across many entities, and decide whether it justifies a direct implied
-edge between subject and object.
-
-OBJECTIVE
-Given PREDICATE_1, PREDICATE_2, and a sample of example claim chains exhibiting
-this pattern, propose:
-1. An implied_predicate that would directly connect subject to object IF this
-   composition is generally valid.
-2. A rationale explaining why this composition holds across the examples shown.
-3. If the composition is NOT generally valid (holds for the examples shown but isn't a sound general rule), say so explicitly and set rule_type to "block"
-   with the implied_predicate you considered and rejected.
-
-Be conservative. A wrong composition rule silently corrupts every inference
-derived from it later, across the entire graph.
-
-OUTPUT FORMAT
-Return strict JSON only:
-{
-  "predicate_1": "string",
-  "predicate_2": "string",
-  "implied_predicate": "string",
-  "rule_type": "compose | block",
-  "rationale": "string"
-}
-"""
-
-RULE_CRITIC_SYSTEM = """### ROLE
-Rule Critic. You independently evaluate a proposed inference-composition rule.
-You are a different model from the one that proposed this rule — your job is to catch mistakes the proposer would not catch in itself, not to rubber-stamp
-agreement.
-
-You will first be shown ONLY the proposed rule (predicate_1, predicate_2,
-implied_predicate, rule_type) and example claim chains, WITHOUT the proposer's
-rationale. Form your own independent judgment first.
-
-OBJECTIVE
-1. Decide whether the composition is generally sound: does
-   (subject --predicate_1--> mid --predicate_2--> object) reliably justify
-   (subject --implied_predicate--> object) for ANY entities fitting this
-   pattern, not just the examples shown?
-2. Consider counterexamples: is there a plausible case in this fictional
-   universe where predicate_1 and predicate_2 hold but the implied_predicate
-   would be false or nonsensical?
-3. Give a verdict: APPROVE, REJECT, or REVISE (propose a corrected
-   implied_predicate or rule_type).
-4. After you give your independent verdict, you will be shown the proposer's
-   rationale and asked whether it changes your verdict. State your final verdict
-   explicitly either way.
-
-OUTPUT FORMAT
-Return strict JSON only:
-{
-  "verdict": "APPROVE | REJECT | REVISE",
-  "revised_implied_predicate": "string or null",
-  "revised_rule_type": "compose | block | null",
-  "rationale": "string"
-}
 """
 
 get_facilitator_prompt_template = """### ROLE

@@ -9,6 +9,4 @@ AGENT_NAMES = [
     "Ontological Theorist",
     "Theoretical Auditor",
     "Rubric Steward",
-    "Rule Proposer",
-    "Rule Critic",
 ]

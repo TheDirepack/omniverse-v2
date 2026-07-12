@@ -135,14 +135,15 @@ class ModelConfig(SQLModel, table=True):
 class Artifact(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     universe_id: int = Field(
-        sa_column=Column(ForeignKey("universe.id", ondelete="CASCADE"), nullable=False)
+        sa_column=Column(ForeignKey("universe.id", ondelete="CASCADE"), nullable=False, index=True)
     )
     type: str = Field(index=True)
     name: str | None = Field(default=None, index=True)
     confidence: str | None = None
     freshness: str | None = None
     verification_status: str = Field(default="PENDING")
-    evidence_id: int | None = Field(default=None, foreign_key="evidence.id")
+    evidence_refs: str = Field(default="[]", index=True)
+    support_count: int = Field(default=0, index=True)
     source_reference: str | None = None
     source_wiki: str | None = None
     payload_json: str = Field(default="{}")
@@ -173,8 +174,10 @@ class Evidence(SQLModel, table=True):
         sa_column=Column(ForeignKey("universe.id", ondelete="CASCADE"), nullable=False)
     )
     source_url: str = Field(index=True)
+    section: str | None = Field(default=None, index=True)
     source_name: str | None = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
+    __table_args__ = (UniqueConstraint("universe_id", "source_url", "section"),)
 
 
 class EvidenceChunk(SQLModel, table=True):
@@ -186,43 +189,19 @@ class EvidenceChunk(SQLModel, table=True):
 
 
 
-
-class InferenceRule(SQLModel, table=True):
+class ArtifactVersion(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
-    predicate_1: str
-    predicate_2: str
-    implied_predicate: str
-    rule_type: str = Field(default="compose")
-    status: str = Field(default="PROPOSED")
-    proposer_model: str | None = None
-    proposer_rationale: str | None = None
-    critic_model: str | None = None
-    critic_verdict: str | None = None
-    critic_rationale: str | None = None
-    human_approved: bool = Field(default=False)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-
-
-class InferredClaim(SQLModel, table=True):
-    id: int | None = Field(default=None, primary_key=True)
-    subject_id: int = Field(foreign_key="artifact.id")
-    predicate: str
-    object_id: int = Field(foreign_key="artifact.id")
-    derived_from_rule_id: int = Field(
-        sa_column=Column(
-            ForeignKey("inferencerule.id", ondelete="CASCADE"), nullable=False
-        )
+    artifact_id: int = Field(
+        sa_column=Column(ForeignKey("artifact.id", ondelete="CASCADE"), nullable=False),
     )
-    contradicts_claim_id: int | None = Field(default=None, foreign_key="artifact.id")
-    reviewed: bool = Field(default=False)
+    version: int = Field(index=True)
+    payload_json: str
+    evidence_refs: str
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
-class InferredClaimPath(SQLModel, table=True):
-    id: int | None = Field(default=None, primary_key=True)
-    inferred_claim_id: int = Field(foreign_key="inferredclaim.id", ondelete="CASCADE")
-    claim_id: int = Field(foreign_key="artifact.id", ondelete="CASCADE")
-    hop_index: int
+
+
 
 
 class CandidateHealth(SQLModel, table=True):
@@ -235,66 +214,3 @@ class CandidateHealth(SQLModel, table=True):
     disabled_until: datetime | None = Field(default=None)
 
 
-class Entity(SQLModel, table=True):
-    __table_args__ = (UniqueConstraint("universe_id", "name"),)
-    id: int | None = Field(default=None, primary_key=True)
-    universe_id: int = Field(
-        sa_column=Column(ForeignKey("universe.id", ondelete="CASCADE"), nullable=False)
-    )
-    name: str = Field(index=True)
-    entity_type: str = Field(default="Unknown")
-
-
-class EntityAlias(SQLModel, table=True):
-    __table_args__ = (UniqueConstraint("universe_id", "alias"),)
-    id: int | None = Field(default=None, primary_key=True)
-    universe_id: int = Field(
-        sa_column=Column(ForeignKey("universe.id", ondelete="CASCADE"), nullable=False)
-    )
-    alias: str = Field(index=True)
-    entity_id: int = Field(foreign_key="entity.id")
-
-
-class Predicate(SQLModel, table=True):
-    __table_args__ = (UniqueConstraint("canonical_name"),)
-    id: int | None = Field(default=None, primary_key=True)
-    canonical_name: str = Field(index=True)
-
-
-class Claim(SQLModel, table=True):
-    __table_args__ = (UniqueConstraint("subject_id", "context", "predicate_id", "object_entity_id", "object_literal"),)
-    id: int | None = Field(default=None, primary_key=True)
-    subject_id: int = Field(foreign_key="entity.id")
-    context: str = Field(default="")
-    predicate_id: int = Field(foreign_key="predicate.id")
-    predicate: str = Field(default="")
-    object_entity_id: int | None = Field(default=None, foreign_key="entity.id")
-    object_literal: str | None = Field(default=None)
-    source_reference: str | None = Field(default=None)
-    source_wiki: str | None = Field(default=None)
-    evidence_chunk_id: int | None = Field(default=None, foreign_key="evidencechunk.id")
-    support_count: int = Field(default=0)
-    universe_scope: int = Field(foreign_key="universe.id")
-    status: str = Field(default="VERIFIED")
-    source_unconfirmed_id: int | None = Field(default=None)
-
-
-class ClaimAttribute(SQLModel, table=True):
-    __table_args__ = (UniqueConstraint("claim_id", "key"),)
-    id: int | None = Field(default=None, primary_key=True)
-    claim_id: int = Field(foreign_key="claim.id")
-    key: str = Field(index=True)
-    value: str = Field(default="")
-
-
-class UnconfirmedClaim(SQLModel, table=True):
-    __table_args__ = (UniqueConstraint("subject", "context", "predicate", "object_val"),)
-    id: int | None = Field(default=None, primary_key=True)
-    universe_id: int = Field(foreign_key="universe.id")
-    subject: str = Field(index=True)
-    context: str = Field(default="")
-    predicate: str = Field(index=True)
-    object_val: str = Field(index=True)
-    reference: str | None = Field(default=None)
-    wiki_source: str | None = Field(default=None)
-    confidence: str = Field(default="")

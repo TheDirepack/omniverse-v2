@@ -17,7 +17,8 @@ RESEARCH_SCHEMA = """
       "reference": "url: section/line",
       "wiki_source": "page name or url",
       "confidence": "High | Medium | Low",
-      "staging_ref": "integer | null (The ID from saveUnconfirmedClaim, if applicable)"
+       "staging_ref": "integer | null (The ID from saveNotebookEntry, if applicable)"
+
     }
   ],
   "Knowledge_Graph": [

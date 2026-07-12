@@ -48,24 +48,19 @@ Tests use ephemeral SQLite at `/dev/shm/omniverse_tests/`. Autouse fixture drops
 - `backend/app/db/` — Database schemas and session management.
 - `backend/app/views/` — FastAPI routers for HTMX-rendered pages.
 
-### Knowledge Graph & Inference
-- **Atomic Claims**: Knowledge is stored as triples (Subject $\rightarrow$ Predicate $\rightarrow$ Object).
-- **Predicate Normalization**: Raw predicates are mapped to canonical forms via `PredicateService` (e.g., "uses" $\rightarrow$ `POWERED_BY`).
-- **Typed Objects**: Objects are stored as either `object_entity_id` (pointer to another entity) or `object_literal` (text).
-- **Provenance**: Claims link to `AcquisitionArtifact` via `artifact_id` for source traceability.
-- **Technical Specs**: Specific values (e.g., jump range) are stored in `ClaimAttribute` linked to a claim.
-- **Confidence Model**: derived from `support_count` (matching claims) and `contradiction_count` (conflicting claims).
-- **Inference**:
-  - **Rule Discovery**: Scans for frequent predicate pairs $\rightarrow$ Proposer/Critic LLM loop $\rightarrow$ Human approval $\rightarrow$ `InferenceRule`.
-  - **Materialization**: Applies approved rules to Claims to create `InferredClaim`s. Supports multi-hop composition up to `max_composition_depth`.
-  - **Contradictions**: Flags inferences that contradict asserted claims for manual review.
+### Knowledge Graph & Provenance
+- **Artifact-based Graph**: Knowledge is stored as a collection of polymorphic `Artifact`s (Entities, Claims, Specifications, and Events).
+- **Predicate Normalization**: Raw predicates in claims are mapped to canonical forms via `PredicateService` (e.g., "uses" $\rightarrow$ `POWERED_BY`).
+- **Provenance**: Every artifact is grounded in `Evidence` (source URLs and sections) via `evidence_refs`.
+- **Versioning**: All changes to artifacts are archived in `ArtifactVersion` records, allowing for full historical traceability of knowledge evolution.
+- **Confidence Model**: Derived from `support_count` (number of unique supporting evidence references).
 
 ### DBs
 
-- **Main DB**: SQLite via SQLModel at `DATABASE_URL` (default `backend/data/omniverse_v2.db`). Stores the canonical Knowledge Graph (Entities and Claims).
+- **Main DB**: SQLite via SQLModel at `DATABASE_URL` (default `backend/data/omniverse_v2.db`). Stores the canonical Knowledge Graph (Artifacts and Relations).
 - **Settings DB**: `backend/data/settings.db`. Agent routes, provider configs, settings.
 - **Operational DB**: `backend/data/operational.db`. Execution state, logs.
-- **Staging DB**: `backend/data/unconfirmed.db`. Persistent research notes, leads, unconfirmed claims, and provenance edges.
+- **Staging DB**: `backend/data/unconfirmed.db`. Persistent research workspace (Notebook entries, curated sources, and timelines).
 - **Extrapolation DB**: `backend/data/extrapolation.db`. Isolated storage for speculative theories; must never contaminate canon DB.
 
 All default to `backend/data/` but overridable via env vars.
@@ -74,13 +69,10 @@ All default to `backend/data/` but overridable via env vars.
 
 `research` $\rightarrow$ `db_integrator` $\rightarrow$ `summary` $\rightarrow$ `FINISHED`
 
-- **Research**: Generic fact collection. No power-scaling analysis at this stage.
-- **DB Integrator**: Stateful sequence (Integration $\rightarrow$ Cleanup).
-  - **Integration**: DB Architect performs graph-based merging of verified claims (deduplication, contradiction detection, and technical attribute mapping) into Main DB.
-  - **Cleanup**: DB Architect removes promoted items from Staging DB.
-  - **Security**: Write access to Main DB is stripped before the Cleanup phase begins.
-- **Summary**: Regenerates world summary from Main DB claims.
-- Traits replaced by Claims. This impacts `Summary` generation and related services.
+- **Research**: Iterative fact collection and verification. The Researcher uses a `Notebook` as working memory and produces a structured JSON dataset of verified artifacts.
+- **DB Integrator**: The `DB Architect` agent performs an intelligent merge of the verified research data into the Main DB, ensuring deduplication and provenance preservation.
+- **Summary**: Regenerates world summary from the updated Main DB artifacts.
+- Research artifacts are promoted directly to the Main DB; the research notebook persists as a record of the investigative process.
 
 ### Tiering & Extrapolation (Manual Workflows)
 
@@ -95,8 +87,8 @@ All default to `backend/data/` but overridable via env vars.
 DB-driven fallback chain in `core/router.py`. `api_base` passed from `provider.base_url`.
 Agent names: Researcher, Universe Chronicler, DB Architect, Tier Architect, Logic Auditor, Stability Unit, Ontological Theorist, Theoretical Auditor.
 
-- **Agent tool loop**: `core/agent_engine.py` supports stateful sessions. `_current_run_id` managed in `core/runtime_state.py` to avoid circular imports. Includes a `min_turns` gate to prevent early submission.
-- **Available tools**: `webSearch`, `fetchPage`, `compareSourceFreshness`, `queryClaims`, `upsertClaims`, `queryUnconfirmedClaims`, `saveUnconfirmedClaim`, `deleteUnconfirmedClaim`.
+- **Agent tool loop**: `core/agent_engine.py` supports stateful sessions. `run_id` is managed via `ContextVar` in `core/runtime_state.py` to ensure task-isolation and prevent race conditions during concurrent runs. Includes a `min_turns` gate to prevent early submission.
+- **Available tools**: `webSearch`, `fetchPage`, `compareSourceFreshness`, `queryArtifacts`, `upsertArtifacts`, `saveNotebookEntry`, `loadNotebookEntry`, `deleteNotebookEntry`, `manageSource`, `recordTimelineEvent`.
 
 
 ### Browser
@@ -105,7 +97,7 @@ Agent names: Researcher, Universe Chronicler, DB Architect, Tier Architect, Logi
 
 ### State management
 
-Global `ACTIVE_RUNS` / `ABORTED_RUNS` sets in `core/state.py`. Abort checked between every agent call. Universe context via `ContextVar` in `core/context.py`.
+Global `ACTIVE_RUNS` / `ABORTED_RUNS` sets in `core/state.py`. Abort checked between every agent call. Universe context and `run_id` are isolated via `ContextVar` in `core/context.py` and `core/runtime_state.py`.
 
 ## Key conventions
 

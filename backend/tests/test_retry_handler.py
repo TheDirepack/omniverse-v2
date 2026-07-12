@@ -259,3 +259,17 @@ class TestRetryHandlerIterationCount:
         rh = RetryHandler()
         rh.current_iteration = 5
         assert rh.iteration_count == 6
+
+    def test_update_state_resolves_previous_issues(self):
+        rh = RetryHandler()
+        # Turn 1: Issue A is outstanding
+        rh.update_state("r1", json.dumps({"Correction_Queue": [{"Issue": "Issue A"}]}), "h1")
+        assert rh.feedback_history[0]["corrections"][0]["status"] == "OUTSTANDING"
+        
+        # Turn 2: Issue A is gone, Issue B is now outstanding
+        rh.update_state("r2", json.dumps({"Correction_Queue": [{"Issue": "Issue B"}]}), "h2")
+        
+        # Issue A should be RESOLVED
+        assert rh.feedback_history[0]["corrections"][0]["status"] == "RESOLVED"
+        # Issue B should be OUTSTANDING
+        assert rh.feedback_history[1]["corrections"][0]["status"] == "OUTSTANDING"

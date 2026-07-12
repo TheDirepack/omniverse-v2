@@ -93,11 +93,12 @@ ACTIVE_RUNS: set[str] = set()
 ABORTED_RUNS: set[str] = set()
 RUNS_LOCK = asyncio.Lock()
 
-_current_run_id: str | None = None
+from contextvars import ContextVar
+
+_current_run_id: ContextVar[str | None] = ContextVar("current_run_id", default=None)
 
 def set_current_run_id(run_id: str | None):
-    global _current_run_id
-    _current_run_id = run_id
+    _current_run_id.set(run_id)
 
 def get_current_run_id() -> str | None:
-    return _current_run_id
+    return _current_run_id.get()

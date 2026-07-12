@@ -12,8 +12,6 @@ from app.db.schema import (
     Artifact,
     ArtifactRelation,
     ExecutionState,
-    InferenceRule,
-    InferredClaim,
     ModelConfig,
     TierSystem,
     Universe,
@@ -29,6 +27,11 @@ router = APIRouter(prefix="/worlds", tags=["worlds"])
 
 class AddWorldPayload(BaseModel):
     world_name: str
+    franchise: str | None = None
+    category: str | None = None
+    continuity: str | None = None
+    era: str | None = None
+    parent_id: int | None = None
     auto_research: bool = True
 
 
@@ -107,6 +110,7 @@ def delete_snapshot(snapshot_id: int):
         session.delete(snapshot)
         session.commit()
         return {"status": "success"}
+@router.post("/import")
 def import_world(payload: ImportWorldPayload, background_tasks: BackgroundTasks):
     service = UniverseService()
     world = service.import_from_registry(payload.world_id)
@@ -123,7 +127,7 @@ def import_world(payload: ImportWorldPayload, background_tasks: BackgroundTasks)
         from app.api.routers.runs import run_pipeline_in_background
 
         background_tasks.add_task(
-            run_pipeline_in_background, run_id, [world.name]
+            run_pipeline_in_background, run_id, [world.uuid]
         )
         return {
             "status": "queued",
@@ -139,14 +143,14 @@ def import_world(payload: ImportWorldPayload, background_tasks: BackgroundTasks)
 
 
 @router.post("/create")
-def create_world(payload: CreateWorldPayload, background_tasks: BackgroundTasks):
+def create_world(payload: AddWorldPayload, background_tasks: BackgroundTasks):
     service = UniverseService()
-    existing = service.get_universe(payload.name)
+    existing = service.get_universe(payload.world_name)
     if existing:
-        return {"status": "exists", "world_name": payload.name, "id": existing.id}
+        return {"status": "exists", "world_name": payload.world_name, "id": existing.id}
 
     world = service.create_universe(
-        name=payload.name,
+        name=payload.world_name,
         franchise=payload.franchise,
         category=payload.category,
         continuity=payload.continuity,
@@ -161,7 +165,7 @@ def create_world(payload: CreateWorldPayload, background_tasks: BackgroundTasks)
         from app.api.routers.runs import run_pipeline_in_background
 
         background_tasks.add_task(
-            run_pipeline_in_background, run_id, [world.name]
+            run_pipeline_in_background, run_id, [world.uuid]
         )
         return {"status": "queued", "run_id": run_id, "world_name": world.name}
     return {"status": "created", "world_name": world.name, "id": world.id}
@@ -181,7 +185,7 @@ def add_world(payload: AddWorldPayload, background_tasks: BackgroundTasks):
         from app.api.routers.runs import run_pipeline_in_background
 
         background_tasks.add_task(
-            run_pipeline_in_background, run_id, [payload.world_name]
+            run_pipeline_in_background, run_id, [world.uuid]
         )
         return {"status": "queued", "run_id": run_id, "world_name": payload.world_name}
     return {"status": "created", "world_name": payload.world_name}
@@ -233,7 +237,7 @@ def reset_all_explored():
 @router.post("/research-unexplored")
 def research_unexplored(background_tasks: BackgroundTasks):
     service = UniverseService()
-    unexplored = [u.name for u in service.repo.get_all() if not u.is_explored]
+    unexplored = [u.uuid for u in service.repo.get_all() if not u.is_explored]
     if not unexplored:
         return {"status": "noop", "run_id": None, "worlds": []}
     import uuid
@@ -269,17 +273,13 @@ def reset_database(create_snapshot: bool = True, snapshot_name: str = "Auto-Rese
         # Deletion order matters: PRAGMA foreign_keys=ON is enabled on this
         # engine (see db/session.py), so any table must be deleted AFTER
         # every table that references it via a foreign key, or SQLite raises
-        # an IntegrityError. InferredClaim references Entity/Claim/
-        # InferenceRule; Claim and EntityAlias reference Entity -- so those
-        # go first, then Entity, then the independent InferenceRule.
+        # an IntegrityError.
         # WorldTier references TierSystem, so it must precede it too
         # (already correct below).
         for table in [
             ExecutionState,
-            InferredClaim,
             ArtifactRelation,
             Artifact,
-            InferenceRule,
             WorldTier,
             TierSystem,
             Anomaly,

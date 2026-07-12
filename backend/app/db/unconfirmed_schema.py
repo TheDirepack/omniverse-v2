@@ -135,23 +135,6 @@ class ResearchSource(UnconfirmedModel, table=True):
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
-class UnconfirmedClaim(UnconfirmedModel, table=True):
-    __tablename__ = "unconfirmed_claim"
-
-    id: int | None = Field(default=None, primary_key=True)
-    universe_id: int = Field(foreign_key="unconfirmed_universe.id", index=True)
-    subject: str = Field(index=True)
-    context: str = Field(index=True)
-    predicate: str = Field(index=True)
-    object_val: str
-    source_wikis: str | None = None
-    evidence_chunk: str | None = None
-    confidence: float = Field(default=1.0)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
-    __table_args__ = (
-        UniqueConstraint("subject", "context", "predicate", "object_val"),
-    )
 
 
 class NotebookEntry(UnconfirmedModel, table=True):

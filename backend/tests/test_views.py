@@ -12,11 +12,6 @@ def test_research_page(client):
     assert "Choose a World" in response.text
 
 
-def test_inference_page(client):
-    response = client.get("/inference")
-    assert response.status_code == 200
-    assert "Inference Rules" in response.text
-
 
 def test_knowledge_world_list(client, _seeded_db):
     response = client.get("/knowledge/worlds")

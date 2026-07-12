@@ -262,6 +262,30 @@ class SettingsService:
                     "message": f"Setting 'MIN_RESEARCH_TURNS' must be an integer. Current value: {min_turns}",
                 })
 
+            max_iterations = general.get("MAX_RESEARCH_ITERATIONS")
+            if max_iterations is None:
+                issues.append({
+                    "severity": "WARNING",
+                    "message": "Setting 'MAX_RESEARCH_ITERATIONS' is missing. Using default (2).",
+                })
+            elif not str(max_iterations).isdigit():
+                issues.append({
+                    "severity": "ERROR",
+                    "message": f"Setting 'MAX_RESEARCH_ITERATIONS' must be an integer. Current value: {max_iterations}",
+                })
+
+            max_versions = general.get("MAX_ARTIFACT_VERSIONS")
+            if max_versions is None:
+                issues.append({
+                    "severity": "WARNING",
+                    "message": "Setting 'MAX_ARTIFACT_VERSIONS' is missing. Using default (10).",
+                })
+            elif not str(max_versions).isdigit():
+                issues.append({
+                    "severity": "ERROR",
+                    "message": f"Setting 'MAX_ARTIFACT_VERSIONS' must be an integer. Current value: {max_versions}",
+                })
+
             # 2. Validate Providers
             providers = all_settings.get("providers", [])
             provider_ids = {p["id"] for p in providers}

@@ -36,12 +36,6 @@ Investigate this feature specifically: {focus}
 Goal: prove existence, disprove existence, or mark inconclusive. Extract details, mechanism, limits, contradictions, and citations.
 Add an item named "Focused Verdict" with Detail containing one of: VERIFIED, DISPROVED, INCONCLUSIVE."""
 
-    unconfirmed_block = ""
-    if unconfirmed_data and unconfirmed_data.strip():
-        unconfirmed_block = f"""STAGING DATABASE (Unconfirmed Claims):
-The following artifacts were previously found but not yet verified:
-{unconfirmed_data}"""
-
     verified_block = ""
     if verified_claims and verified_claims.strip():
         verified_block = f"""VERIFIED KNOWLEDGE BASE:
@@ -62,10 +56,10 @@ Current semantic mapping of the universe:
 The following data exists for related universes in the multiverse:
 LEADS:
 {leads}
- 
+  
 KNOWLEDGE GRAPH:
 {kg}
- 
+  
 IMPORTANT: This data is NOT necessarily true for the current universe/timeline. Use it to identify what to check and where gaps might be, but you MUST independently verify every lead and explicitly document any deviations."""
 
     workspace_block = ""
@@ -100,24 +94,23 @@ The workspace is your living workspace. You are expected to discover entirely ne
 You are updating an existing dataset.
 PREVIOUS DATASET:
 {previous_dataset}
- 
+  
 OUTSTANDING CORRECTIONS:
 {outstanding_corrections or "None"}
- 
+  
 INSTRUCTIONS:
 1. ABSOLUTE PRIORITY: Outstanding Corrections take precedence over all other leads. Resolve them first before proceeding to new research.
 2. TARGETED FIXES: Identify exactly which entries are affected by the Outstanding Corrections and fix them.
 3. STABILITY: Keep all unaffected verified data exactly as it is.
 4. PATCHING: Update the JSON by patching only the necessary fields."""
 
-    system_parts = [
+        system_parts = [
         f"### ROLE\nProfessional Lore Archivist & Technical Documentation Specialist for {entity}. Your mission is to produce the most complete, accurate, and well-supported record of the assigned world that can be constructed from available evidence.",
         f"MODE: {mode_block}",
         verified_block,
         graph_block,
         multiverse_block,
         workspace_block,
-        unconfirmed_block,
         """RESEARCH PHILOSOPHY & WORKFLOW
 1. DISCOVERY: Use `webSearch` to find candidate wikis. If multiple distinct domains are returned, use `compareSourceFreshness` to select the most active canonical source. Use Category pages ONLY to extract article links.
 2. EXTRACTION: Fetch specific articles using `fetchPage`. Deconstruct the text into high-density factual data.
@@ -125,12 +118,15 @@ INSTRUCTIONS:
     - Favor completeness over summarization. Extract precise parameters and limits rather than general descriptions.
     - Record relationships explicitly described or directly supported by evidence.
 3. DOCUMENTATION:
-    - Use `saveNotebookEntry` to record leads, hypotheses, and unresolved questions.
+    - Use `saveNotebookEntry` to record internal thoughts, leads, hypotheses, and unresolved questions.
     - Use `manage_source` to curate your bibliography.
     - Use `record_timeline_event` to build a structured historical record.
-     - Use `saveNotebookEntry` for artifacts and relations to be promoted to the main DB.
+    - Use `deleteNotebookEntry` or `modifyNotebookEntry` to prune or refine your working notes.
+    - THE NOTEBOOK IS FOR INTERNAL STATE ONLY. Do not use it to store artifacts for promotion.
 4. SYNTHESIS: Build the `Knowledge_Graph` as a prioritized Research Scheduler. Track Status and Attempts for every lead.
-5. FORMATTING: Return results in strict JSON matching the provided schema.""",
+5. FORMATTING: At the end of your process, output the final structured artifacts in strict JSON matching the provided schema. This output is what will be verified and promoted to the main database.
+"""
+,
         """CORE DIRECTIVES
 - NO HEADCANON: Do not invent missing lore or reconcile contradictions through speculation. When evidence is incomplete or conflicting, document the uncertainty in the notebook and continue gathering evidence.
 - TECHNICAL RIGOR: Explicitly avoid general descriptive summaries (e.g., 'highly powerful'); instead, extract the specific evidence and parameters.
@@ -151,9 +147,6 @@ INSTRUCTIONS:
     }
 
 
-
-
-
 def get_critic_prompt(
     data: str,
     criteria: str,
@@ -165,7 +158,7 @@ def get_critic_prompt(
         history_block = f"""
 PREVIOUS AUDIT HISTORY:
 {previous_corrections}
- 
+  
 INSTRUCTIONS for INCREMENTAL AUDIT:
 1. Verify that the "Resolved" items from the previous turn are actually fixed.
 2. Identify if any new flaws were introduced during the patching process.
@@ -183,7 +176,13 @@ The "Sifted_Dataset" must be a complete JSON object following the RESEARCH_SCHEM
     return {
         "system": f"""### ROLE
 Lore Critic & Depth Controller. Your mission is to dismantle shallow research and identify the smallest possible flaw that requires revision.
- 
+
+INDEPENDENT VERIFICATION MANDATE
+You MUST NOT rely on the Researcher's synthesized output as the source of truth. Independent verification is a non-negotiable requirement for every claim audit.
+1. Cross-Reference: Use `loadNotebookEntry` and `queryArtifacts` to verify claims against the working memory and database.
+2. Raw Evidence Priority: Prioritize raw source evidence (via `fetchPage`) over the Researcher's summary.
+3. Summary Bias: Identify "Summary Bias" (general narratives instead of technical specs). If a claim is supported only by the Researcher's summary and not by raw evidence in the notebook or DB, it MUST be flagged as Revision_Required.
+  
 OBJECTIVE
 1. Depth Audit: Identify "Summary Bias". If the Researcher provides general narrative descriptions instead of technical specifications, mechanisms, and quantitative data, mark as Revision_Required.
 2. Gap Analysis: Check the `Knowledge_Graph`. If high-priority leads exist that were not pursued, or if obvious technical gaps remain, flag it.
@@ -191,31 +190,31 @@ OBJECTIVE
 4. Rigor Check:
     - No "Headcanon": Flag any speculative reconciliation of contradictions.
     - Grounding: Every claim must have a precise reference ("url: section/line").
+    - Evidence Reference: Every artifact MUST have at least one evidence reference (evidence_refs must not be empty/null). Flag artifacts with empty/null evidence_refs.
     - Freshness: Flag if a stale source was used when a fresher one was available.
 5. Correction Queue: Every `Required_Fix` MUST be a structured object:
    {{ "action": "FETCH" | "SEARCH" | "REVISE", "target": "URL or Search Query", "reason": "string" }}
    Example: {{ "action": "FETCH", "target": "https://wiki.com/pageX", "reason": "To verify the engine specifications of X" }}
- 
+
 {history_block}
 {final_attempt_block}
- 
+  
 OUTPUT FORMAT
 Strict JSON only, no markdown fences, no commentary:
 {{
   "Verification_Status": "Success | Revision_Required",
   "Correction_Queue": [
-    {{"Error_Type": "Schema | Citation | Canon | Missing_Info | Contradiction | Data_Bleed | Stale_Source | Depth", "Issue": "string", "Required_Fix": "string"}}
+    {{"Error_Type": "Schema | Citation | Canon | Missing_Info | Contradiction | Data_Bleed | Stale_Source | Depth", "Issue": "string", "Required_Fix": "string", "Suggested_Action": "UPDATE_ARTIFACT | RESEARCH_MORE | DELETE_ARTIFACT"}}
   ],
   "Sifted_Dataset": {{ ...optional, only on final attempt if Revision_Required... }}
 }}
- 
+  
 CRITERIA
 {criteria}
 - PROHIBITED: No power-scaling, feat analysis, or relative strength comparisons. Focus exclusively on factual accuracy and source grounding.
 """,
         "user": f"Audit this dataset for accuracy and depth:\n\n{data}",
     }
-
 
 
 def get_synthesis_prompt(reports: list[str]):
@@ -382,12 +381,12 @@ def get_db_agent_prompt():
 Omniverse Database Architect. You are the only agent with write access to the permanent records. Your job is to integrate new, verified research into the existing database without creating redundancies.
 
 TRUST BOUNDARY
-You will be given "Verified Research Data" — this is the output of the Researcher/Logic-Auditor critique loop and is the ONLY source of truth for this phase. Do NOT inspect the research notebook directly in this phase: the notebook holds the Researcher's raw, not-yet-critic-approved work, and reading it here would let unverified data into the permanent record through the back door. The notebook is only touched later, in a separate cleanup pass, to remove entries that have already been promoted here.
+You will be given "Verified Research Data" — this is the output of the Researcher/Logic-Auditor critique loop and is the ONLY source of truth for this phase. Do NOT use any other tools or sources to find data; integrate only what has been explicitly verified and provided to you.
 
 OBJECTIVE
 1. Analyze the Verified Research Data (Artifacts and Relations) and compare it with existing confirmed data in the database for the target universe (`queryArtifacts`).
 2. Intelligent Merging:
-    - If an artifact already exists (same entity/type/value), it is a duplicate; the system will increment the support count.
+    - If an artifact already exists (same entity/type/value), it is a duplicate; the system will increment the support count (internally handled by upsert).
     - If a relation is contradictory to an existing one, flag it for review.
     - Create new artifacts and relations for all unique verified findings.
 3. Technical Specifications:
@@ -442,7 +441,3 @@ RULES
 """,
         "user": "Unconfirmed staging cleanup is ready. Review unconfirmed artifacts, match against main DB, and delete the promoted ones.",
     }
-
-
-# (End of file)
-

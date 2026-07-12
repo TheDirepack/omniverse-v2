@@ -9,9 +9,9 @@ from app.db.schema import (
     Anomaly,
     Artifact,
     ArtifactRelation,
+    ArtifactVersion,
     Evidence,
     EvidenceChunk,
-    InferredClaim,
     Universe,
     UniverseRelation,
     WorldTier,
@@ -332,6 +332,34 @@ class UniverseService:
                         )
                     ).first()
                     if existing:
+                        # Merge evidence_refs as set union
+                        ref_keep = json.loads(existing.evidence_refs or "[]")
+                        ref_merge = json.loads(a.evidence_refs or "[]")
+                        union_refs = sorted(set(ref_keep) | set(ref_merge))
+                        existing.evidence_refs = json.dumps(union_refs)
+                        existing.support_count = len(union_refs)
+                        session.add(existing)
+
+                        # Re-parent ArtifactVersion records and shift versions
+                        versions = session.exec(
+                            select(ArtifactVersion)
+                            .where(ArtifactVersion.artifact_id == a.id)
+                            .order_by(ArtifactVersion.version.asc())
+                        ).all()
+                        
+                        if versions:
+                            max_ver_keep = session.exec(
+                                select(ArtifactVersion.version)
+                                .where(ArtifactVersion.artifact_id == existing.id)
+                                .order_by(ArtifactVersion.version.desc())
+                            ).first()
+                            
+                            offset = (max_ver_keep or 0)
+                            for v in versions:
+                                v.artifact_id = existing.id
+                                v.version = v.version + offset
+                                session.add(v)
+                        
                         artifact_map[a.id] = existing.id
                     else:
                         a.universe_id = keep_id
@@ -608,24 +636,10 @@ class UniverseService:
         session = self.session or Session(engine)
         try:
             # Cascading cleanup to prevent IntegrityError
-            # Order: InferredClaim -> Relations -> Artifacts -> WorldTier
+            # Order: Relations -> Artifacts -> WorldTier
             # -> Anomaly -> Relation -> EvidenceChunk -> Evidence -> Universe
 
-            # 1. InferredClaims referencing artifacts of this universe
-            artifacts = (
-                session.exec(select(Artifact).where(Artifact.universe_id == universe_id))
-                .all()
-            )
-            artifact_ids = [a.id for a in artifacts]
-            if artifact_ids:
-                session.exec(
-                    delete(InferredClaim).where(
-                        (InferredClaim.subject_id.in_(artifact_ids)) |
-                        (InferredClaim.object_id.in_(artifact_ids))
-                    )
-                )
-
-            # 2. ArtifactRelations and Artifacts
+            # 1. ArtifactRelations and Artifacts
             session.exec(
                 delete(ArtifactRelation).where(ArtifactRelation.universe_id == universe_id)
             )

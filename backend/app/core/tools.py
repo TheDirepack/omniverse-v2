@@ -2,6 +2,7 @@ import asyncio
 import json
 from typing import Any
 
+from sqlalchemy import text
 from sqlmodel import Session, select
 
 from app.core.acquisition_cache import acquisition_cache
@@ -11,20 +12,20 @@ from app.core.web_fetch import web_fetcher
 from app.core.web_search import web_searcher
 from app.db.schema import (
     Artifact,
+    ArtifactVersion,
     Evidence,
     EvidenceChunk,
     Universe,
 )
+from app.services.predicate_service import PredicateService
 from app.db.session import engine
 from app.db.unconfirmed_schema import (
     AcquisitionArtifact,
     NotebookEntry,
-    UnconfirmedClaim,
     UnconfirmedUniverse,
 )
 from app.db.unconfirmed_session import unconfirmed_engine
 from app.services.knowledge_retriever import KnowledgeRetrieverService
-from app.services.predicate_service import PredicateService
 from app.services.research_workspace import WorkspaceService
 from app.services.universe_service import UniverseService
 
@@ -47,6 +48,16 @@ async def tool_load_notebook_entry(args: dict[str, Any]) -> str:
         f"Details: {entry.details or 'No detailed notes provided.'}"
     )
 
+
+async def tool_delete_notebook_entry(args: dict[str, Any]) -> str:
+    entry_id = args.get("entry_id")
+    if not entry_id:
+        return "Error: Missing entry_id."
+
+    service = WorkspaceService()
+    if service.delete_notebook_entry(entry_id):
+        return f"Notebook entry {entry_id} deleted successfully."
+    return f"Notebook entry {entry_id} not found."
 
 async def tool_save_notebook_entry(args: dict[str, Any]) -> str:
     universe_uuid = _get_universe_uuid()
@@ -157,8 +168,6 @@ async def tool_add_timeline_detail(args: dict[str, Any]) -> str:
         service.add_timeline_location(timeline_id, value_id)
     elif detail_type == "source":
         service.add_timeline_source(timeline_id, value_id)
-    elif detail_type == "claim":
-        service.add_timeline_claim(timeline_id, value_id)
     else:
         return f"Error: Invalid detail type '{detail_type}'."
 
@@ -479,6 +488,66 @@ async def tool_compare_source_freshness(args: dict[str, Any]) -> str:
     return build_freshness_comparison_report(url_content_map)
 
 
+async def tool_query_claims(args: dict[str, Any]) -> str:
+    universe_name = get_current_universe()
+    if not universe_name:
+        return "Error: No active universe context."
+
+    predicate_filter = args.get("predicate")
+
+    with Session(engine) as session:
+        universe = session.exec(
+            select(Universe).where(Universe.name == universe_name)
+        ).first()
+        if not universe:
+            return f"Universe {universe_name} not found."
+
+        retriever = KnowledgeRetrieverService(session)
+        claims = retriever.get_semantic_claims(universe.id, predicate_filter=predicate_filter)
+        
+        if not claims:
+            return f"No verified claims found for {universe_name} matching filter '{predicate_filter or 'any'}'."
+
+        lines = [
+            f"({c['subject']} --{c['predicate']}--> {c['object']}) | support: {c['support']} | ref: {c['reference'] or 'N/A'}"
+            for c in claims
+        ]
+        return "\n".join(lines)
+
+async def tool_delete_unconfirmed_claim(args: dict[str, Any]) -> str:
+    return "No unconfirmed atomic claims found in the research workspace."
+
+async def tool_query_unconfirmed_claims(args: dict[str, Any]) -> str:
+    return "No unconfirmed atomic claims found in the research workspace."
+
+async def tool_query_unconfirmed_artifacts(args: dict[str, Any]) -> str:
+    return "No unconfirmed artifacts found in the research workspace."
+
+async def tool_delete_unconfirmed_artifact(args: dict[str, Any]) -> str:
+    return "No unconfirmed artifacts found to delete."
+
+async def tool_delete_artifact(args: dict[str, Any]) -> str:
+    universe_name = get_current_universe()
+    if not universe_name:
+        return "Error: No active universe context."
+
+    artifact_id = args.get("artifact_id")
+    if not artifact_id:
+        return "Error: Missing artifact_id."
+
+    with Session(engine) as session:
+        universe = session.exec(select(Universe).where(Universe.name == universe_name)).first()
+        if not universe:
+            return f"Universe {universe_name} not found."
+        
+        art = session.get(Artifact, artifact_id)
+        if not art or art.universe_id != universe.id:
+            return f"Artifact {artifact_id} not found in {universe_name}."
+        
+        session.delete(art)
+        session.commit()
+        return f"Artifact {artifact_id} deleted successfully."
+
 async def tool_upsert_artifacts(args: dict[str, Any]) -> str:
     """
     Integrates polymorphic artifacts (Entity, Claim, Event, Specification) into the permanent records.
@@ -495,13 +564,15 @@ async def tool_upsert_artifacts(args: dict[str, Any]) -> str:
     pred_service = PredicateService()
 
     with Session(engine) as session:
+        session.execute(text("BEGIN IMMEDIATE"))
         universe = session.exec(
             select(Universe).where(Universe.name == universe_name)
         ).first()
         if not universe:
             return f"Universe {universe_name} not found."
 
-        def get_or_create_artifact(name: str, art_type: str):
+        def get_or_create_artifact(name: str, art_type: str, payload: dict = None):
+            # 1. Try to find by name and type
             art = session.exec(
                 select(Artifact).where(
                     Artifact.universe_id == universe.id,
@@ -509,14 +580,34 @@ async def tool_upsert_artifacts(args: dict[str, Any]) -> str:
                     Artifact.name == name
                 )
             ).first()
-            if not art:
-                art = Artifact(
-                    name=name,
-                    type=art_type,
-                    universe_id=universe.id
-                )
-                session.add(art)
-                session.flush()
+            if art:
+                return art
+            
+            # 2. Try to find by payload (Merge duplicate factual content)
+            if payload:
+                payload_str = json.dumps(payload, sort_keys=True)
+                art = session.exec(
+                    select(Artifact).where(
+                        Artifact.universe_id == universe.id,
+                        Artifact.type == art_type,
+                        Artifact.payload_json == payload_str
+                    )
+                ).first()
+                if art:
+                    # Merge: update name to the new name and return
+                    art.name = name
+                    session.add(art)
+                    session.flush()
+                    return art
+            
+            # 3. Create new
+            art = Artifact(
+                name=name,
+                type=art_type,
+                universe_id=universe.id
+            )
+            session.add(art)
+            session.flush()
             return art
 
         created, updated = [], []
@@ -533,7 +624,6 @@ async def tool_upsert_artifacts(args: dict[str, Any]) -> str:
             if not art_type or not name:
                 continue
 
-            # Determine if it's a new artifact BEFORE calling get_or_create_artifact (which flushes)
             existing_art = session.exec(
                 select(Artifact).where(
                     Artifact.universe_id == universe.id,
@@ -543,32 +633,50 @@ async def tool_upsert_artifacts(args: dict[str, Any]) -> str:
             ).first()
 
             is_new = existing_art is None
-            art = get_or_create_artifact(name, art_type)
+            art = get_or_create_artifact(name, art_type, payload)
+
+            # Handle Evidence Deduplication (URL + Section)
+            evidence_ids = []
+            if ref or wiki:
+                url = wiki or ref
+                section = item.get("section", "General")
+                
+                existing_ev = session.exec(
+                    select(Evidence).where(
+                        Evidence.universe_id == universe.id,
+                        Evidence.source_url == url,
+                        Evidence.section == section
+                    )
+                ).first()
+                
+                if existing_ev:
+                    evidence_ids.append(existing_ev.id)
+                else:
+                    evidence = Evidence(
+                        universe_id=universe.id,
+                        source_url=url,
+                        section=section,
+                        source_name=wiki or "Unknown"
+                    )
+                    session.add(evidence)
+                    session.flush()
+                    evidence_ids.append(evidence.id)
+                    
+                    chunk = EvidenceChunk(
+                        evidence_id=evidence.id,
+                        content=ref or "",
+                        chunk_index=0
+                    )
+                    session.add(chunk)
+                    session.flush()
 
             art.confidence = conf
             art.freshness = fresh
             art.source_reference = ref
             art.source_wiki = wiki
-
-            if ref or wiki:
-                evidence = Evidence(
-                    universe_id=universe.id,
-                    source_url=wiki or ref,
-                    source_name=wiki or "Unknown"
-                )
-                session.add(evidence)
-                session.flush()
-
-                chunk = EvidenceChunk(
-                    evidence_id=evidence.id,
-                    content=ref or "",
-                    chunk_index=0
-                )
-                session.add(chunk)
-                session.flush()
-
-                art.evidence_id = evidence.id
-
+            art.evidence_refs = json.dumps(evidence_ids)
+            art.support_count = len(evidence_ids)
+            
             if art_type == "claim":
                 raw_pred = payload.get("predicate", "related_to")
                 norm_pred = pred_service.normalize(raw_pred)
@@ -603,11 +711,50 @@ async def tool_upsert_artifacts(args: dict[str, Any]) -> str:
             else:
                 art.payload_json = json.dumps(payload)
 
+            # Artifact Versioning (Internal Database Feature)
+            if not is_new:
+                from app.services.settings_service import SettingsService
+                max_versions = int(SettingsService().get_setting("MAX_ARTIFACT_VERSIONS").value) if SettingsService().get_setting("MAX_ARTIFACT_VERSIONS") else 10
+                
+                # Archive current state to ArtifactVersion before updating
+                # We use a separate session or flush to ensure current is captured
+                old_version = session.exec(
+                    select(ArtifactVersion)
+                    .where(ArtifactVersion.artifact_id == art.id)
+                    .order_by(ArtifactVersion.version.desc())
+                ).first()
+                
+                new_ver_num = (old_version.version + 1) if old_version else 1
+                
+                # Create version record
+                version_record = ArtifactVersion(
+                    artifact_id=art.id,
+                    version=new_ver_num,
+                    payload_json=art.payload_json,
+                    evidence_refs=art.evidence_refs
+                )
+                session.add(version_record)
+                
+                # Prune old versions
+                if new_ver_num > max_versions:
+                    session.exec(
+                        select(ArtifactVersion).where(
+                            ArtifactVersion.artifact_id == art.id,
+                            ArtifactVersion.version <= new_ver_num - max_versions
+                        )
+                    ).delete()
+
             session.add(art)
             if is_new:
                 created.append(name)
             else:
                 updated.append(name)
+
+            # Promote from Notebook: If notebook_entry_id is provided, delete the entry
+            entry_id = item.get("notebook_entry_id")
+            if entry_id:
+                workspace_service = WorkspaceService(session=session)
+                workspace_service.delete_notebook_entry(entry_id)
 
         session.commit()
         return f"Integrated {len(created)} new and {len(updated)} updated artifacts for {universe_name}."
@@ -673,251 +820,14 @@ async def tool_query_artifacts(args: dict[str, Any]) -> str:
         return "\n\n---\n\n".join(output_blocks)
 
 
-async def tool_query_unconfirmed_artifacts(args: dict[str, Any]) -> str:
-    universe_name = get_current_universe()
-    if not universe_name:
-        return "Error: No active universe context."
-
-    with Session(unconfirmed_engine) as session:
-        universe = session.exec(
-            select(UnconfirmedUniverse).where(UnconfirmedUniverse.name == universe_name)
-        ).first()
-        if not universe:
-            return f"No unconfirmed data for {universe_name}."
-
-        claims = session.exec(
-            select(UnconfirmedClaim).where(UnconfirmedClaim.universe_id == universe.id)
-        ).all()
-        if not claims:
-            return f"No unconfirmed claims for {universe_name}."
-
-        return "\n".join(
-            [
-                f"ID: {c.id} | subj: {c.subject} | pred: {c.predicate} | obj: {c.object_val} | ref: {c.reference or 'N/A'} | conf: {c.confidence or 'N/A'}"
-                for c in claims
-            ]
-        )
 
 
-async def tool_query_unconfirmed_claims(args: dict[str, Any]) -> str:
-    """
-    Retrieve all unconfirmed atomic claims (S-P-O) for the active universe.
-    """
-    universe_name = get_current_universe()
-    if not universe_name:
-        return "Error: No active universe context."
-
-    with Session(unconfirmed_engine) as session:
-        universe = session.exec(
-            select(UnconfirmedUniverse).where(UnconfirmedUniverse.name == universe_name)
-        ).first()
-        if not universe:
-            return f"No unconfirmed data for {universe_name}."
-
-        claims = session.exec(
-            select(UnconfirmedClaim).where(UnconfirmedClaim.universe_id == universe.id)
-        ).all()
-        if not claims:
-            return f"No unconfirmed claims for {universe_name}."
-
-        return "\n".join(
-            [
-                f"ID: {c.id} | subj: {c.subject} | pred: {c.predicate} | obj: {c.object_val} | ref: {c.reference or 'N/A'} | conf: {c.confidence or 'N/A'}"
-                for c in claims
-            ]
-        )
 
 
-async def tool_save_unconfirmed_artifact(args: dict[str, Any]) -> str:
-    """
-    Save unconfirmed claims for the active universe.
-    Claims are atomic statements: (subject, context, predicate, object).
-    Prefer batching via `items`: [{subject, context, predicate, object_val, reference, wiki_source, confidence, artifact_id}, ...].
-    """
-    universe_name = get_current_universe()
-    if not universe_name:
-        return "Error: No active universe context."
-
-    items = args.get("items")
-    if not items:
-        single = {
-            "subject": args.get("subject", ""),
-            "context": args.get("context"),
-            "predicate": args.get("predicate", ""),
-            "object_val": args.get("object_val", ""),
-            "reference": args.get("reference"),
-            "wiki_source": args.get("wiki_source"),
-            "confidence": args.get("confidence"),
-            "artifact_id": args.get("artifact_id"),
-        }
-        items = [single]
-
-    saved, errors = [], []
-    with Session(unconfirmed_engine) as session:
-        universe = session.exec(
-            select(UnconfirmedUniverse).where(UnconfirmedUniverse.name == universe_name)
-        ).first()
-        if not universe:
-            universe = UnconfirmedUniverse(name=universe_name)
-            session.add(universe)
-            session.flush()
-
-        for item in items:
-            subject = item.get("subject", "")
-            context = item.get("context")
-            predicate = item.get("predicate", "")
-            object_val = item.get("object_val", "")
-            artifact_id = item.get("artifact_id")
-            if not all([subject, predicate, object_val]):
-                errors.append(f"Skipped claim with missing required fields: {item}")
-                continue
-
-            new_claim = UnconfirmedClaim(
-                universe_id=universe.id,
-                subject=subject,
-                context=context,
-                predicate=predicate,
-                object_val=object_val,
-                reference=item.get("reference"),
-                wiki_source=item.get("wiki_source"),
-                confidence=str(item.get("confidence") or ""),
-            )
-            session.add(new_claim)
-            session.flush()
-
-            if artifact_id:
-                try:
-                    acquisition_cache.store_provenance(
-                        source_artifact_id=artifact_id,
-                        target_type="unconfirmed_claim",
-                        target_id=new_claim.id,
-                        relation="supports",
-                        run_id=_get_run_id(),
-                        session=session,
-                    )
-                except Exception:
-                    pass
-
-            saved.append(new_claim.id)
 
 
-        session.commit()
-
-    result = f"Saved {len(saved)} unconfirmed claim(s) for {universe_name}. IDs: {', '.join(map(str, saved))}"
-    if errors:
-        result += " Errors: " + "; ".join(errors)
-    return result
 
 
-async def tool_delete_unconfirmed_artifact(args: dict[str, Any]) -> str:
-    """Accepts either a single `claim_id`, or a batch via `claim_ids`: [id, ...]."""
-    claim_ids = args.get("claim_ids")
-    if not claim_ids:
-        single_id = args.get("claim_id") or args.get("artifact_id")
-        if not single_id:
-            return "Error: Missing claim_id or claim_ids."
-        claim_ids = [single_id]
-
-    universe_name = get_current_universe()
-    if not universe_name:
-        return "Error: No active universe context."
-
-    deleted, errors = [], []
-    with Session(unconfirmed_engine) as session:
-        universe = session.exec(
-            select(UnconfirmedUniverse).where(UnconfirmedUniverse.name == universe_name)
-        ).first()
-        for cid in claim_ids:
-            # Try to find as UnconfirmedClaim
-            claim = session.get(UnconfirmedClaim, cid)
-            if claim:
-                if not universe or claim.universe_id != universe.id:
-                    errors.append(f"{cid} (claim) does not belong to current universe")
-                    continue
-                session.delete(claim)
-                deleted.append(str(cid))
-                continue
-
-            # Try to find as NotebookEntry
-            entry = session.get(NotebookEntry, cid)
-            if entry:
-                if not universe or entry.universe_uuid != universe.universe_uuid:
-                    errors.append(f"{cid} (entry) does not belong to current universe")
-                    continue
-                session.delete(entry)
-                deleted.append(str(cid))
-                continue
-
-            errors.append(f"{cid} not found as claim or entry")
-        session.commit()
-
-    result = f"Deleted {len(deleted)} unconfirmed artifact(s): {', '.join(deleted) if deleted else 'none'}."
-    if errors:
-        result += " Errors: " + "; ".join(errors)
-    return result
-
-
-async def tool_query_claims(args: dict[str, Any]) -> str:
-    """
-    Query verified claims from the main database for the current universe.
-    Optionally filter by a specific predicate.
-    """
-    universe_name = get_current_universe()
-    if not universe_name:
-        return "Error: No active universe context."
-
-    predicate_filter = args.get("predicate")
-
-    with Session(engine) as session:
-        universe = session.exec(
-            select(Universe).where(Universe.name == universe_name)
-        ).first()
-        if not universe:
-            return f"Universe {universe_name} not found."
-
-        retriever = KnowledgeRetrieverService(session)
-        graph = retriever.get_universe_knowledge_graph(universe.id)
-
-        if not graph:
-            return f"No verified claims found for {universe_name}."
-
-        output_blocks = []
-        for entity, data in graph.items():
-            filtered_facts = [
-                f
-                for f in data["facts"]
-                if not predicate_filter or f["predicate"] == predicate_filter
-            ]
-
-            if not filtered_facts:
-                continue
-
-            block = [f"Entity: {entity}"]
-
-            facts_lines = []
-            total_support = 0
-            for f in filtered_facts:
-                facts_lines.append(
-                    f"- {f['predicate'].replace('_', ' ').title()}: {f['object']} (support: {f['support']})"
-                )
-                total_support += f["support"]
-
-            block.append("Verified Facts:")
-            block.extend(facts_lines)
-
-            if data["related_entities"]:
-                block.append("Related Entities:")
-                block.append(", ".join(data["related_entities"]))
-
-            avg_conf = total_support / len(filtered_facts) if filtered_facts else 0
-            block.append(f"Confidence: {avg_conf:.1f} avg supporting sources")
-
-            output_blocks.append("\n".join(block))
-
-        if not output_blocks:
-            return f"No verified claims found for {universe_name} matching filter '{predicate_filter}'."
-
-        return "\n\n---\n\n".join(output_blocks)
 
 
 async def tool_ocr_image(args: dict[str, Any]) -> str:
@@ -993,8 +903,9 @@ async def tool_link_entity_to_canonical(args: dict[str, Any]) -> str:
 
     service = UniverseService()
     with Session(engine) as session:
+        session.execute(text("BEGIN IMMEDIATE"))
         universe = session.exec(
-            select(Universe).where(Universe.name == current_name)
+            select(Universe).where(Universe.name == universe_name)
         ).first()
         if not universe:
             return f"Universe {current_name} not found."
@@ -1031,81 +942,6 @@ async def tool_link_entity_to_canonical(args: dict[str, Any]) -> str:
         return f"Entity {entity_name} in {current_name} {status}."
 
 
-async def tool_save_unconfirmed_claim(args: dict[str, Any]) -> str:
-    """
-    Save unconfirmed atomic claims (S-P-O) for the active universe.
-    Prefer batching via `items`: [{subject, predicate, object_val, reference, wiki_source, confidence}, ...].
-    """
-    universe_name = get_current_universe()
-    if not universe_name:
-        return "Error: No active universe context."
-
-    items = args.get("items")
-    if not items:
-        single = {
-            "subject": args.get("subject", ""),
-            "predicate": args.get("predicate", ""),
-            "object_val": args.get("object_val", ""),
-            "reference": args.get("reference"),
-            "wiki_source": args.get("wiki_source"),
-            "confidence": args.get("confidence"),
-        }
-        items = [single]
-
-    saved, errors = [], []
-    with Session(unconfirmed_engine) as session:
-        universe = session.exec(
-            select(UnconfirmedUniverse).where(UnconfirmedUniverse.name == universe_name)
-        ).first()
-        if not universe:
-            universe = UnconfirmedUniverse(name=universe_name)
-            session.add(universe)
-            session.flush()
-
-        for item in items:
-            subject = item.get("subject", "")
-            predicate = item.get("predicate", "")
-            object_val = item.get("object_val", "")
-            artifact_id = item.get("artifact_id")
-            if not all([subject, predicate, object_val]):
-                errors.append(f"Skipped claim with missing required fields: {item}")
-                continue
-
-            new_claim = UnconfirmedClaim(
-                universe_id=universe.id,
-                subject=subject,
-                predicate=predicate,
-                object_val=object_val,
-                reference=item.get("reference"),
-                wiki_source=item.get("wiki_source"),
-                confidence=str(item.get("confidence") or ""),
-            )
-            session.add(new_claim)
-            session.flush()
-
-            if artifact_id:
-                try:
-                    acquisition_cache.store_provenance(
-                        source_artifact_id=artifact_id,
-                        target_type="unconfirmed_claim",
-                        target_id=new_claim.id,
-                        relation="supports",
-                        run_id=_get_run_id(),
-                        session=session,
-                    )
-                except Exception:
-                    pass
-
-            saved.append(new_claim.id)
-
-        session.commit()
-
-    result = f"Saved {len(saved)} unconfirmed claim(s) for {universe_name}. IDs: {', '.join(map(str, saved))}"
-    if errors:
-        result += " Errors: " + "; ".join(errors)
-    return result
-
-
 async def tool_delete_unconfirmed_claim(args: dict[str, Any]) -> str:
     """Accepts either a single `claim_id`, or a batch via `claim_ids`: [id, ...]."""
     claim_ids = args.get("claim_ids")
@@ -1114,6 +950,7 @@ async def tool_delete_unconfirmed_claim(args: dict[str, Any]) -> str:
         if not single_id:
             return "Error: Missing claim_id or claim_ids."
         claim_ids = [single_id]
+
 
     universe_name = get_current_universe()
     if not universe_name:
@@ -1224,35 +1061,47 @@ AGENT_TOOLS: dict[str, dict[str, Any]] = {
                     "items": {
                         "type": "object",
                         "properties": {
-                             "type": {
-                                 "type": "string",
-                                 "description": (
-                                     "entity | claim | timeline_event | "
-                                     "specification"
-                                 ),
-                             },
-                             "name": {
-                                 "type": "string",
-                                 "description": "Identifier for the artifact.",
-                             },
-                             "confidence": {"type": "string"},
-                             "freshness": {"type": "string"},
-                             "source_reference": {"type": "string"},
-                             "source_wiki": {"type": "string"},
-                             "payload": {
-                                 "type": "object",
-                                 "description": "Type-specific metadata.",
-                             }
+                            "type": {
+                                "type": "string",
+                                "description": (
+                                    "entity | claim | timeline_event | "
+                                    "specification"
+                                ),
+                            },
+                            "name": {
+                                "type": "string",
+                                "description": "Identifier for the artifact.",
+                            },
+                            "confidence": {"type": "string"},
+                            "freshness": {"type": "string"},
+                            "source_reference": {"type": "string"},
+                            "source_wiki": {"type": "string"},
+                            "notebook_entry_id": {"type": "integer", "description": "ID of the notebook entry being promoted, if any."},
+                            "payload": {
+                                "type": "object",
+                                "description": "Type-specific metadata.",
+                            }
                         },
                         "required": ["type"]
                     }
                 }
             }
-        }
+        },
     },
-
+    "deleteArtifact": {
+        "func": tool_delete_artifact,
+        "description": "Delete an artifact from the permanent records by ID.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "artifact_id": {"type": "integer", "description": "The ID of the artifact to delete."},
+            },
+            "required": ["artifact_id"],
+        },
+    },
     "queryClaims": {
         "func": tool_query_claims,
+
         "description": "Query verified claims from the main database for the current universe. Optionally filter by a specific predicate.",
         "parameters": {
             "type": "object",
@@ -1270,58 +1119,14 @@ AGENT_TOOLS: dict[str, dict[str, Any]] = {
         "description": "Retrieve all unconfirmed atomic claims (S-P-O) for the active universe.",
         "parameters": {"type": "object", "properties": {}, "required": []},
     },
-    "saveUnconfirmedClaim": {
-        "func": tool_save_unconfirmed_claim,
-        "description": "Save unconfirmed atomic claims (S-P-O) for the active universe. This is the primary way to persist granular knowledge. Prefer batching via `items`.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "subject": {
-                    "type": "string",
-                    "description": "The entity the claim is about.",
-                },
-                "predicate": {
-                    "type": "string",
-                    "description": "The relationship or property (e.g. 'is_a', 'located_in', 'has_power').",
-                },
-                "object_val": {
-                    "type": "string",
-                    "description": "The value or target entity of the claim.",
-                },
-                "reference": {
-                    "type": "string",
-                    "description": "URL and section reference.",
-                },
-                "wiki_source": {
-                    "type": "string",
-                    "description": "Wiki page name or URL.",
-                },
-                "confidence": {
-                    "type": "string",
-                    "description": "Confidence level (high, medium, low).",
-                },
-                "items": {
-                    "type": "array",
-                    "description": "Batch mode (preferred): a list of claims to save in one call.",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "subject": {"type": "string"},
-                            "predicate": {"type": "string"},
-                            "object_val": {"type": "string"},
-                            "reference": {"type": "string"},
-                            "wiki_source": {"type": "string"},
-                            "confidence": {"type": "string"},
-                        },
-                        "required": ["subject", "predicate", "object_val"],
-                    },
-                },
-            },
-            "required": [],
-        },
+    "queryUnconfirmedArtifacts": {
+        "func": tool_query_unconfirmed_artifacts,
+        "description": "Retrieve all unconfirmed artifacts from the research workspace for the active universe.",
+        "parameters": {"type": "object", "properties": {}, "required": []},
     },
     "linkUniverses": {
         "func": tool_link_universes,
+
         "description": "Define a relationship between the active universe and another universe. Use this for timelines, alternate realities, or nested cosmologies.",
         "parameters": {
             "type": "object",
@@ -1415,6 +1220,17 @@ AGENT_TOOLS: dict[str, dict[str, Any]] = {
             "required": ["title", "summary"],
         },
     },
+    "deleteNotebookEntry": {
+        "func": tool_delete_notebook_entry,
+        "description": "Delete a research notebook entry by ID.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "entry_id": {"type": "integer", "description": "The ID of the notebook entry to delete."},
+            },
+            "required": ["entry_id"],
+        },
+    },
     "manageSource": {
         "func": tool_manage_source,
         "description": "Curate the research source library. Mark sources as useful, track their extraction status, and record why they are valuable.",
@@ -1462,7 +1278,8 @@ AGENT_TOOLS: dict[str, dict[str, Any]] = {
                 "timeline_id": {"type": "integer", "description": "ID of the timeline event."},
                 "type": {
                     "type": "string",
-                    "enum": ["participant", "location", "source", "claim"],
+                                    "enum": ["participant", "location", "source"],
+
                     "description": "The type of detail to add."
                 },
                 "value_id": {"type": "integer", "description": "The ID of the entity, source, or claim."},

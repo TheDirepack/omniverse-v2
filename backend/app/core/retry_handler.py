@@ -18,6 +18,7 @@ class RetryHandler:
     def update_state(self, result: str, critique: str, turn_history: Any):
         """
         Updates the internal state with the latest agent results and audit.
+        Detects resolved corrections by comparing current issues with history.
         """
         self.current_iteration += 1
         self.last_result = result
@@ -25,15 +26,23 @@ class RetryHandler:
 
         try:
             parsed_critique = json.loads(critique)
-            corrections = parsed_critique.get("Correction_Queue", [])
-            status = "OUTSTANDING"
-            # Note: The actual 'SUCCESS' check is done via audit_success validator,
-            # but we track the raw corrections here.
+            current_corrections = parsed_critique.get("Correction_Queue", [])
+            
+            # Mark previous corrections as resolved if they are no longer in the current queue
+            current_issues = {c.get("Issue") for c in current_corrections if isinstance(c, dict)}
+            for entry in self.feedback_history:
+                for corr in entry.get("corrections", []):
+                    if isinstance(corr, dict) and corr.get("status") != "RESOLVED":
+                        if corr.get("Issue") not in current_issues:
+                            corr["status"] = "RESOLVED"
+
             self.feedback_history.append(
                 {
                     "attempt": self.current_iteration,
-                    "corrections": corrections,
-                    "status": status,
+                    "corrections": [
+                        {**c, "status": "OUTSTANDING"} if isinstance(c, dict) else {"Issue": c, "status": "OUTSTANDING"}
+                        for c in current_corrections
+                    ],
                 }
             )
         except (json.JSONDecodeError, TypeError):
@@ -41,9 +50,8 @@ class RetryHandler:
                 {
                     "attempt": self.current_iteration,
                     "corrections": [
-                        {"Issue": critique, "Required_Fix": "General revision required"}
+                        {"Issue": critique, "Required_Fix": "General revision required", "status": "OUTSTANDING"}
                     ],
-                    "status": "OUTSTANDING",
                 }
             )
 
@@ -54,22 +62,31 @@ class RetryHandler:
         resolved = []
         outstanding = []
         for entry in self.feedback_history:
-            for corr in entry["corrections"]:
-                if entry["status"] == "RESOLVED":
-                    resolved.append(f"✓ {corr['Issue']}")
+            for corr in entry.get("corrections", []):
+                if isinstance(corr, dict):
+                    if corr.get("status") == "RESOLVED":
+                        resolved.append(f"✓ {corr.get('Issue', 'Unknown')}")
+                    elif corr.get("status") == "OUTSTANDING":
+                        fix = corr.get("Required_Fix")
+                        fix_str = (
+                            f"{fix['action']} {fix['target']} ({fix['reason']})"
+                            if isinstance(fix, dict)
+                            else str(fix)
+                        )
+                        outstanding.append(f"• {corr.get('Issue', 'Unknown')} -> Fix: {fix_str}")
                 else:
-                    fix = corr["Required_Fix"]
-                    fix_str = (
-                        f"{fix['action']} {fix['target']} ({fix['reason']})"
-                        if isinstance(fix, dict)
-                        else str(fix)
-                    )
-                    outstanding.append(f"• {corr['Issue']} -> Fix: {fix_str}")
+                    outstanding.append(f"• {corr} -> Fix: General revision")
 
         if not resolved and not outstanding:
             return "None"
 
-        return "\n".join(["RESOLVED:", *resolved, "\nOUTSTANDING:", *outstanding])
+        parts = []
+        if resolved:
+            parts.append("RESOLVED:\n" + "\n".join(resolved))
+        if outstanding:
+            parts.append("OUTSTANDING:\n" + "\n".join(outstanding))
+        
+        return "\n\n".join(parts)
 
     def get_research_queue(self) -> str:
         """

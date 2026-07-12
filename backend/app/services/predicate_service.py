@@ -1,33 +1,34 @@
 from sqlmodel import Session, select
-
-from app.db.schema import Predicate
 from app.db.session import engine
 
-
 class PredicateService:
-    def __init__(self, session: Session | None = None):
-        self._session = session
+    """
+    Handles normalization of raw predicates into canonical forms.
+    Example: 'uses' -> 'POWERED_BY', 'is a' -> 'INSTANCE_OF'.
+    """
+    
+    # Common aliases for predicate normalization
+    ALIASES = {
+        "uses": "POWERED_BY",
+        "utilizes": "POWERED_BY",
+        "is a": "INSTANCE_OF",
+        "belongs to": "PART_OF",
+        "located in": "SITUATED_AT",
+        "created by": "ORIGINATED_FROM",
+    }
 
-    @property
-    def session(self) -> Session:
-        if self._session is None:
-            # In a real app, we'd use a session provider, but for a service
-            # called from tools, we can open a temporary session if none provided.
-            self._session = Session(engine)
-        return self._session
+    def __init__(self, session: Session | None = None):
+        self.session = session or Session(engine)
 
     def normalize(self, predicate: str) -> str:
         if not predicate:
-            return "related_to"
-
-        norm = predicate.strip().upper().replace(" ", "_")
-
-        # Try to find a canonical match in the database
-        existing = self.session.exec(
-            select(Predicate).where(Predicate.canonical_name == norm)
-        ).first()
-
-        if existing:
-            return existing.canonical_name
-
-        return norm
+            return "RELATED_TO"
+        
+        lower_pred = predicate.lower().strip()
+        
+        # 1. Check hardcoded aliases
+        if lower_pred in self.ALIASES:
+            return self.ALIASES[lower_pred]
+        
+        # 2. Fallback: return uppercased raw predicate
+        return lower_pred.upper().replace(" ", "_")

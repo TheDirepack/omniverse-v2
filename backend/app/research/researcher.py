@@ -11,7 +11,7 @@ from app.core.validation import audit_success
 from app.core.validators import validate_research_json
 from app.core.runtime_state import is_aborted
 from app.core.agent_config import get_tools_for_agent
-from app.core.tools import tool_query_unconfirmed_claims
+from app.core.tools import tool_query_unconfirmed_claims, tool_query_unconfirmed_artifacts
 from app.services.execution_service import ExecutionService
 from app.services.research_workspace import WorkspaceService
 from app.services.knowledge_retriever import KnowledgeRetrieverService

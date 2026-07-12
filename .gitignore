@@ -8,16 +8,23 @@
 *.log
 temp/
 tmp/
+.tmp/
+.opencode/
+.agents/
 
 # Python specific
 *.pyc
+*.py[cod]
 *.egg-info/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.coverage
 dist/
 build/
 __pycache__/
+venv/
+.venv/
 *.db
 *.db-journal
 
@@ -30,8 +37,10 @@ yarn-error.log*
 htmlcov/
 
 # Credentials
+.env
+.env.*
 provider_config.py
 backend/tests/provider_config.py
 
-# Test logs
-backend/tests/logs/
+# Project Specific
+skills-lock.json

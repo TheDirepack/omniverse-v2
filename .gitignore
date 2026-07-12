@@ -44,3 +44,4 @@ backend/tests/provider_config.py
 
 # Project Specific
 skills-lock.json
+Opencode.yaml

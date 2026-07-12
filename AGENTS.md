@@ -24,9 +24,9 @@ Venvs: `backend/.venv/` or `backend/venv/` (both exist).
 ```
 
 Tests use ephemeral SQLite at `/dev/shm/omniverse_tests/`. Autouse fixture drops/recreates tables per test. `conftest.py` sets `DATABASE_URL` before importing app.
-- Backend tests: root `tests/` (Python).
-- Prompt Robustness: Behavioral tests using real LLMs to verify prompt compliance and recovery from failure modes (found in `backend/tests/live/test_prompt_failure_modes.py`).
-- Frontend (HTMX) views are tested via backend.
+- Backend tests: backend/tests/backend/ (Python).
+- UI tests: backend/tests/ui/ (HTMX views).
+- Prompt Robustness: Behavioral tests using real LLMs to verify prompt compliance and recovery from failure modes (found in backend/tests/live/test_prompt_failure_modes.py).
 
 ## Linting
 

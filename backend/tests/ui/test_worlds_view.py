@@ -135,7 +135,7 @@ class TestKnowledgeWorldRow:
             era="1995 Film Timeline"
         )
         # Case 2: Normal name
-        u2 = Universe(name="Pokemon Red", franchise="Pokemon")
+        u2 = Universe(name="Pokemon Red")
         session.add_all([u1, u2])
         session.commit()
         session.close()

@@ -16,18 +16,18 @@
 
     <div class="text-gray-400">↓</div>
 
-    <!-- 2. Unconfirmed Claim -->
-    <div class="w-full max-w-md p-4 border rounded-lg {% if unconfirmed %}bg-yellow-50 dark:bg-yellow-900/30 border-yellow-200 dark:border-yellow-800{% else %}bg-gray-100 dark:bg-gray-800 opacity-50{% endif %} flex items-center gap-4">
+    <!-- 2. Notebook Claim -->
+    <div class="w-full max-w-md p-4 border rounded-lg {% if notebook %}bg-yellow-50 dark:bg-yellow-900/30 border-yellow-200 dark:border-yellow-800{% else %}bg-gray-100 dark:bg-gray-800 opacity-50{% endif %} flex items-center gap-4">
         <div class="text-xl">📝</div>
         <div class="flex-1">
-            <div class="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase">Unconfirmed Claim</div>
-            {% if unconfirmed %}
+            <div class="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase">Notebook Claim</div>
+            {% if notebook %}
                 <div class="text-sm">
-                    <strong>{{ unconfirmed.subject }}</strong> {{ unconfirmed.predicate }} <strong>{{ unconfirmed.object_val }}</strong>
-                    <div class="text-xs text-gray-500 mt-1">Confidence: {{ unconfirmed.confidence }}</div>
+                    <strong>{{ notebook.subject }}</strong> {{ notebook.predicate }} <strong>{{ notebook.object_val }}</strong>
+                    <div class="text-xs text-gray-500 mt-1">Confidence: {{ notebook.confidence }}</div>
                 </div>
             {% else %}
-                <span class="text-gray-400 italic">No corresponding unconfirmed claim found</span>
+                <span class="text-gray-400 italic">No corresponding notebook claim found</span>
             {% endif %}
         </div>
     </div>

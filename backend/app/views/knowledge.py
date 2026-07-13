@@ -25,7 +25,7 @@ async def list_worlds(
     offset: int = 0,
 ):
     worlds = uni_service.get_all_universes(limit=limit, offset=offset)
-    filtered = uni_service.filter_universes(worlds, q=q)
+    filtered = uni_service.filter_universes(q=q)
     template = templates.env.get_template("fragments/world_row.html")
     return HTMLResponse(content=template.render(request=request, worlds=filtered))
 

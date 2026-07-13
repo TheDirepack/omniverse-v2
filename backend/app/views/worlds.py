@@ -16,7 +16,7 @@ router = APIRouter(tags=["worlds_views"])
 
 def _render_worlds(
     request: Request,
-    worlds: Sequence[Any],
+    worlds: Sequence[Any] | None = None,
     q: str = "",
     explored: str = "",
     franchise: str = "",
@@ -24,7 +24,7 @@ def _render_worlds(
 ) -> HTMLResponse:
     uni_service = UniverseService()
     filtered = uni_service.filter_universes(
-        worlds, q=q, explored=explored, franchise=franchise
+        q=q, explored=explored, franchise=franchise
     )
     template = templates.env.get_template("fragments/database_worlds.html")
     return HTMLResponse(content=template.render(

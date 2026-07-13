@@ -13,7 +13,7 @@ Omniverse V2 uses **multiple isolated SQLite databases** to prevent contaminatio
 | **Main DB** | `omniverse_v2.db` | Canonical Knowledge Graph | `backend/data/` |
 | **Settings DB** | `settings.db` | System & Agent Configuration | `backend/data/` |
 | **Operational DB** | `operational.db` | Execution logs & state | `backend/data/` |
-| **Staging DB** | `unconfirmed.db` | Research workspace | `backend/data/` |
+| **Staging DB** | `notebook.db` | Research workspace | `backend/data/` |
 | **Extrapolation DB** | `extrapolation.db` | Speculative theories | `backend/data/` |
 
 ---
@@ -224,11 +224,11 @@ The **Main DB** stores the polymorphic Knowledge Graph - the core of the system.
 
 ---
 
-## Staging DB Schema (Unconfirmed)
+## Staging DB Schema (Notebook)
 
 | Table | Purpose | Key Columns |
 | :--- | :--- | :--- |
-| **UnconfirmedUniverse** | Research universes | `uuid` (PK), `name`, `franchise`, `is_explored` |
+| **NotebookUniverse** | Research universes | `uuid` (PK), `name`, `franchise`, `is_explored` |
 | **NotebookEntry** | Research notes | `id` (PK), `universe_uuid` (FK), `title`, `summary`, `kind`, `details`, `status`, `priority` |
 | **Source** | Research sources | `id` (PK), `universe_uuid` (FK), `url`, `title`, `reason_saved`, `coverage`, `reliability`, `extraction_status` |
 | **TimelineEvent** | Event chronology | `id` (PK), `universe_uuid` (FK), `title`, `date`, `era`, `summary`, `description`, `importance`, `confidence` |

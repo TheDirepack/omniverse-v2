@@ -4,7 +4,7 @@ from enum import Enum
 
 from sqlmodel import Session
 
-from app.db.unconfirmed_schema import AcquisitionArtifact
+from app.db.notebook_schema import AcquisitionArtifact
 from app.repositories.acquisition_cache import AcquisitionCacheRepository
 
 

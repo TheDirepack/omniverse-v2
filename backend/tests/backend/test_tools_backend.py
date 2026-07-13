@@ -1,11 +1,11 @@
 import pytest
 
-from app.db.unconfirmed_session import init_unconfirmed_db
+from app.db.notebook_session import init_notebook_db
 
 
 @pytest.fixture(autouse=True)
-def setup_unconfirmed_db():
-    init_unconfirmed_db()
+def setup_notebook_db():
+    init_notebook_db()
     return
 
 def test_build_freshness_comparison_report_prefers_fresh_over_none():

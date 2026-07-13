@@ -1,14 +1,14 @@
 import pytest
 from sqlmodel import Session
 
-from app.db.unconfirmed_schema import NotebookEntry, UnconfirmedUniverse
-from app.db.unconfirmed_session import unconfirmed_engine
+from app.db.notebook_schema import NotebookEntry, NotebookUniverse
+from app.db.notebook_session import notebook_engine
 
 
 @pytest.fixture
-def unconfirmed_data():
-    with Session(unconfirmed_engine) as session:
-        u = UnconfirmedUniverse(name="Test Universe")
+def notebook_data():
+    with Session(notebook_engine) as session:
+        u = NotebookUniverse(name="Test Universe")
         session.add(u)
         session.commit()
         session.refresh(u)
@@ -33,8 +33,8 @@ def test_validation_page(client):
     response = client.get("/validation/")
     assert response.status_code == 200
 
-def test_approve_claim(client, unconfirmed_data):
-    response = client.post(f"/validation/entry/{unconfirmed_data.id}/approve")
+def test_approve_claim(client, notebook_data):
+    response = client.post(f"/validation/entry/{notebook_data.id}/approve")
     assert response.status_code == 200
     assert "HX-Trigger" in response.headers
     assert (
@@ -42,13 +42,13 @@ def test_approve_claim(client, unconfirmed_data):
         in response.headers["HX-Trigger"]
     )
 
-    # Verify it's gone from unconfirmed
-    with Session(unconfirmed_engine) as session:
-        entry = session.get(NotebookEntry, unconfirmed_data.id)
+    # Verify it's gone from notebook
+    with Session(notebook_engine) as session:
+        entry = session.get(NotebookEntry, notebook_data.id)
         assert entry is None
 
-def test_reject_claim(client, unconfirmed_data):
-    response = client.post(f"/validation/entry/{unconfirmed_data.id}/reject")
+def test_reject_claim(client, notebook_data):
+    response = client.post(f"/validation/entry/{notebook_data.id}/reject")
     assert response.status_code == 200
     assert "HX-Trigger" in response.headers
     assert (
@@ -56,9 +56,9 @@ def test_reject_claim(client, unconfirmed_data):
         in response.headers["HX-Trigger"]
     )
 
-    # Verify it's gone from unconfirmed
-    with Session(unconfirmed_engine) as session:
-        entry = session.get(NotebookEntry, unconfirmed_data.id)
+    # Verify it's gone from notebook
+    with Session(notebook_engine) as session:
+        entry = session.get(NotebookEntry, notebook_data.id)
         assert entry is None
 
 def test_merge_entity(client):

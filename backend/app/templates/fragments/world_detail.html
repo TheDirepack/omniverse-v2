@@ -2,11 +2,6 @@
     <div class="flex justify-between items-center">
         <div>
             <h2 class="text-2xl font-bold text-gray-800 dark:text-gray-100">{{ world.display_name }}</h2>
-            {% if world.franchise or world.category %}
-            <p class="text-sm text-gray-500 dark:text-gray-400">
-                {{ world.franchise or '' }}{% if world.franchise and world.category %} — {% endif %}{{ world.category or '' }}
-            </p>
-            {% endif %}
         </div>
         <span class="px-3 py-1 rounded-full text-sm font-semibold {{ 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300' if world.is_explored else 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400' }}">
             {{ 'Explored' if world.is_explored else 'Unexplored' }}

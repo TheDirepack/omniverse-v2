@@ -42,11 +42,11 @@ async def test_workspace_claim_isolation(_clean_db):
     run_id_1 = "run-1"
     run_id_2 = "run-2"
 
-    # Create a universe in the unconfirmed DB
-    from app.db.unconfirmed_schema import UnconfirmedUniverse
-    from app.db.unconfirmed_session import get_unconfirmed_session
-    with get_unconfirmed_session() as session:
-        u = UnconfirmedUniverse(name="TestUni")
+    # Create a universe in the notebook DB
+    from app.db.notebook_schema import NotebookUniverse
+    from app.db.notebook_session import get_notebook_session
+    with get_notebook_session() as session:
+        u = NotebookUniverse(name="TestUni")
         session.add(u)
         session.commit()
         session.refresh(u)
@@ -92,9 +92,9 @@ async def test_workspace_timeline_events(_clean_db):
     service.add_timeline_location(event.id, 201)
 
     # Verify they exist in DB
-    from app.db.unconfirmed_session import get_unconfirmed_session
-    with get_unconfirmed_session() as session:
-        from app.db.unconfirmed_schema import TimelineLocation, TimelineParticipant
+    from app.db.notebook_session import get_notebook_session
+    with get_notebook_session() as session:
+        from app.db.notebook_schema import TimelineLocation, TimelineParticipant
         p = session.exec(
             select(TimelineParticipant).where(
                 TimelineParticipant.timeline_id == event.id

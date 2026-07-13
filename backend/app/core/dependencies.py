@@ -5,7 +5,7 @@ from sqlmodel import Session
 
 from app.db.session import engine
 from app.db.settings_session import settings_engine
-from app.db.unconfirmed_session import unconfirmed_engine
+from app.db.notebook_session import notebook_engine
 from app.services.settings_service import SettingsService
 from app.services.universe_service import UniverseService
 
@@ -14,8 +14,8 @@ def get_settings_session() -> Session:
     with Session(settings_engine) as session:
         yield session
 
-def get_unconfirmed_session() -> Session:
-    with Session(unconfirmed_engine) as session:
+def get_notebook_session() -> Session:
+    with Session(notebook_engine) as session:
         yield session
 
 def get_settings_service(

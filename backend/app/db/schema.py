@@ -2,7 +2,8 @@ from datetime import datetime
 from uuid import uuid4
 
 from sqlalchemy import UniqueConstraint
-from sqlmodel import Column, Field, ForeignKey, SQLModel
+from sqlalchemy.orm import relationship
+from sqlmodel import Column, Field, ForeignKey, Relationship, SQLModel
 
 
 class Setting(SQLModel, table=True):
@@ -48,10 +49,6 @@ class Universe(SQLModel, table=True):
     )
     slug: str | None = Field(default=None, index=True, unique=True)
     name: str = Field(index=True)
-    franchise: str | None = None
-    category: str | None = None
-    continuity: str | None = None
-    era: str | None = None
     parent_id: int | None = Field(default=None, foreign_key="universe.id")
     summary: str | None = None
     raw_data: str | None = None
@@ -59,11 +56,6 @@ class Universe(SQLModel, table=True):
 
     @property
     def display_name(self) -> str:
-        if (
-            (self.era and self.name == self.era)
-            or (self.continuity and self.name == self.continuity)
-        ):
-            return self.franchise or self.name
         return self.name
 
 
@@ -139,6 +131,7 @@ class Artifact(SQLModel, table=True):
     )
     type: str = Field(index=True)
     name: str | None = Field(default=None, index=True)
+    description: str | None = Field(default=None, index=True)
     confidence: str | None = None
     freshness: str | None = None
     verification_status: str = Field(default="PENDING")
@@ -167,6 +160,33 @@ class ArtifactRelation(SQLModel, table=True):
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
+# Define relationships after both classes are defined to avoid circularity and ambiguity
+Artifact.relations_from = relationship(
+    "ArtifactRelation",
+    back_populates="from_artifact",
+    primaryjoin="Artifact.id == ArtifactRelation.from_artifact_id",
+    foreign_keys="ArtifactRelation.from_artifact_id"
+)
+Artifact.relations_to = relationship(
+    "ArtifactRelation",
+    back_populates="to_artifact",
+    primaryjoin="Artifact.id == ArtifactRelation.to_artifact_id",
+    foreign_keys="ArtifactRelation.to_artifact_id"
+)
+
+ArtifactRelation.from_artifact = relationship(
+    "Artifact",
+    back_populates="relations_from",
+    primaryjoin="ArtifactRelation.from_artifact_id == Artifact.id",
+    foreign_keys="ArtifactRelation.from_artifact_id"
+)
+ArtifactRelation.to_artifact = relationship(
+    "Artifact",
+    back_populates="relations_to",
+    primaryjoin="ArtifactRelation.to_artifact_id == Artifact.id",
+    foreign_keys="ArtifactRelation.to_artifact_id"
+)
+
 
 class Evidence(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
@@ -188,7 +208,6 @@ class EvidenceChunk(SQLModel, table=True):
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
-
 class ArtifactVersion(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     artifact_id: int = Field(
@@ -200,10 +219,6 @@ class ArtifactVersion(SQLModel, table=True):
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
-
-
-
-
 class CandidateHealth(SQLModel, table=True):
     candidate_hash: str = Field(primary_key=True)
     provider_id: int = Field(index=True)
@@ -212,5 +227,3 @@ class CandidateHealth(SQLModel, table=True):
     failure_count: int = Field(default=0)
     last_failure_at: datetime | None = Field(default=None)
     disabled_until: datetime | None = Field(default=None)
-
-

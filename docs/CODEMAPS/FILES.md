@@ -29,7 +29,7 @@ omniverse-v2/
 │   │   │   └── web_search.py         # Search utilities
 │   │   ├── db/                       # Database schemas
 │   │   │   ├── schema.py             # Main DB models
-│   │   │   ├── unconfirmed_schema.py # Staging DB models
+│   │   │   ├── notebook_schema.py # Staging DB models
 │   │   │   └── session.py            # DB session management
 │   │   ├── repositories/             # Data access layer
 │   │   │   ├── universe.py           # Universe operations
@@ -132,7 +132,7 @@ omniverse-v2/
 | File | Purpose |
 | :--- | :--- |
 | `backend/app/db/schema.py` | Main DB tables |
-| `backend/app/db/unconfirmed_schema.py` | Staging DB tables |
+| `backend/app/db/notebook_schema.py` | Staging DB tables |
 | `backend/app/db/session.py` | Session management |
 
 ### Views
@@ -172,7 +172,7 @@ omniverse-v2/
 | `backend/data/omniverse_v2.db` | Main knowledge graph |
 | `backend/data/settings.db` | System configuration |
 | `backend/data/operational.db` | Execution logs |
-| `backend/data/unconfirmed.db` | Research staging |
+| `backend/data/notebook.db` | Research staging |
 | `backend/data/extrapolation.db` | Speculative theories |
 
 ## Default Data

@@ -10,7 +10,7 @@ from app.api.routers.research import router as research_router
 from app.api.routers.routes import router as routes_router
 from app.api.routers.runs import router as runs_router
 from app.api.routers.settings import router as settings_router
-from app.api.routers.unconfirmed import router as unconfirmed_router
+from app.api.routers.notebook import router as notebook_router
 from app.api.routers.worlds import router as worlds_router
 from app.core.browser import browser_manager
 from app.db.session import init_db
@@ -101,7 +101,7 @@ app.include_router(theory_views_router, prefix="/theory")
 app.include_router(flow_views_router, prefix="/flow")
 app.include_router(logs_views_router, prefix="/logs")
 app.include_router(research_router, prefix="/api")
-app.include_router(unconfirmed_router, prefix="/api")
+app.include_router(notebook_router, prefix="/api")
 app.include_router(settings_router, prefix="/api")
 app.include_router(routes_router, prefix="/api")
 app.include_router(providers_router, prefix="/api")

@@ -42,7 +42,7 @@ class TestCache:
 
     async def test_cache_hit_preferred_diff_engine_re_runs(self, svc):
         from app.core.acquisition_cache import acquisition_cache
-        from app.db.unconfirmed_schema import AcquisitionArtifact
+        from app.db.notebook_schema import AcquisitionArtifact
 
         artifact = AcquisitionArtifact(
             content_hash="abc",

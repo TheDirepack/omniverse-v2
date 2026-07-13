@@ -3,13 +3,14 @@ from pathlib import Path
 import pytest
 from sqlmodel import Session, SQLModel, create_engine, select
 
-from app.db.schema import AgentRouteFallback, ProviderConfig, ProviderKey, Universe
+from app.db.schema import AgentRouteFallback, ProviderConfig, ProviderKey, Universe, Artifact, ArtifactRelation
 
 try:
     from tests.provider_config import PROVIDER_CREDENTIALS
 except ImportError:
     pytest.importorskip("tests.provider_config")
 
+from scripts.migrate_universe_metadata_to_artifacts import migrate
 
 def create_test_db(db_dir: str | Path, db_filename: str = "omniverse_v2.db"):
     db_dir = Path(db_dir)
@@ -60,11 +61,11 @@ def create_test_db(db_dir: str | Path, db_filename: str = "omniverse_v2.db"):
             ).fetchall()
         ]
         if "provider_type" in provider_columns and "base_url" in provider_columns:
-                conn.exec_driver_sql(
-                    "UPDATE providerconfig SET provider_type = 'custom' "
-                    "WHERE provider_type = 'openai' AND base_url IS NOT NULL "
-                    "AND base_url != ''"
-                )
+            conn.exec_driver_sql(
+                "UPDATE providerconfig SET provider_type = 'custom' "
+                "WHERE provider_type = 'openai' AND base_url IS NOT NULL "
+                "AND base_url != ''"
+            )
 
     # Seed providers
     with Session(engine) as session:
@@ -109,3 +110,61 @@ def create_test_db(db_dir: str | Path, db_filename: str = "omniverse_v2.db"):
         session.commit()
 
     engine.dispose()
+
+def test_universe_metadata_columns_removed():
+    # Assert that Universe model no longer has franchise, category, continuity, era
+    assert not hasattr(Universe, "franchise")
+    assert not hasattr(Universe, "category")
+    assert not hasattr(Universe, "continuity")
+    assert not hasattr(Universe, "era")
+
+def test_migration_moves_metadata_to_artifacts(tmp_path):
+    db_dir = tmp_path / "test_db"
+    db_dir.mkdir()
+    db_filename = "test_migration.db"
+    create_test_db(db_dir, db_filename)
+    
+    db_path = db_dir / db_filename
+    db_url = f"sqlite:///{db_path}"
+    test_engine = create_engine(db_url, connect_args={"check_same_thread": False})
+
+    # Seed a universe with metadata
+    with Session(test_engine) as session:
+        universe = Universe(
+            name="Migration Test Universe",
+            franchise="Test Franchise",
+            category="Test Category",
+            continuity="Test Continuity",
+            era="Test Era"
+        )
+        session.add(universe)
+        session.commit()
+        universe_id = universe.id
+
+    # Run migration
+    migrate(engine_override=test_engine)
+
+    # Verify migration
+    with Session(test_engine) as session:
+        # Check for Artifacts
+        artifacts = session.exec(
+            select(Artifact).where(Artifact.universe_id == universe_id)
+        ).all()
+        
+        artifact_types = {a.type: a.name for a in artifacts}
+        assert artifact_types["franchise"] == "Test Franchise"
+        assert artifact_types["category"] == "Test Category"
+        assert artifact_types["continuity"] == "Test Continuity"
+        assert artifact_types["era"] == "Test Era"
+        assert artifact_types["world"] == "Migration Test Universe"
+
+        # Check for Relations
+        relations = session.exec(
+            select(ArtifactRelation).where(ArtifactRelation.universe_id == universe_id)
+        ).all()
+        
+        # We expect 4 relations: world -> franchise, world -> category, world -> continuity, world -> era
+        assert len(relations) == 4
+        
+        relation_types = [r.relation_type for r in relations]
+        assert all(rt == "PART_OF" for rt in relation_types)

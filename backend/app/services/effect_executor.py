@@ -168,13 +168,13 @@ class EffectExecutor:
                             await run_agent(
                                 agent_name="DB Architect",
                                 system_prompt=cleanup_prompt["system"],
-                                user_prompt=f"Clean up unconfirmed staging for {world_name}",
+                                user_prompt=f"Clean up notebook staging for {world_name}",
                                 step=f"Cleanup {world_name}",
                                 run_id=run_id,
                                 tools_names=[
                                     "queryClaims",
-                                    "queryUnconfirmedClaims",
-                                    "deleteUnconfirmedClaim",
+                                    "queryNotebookClaims",
+                                    "deleteNotebookClaim",
                                 ],
                                 submit_tool_name="submit_cleanup",
                                 history=truncated_history,

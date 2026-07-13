@@ -7,7 +7,7 @@ from sqlmodel import SQLModel, create_engine
 # Import schema to register models with SQLModel.metadata
 import app.db.schema  # noqa: F401
 from app.db.extrapolation_session import init_extrapolation_db
-from app.db.unconfirmed_session import init_unconfirmed_db
+from app.db.notebook_session import init_notebook_db
 
 _DATA_DIR = Path(__file__).resolve().parents[2] / "data"
 _DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -42,11 +42,11 @@ def init_db(engine_override=None):
     except Exception as e:
         print(f"Error initializing operational database: {e}")
 
-    # Initialize the separate unconfirmed staging database
+    # Initialize the separate notebook staging database
     try:
-        init_unconfirmed_db()
+        init_notebook_db()
     except Exception as e:
-        print(f"Error initializing unconfirmed database: {e}")
+        print(f"Error initializing notebook database: {e}")
 
     # Initialize the extrapolation database
     try:

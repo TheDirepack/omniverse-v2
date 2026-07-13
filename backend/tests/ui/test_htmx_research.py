@@ -91,8 +91,8 @@ def test_database_worlds_filter_explored(client, clean_db):
 def test_database_worlds_filter_franchise(client, clean_db):
     session = clean_db
 
-    session.add(Universe(name="MarvelHero", franchise="Marvel"))
-    session.add(Universe(name="DCHero", franchise="DC"))
+    session.add(Universe(name="MarvelHero"))
+    session.add(Universe(name="DCHero"))
     session.commit()
 
     response = client.get("/worlds/database-worlds", params={"franchise": "Marvel"})
@@ -129,13 +129,13 @@ def test_database_worlds_delete(client, clean_db):
 
 
 def test_database_worlds_add_world(client, clean_db):
-    response = client.post("/worlds/create", data={"world_name": "NewTestWorld"})
+    response = client.post("/worlds/create", json={"world_name": "NewTestWorld"})
     assert response.status_code == 200
     assert "NewTestWorld" in response.text
 
 
 def test_database_worlds_add_world_with_metadata(client, clean_db):
-    response = client.post("/worlds/create", data={
+    response = client.post("/worlds/create", json={
         "world_name": "FullMetaWorld",
         "franchise": "TestFranchise",
         "category": "TestCategory",

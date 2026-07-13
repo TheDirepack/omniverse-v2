@@ -1,0 +1,998 @@
+============================= test session starts ==============================
+platform linux -- Python 3.14.6, pytest-9.1.1, pluggy-1.6.0 -- /home/max/Projects/omniverse-v2/backend/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /home/max/Projects/omniverse-v2/backend
+configfile: pyproject.toml
+plugins: Faker-40.28.1, anyio-4.14.1, asyncio-1.4.0, langsmith-0.10.2, xdist-3.8.0, cov-7.1.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... collected 12 items
+
+backend/tests/backend/test_researcher_unit.py::test_research_universe_not_found PASSED [  8%]
+backend/tests/backend/test_researcher_unit.py::test_gather_universe_context_basic PASSED [ 16%]
+backend/tests/backend/test_researcher_unit.py::test_gather_universe_context_with_relations PASSED [ 25%]
+backend/tests/backend/test_researcher_unit.py::test_handle_audit_failure_valid_json PASSED [ 33%]
+backend/tests/backend/test_researcher_unit.py::test_handle_audit_failure_invalid_json PASSED [ 41%]
+backend/tests/backend/test_researcher_unit.py::test_handle_audit_failure_empty_queue PASSED [ 50%]
+backend/tests/backend/test_researcher_unit.py::test_research_happy_path FAILED [ 58%]
+backend/tests/backend/test_researcher_unit.py::test_research_json_decode_failure FAILED [ 66%]
+backend/tests/backend/test_researcher_unit.py::test_research_audit_failure FAILED [ 75%]
+backend/tests/backend/test_researcher_unit.py::test_research_max_iterations FAILED [ 83%]
+backend/tests/backend/test_researcher_unit.py::test_research_aborted FAILED [ 91%]
+backend/tests/backend/test_researcher_unit.py::test_research_exception_logging FAILED [100%]
+[logs] 12 files written to /home/max/Projects/omniverse-v2/backend/tests/logs/run_20260712_002440/
+
+
+=================================== FAILURES ===================================
+___________________________ test_research_happy_path ___________________________
+
+researcher = <app.research.researcher.WorldResearcher object at 0x7f46d8c70c00>
+
+    @pytest.mark.asyncio
+    async def test_research_happy_path(researcher):
+        # Mock universe
+        universe = Universe(id=1, name="TestUniverse", uuid="test-uuid")
+        researcher.uni_service = MagicMock()
+        researcher.uni_service.get_universe_by_uuid.return_value = universe
+    
+        researcher.tier_service = MagicMock()
+        researcher.settings_service = MagicMock()
+        researcher.settings_service.get_setting.return_value = MagicMock(value="1")
+    
+        researcher.retriever = MagicMock()
+        researcher.retriever.get_semantic_claims.return_value = []
+        researcher.retriever.get_universe_knowledge_graph.return_value = {}
+    
+        researcher.uni_service.get_children.return_value = []
+    
+        researcher.workspace_service = MagicMock()
+        researcher.exec_service = MagicMock()
+    
+        # Mock run_agent
+        with patch("app.research.researcher.run_agent", new_callable=AsyncMock) as mock_run:
+            # Researcher turn returns a valid JSON result
+            mock_run.side_effect = [
+                (True, '{"Verified_Data": "some data"}', [], "system_prompt"), # Researcher
+                (True, '{"Verification_Status": "SUCCESS"}', [], "audit_prompt"), # Auditor
+            ]
+    
+            # Mock audit_success to return True
+            with patch("app.research.researcher.audit_success", return_value=True):
+>               result = await researcher.research()
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+backend/tests/backend/test_researcher_unit.py:132: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+backend/app/research/researcher.py:105: in research
+    _, result, turn_history, researcher_system_prompt = await self._execute_research_iteration(
+backend/app/research/researcher.py:237: in _execute_research_iteration
+    researcher_prompt = get_researcher_prompt(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+entity = 'TestUniverse'
+requirements = 'Collect comprehensive canonical wiki data.', focus = None
+previous_dataset = None, outstanding_corrections = 'None'
+notebook_data = 'No notebook artifacts found in the research workspace.'
+verified_claims = None, knowledge_graph = None, multiverse_leads = None
+multiverse_kg = None
+workspace_index = <MagicMock name='mock.get_full_workspace_index()' id='139942260769184'>
+notebook_index = None, source_index = None, timeline_index = None
+
+    def get_researcher_prompt(
+        entity: str,
+        requirements: str,
+        focus: str | None = None,
+        previous_dataset: str | None = None,
+        outstanding_corrections: str | None = None,
+        notebook_data: str | None = None,
+        verified_claims: str | None = None,
+        knowledge_graph: str | None = None,
+        multiverse_leads: str | None = None,
+        multiverse_kg: str | None = None,
+        workspace_index: str | None = None,
+        notebook_index: str | None = None,
+        source_index: str | None = None,
+        timeline_index: str | None = None,
+    ):
+        focus_block = ""
+        if focus:
+            focus_block = f"""FOCUSED FEATURE TARGET
+    Investigate this feature specifically: {focus}
+    Goal: prove existence, disprove existence, or mark inconclusive. Extract details, mechanism, limits, contradictions, and citations.
+    Add an item named "Focused Verdict" with Detail containing one of: VERIFIED, DISPROVED, INCONCLUSIVE."""
+    
+        verified_block = ""
+        if verified_claims and verified_claims.strip():
+            verified_block = f"""VERIFIED KNOWLEDGE BASE:
+    The following facts are already confirmed in the main database. Use them as anchors for expanding the investigation; do not spend time rediscovering them unless new evidence directly contradicts them.
+    {verified_claims}"""
+    
+        graph_block = ""
+        if knowledge_graph and knowledge_graph.strip():
+            graph_block = f"""EXISTING KNOWLEDGE GRAPH:
+    Current semantic mapping of the universe:
+    {knowledge_graph}"""
+    
+        multiverse_block = ""
+        if multiverse_leads or multiverse_kg:
+            leads = multiverse_leads or "None"
+            kg = multiverse_kg or "None"
+            multiverse_block = f"""MULTIVERSE LEADS (Parent/Children Universes):
+    The following data exists for related universes in the multiverse:
+    LEADS:
+    {leads}
+    
+    KNOWLEDGE GRAPH:
+    {kg}
+    
+    IMPORTANT: This data is NOT necessarily true for the current universe/timeline. Use it to identify what to check and where gaps might be, but you MUST independently verify every lead and explicitly document any deviations."""
+    
+        workspace_block = ""
+        if workspace_index or notebook_index or source_index or timeline_index:
+            if workspace_index:
+                workspace_block = f"""RESEARCH WORKSPACE (Working Memory)
+    {workspace_index}
+    
+    The workspace is your living workspace. You are expected to discover entirely new entities, relationships, and research directions that are absent from the notebook. Use it as prior work, not as a task list."""
+            else:
+                n_idx = notebook_index or "No active notes."
+                s_idx = source_index or "No curated sources."
+                t_idx = timeline_index or "No timeline events recorded."
+                workspace_block = f"""RESEARCH WORKSPACE (Working Memory)
+    The following indices represent your persistent research state. Use `load_notebook_entry`, `manage_source`, and `record_timeline_event` to interact with them.
+    
+    NOTEBOOK INDEX (Active Leads & Hypotheses):
+    {n_idx}
+    
+    SOURCE LIBRARY INDEX (Evidence Base):
+    {s_idx}
+    
+    TIMELINE INDEX (Chronology):
+    {t_idx}
+    
+    The workspace is your living workspace. You are expected to discover entirely new entities, relationships, and research directions that are absent from the notebook. Use it as prior work, not as a task list."""
+    
+    
+        mode_block = "INITIAL RESEARCH"
+        if previous_dataset:
+            mode_block = f"""PATCH & REFINE MODE
+    You are updating an existing dataset.
+    PREVIOUS DATASET:
+    {previous_dataset}
+    
+    OUTSTANDING CORRECTIONS:
+    {outstanding_corrections or "None"}
+    
+    INSTRUCTIONS:
+    1. ABSOLUTE PRIORITY: Outstanding Corrections take precedence over all other leads. Resolve them first before proceeding to new research.
+    2. TARGETED FIXES: Identify exactly which entries are affected by the Outstanding Corrections and fix them.
+    3. STABILITY: Keep all unaffected verified data exactly as it is.
+    4. PATCHING: Update the JSON by patching only the necessary fields."""
+    
+            system_parts = [
+            f"### ROLE\nProfessional Lore Archivist & Technical Documentation Specialist for {entity}. Your mission is to produce the most complete, accurate, and well-supported record of the assigned world that can be constructed from available evidence.",
+            f"MODE: {mode_block}",
+            verified_block,
+            graph_block,
+            multiverse_block,
+            workspace_block,
+            """RESEARCH PHILOSOPHY & WORKFLOW
+    1. DISCOVERY: Use `webSearch` to find candidate wikis. If multiple distinct domains are returned, use `compareSourceFreshness` to select the most active canonical source. Use Category pages ONLY to extract article links.
+    2. EXTRACTION: Fetch specific articles using `fetchPage`. Deconstruct the text into high-density factual data.
+        - Prioritize technical specifications, engineering details, scientific principles, magical systems, organizational structures, and military capabilities.
+        - Favor completeness over summarization. Extract precise parameters and limits rather than general descriptions.
+        - Record relationships explicitly described or directly supported by evidence.
+    3. DOCUMENTATION:
+        - Use `saveNotebookEntry` to record internal thoughts, leads, hypotheses, and unresolved questions.
+        - Use `manage_source` to curate your bibliography.
+        - Use `record_timeline_event` to build a structured historical record.
+        - Use `deleteNotebookEntry` or `modifyNotebookEntry` to prune or refine your working notes.
+        - THE NOTEBOOK IS FOR INTERNAL STATE ONLY. Do not use it to store artifacts for promotion.
+    4. SYNTHESIS: Build the `Knowledge_Graph` as a prioritized Research Scheduler. Track Status and Attempts for every lead.
+    5. FORMATTING: At the end of your process, output the final structured artifacts in strict JSON matching the provided schema. This output is what will be verified and promoted to the main database.
+    """
+    ,
+            """CORE DIRECTIVES
+    - NO HEADCANON: Do not invent missing lore or reconcile contradictions through speculation. When evidence is incomplete or conflicting, document the uncertainty in the notebook and continue gathering evidence.
+    - TECHNICAL RIGOR: Explicitly avoid general descriptive summaries (e.g., 'highly powerful'); instead, extract the specific evidence and parameters.
+    - PRECISE GROUNDING: Every claim MUST have a Reference as 'url: section/L#'.
+    - NO EXTERNAL KNOWLEDGE: If evidence is missing from source text, mark it in `Missing_Info`.
+    - NOVELTY & INFO GAIN: Proactively identify coverage gaps (e.g., missing years in a timeline). Prefer actions with maximum expected information gain.
+    - STOPPING HEURISTIC: Stop only when additional research has low expected information gain, not just because the notebook is exhausted.
+    - NO THEORY: Do not construct high-level explanatory theories or causal mechanisms unless directly supported by evidence. Leave interpretation to downstream Theory Agents.""",
+            C_STAGING_DB,
+            focus_block,
+            f"OUTPUT FORMAT\nReturn strict JSON only, matching this schema exactly:\n{RESEARCH_SCHEMA}",
+            f"CONSTRAINTS\n- No markdown formatting, no code fences (no ```), no commentary.\n- Single parseable JSON object.\n- No invented data.\n- PROHIBITED: No power-scaling, feat analysis, or relative strength comparisons.\nRequirements: {requirements}"
+        ]
+    
+        return {
+>           "system": "\n\n".join([p for p in system_parts if p.strip()]),
+                                              ^^^^^^^^^^^^
+            "user": f"Perform the research operation for {entity}. Focus on the phased workflow: Discover $\rightarrow$ Extract $\rightarrow$ Document $\rightarrow$ Synthesize $\rightarrow$ Format.",
+        }
+E       UnboundLocalError: cannot access local variable 'system_parts' where it is not associated with a value
+
+backend/app/agents/prompts.py:145: UnboundLocalError
+------------------------------ Captured log setup ------------------------------
+DEBUG    asyncio:selector_events.py:64 Using selector: EpollSelector
+______________________ test_research_json_decode_failure _______________________
+
+researcher = <app.research.researcher.WorldResearcher object at 0x7f46d8c71d00>
+
+    @pytest.mark.asyncio
+    async def test_research_json_decode_failure(researcher):
+        universe = Universe(id=1, name="TestUniverse", uuid="test-uuid")
+        researcher.uni_service = MagicMock()
+        researcher.uni_service.get_universe_by_uuid.return_value = universe
+        researcher.tier_service = MagicMock()
+        researcher.settings_service = MagicMock()
+        researcher.settings_service.get_setting.return_value = MagicMock(value="2")
+        researcher.retriever = MagicMock()
+        researcher.retriever.get_semantic_claims.return_value = []
+        researcher.retriever.get_universe_knowledge_graph.return_value = {}
+        researcher.uni_service.get_children.return_value = []
+        researcher.workspace_service = MagicMock()
+        researcher.exec_service = MagicMock()
+    
+        with patch("app.research.researcher.run_agent", new_callable=AsyncMock) as mock_run:
+            # 1st iteration: Invalid JSON
+            # 2nd iteration: Valid JSON
+            mock_run.side_effect = [
+                (True, "NOT JSON", [], "p1"),
+                (True, '{"Verified_Data": "ok"}', [], "p2"),
+                (True, '{"Verification_Status": "SUCCESS"}', [], "p3"),
+            ]
+    
+            with patch("app.research.researcher.audit_success", return_value=True):
+>               result = await researcher.research()
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+backend/tests/backend/test_researcher_unit.py:163: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+backend/app/research/researcher.py:105: in research
+    _, result, turn_history, researcher_system_prompt = await self._execute_research_iteration(
+backend/app/research/researcher.py:237: in _execute_research_iteration
+    researcher_prompt = get_researcher_prompt(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+entity = 'TestUniverse'
+requirements = 'Collect comprehensive canonical wiki data.', focus = None
+previous_dataset = None, outstanding_corrections = 'None'
+notebook_data = 'No notebook artifacts found in the research workspace.'
+verified_claims = None, knowledge_graph = None, multiverse_leads = None
+multiverse_kg = None
+workspace_index = <MagicMock name='mock.get_full_workspace_index()' id='139942260779600'>
+notebook_index = None, source_index = None, timeline_index = None
+
+    def get_researcher_prompt(
+        entity: str,
+        requirements: str,
+        focus: str | None = None,
+        previous_dataset: str | None = None,
+        outstanding_corrections: str | None = None,
+        notebook_data: str | None = None,
+        verified_claims: str | None = None,
+        knowledge_graph: str | None = None,
+        multiverse_leads: str | None = None,
+        multiverse_kg: str | None = None,
+        workspace_index: str | None = None,
+        notebook_index: str | None = None,
+        source_index: str | None = None,
+        timeline_index: str | None = None,
+    ):
+        focus_block = ""
+        if focus:
+            focus_block = f"""FOCUSED FEATURE TARGET
+    Investigate this feature specifically: {focus}
+    Goal: prove existence, disprove existence, or mark inconclusive. Extract details, mechanism, limits, contradictions, and citations.
+    Add an item named "Focused Verdict" with Detail containing one of: VERIFIED, DISPROVED, INCONCLUSIVE."""
+    
+        verified_block = ""
+        if verified_claims and verified_claims.strip():
+            verified_block = f"""VERIFIED KNOWLEDGE BASE:
+    The following facts are already confirmed in the main database. Use them as anchors for expanding the investigation; do not spend time rediscovering them unless new evidence directly contradicts them.
+    {verified_claims}"""
+    
+        graph_block = ""
+        if knowledge_graph and knowledge_graph.strip():
+            graph_block = f"""EXISTING KNOWLEDGE GRAPH:
+    Current semantic mapping of the universe:
+    {knowledge_graph}"""
+    
+        multiverse_block = ""
+        if multiverse_leads or multiverse_kg:
+            leads = multiverse_leads or "None"
+            kg = multiverse_kg or "None"
+            multiverse_block = f"""MULTIVERSE LEADS (Parent/Children Universes):
+    The following data exists for related universes in the multiverse:
+    LEADS:
+    {leads}
+    
+    KNOWLEDGE GRAPH:
+    {kg}
+    
+    IMPORTANT: This data is NOT necessarily true for the current universe/timeline. Use it to identify what to check and where gaps might be, but you MUST independently verify every lead and explicitly document any deviations."""
+    
+        workspace_block = ""
+        if workspace_index or notebook_index or source_index or timeline_index:
+            if workspace_index:
+                workspace_block = f"""RESEARCH WORKSPACE (Working Memory)
+    {workspace_index}
+    
+    The workspace is your living workspace. You are expected to discover entirely new entities, relationships, and research directions that are absent from the notebook. Use it as prior work, not as a task list."""
+            else:
+                n_idx = notebook_index or "No active notes."
+                s_idx = source_index or "No curated sources."
+                t_idx = timeline_index or "No timeline events recorded."
+                workspace_block = f"""RESEARCH WORKSPACE (Working Memory)
+    The following indices represent your persistent research state. Use `load_notebook_entry`, `manage_source`, and `record_timeline_event` to interact with them.
+    
+    NOTEBOOK INDEX (Active Leads & Hypotheses):
+    {n_idx}
+    
+    SOURCE LIBRARY INDEX (Evidence Base):
+    {s_idx}
+    
+    TIMELINE INDEX (Chronology):
+    {t_idx}
+    
+    The workspace is your living workspace. You are expected to discover entirely new entities, relationships, and research directions that are absent from the notebook. Use it as prior work, not as a task list."""
+    
+    
+        mode_block = "INITIAL RESEARCH"
+        if previous_dataset:
+            mode_block = f"""PATCH & REFINE MODE
+    You are updating an existing dataset.
+    PREVIOUS DATASET:
+    {previous_dataset}
+    
+    OUTSTANDING CORRECTIONS:
+    {outstanding_corrections or "None"}
+    
+    INSTRUCTIONS:
+    1. ABSOLUTE PRIORITY: Outstanding Corrections take precedence over all other leads. Resolve them first before proceeding to new research.
+    2. TARGETED FIXES: Identify exactly which entries are affected by the Outstanding Corrections and fix them.
+    3. STABILITY: Keep all unaffected verified data exactly as it is.
+    4. PATCHING: Update the JSON by patching only the necessary fields."""
+    
+            system_parts = [
+            f"### ROLE\nProfessional Lore Archivist & Technical Documentation Specialist for {entity}. Your mission is to produce the most complete, accurate, and well-supported record of the assigned world that can be constructed from available evidence.",
+            f"MODE: {mode_block}",
+            verified_block,
+            graph_block,
+            multiverse_block,
+            workspace_block,
+            """RESEARCH PHILOSOPHY & WORKFLOW
+    1. DISCOVERY: Use `webSearch` to find candidate wikis. If multiple distinct domains are returned, use `compareSourceFreshness` to select the most active canonical source. Use Category pages ONLY to extract article links.
+    2. EXTRACTION: Fetch specific articles using `fetchPage`. Deconstruct the text into high-density factual data.
+        - Prioritize technical specifications, engineering details, scientific principles, magical systems, organizational structures, and military capabilities.
+        - Favor completeness over summarization. Extract precise parameters and limits rather than general descriptions.
+        - Record relationships explicitly described or directly supported by evidence.
+    3. DOCUMENTATION:
+        - Use `saveNotebookEntry` to record internal thoughts, leads, hypotheses, and unresolved questions.
+        - Use `manage_source` to curate your bibliography.
+        - Use `record_timeline_event` to build a structured historical record.
+        - Use `deleteNotebookEntry` or `modifyNotebookEntry` to prune or refine your working notes.
+        - THE NOTEBOOK IS FOR INTERNAL STATE ONLY. Do not use it to store artifacts for promotion.
+    4. SYNTHESIS: Build the `Knowledge_Graph` as a prioritized Research Scheduler. Track Status and Attempts for every lead.
+    5. FORMATTING: At the end of your process, output the final structured artifacts in strict JSON matching the provided schema. This output is what will be verified and promoted to the main database.
+    """
+    ,
+            """CORE DIRECTIVES
+    - NO HEADCANON: Do not invent missing lore or reconcile contradictions through speculation. When evidence is incomplete or conflicting, document the uncertainty in the notebook and continue gathering evidence.
+    - TECHNICAL RIGOR: Explicitly avoid general descriptive summaries (e.g., 'highly powerful'); instead, extract the specific evidence and parameters.
+    - PRECISE GROUNDING: Every claim MUST have a Reference as 'url: section/L#'.
+    - NO EXTERNAL KNOWLEDGE: If evidence is missing from source text, mark it in `Missing_Info`.
+    - NOVELTY & INFO GAIN: Proactively identify coverage gaps (e.g., missing years in a timeline). Prefer actions with maximum expected information gain.
+    - STOPPING HEURISTIC: Stop only when additional research has low expected information gain, not just because the notebook is exhausted.
+    - NO THEORY: Do not construct high-level explanatory theories or causal mechanisms unless directly supported by evidence. Leave interpretation to downstream Theory Agents.""",
+            C_STAGING_DB,
+            focus_block,
+            f"OUTPUT FORMAT\nReturn strict JSON only, matching this schema exactly:\n{RESEARCH_SCHEMA}",
+            f"CONSTRAINTS\n- No markdown formatting, no code fences (no ```), no commentary.\n- Single parseable JSON object.\n- No invented data.\n- PROHIBITED: No power-scaling, feat analysis, or relative strength comparisons.\nRequirements: {requirements}"
+        ]
+    
+        return {
+>           "system": "\n\n".join([p for p in system_parts if p.strip()]),
+                                              ^^^^^^^^^^^^
+            "user": f"Perform the research operation for {entity}. Focus on the phased workflow: Discover $\rightarrow$ Extract $\rightarrow$ Document $\rightarrow$ Synthesize $\rightarrow$ Format.",
+        }
+E       UnboundLocalError: cannot access local variable 'system_parts' where it is not associated with a value
+
+backend/app/agents/prompts.py:145: UnboundLocalError
+------------------------------ Captured log setup ------------------------------
+DEBUG    asyncio:selector_events.py:64 Using selector: EpollSelector
+_________________________ test_research_audit_failure __________________________
+
+researcher = <app.research.researcher.WorldResearcher object at 0x7f46d8ac8c50>
+
+    @pytest.mark.asyncio
+    async def test_research_audit_failure(researcher):
+        universe = Universe(id=1, name="TestUniverse", uuid="test-uuid")
+        researcher.uni_service = MagicMock()
+        researcher.uni_service.get_universe_by_uuid.return_value = universe
+        researcher.tier_service = MagicMock()
+        researcher.settings_service = MagicMock()
+        researcher.settings_service.get_setting.return_value = MagicMock(value="2")
+        researcher.retriever = MagicMock()
+        researcher.retriever.get_semantic_claims.return_value = []
+        researcher.retriever.get_universe_knowledge_graph.return_value = {}
+        researcher.uni_service.get_children.return_value = []
+        researcher.workspace_service = MagicMock()
+        researcher.exec_service = MagicMock()
+    
+        with patch("app.research.researcher.run_agent", new_callable=AsyncMock) as mock_run:
+            # Iteration 1: Researcher OK, Auditor Fails
+            # Iteration 2: Researcher OK, Auditor OK
+            mock_run.side_effect = [
+                (True, '{"data": "v1"}', [], "p1"),
+                (True, '{"Verification_Status": "REVISION"}', [], "p2"),
+                (True, '{"data": "v2"}', [], "p3"),
+                (True, '{"Verification_Status": "SUCCESS"}', [], "p4"),
+            ]
+    
+            # Audit success returns False then True
+            with patch("app.research.researcher.audit_success", side_effect=[False, True]):
+>               result = await researcher.research()
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+backend/tests/backend/test_researcher_unit.py:195: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+backend/app/research/researcher.py:105: in research
+    _, result, turn_history, researcher_system_prompt = await self._execute_research_iteration(
+backend/app/research/researcher.py:237: in _execute_research_iteration
+    researcher_prompt = get_researcher_prompt(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+entity = 'TestUniverse'
+requirements = 'Collect comprehensive canonical wiki data.', focus = None
+previous_dataset = None, outstanding_corrections = 'None'
+notebook_data = 'No notebook artifacts found in the research workspace.'
+verified_claims = None, knowledge_graph = None, multiverse_leads = None
+multiverse_kg = None
+workspace_index = <MagicMock name='mock.get_full_workspace_index()' id='139942259561808'>
+notebook_index = None, source_index = None, timeline_index = None
+
+    def get_researcher_prompt(
+        entity: str,
+        requirements: str,
+        focus: str | None = None,
+        previous_dataset: str | None = None,
+        outstanding_corrections: str | None = None,
+        notebook_data: str | None = None,
+        verified_claims: str | None = None,
+        knowledge_graph: str | None = None,
+        multiverse_leads: str | None = None,
+        multiverse_kg: str | None = None,
+        workspace_index: str | None = None,
+        notebook_index: str | None = None,
+        source_index: str | None = None,
+        timeline_index: str | None = None,
+    ):
+        focus_block = ""
+        if focus:
+            focus_block = f"""FOCUSED FEATURE TARGET
+    Investigate this feature specifically: {focus}
+    Goal: prove existence, disprove existence, or mark inconclusive. Extract details, mechanism, limits, contradictions, and citations.
+    Add an item named "Focused Verdict" with Detail containing one of: VERIFIED, DISPROVED, INCONCLUSIVE."""
+    
+        verified_block = ""
+        if verified_claims and verified_claims.strip():
+            verified_block = f"""VERIFIED KNOWLEDGE BASE:
+    The following facts are already confirmed in the main database. Use them as anchors for expanding the investigation; do not spend time rediscovering them unless new evidence directly contradicts them.
+    {verified_claims}"""
+    
+        graph_block = ""
+        if knowledge_graph and knowledge_graph.strip():
+            graph_block = f"""EXISTING KNOWLEDGE GRAPH:
+    Current semantic mapping of the universe:
+    {knowledge_graph}"""
+    
+        multiverse_block = ""
+        if multiverse_leads or multiverse_kg:
+            leads = multiverse_leads or "None"
+            kg = multiverse_kg or "None"
+            multiverse_block = f"""MULTIVERSE LEADS (Parent/Children Universes):
+    The following data exists for related universes in the multiverse:
+    LEADS:
+    {leads}
+    
+    KNOWLEDGE GRAPH:
+    {kg}
+    
+    IMPORTANT: This data is NOT necessarily true for the current universe/timeline. Use it to identify what to check and where gaps might be, but you MUST independently verify every lead and explicitly document any deviations."""
+    
+        workspace_block = ""
+        if workspace_index or notebook_index or source_index or timeline_index:
+            if workspace_index:
+                workspace_block = f"""RESEARCH WORKSPACE (Working Memory)
+    {workspace_index}
+    
+    The workspace is your living workspace. You are expected to discover entirely new entities, relationships, and research directions that are absent from the notebook. Use it as prior work, not as a task list."""
+            else:
+                n_idx = notebook_index or "No active notes."
+                s_idx = source_index or "No curated sources."
+                t_idx = timeline_index or "No timeline events recorded."
+                workspace_block = f"""RESEARCH WORKSPACE (Working Memory)
+    The following indices represent your persistent research state. Use `load_notebook_entry`, `manage_source`, and `record_timeline_event` to interact with them.
+    
+    NOTEBOOK INDEX (Active Leads & Hypotheses):
+    {n_idx}
+    
+    SOURCE LIBRARY INDEX (Evidence Base):
+    {s_idx}
+    
+    TIMELINE INDEX (Chronology):
+    {t_idx}
+    
+    The workspace is your living workspace. You are expected to discover entirely new entities, relationships, and research directions that are absent from the notebook. Use it as prior work, not as a task list."""
+    
+    
+        mode_block = "INITIAL RESEARCH"
+        if previous_dataset:
+            mode_block = f"""PATCH & REFINE MODE
+    You are updating an existing dataset.
+    PREVIOUS DATASET:
+    {previous_dataset}
+    
+    OUTSTANDING CORRECTIONS:
+    {outstanding_corrections or "None"}
+    
+    INSTRUCTIONS:
+    1. ABSOLUTE PRIORITY: Outstanding Corrections take precedence over all other leads. Resolve them first before proceeding to new research.
+    2. TARGETED FIXES: Identify exactly which entries are affected by the Outstanding Corrections and fix them.
+    3. STABILITY: Keep all unaffected verified data exactly as it is.
+    4. PATCHING: Update the JSON by patching only the necessary fields."""
+    
+            system_parts = [
+            f"### ROLE\nProfessional Lore Archivist & Technical Documentation Specialist for {entity}. Your mission is to produce the most complete, accurate, and well-supported record of the assigned world that can be constructed from available evidence.",
+            f"MODE: {mode_block}",
+            verified_block,
+            graph_block,
+            multiverse_block,
+            workspace_block,
+            """RESEARCH PHILOSOPHY & WORKFLOW
+    1. DISCOVERY: Use `webSearch` to find candidate wikis. If multiple distinct domains are returned, use `compareSourceFreshness` to select the most active canonical source. Use Category pages ONLY to extract article links.
+    2. EXTRACTION: Fetch specific articles using `fetchPage`. Deconstruct the text into high-density factual data.
+        - Prioritize technical specifications, engineering details, scientific principles, magical systems, organizational structures, and military capabilities.
+        - Favor completeness over summarization. Extract precise parameters and limits rather than general descriptions.
+        - Record relationships explicitly described or directly supported by evidence.
+    3. DOCUMENTATION:
+        - Use `saveNotebookEntry` to record internal thoughts, leads, hypotheses, and unresolved questions.
+        - Use `manage_source` to curate your bibliography.
+        - Use `record_timeline_event` to build a structured historical record.
+        - Use `deleteNotebookEntry` or `modifyNotebookEntry` to prune or refine your working notes.
+        - THE NOTEBOOK IS FOR INTERNAL STATE ONLY. Do not use it to store artifacts for promotion.
+    4. SYNTHESIS: Build the `Knowledge_Graph` as a prioritized Research Scheduler. Track Status and Attempts for every lead.
+    5. FORMATTING: At the end of your process, output the final structured artifacts in strict JSON matching the provided schema. This output is what will be verified and promoted to the main database.
+    """
+    ,
+            """CORE DIRECTIVES
+    - NO HEADCANON: Do not invent missing lore or reconcile contradictions through speculation. When evidence is incomplete or conflicting, document the uncertainty in the notebook and continue gathering evidence.
+    - TECHNICAL RIGOR: Explicitly avoid general descriptive summaries (e.g., 'highly powerful'); instead, extract the specific evidence and parameters.
+    - PRECISE GROUNDING: Every claim MUST have a Reference as 'url: section/L#'.
+    - NO EXTERNAL KNOWLEDGE: If evidence is missing from source text, mark it in `Missing_Info`.
+    - NOVELTY & INFO GAIN: Proactively identify coverage gaps (e.g., missing years in a timeline). Prefer actions with maximum expected information gain.
+    - STOPPING HEURISTIC: Stop only when additional research has low expected information gain, not just because the notebook is exhausted.
+    - NO THEORY: Do not construct high-level explanatory theories or causal mechanisms unless directly supported by evidence. Leave interpretation to downstream Theory Agents.""",
+            C_STAGING_DB,
+            focus_block,
+            f"OUTPUT FORMAT\nReturn strict JSON only, matching this schema exactly:\n{RESEARCH_SCHEMA}",
+            f"CONSTRAINTS\n- No markdown formatting, no code fences (no ```), no commentary.\n- Single parseable JSON object.\n- No invented data.\n- PROHIBITED: No power-scaling, feat analysis, or relative strength comparisons.\nRequirements: {requirements}"
+        ]
+    
+        return {
+>           "system": "\n\n".join([p for p in system_parts if p.strip()]),
+                                              ^^^^^^^^^^^^
+            "user": f"Perform the research operation for {entity}. Focus on the phased workflow: Discover $\rightarrow$ Extract $\rightarrow$ Document $\rightarrow$ Synthesize $\rightarrow$ Format.",
+        }
+E       UnboundLocalError: cannot access local variable 'system_parts' where it is not associated with a value
+
+backend/app/agents/prompts.py:145: UnboundLocalError
+------------------------------ Captured log setup ------------------------------
+DEBUG    asyncio:selector_events.py:64 Using selector: EpollSelector
+_________________________ test_research_max_iterations _________________________
+
+researcher = <app.research.researcher.WorldResearcher object at 0x7f46d8aca550>
+
+    @pytest.mark.asyncio
+    async def test_research_max_iterations(researcher):
+        universe = Universe(id=1, name="TestUniverse", uuid="test-uuid")
+        researcher.uni_service = MagicMock()
+        researcher.uni_service.get_universe_by_uuid.return_value = universe
+        researcher.tier_service = MagicMock()
+        researcher.settings_service = MagicMock()
+        researcher.settings_service.get_setting.return_value = MagicMock(value="1")
+        researcher.retriever = MagicMock()
+        researcher.retriever.get_semantic_claims.return_value = []
+        researcher.retriever.get_universe_knowledge_graph.return_value = {}
+        researcher.uni_service.get_children.return_value = []
+        researcher.workspace_service = MagicMock()
+        researcher.exec_service = MagicMock()
+    
+        with patch("app.research.researcher.run_agent", new_callable=AsyncMock) as mock_run:
+            mock_run.return_value = (True, '{"data": "v1"}', [], "p1")
+    
+            with patch("app.research.researcher.audit_success", return_value=False):
+>               result = await researcher.research()
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+backend/tests/backend/test_researcher_unit.py:219: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+backend/app/research/researcher.py:105: in research
+    _, result, turn_history, researcher_system_prompt = await self._execute_research_iteration(
+backend/app/research/researcher.py:237: in _execute_research_iteration
+    researcher_prompt = get_researcher_prompt(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+entity = 'TestUniverse'
+requirements = 'Collect comprehensive canonical wiki data.', focus = None
+previous_dataset = None, outstanding_corrections = 'None'
+notebook_data = 'No notebook artifacts found in the research workspace.'
+verified_claims = None, knowledge_graph = None, multiverse_leads = None
+multiverse_kg = None
+workspace_index = <MagicMock name='mock.get_full_workspace_index()' id='139942258425936'>
+notebook_index = None, source_index = None, timeline_index = None
+
+    def get_researcher_prompt(
+        entity: str,
+        requirements: str,
+        focus: str | None = None,
+        previous_dataset: str | None = None,
+        outstanding_corrections: str | None = None,
+        notebook_data: str | None = None,
+        verified_claims: str | None = None,
+        knowledge_graph: str | None = None,
+        multiverse_leads: str | None = None,
+        multiverse_kg: str | None = None,
+        workspace_index: str | None = None,
+        notebook_index: str | None = None,
+        source_index: str | None = None,
+        timeline_index: str | None = None,
+    ):
+        focus_block = ""
+        if focus:
+            focus_block = f"""FOCUSED FEATURE TARGET
+    Investigate this feature specifically: {focus}
+    Goal: prove existence, disprove existence, or mark inconclusive. Extract details, mechanism, limits, contradictions, and citations.
+    Add an item named "Focused Verdict" with Detail containing one of: VERIFIED, DISPROVED, INCONCLUSIVE."""
+    
+        verified_block = ""
+        if verified_claims and verified_claims.strip():
+            verified_block = f"""VERIFIED KNOWLEDGE BASE:
+    The following facts are already confirmed in the main database. Use them as anchors for expanding the investigation; do not spend time rediscovering them unless new evidence directly contradicts them.
+    {verified_claims}"""
+    
+        graph_block = ""
+        if knowledge_graph and knowledge_graph.strip():
+            graph_block = f"""EXISTING KNOWLEDGE GRAPH:
+    Current semantic mapping of the universe:
+    {knowledge_graph}"""
+    
+        multiverse_block = ""
+        if multiverse_leads or multiverse_kg:
+            leads = multiverse_leads or "None"
+            kg = multiverse_kg or "None"
+            multiverse_block = f"""MULTIVERSE LEADS (Parent/Children Universes):
+    The following data exists for related universes in the multiverse:
+    LEADS:
+    {leads}
+    
+    KNOWLEDGE GRAPH:
+    {kg}
+    
+    IMPORTANT: This data is NOT necessarily true for the current universe/timeline. Use it to identify what to check and where gaps might be, but you MUST independently verify every lead and explicitly document any deviations."""
+    
+        workspace_block = ""
+        if workspace_index or notebook_index or source_index or timeline_index:
+            if workspace_index:
+                workspace_block = f"""RESEARCH WORKSPACE (Working Memory)
+    {workspace_index}
+    
+    The workspace is your living workspace. You are expected to discover entirely new entities, relationships, and research directions that are absent from the notebook. Use it as prior work, not as a task list."""
+            else:
+                n_idx = notebook_index or "No active notes."
+                s_idx = source_index or "No curated sources."
+                t_idx = timeline_index or "No timeline events recorded."
+                workspace_block = f"""RESEARCH WORKSPACE (Working Memory)
+    The following indices represent your persistent research state. Use `load_notebook_entry`, `manage_source`, and `record_timeline_event` to interact with them.
+    
+    NOTEBOOK INDEX (Active Leads & Hypotheses):
+    {n_idx}
+    
+    SOURCE LIBRARY INDEX (Evidence Base):
+    {s_idx}
+    
+    TIMELINE INDEX (Chronology):
+    {t_idx}
+    
+    The workspace is your living workspace. You are expected to discover entirely new entities, relationships, and research directions that are absent from the notebook. Use it as prior work, not as a task list."""
+    
+    
+        mode_block = "INITIAL RESEARCH"
+        if previous_dataset:
+            mode_block = f"""PATCH & REFINE MODE
+    You are updating an existing dataset.
+    PREVIOUS DATASET:
+    {previous_dataset}
+    
+    OUTSTANDING CORRECTIONS:
+    {outstanding_corrections or "None"}
+    
+    INSTRUCTIONS:
+    1. ABSOLUTE PRIORITY: Outstanding Corrections take precedence over all other leads. Resolve them first before proceeding to new research.
+    2. TARGETED FIXES: Identify exactly which entries are affected by the Outstanding Corrections and fix them.
+    3. STABILITY: Keep all unaffected verified data exactly as it is.
+    4. PATCHING: Update the JSON by patching only the necessary fields."""
+    
+            system_parts = [
+            f"### ROLE\nProfessional Lore Archivist & Technical Documentation Specialist for {entity}. Your mission is to produce the most complete, accurate, and well-supported record of the assigned world that can be constructed from available evidence.",
+            f"MODE: {mode_block}",
+            verified_block,
+            graph_block,
+            multiverse_block,
+            workspace_block,
+            """RESEARCH PHILOSOPHY & WORKFLOW
+    1. DISCOVERY: Use `webSearch` to find candidate wikis. If multiple distinct domains are returned, use `compareSourceFreshness` to select the most active canonical source. Use Category pages ONLY to extract article links.
+    2. EXTRACTION: Fetch specific articles using `fetchPage`. Deconstruct the text into high-density factual data.
+        - Prioritize technical specifications, engineering details, scientific principles, magical systems, organizational structures, and military capabilities.
+        - Favor completeness over summarization. Extract precise parameters and limits rather than general descriptions.
+        - Record relationships explicitly described or directly supported by evidence.
+    3. DOCUMENTATION:
+        - Use `saveNotebookEntry` to record internal thoughts, leads, hypotheses, and unresolved questions.
+        - Use `manage_source` to curate your bibliography.
+        - Use `record_timeline_event` to build a structured historical record.
+        - Use `deleteNotebookEntry` or `modifyNotebookEntry` to prune or refine your working notes.
+        - THE NOTEBOOK IS FOR INTERNAL STATE ONLY. Do not use it to store artifacts for promotion.
+    4. SYNTHESIS: Build the `Knowledge_Graph` as a prioritized Research Scheduler. Track Status and Attempts for every lead.
+    5. FORMATTING: At the end of your process, output the final structured artifacts in strict JSON matching the provided schema. This output is what will be verified and promoted to the main database.
+    """
+    ,
+            """CORE DIRECTIVES
+    - NO HEADCANON: Do not invent missing lore or reconcile contradictions through speculation. When evidence is incomplete or conflicting, document the uncertainty in the notebook and continue gathering evidence.
+    - TECHNICAL RIGOR: Explicitly avoid general descriptive summaries (e.g., 'highly powerful'); instead, extract the specific evidence and parameters.
+    - PRECISE GROUNDING: Every claim MUST have a Reference as 'url: section/L#'.
+    - NO EXTERNAL KNOWLEDGE: If evidence is missing from source text, mark it in `Missing_Info`.
+    - NOVELTY & INFO GAIN: Proactively identify coverage gaps (e.g., missing years in a timeline). Prefer actions with maximum expected information gain.
+    - STOPPING HEURISTIC: Stop only when additional research has low expected information gain, not just because the notebook is exhausted.
+    - NO THEORY: Do not construct high-level explanatory theories or causal mechanisms unless directly supported by evidence. Leave interpretation to downstream Theory Agents.""",
+            C_STAGING_DB,
+            focus_block,
+            f"OUTPUT FORMAT\nReturn strict JSON only, matching this schema exactly:\n{RESEARCH_SCHEMA}",
+            f"CONSTRAINTS\n- No markdown formatting, no code fences (no ```), no commentary.\n- Single parseable JSON object.\n- No invented data.\n- PROHIBITED: No power-scaling, feat analysis, or relative strength comparisons.\nRequirements: {requirements}"
+        ]
+    
+        return {
+>           "system": "\n\n".join([p for p in system_parts if p.strip()]),
+                                              ^^^^^^^^^^^^
+            "user": f"Perform the research operation for {entity}. Focus on the phased workflow: Discover $\rightarrow$ Extract $\rightarrow$ Document $\rightarrow$ Synthesize $\rightarrow$ Format.",
+        }
+E       UnboundLocalError: cannot access local variable 'system_parts' where it is not associated with a value
+
+backend/app/agents/prompts.py:145: UnboundLocalError
+------------------------------ Captured log setup ------------------------------
+DEBUG    asyncio:selector_events.py:64 Using selector: EpollSelector
+____________________________ test_research_aborted _____________________________
+
+researcher = <app.research.researcher.WorldResearcher object at 0x7f46d89a88c0>
+
+    @pytest.mark.asyncio
+    async def test_research_aborted(researcher):
+        universe = Universe(id=1, name="TestUniverse", uuid="test-uuid")
+        researcher.uni_service = MagicMock()
+        researcher.uni_service.get_universe_by_uuid.return_value = universe
+        researcher.tier_service = MagicMock()
+        researcher.settings_service = MagicMock()
+        researcher.settings_service.get_setting.return_value = MagicMock(value="2")
+        researcher.retriever = MagicMock()
+        researcher.retriever.get_semantic_claims.return_value = []
+        researcher.retriever.get_universe_knowledge_graph.return_value = {}
+        researcher.uni_service.get_children.return_value = []
+        researcher.workspace_service = MagicMock()
+        researcher.exec_service = MagicMock()
+    
+        with patch("app.research.researcher.run_agent", new_callable=AsyncMock) as mock_run:
+            mock_run.return_value = (True, '{"data": "v1"}', [], "p1")
+    
+            with patch("app.research.researcher.is_aborted", return_value=True):
+                with pytest.raises(RuntimeError, match="Aborted"):
+>                   await researcher.research()
+
+backend/tests/backend/test_researcher_unit.py:243: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+backend/app/research/researcher.py:105: in research
+    _, result, turn_history, researcher_system_prompt = await self._execute_research_iteration(
+backend/app/research/researcher.py:237: in _execute_research_iteration
+    researcher_prompt = get_researcher_prompt(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+entity = 'TestUniverse'
+requirements = 'Collect comprehensive canonical wiki data.', focus = None
+previous_dataset = None, outstanding_corrections = 'None'
+notebook_data = 'No notebook artifacts found in the research workspace.'
+verified_claims = None, knowledge_graph = None, multiverse_leads = None
+multiverse_kg = None
+workspace_index = <MagicMock name='mock.get_full_workspace_index()' id='139942258437024'>
+notebook_index = None, source_index = None, timeline_index = None
+
+    def get_researcher_prompt(
+        entity: str,
+        requirements: str,
+        focus: str | None = None,
+        previous_dataset: str | None = None,
+        outstanding_corrections: str | None = None,
+        notebook_data: str | None = None,
+        verified_claims: str | None = None,
+        knowledge_graph: str | None = None,
+        multiverse_leads: str | None = None,
+        multiverse_kg: str | None = None,
+        workspace_index: str | None = None,
+        notebook_index: str | None = None,
+        source_index: str | None = None,
+        timeline_index: str | None = None,
+    ):
+        focus_block = ""
+        if focus:
+            focus_block = f"""FOCUSED FEATURE TARGET
+    Investigate this feature specifically: {focus}
+    Goal: prove existence, disprove existence, or mark inconclusive. Extract details, mechanism, limits, contradictions, and citations.
+    Add an item named "Focused Verdict" with Detail containing one of: VERIFIED, DISPROVED, INCONCLUSIVE."""
+    
+        verified_block = ""
+        if verified_claims and verified_claims.strip():
+            verified_block = f"""VERIFIED KNOWLEDGE BASE:
+    The following facts are already confirmed in the main database. Use them as anchors for expanding the investigation; do not spend time rediscovering them unless new evidence directly contradicts them.
+    {verified_claims}"""
+    
+        graph_block = ""
+        if knowledge_graph and knowledge_graph.strip():
+            graph_block = f"""EXISTING KNOWLEDGE GRAPH:
+    Current semantic mapping of the universe:
+    {knowledge_graph}"""
+    
+        multiverse_block = ""
+        if multiverse_leads or multiverse_kg:
+            leads = multiverse_leads or "None"
+            kg = multiverse_kg or "None"
+            multiverse_block = f"""MULTIVERSE LEADS (Parent/Children Universes):
+    The following data exists for related universes in the multiverse:
+    LEADS:
+    {leads}
+    
+    KNOWLEDGE GRAPH:
+    {kg}
+    
+    IMPORTANT: This data is NOT necessarily true for the current universe/timeline. Use it to identify what to check and where gaps might be, but you MUST independently verify every lead and explicitly document any deviations."""
+    
+        workspace_block = ""
+        if workspace_index or notebook_index or source_index or timeline_index:
+            if workspace_index:
+                workspace_block = f"""RESEARCH WORKSPACE (Working Memory)
+    {workspace_index}
+    
+    The workspace is your living workspace. You are expected to discover entirely new entities, relationships, and research directions that are absent from the notebook. Use it as prior work, not as a task list."""
+            else:
+                n_idx = notebook_index or "No active notes."
+                s_idx = source_index or "No curated sources."
+                t_idx = timeline_index or "No timeline events recorded."
+                workspace_block = f"""RESEARCH WORKSPACE (Working Memory)
+    The following indices represent your persistent research state. Use `load_notebook_entry`, `manage_source`, and `record_timeline_event` to interact with them.
+    
+    NOTEBOOK INDEX (Active Leads & Hypotheses):
+    {n_idx}
+    
+    SOURCE LIBRARY INDEX (Evidence Base):
+    {s_idx}
+    
+    TIMELINE INDEX (Chronology):
+    {t_idx}
+    
+    The workspace is your living workspace. You are expected to discover entirely new entities, relationships, and research directions that are absent from the notebook. Use it as prior work, not as a task list."""
+    
+    
+        mode_block = "INITIAL RESEARCH"
+        if previous_dataset:
+            mode_block = f"""PATCH & REFINE MODE
+    You are updating an existing dataset.
+    PREVIOUS DATASET:
+    {previous_dataset}
+    
+    OUTSTANDING CORRECTIONS:
+    {outstanding_corrections or "None"}
+    
+    INSTRUCTIONS:
+    1. ABSOLUTE PRIORITY: Outstanding Corrections take precedence over all other leads. Resolve them first before proceeding to new research.
+    2. TARGETED FIXES: Identify exactly which entries are affected by the Outstanding Corrections and fix them.
+    3. STABILITY: Keep all unaffected verified data exactly as it is.
+    4. PATCHING: Update the JSON by patching only the necessary fields."""
+    
+            system_parts = [
+            f"### ROLE\nProfessional Lore Archivist & Technical Documentation Specialist for {entity}. Your mission is to produce the most complete, accurate, and well-supported record of the assigned world that can be constructed from available evidence.",
+            f"MODE: {mode_block}",
+            verified_block,
+            graph_block,
+            multiverse_block,
+            workspace_block,
+            """RESEARCH PHILOSOPHY & WORKFLOW
+    1. DISCOVERY: Use `webSearch` to find candidate wikis. If multiple distinct domains are returned, use `compareSourceFreshness` to select the most active canonical source. Use Category pages ONLY to extract article links.
+    2. EXTRACTION: Fetch specific articles using `fetchPage`. Deconstruct the text into high-density factual data.
+        - Prioritize technical specifications, engineering details, scientific principles, magical systems, organizational structures, and military capabilities.
+        - Favor completeness over summarization. Extract precise parameters and limits rather than general descriptions.
+        - Record relationships explicitly described or directly supported by evidence.
+    3. DOCUMENTATION:
+        - Use `saveNotebookEntry` to record internal thoughts, leads, hypotheses, and unresolved questions.
+        - Use `manage_source` to curate your bibliography.
+        - Use `record_timeline_event` to build a structured historical record.
+        - Use `deleteNotebookEntry` or `modifyNotebookEntry` to prune or refine your working notes.
+        - THE NOTEBOOK IS FOR INTERNAL STATE ONLY. Do not use it to store artifacts for promotion.
+    4. SYNTHESIS: Build the `Knowledge_Graph` as a prioritized Research Scheduler. Track Status and Attempts for every lead.
+    5. FORMATTING: At the end of your process, output the final structured artifacts in strict JSON matching the provided schema. This output is what will be verified and promoted to the main database.
+    """
+    ,
+            """CORE DIRECTIVES
+    - NO HEADCANON: Do not invent missing lore or reconcile contradictions through speculation. When evidence is incomplete or conflicting, document the uncertainty in the notebook and continue gathering evidence.
+    - TECHNICAL RIGOR: Explicitly avoid general descriptive summaries (e.g., 'highly powerful'); instead, extract the specific evidence and parameters.
+    - PRECISE GROUNDING: Every claim MUST have a Reference as 'url: section/L#'.
+    - NO EXTERNAL KNOWLEDGE: If evidence is missing from source text, mark it in `Missing_Info`.
+    - NOVELTY & INFO GAIN: Proactively identify coverage gaps (e.g., missing years in a timeline). Prefer actions with maximum expected information gain.
+    - STOPPING HEURISTIC: Stop only when additional research has low expected information gain, not just because the notebook is exhausted.
+    - NO THEORY: Do not construct high-level explanatory theories or causal mechanisms unless directly supported by evidence. Leave interpretation to downstream Theory Agents.""",
+            C_STAGING_DB,
+            focus_block,
+            f"OUTPUT FORMAT\nReturn strict JSON only, matching this schema exactly:\n{RESEARCH_SCHEMA}",
+            f"CONSTRAINTS\n- No markdown formatting, no code fences (no ```), no commentary.\n- Single parseable JSON object.\n- No invented data.\n- PROHIBITED: No power-scaling, feat analysis, or relative strength comparisons.\nRequirements: {requirements}"
+        ]
+    
+        return {
+>           "system": "\n\n".join([p for p in system_parts if p.strip()]),
+                                              ^^^^^^^^^^^^
+            "user": f"Perform the research operation for {entity}. Focus on the phased workflow: Discover $\rightarrow$ Extract $\rightarrow$ Document $\rightarrow$ Synthesize $\rightarrow$ Format.",
+        }
+E       UnboundLocalError: cannot access local variable 'system_parts' where it is not associated with a value
+
+backend/app/agents/prompts.py:145: UnboundLocalError
+------------------------------ Captured log setup ------------------------------
+DEBUG    asyncio:selector_events.py:64 Using selector: EpollSelector
+_______________________ test_research_exception_logging ________________________
+
+researcher = <app.research.researcher.WorldResearcher object at 0x7f46d8be7d40>
+
+    @pytest.mark.asyncio
+    async def test_research_exception_logging(researcher):
+        universe = Universe(id=1, name="TestUniverse", uuid="test-uuid")
+        researcher.uni_service = MagicMock()
+        researcher.uni_service.get_universe_by_uuid.return_value = universe
+        researcher.tier_service = MagicMock()
+        researcher.settings_service = MagicMock()
+        researcher.settings_service.get_setting.return_value = MagicMock(value="1")
+        researcher.retriever = MagicMock()
+        researcher.retriever.get_semantic_claims.return_value = []
+        researcher.retriever.get_universe_knowledge_graph.return_value = {}
+        researcher.uni_service.get_children.return_value = []
+        researcher.workspace_service = MagicMock()
+        researcher.exec_service = MagicMock()
+    
+        with patch("app.research.researcher.run_agent", side_effect=Exception("Boom")):
+>           with pytest.raises(Exception, match="Boom"):
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E           AssertionError: Regex pattern did not match.
+E             Expected regex: 'Boom'
+E             Actual message: "cannot access local variable 'system_parts' where it is not associated with a value"
+
+backend/tests/backend/test_researcher_unit.py:261: AssertionError
+------------------------------ Captured log setup ------------------------------
+DEBUG    asyncio:selector_events.py:64 Using selector: EpollSelector
+=============================== warnings summary ===============================
+backend/app/api/routers/runs.py:40
+  /home/max/Projects/omniverse-v2/backend/app/api/routers/runs.py:40: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class AbortRunPayload(BaseModel):
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED backend/tests/backend/test_researcher_unit.py::test_research_happy_path
+FAILED backend/tests/backend/test_researcher_unit.py::test_research_json_decode_failure
+FAILED backend/tests/backend/test_researcher_unit.py::test_research_audit_failure
+FAILED backend/tests/backend/test_researcher_unit.py::test_research_max_iterations
+FAILED backend/tests/backend/test_researcher_unit.py::test_research_aborted
+FAILED backend/tests/backend/test_researcher_unit.py::test_research_exception_logging
+==================== 6 failed, 6 passed, 1 warning in 0.34s ====================

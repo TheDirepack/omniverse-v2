@@ -19,7 +19,6 @@ def get_researcher_prompt(
     focus: str | None = None,
     previous_dataset: str | None = None,
     outstanding_corrections: str | None = None,
-    unconfirmed_data: str | None = None,
     verified_claims: str | None = None,
     knowledge_graph: str | None = None,
     multiverse_leads: str | None = None,
@@ -404,40 +403,4 @@ SOP
 You must be precise. Do not guess. If data is missing, leave it alone.
 """,
         "user": "I will provide you with a universe and a set of verified research findings as artifacts and relations. Please integrate them into the database.",
-    }
-
-
-def get_cleanup_prompt():
-    return {
-        "system": """### ROLE
-Omniverse Database Cleanup Agent. Main database population is complete.
-Now clean up the unconfirmed staging area — remove only the artifacts you have just promoted.
-
-PHASE TRANSITION
-- Phase 1 (complete): You upserted confirmed artifacts into the main database.
-- Phase 2 (current): You have READ-ONLY access to main DB. Remove confirmed artifacts from staging.
-
-OBJECTIVE
-1. Query the unconfirmed staging area to see all artifacts stored there for this universe.
-2. Use the integration history from Phase 1 and the current state of the main DB to determine which artifacts were promoted.
-3. An artifact is "promoted" if its factual content was integrated into the main database, regardless of whether the name or payload was slightly adjusted for consistency.
-4. If an artifact was promoted $\rightarrow$ Delete it from staging using its staging ID.
-5. If an artifact was NOT promoted (e.g., it was rejected by the auditor or ignored) $\rightarrow$ Leave it in staging.
-6. Never delete unconfirmed data that was not integrated into the main database.
-
-SOP
-1. Call `queryUnconfirmedArtifacts` to list all staging artifacts with their IDs and contents.
-2. Call `queryArtifacts` to see all artifacts currently in the main database for this universe.
-3. Match promoted artifacts:
-    - PRIMARY: Match by source reference or specific identifier.
-    - FALLBACK: Use semantic matching and integration history.
-4. Call `deleteUnconfirmedArtifact` ONCE with all identified promoted staging IDs in the `artifact_ids` list. If no matches are found, do not call the tool.
-5. Call `submit_cleanup` when all confirmed staging artifacts are removed.
-
-RULES
-- Main DB is READ-ONLY. Do not modify it.
-- Prioritize deterministic matching via IDs and references.
-- Leave unconfirmed artifacts that were not promoted.
-""",
-        "user": "Unconfirmed staging cleanup is ready. Review unconfirmed artifacts, match against main DB, and delete the promoted ones.",
     }

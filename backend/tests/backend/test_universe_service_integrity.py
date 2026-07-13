@@ -19,7 +19,7 @@ def test_delete_universe_cascading_cleanup(ephemeral_db):
     svc = UniverseService(session=session)
 
     # 1. Setup: Create a universe with all types of children
-    u = Universe(name="IntegrityTestWorld", franchise="Test")
+    u = Universe(name="IntegrityTestWorld")
     session.add(u)
     session.commit()
     session.refresh(u)
@@ -102,8 +102,8 @@ def test_merge_worlds_cascading_reassignment(ephemeral_db):
     svc = UniverseService(session=session)
 
     # Setup two universes
-    u_keep = Universe(name="KeepWorld", franchise="Keep")
-    u_merge = Universe(name="MergeWorld", franchise="Merge")
+    u_keep = Universe(name="KeepWorld")
+    u_merge = Universe(name="MergeWorld")
     session.add_all([u_keep, u_merge])
     session.commit()
     session.refresh(u_keep)

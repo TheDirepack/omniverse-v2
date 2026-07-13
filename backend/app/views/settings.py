@@ -8,8 +8,8 @@ from sqlmodel import Session, select
 
 from app.core.templates import templates
 from app.db.settings_session import settings_engine
-from app.db.unconfirmed_schema import Snapshot
-from app.db.unconfirmed_session import unconfirmed_engine
+from app.db.notebook_schema import Snapshot
+from app.db.notebook_session import notebook_engine
 from app.repositories.settings import SettingsRepository
 from app.services.settings_service import PROVIDER_PRESETS, SettingsService
 
@@ -389,7 +389,7 @@ async def settings_tab_health(request: Request):
     template = templates.env.get_template("fragments/settings_health.html")
 
     # Include snapshots in the health tab
-    with Session(unconfirmed_engine) as session:
+    with Session(notebook_engine) as session:
         snapshots = session.exec(select(Snapshot)).all()
 
     return HTMLResponse(
@@ -404,7 +404,7 @@ async def settings_reset_health(request: Request):
     status = _get_model_status()
     template = templates.env.get_template("fragments/settings_health.html")
 
-    with Session(unconfirmed_engine) as session:
+    with Session(notebook_engine) as session:
         snapshots = session.exec(select(Snapshot)).all()
 
     return HTMLResponse(
@@ -413,7 +413,7 @@ async def settings_reset_health(request: Request):
 
 @router.get("/snapshots", response_class=HTMLResponse)
 async def settings_snapshots_fragment(request: Request):
-    with Session(unconfirmed_engine) as session:
+    with Session(notebook_engine) as session:
         snapshots = session.exec(select(Snapshot)).all()
 
     template = templates.env.get_template("fragments/world_snapshots.html")
@@ -430,7 +430,7 @@ async def settings_snapshots_create_action(
     snapshot_dir = data_dir / "snapshots"
     snapshot_dir.mkdir(parents=True, exist_ok=True)
 
-    with Session(unconfirmed_engine) as session:
+    with Session(notebook_engine) as session:
         snapshot = Snapshot(
             name=name,
             snapshot_type=snapshot_type,
@@ -446,7 +446,7 @@ async def settings_snapshots_create_action(
             "omniverse_v2.db",
             "settings.db",
             "operational.db",
-            "unconfirmed.db",
+            "notebook.db",
             "extrapolation.db",
         ]:
             src = data_dir / db_file
@@ -460,7 +460,7 @@ async def settings_snapshots_create_action(
 async def settings_snapshots_delete_action(request: Request, snapshot_id: int):
     data_dir = Path(__file__).parent.parent.parent / "data"
 
-    with Session(unconfirmed_engine) as session:
+    with Session(notebook_engine) as session:
         snapshot = session.get(Snapshot, snapshot_id)
         if snapshot:
             s_dir = data_dir / "snapshots" / str(snapshot.id)
@@ -476,7 +476,7 @@ async def settings_snapshots_delete_action(request: Request, snapshot_id: int):
 async def settings_snapshots_restore_action(_request: Request, snapshot_id: int):
     data_dir = Path(__file__).parent.parent.parent / "data"
 
-    with Session(unconfirmed_engine) as session:
+    with Session(notebook_engine) as session:
         snapshot = session.get(Snapshot, snapshot_id)
         if not snapshot:
             return HTMLResponse(
@@ -493,7 +493,7 @@ async def settings_snapshots_restore_action(_request: Request, snapshot_id: int)
             "omniverse_v2.db",
             "settings.db",
             "operational.db",
-            "unconfirmed.db",
+            "notebook.db",
             "extrapolation.db",
         ]:
             src = s_dir / db_file

@@ -415,9 +415,9 @@ async def run_acquisition(request: Request, run_id: str):
     from sqlmodel import Session, select
 
     from app.db.schema import AcquisitionArtifact, WorldAcquisitionUsage
-    from app.db.unconfirmed_session import unconfirmed_session_factory
+    from app.db.notebook_session import notebook_session_factory
 
-    with Session(unconfirmed_session_factory()) as session:
+    with Session(notebook_session_factory()) as session:
         stmt = (
             select(AcquisitionArtifact)
             .join(WorldAcquisitionUsage)

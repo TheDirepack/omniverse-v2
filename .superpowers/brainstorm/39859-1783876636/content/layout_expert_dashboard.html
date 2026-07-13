@@ -1,0 +1,164 @@
+<h2>Expert Dashboard Layout</h2>
+<p class="subtitle">Focused on information density and efficiency. Supports high-contrast accessibility patterns.</p>
+
+<div class="split">
+  <!-- LIGHT MODE MOCKUP -->
+  <div class="mockup">
+    <div class="mockup-header">Light Mode Preview</div>
+    <div class="mockup-body" style="background: #f3f4f6; color: #111827; font-family: sans-serif; height: 600px; display: flex; overflow: hidden; border: 1px solid #ddd; border-radius: 8px;">
+      <!-- Sidebar -->
+      <div style="width: 240px; background: #ffffff; border-right: 1px solid #e5e7eb; display: flex; flex-direction: column; padding: 1rem;">
+        <div style="font-weight: bold; font-size: 1.2rem; margin-bottom: 2rem; color: #2563eb;">Omniverse V2</div>
+        <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+          <div style="padding: 0.5rem 1rem; background: #eff6ff; color: #1e40af; border-radius: 0.375rem; font-weight: 500; cursor: pointer;">🔍 Research</div>
+          <div style="padding: 0.5rem 1rem; color: #4b5563; border-radius: 0.375rem; cursor: pointer; transition: background 0.2s;" onmouseover="this.style.background='#f9fafb'" onmouseout="this.style.background='transparent'">📚 Knowledge</div>
+          <div style="padding: 0.5rem 1rem; color: #4b5563; border-radius: 0.375rem; cursor: pointer; transition: background 0.2s;" onmouseover="this.style.background='#f9fafb'" onmouseout="this.style.background='transparent'">⚖️ Tiering <span style="font-size: 0.7rem; background: #e5e7eb; padding: 2px 4px; border-radius: 4px; margin-left: 8px;">Soon</span></div>
+          <div style="padding: 0.5rem 1rem; color: #4b5563; border-radius: 0.375rem; cursor: pointer; transition: background 0.2s;" onmouseover="this.style.background='#f9fafb'" onmouseout="this.style.background='transparent'">⚙️ Execution</div>
+          <div style="padding: 0.5rem 1rem; color: #4b5563; border-radius: 0.375rem; cursor: pointer; transition: background 0.2s;" onmouseover="this.style.background='#f9fafb'" onmouseout="this.style.background='transparent'">🛠️ Settings</div>
+        </div>
+        <div style="margin-top: auto; padding: 1rem; border-top: 1px solid #e5e7eb; font-size: 0.8rem; color: #9ca3af;">User: Admin</div>
+      </div>
+      
+      <!-- Main Area -->
+      <div style="flex: 1; display: flex; flex-direction: column; overflow: hidden;">
+        <!-- Top Bar -->
+        <div style="height: 64px; background: #ffffff; border-bottom: 1px solid #e5e7eb; display: flex; align-items: center; justify-content: space-between; padding: 0 1.5rem;">
+          <div style="display: flex; align-items: center; gap: 1rem;">
+            <span style="font-weight: 600; color: #374151;">World: <span style="color: #2563eb;">The Elder Scrolls</span></span>
+            <div style="width: 1px; height: 20px; background: #e5e7eb;"></div>
+            <input class="mock-input" style="width: 300px; height: 32px; padding: 0 1rem; border: 1px solid #d1d5db; border-radius: 0.375rem; font-size: 0.875rem;" placeholder="Search research items...">
+          </div>
+          <div style="display: flex; align-items: center; gap: 1rem;">
+            <button class="mock-button" style="background: #f3f4f6; border: 1px solid #d1d5db; padding: 4px 8px; border-radius: 4px; font-size: 0.8rem;">🌙 Dark Mode</button>
+          </div>
+        </div>
+        
+        <!-- Content -->
+        <div style="flex: 1; padding: 1.5rem; overflow-y: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 1rem; align-content: start;">
+          <div style="background: white; border: 1px solid #e5e7eb; padding: 1rem; border-radius: 0.5rem; box-shadow: 0 1px 2px rgba(0,0,0,0.05); cursor: pointer;" onclick="this.style.borderColor='#2563eb'; this.style.boxShadow='0 0 0 2px #bfdbfe'">
+            <div style="font-weight: 600; margin-bottom: 0.5rem;">Artifact: Divine Fire</div>
+            <div style="font-size: 0.875rem; color: #6b7280; line-height: 1.4;">The Divine Fire is an ancient flame that powers the central forge of the capital...</div>
+            <div style="margin-top: 1rem; display: flex; justify-content: space-between; align-items: center;">
+              <span style="font-size: 0.75rem; color: #9ca3af;">Updated 2h ago</span>
+              <span style="font-size: 0.75rem; background: #dcfce7; color: #166534; padding: 2px 6px; border-radius: 4px;">Verified</span>
+            </div>
+          </div>
+          <div style="background: white; border: 1px solid #e5e7eb; padding: 1rem; border-radius: 0.5rem; box-shadow: 0 1px 2px rgba(0,0,0,0.05); cursor: pointer;">
+            <div style="font-weight: 600; margin-bottom: 0.5rem;">Claim: High Priest's Authority</div>
+            <div style="font-size: 0.875rem; color: #6b7280; line-height: 1.4;">The High Priest can command the flames using the Sacred Staff...</div>
+            <div style="margin-top: 1rem; display: flex; justify-content: space-between; align-items: center;">
+              <span style="font-size: 0.75rem; color: #9ca3af;">Updated 5h ago</span>
+              <span style="font-size: 0.75rem; background: #fef9c3; color: #854d0e; padding: 2px 6px; border-radius: 4px;">Notebook</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <!-- Contextual Inspector -->
+      <div style="width: 350px; background: #f9fafb; border-left: 1px solid #e5e7eb; display: flex; flex-direction: column; padding: 1.5rem;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+          <h3 style="font-weight: 700; font-size: 1.1rem;">Details</h3>
+          <button style="background: none; border: none; cursor: pointer; font-size: 1.5rem; color: #9ca3af;">&times;</button>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 1.5rem;">
+          <div class="section">
+            <div class="label" style="font-size: 0.7rem; font-weight: bold; color: #9ca3af; text-transform: uppercase; margin-bottom: 0.25rem;">Artifact Name</div>
+            <div style="font-weight: 600;">Divine Fire</div>
+          </div>
+          <div class="section">
+            <div class="label" style="font-size: 0.7rem; font-weight: bold; color: #9ca3af; text-transform: uppercase; margin-bottom: 0.25rem;">Full Description</div>
+            <div style="font-size: 0.875rem; color: #4b5563; line-height: 1.6;">The Divine Fire is an ancient flame that powers the central forge of the capital city. It is said to be an ember from the creation of the universe, capable of refining any metal into a celestial alloy.</div>
+          </div>
+          <div class="section">
+            <div class="label" style="font-size: 0.7rem; font-weight: bold; color: #9ca3af; text-transform: uppercase; margin-bottom: 0.25rem;">Provenance</div>
+            <div style="font-size: 0.875rem; background: #ffffff; border: 1px solid #e5e7eb; padding: 0.75rem; border-radius: 0.375rem;">
+              <div style="color: #2563eb; text-decoration: underline; cursor: pointer; margin-bottom: 0.5rem;">Source: Archive of the Ages (p. 42)</div>
+              <div style="color: #2563eb; text-decoration: underline; cursor: pointer;">Source: Chronicles of Forge (Ch. 3)</div>
+            </div>
+          </div>
+          <button class="mock-button" style="width: 100%; padding: 0.75rem; background: #2563eb; color: white; border-radius: 0.375rem; font-weight: 600; margin-top: 1rem;">Edit Artifact</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- DARK MODE MOCKUP -->
+  <div class="mockup">
+    <div class="mockup-header">Dark Mode Preview</div>
+    <div class="mockup-body" style="background: #111827; color: #f3f4f6; font-family: sans-serif; height: 600px; display: flex; overflow: hidden; border: 1px solid #374151; border-radius: 8px;">
+      <!-- Sidebar -->
+      <div style="width: 240px; background: #1f2937; border-right: 1px solid #374151; display: flex; flex-direction: column; padding: 1rem;">
+        <div style="font-weight: bold; font-size: 1.2rem; margin-bottom: 2rem; color: #60a5fa;">Omniverse V2</div>
+        <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+          <div style="padding: 0.5rem 1rem; background: #1e3a8a; color: #bfdbfe; border-radius: 0.375rem; font-weight: 500; cursor: pointer;">🔍 Research</div>
+          <div style="padding: 0.5rem 1rem; color: #9ca3af; border-radius: 0.375rem; cursor: pointer; transition: background 0.2s;" onmouseover="this.style.background='#374151'" onmouseout="this.style.background='transparent'">📚 Knowledge</div>
+          <div style="padding: 0.5rem 1rem; color: #9ca3af; border-radius: 0.375rem; cursor: pointer; transition: background 0.2s;" onmouseover="this.style.background='#374151'" onmouseout="this.style.background='transparent'">⚖️ Tiering <span style="font-size: 0.7rem; background: #4b5563; padding: 2px 4px; border-radius: 4px; margin-left: 8px;">Soon</span></div>
+          <div style="padding: 0.5rem 1rem; color: #9ca3af; border-radius: 0.375rem; cursor: pointer; transition: background 0.2s;" onmouseover="this.style.background='#374151'" onmouseout="this.style.background='transparent'">⚙️ Execution</div>
+          <div style="padding: 0.5rem 1rem; color: #9ca3af; border-radius: 0.375rem; cursor: pointer; transition: background 0.2s;" onmouseover="this.style.background='#374151'" onmouseout="this.style.background='transparent'">🛠️ Settings</div>
+        </div>
+        <div style="margin-top: auto; padding: 1rem; border-top: 1px solid #374151; font-size: 0.8rem; color: #6b7280;">User: Admin</div>
+      </div>
+      
+      <!-- Main Area -->
+      <div style="flex: 1; display: flex; flex-direction: column; overflow: hidden;">
+        <!-- Top Bar -->
+        <div style="height: 64px; background: #1f2937; border-bottom: 1px solid #374151; display: flex; align-items: center; justify-content: space-between; padding: 0 1.5rem;">
+          <div style="display: flex; align-items: center; gap: 1rem;">
+            <span style="font-weight: 600; color: #d1d5db;">World: <span style="color: #60a5fa;">The Elder Scrolls</span></span>
+            <div style="width: 1px; height: 20px; background: #374151;"></div>
+            <input class="mock-input" style="width: 300px; height: 32px; padding: 0 1rem; background: #374151; border: 1px solid #4b5563; border-radius: 0.375rem; font-size: 0.875rem; color: white;" placeholder="Search research items...">
+          </div>
+          <div style="display: flex; align-items: center; gap: 1rem;">
+            <button class="mock-button" style="background: #374151; border: 1px solid #4b5563; padding: 4px 8px; border-radius: 4px; font-size: 0.8rem; color: #d1d5db;">☀️ Light Mode</button>
+          </div>
+        </div>
+        
+        <!-- Content -->
+        <div style="flex: 1; padding: 1.5rem; overflow-y: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 1rem; align-content: start;">
+          <div style="background: #1f2937; border: 1px solid #374151; padding: 1rem; border-radius: 0.5rem; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); cursor: pointer;" onclick="this.style.borderColor='#60a5fa'; this.style.boxShadow='0 0 0 2px #1e3a8a'">
+            <div style="font-weight: 600; margin-bottom: 0.5rem;">Artifact: Divine Fire</div>
+            <div style="font-size: 0.875rem; color: #9ca3af; line-height: 1.4;">The Divine Fire is an ancient flame that powers the central forge of the capital...</div>
+            <div style="margin-top: 1rem; display: flex; justify-content: space-between; align-items: center;">
+              <span style="font-size: 0.75rem; color: #6b7280;">Updated 2h ago</span>
+              <span style="font-size: 0.75rem; background: #064e3b; color: #6ee7b7; padding: 2px 6px; border-radius: 4px;">Verified</span>
+            </div>
+          </div>
+          <div style="background: #1f2937; border: 1px solid #374151; padding: 1rem; border-radius: 0.5rem; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); cursor: pointer;">
+            <div style="font-weight: 600; margin-bottom: 0.5rem;">Claim: High Priest's Authority</div>
+            <div style="font-size: 0.875rem; color: #9ca3af; line-height: 1.4;">The High Priest can command the flames using the Sacred Staff...</div>
+            <div style="margin-top: 1rem; display: flex; justify-content: space-between; align-items: center;">
+              <span style="font-size: 0.75rem; color: #6b7280;">Updated 5h ago</span>
+              <span style="font-size: 0.75rem; background: #451a03; color: #fde047; padding: 2px 6px; border-radius: 4px;">Notebook</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <!-- Contextual Inspector -->
+      <div style="width: 350px; background: #111827; border-left: 1px solid #374151; display: flex; flex-direction: column; padding: 1.5rem;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+          <h3 style="font-weight: 700; font-size: 1.1rem;">Details</h3>
+          <button style="background: none; border: none; cursor: pointer; font-size: 1.5rem; color: #6b7280;">&times;</button>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 1.5rem;">
+          <div class="section">
+            <div class="label" style="font-size: 0.7rem; font-weight: bold; color: #6b7280; text-transform: uppercase; margin-bottom: 0.25rem;">Artifact Name</div>
+            <div style="font-weight: 600;">Divine Fire</div>
+          </div>
+          <div class="section">
+            <div class="label" style="font-size: 0.7rem; font-weight: bold; color: #6b7280; text-transform: uppercase; margin-bottom: 0.25rem;">Full Description</div>
+            <div style="font-size: 0.875rem; color: #9ca3af; line-height: 1.6;">The Divine Fire is an ancient flame that powers the central forge of the capital city. It is said to be an ember from the creation of the universe, capable of refining any metal into a celestial alloy.</div>
+          </div>
+          <div class="section">
+            <div class="label" style="font-size: 0.7rem; font-weight: bold; color: #6b7280; text-transform: uppercase; margin-bottom: 0.25rem;">Provenance</div>
+            <div style="font-size: 0.875rem; background: #1f2937; border: 1px solid #374151; padding: 0.75rem; border-radius: 0.375rem;">
+              <div style="color: #60a5fa; text-decoration: underline; cursor: pointer; margin-bottom: 0.5rem;">Source: Archive of the Ages (p. 42)</div>
+              <div style="color: #60a5fa; text-decoration: underline; cursor: pointer;">Source: Chronicles of Forge (Ch. 3)</div>
+            </div>
+          </div>
+          <button class="mock-button" style="width: 100%; padding: 0.75rem; background: #2563eb; color: white; border-radius: 0.375rem; font-weight: 600; margin-top: 1rem;">Edit Artifact</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

@@ -150,9 +150,9 @@ The core workflow processes universes from untiered to tiered:
                               ↑
                               │
 ┌─────────────────────────────────────────────────────────────┐
-│                  Staging DB (Unconfirmed)                   │
+│                  Staging DB (Notebook)                   │
 │  ┌──────────────────┐ ┌──────────────┐ ┌──────────────┐   │
-│  │UnconfirmedUniv   │ │NotebookEntry │ │Source        │   │
+│  │NotebookUniv   │ │NotebookEntry │ │Source        │   │
 │  └──────────────────┘ └──────────────┘ └──────────────┘   │
 └─────────────────────────────────────────────────────────────┘
                               ↑

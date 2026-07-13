@@ -4,10 +4,10 @@ from fastapi import APIRouter, Depends, Request, Response
 from fastapi.responses import HTMLResponse
 from sqlmodel import Session, select
 
-from app.core.dependencies import get_main_session, get_unconfirmed_session
+from app.core.dependencies import get_main_session, get_notebook_session
 from app.core.templates import templates
 from app.db.schema import Artifact
-from app.db.unconfirmed_schema import NotebookEntry
+from app.db.notebook_schema import NotebookEntry
 from app.services.universe_service import UniverseService
 
 router = APIRouter(tags=["validation_views"])
@@ -15,7 +15,7 @@ router = APIRouter(tags=["validation_views"])
 @router.get("/", response_class=HTMLResponse)
 async def validation_page(
     request: Request,
-    session: Annotated[Session, Depends(get_unconfirmed_session)],
+    session: Annotated[Session, Depends(get_notebook_session)],
 ):
     # 1. Pending entries from notebook
     entries = (
@@ -74,7 +74,7 @@ async def validation_page(
 @router.post("/claim/{claim_id}/approve", response_class=HTMLResponse)
 async def approve_claim(
     claim_id: int,
-    session: Annotated[Session, Depends(get_unconfirmed_session)],
+    session: Annotated[Session, Depends(get_notebook_session)],
     _main_session: Annotated[Session, Depends(get_main_session)],
 ):
     # This logic is now handled by the DB Architect agent.
@@ -96,7 +96,7 @@ async def approve_claim(
 @router.post("/claim/{claim_id}/reject", response_class=HTMLResponse)
 async def reject_claim(
     claim_id: int,
-    session: Annotated[Session, Depends(get_unconfirmed_session)],
+    session: Annotated[Session, Depends(get_notebook_session)],
 ):
     entry = session.get(NotebookEntry, claim_id)
     if not entry:

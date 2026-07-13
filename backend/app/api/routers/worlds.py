@@ -1,10 +1,11 @@
 import json
 from pathlib import Path
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, Request
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, Request, Depends
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
+from app.core.dependencies import get_main_session
 from app.db.extrapolation_schema import Theory
 from app.db.extrapolation_session import engine as extrapolation_engine
 from app.db.schema import (
@@ -18,8 +19,8 @@ from app.db.schema import (
     WorldTier,
 )
 from app.db.session import engine
-from app.db.unconfirmed_schema import NotebookEntry, UnconfirmedUniverse
-from app.db.unconfirmed_session import unconfirmed_engine
+from app.db.notebook_schema import NotebookEntry, NotebookUniverse
+from app.db.notebook_session import notebook_engine
 from app.services.universe_service import UniverseService
 
 router = APIRouter(prefix="/worlds", tags=["worlds"])
@@ -27,10 +28,6 @@ router = APIRouter(prefix="/worlds", tags=["worlds"])
 
 class AddWorldPayload(BaseModel):
     world_name: str
-    franchise: str | None = None
-    category: str | None = None
-    continuity: str | None = None
-    era: str | None = None
     parent_id: int | None = None
     auto_research: bool = True
 
@@ -56,18 +53,14 @@ class UniverseResponse(BaseModel):
     uuid: str
     slug: str
     name: str
-    franchise: str | None = None
-    category: str | None = None
-    continuity: str | None = None
-    era: str | None = None
     summary: str | None = None
     is_explored: bool
 
 
 @router.post("/snapshots")
 def create_snapshot(payload: SnapshotPayload):
-    from app.db.unconfirmed_schema import Snapshot
-    with Session(unconfirmed_engine) as session:
+    from app.db.notebook_schema import Snapshot
+    with Session(notebook_engine) as session:
         # In a real implementation, we would backup the DB files here
         # For now, we record the snapshot metadata
         snapshot = Snapshot(
@@ -87,8 +80,8 @@ def create_snapshot(payload: SnapshotPayload):
 
 @router.get("/snapshots")
 def list_snapshots():
-    from app.db.unconfirmed_schema import Snapshot
-    with Session(unconfirmed_engine) as session:
+    from app.db.notebook_schema import Snapshot
+    with Session(notebook_engine) as session:
         snapshots = session.exec(select(Snapshot)).all()
         return [
             SnapshotResponse(
@@ -102,8 +95,8 @@ def list_snapshots():
 
 @router.delete("/snapshots/{snapshot_id}")
 def delete_snapshot(snapshot_id: int):
-    from app.db.unconfirmed_schema import Snapshot
-    with Session(unconfirmed_engine) as session:
+    from app.db.notebook_schema import Snapshot
+    with Session(notebook_engine) as session:
         snapshot = session.get(Snapshot, snapshot_id)
         if not snapshot:
             raise HTTPException(status_code=404, detail="Snapshot not found")
@@ -151,10 +144,6 @@ def create_world(payload: AddWorldPayload, background_tasks: BackgroundTasks):
 
     world = service.create_universe(
         name=payload.world_name,
-        franchise=payload.franchise,
-        category=payload.category,
-        continuity=payload.continuity,
-        era=payload.era,
         parent_id=payload.parent_id,
     )
 
@@ -192,31 +181,46 @@ def add_world(payload: AddWorldPayload, background_tasks: BackgroundTasks):
 
 
 @router.get("/")
-def get_worlds(limit: int = 100, offset: int = 0, fields: list[str] | None = None):
+def get_worlds(
+    limit: int = 100, 
+    offset: int = 0, 
+    fields: list[str] | None = None,
+    session: Session = Depends(get_main_session)
+):
     service = UniverseService()
-    worlds = service.get_all_universes(limit=limit, offset=offset, fields=fields)
-    if fields:
-        return [
-            dict(zip(fields, w, strict=False))
-            if isinstance(w, tuple)
-            else w.model_dump()
-            for w in worlds
-        ]
-    return [
-        UniverseResponse(
-            id=w.id,
-            uuid=w.uuid,
-            slug=w.slug or f"universe-{w.id}",
-            name=w.name,
-            franchise=w.franchise,
-            category=w.category,
-            continuity=w.continuity,
-            era=w.era,
-            summary=w.summary,
-            is_explored=w.is_explored,
-        )
-        for w in worlds
-    ]
+    worlds = service.get_all_universes(limit=limit, offset=offset)
+    
+    results = []
+    for w in worlds:
+        # Get metadata from artifacts
+        artifacts = session.exec(
+            select(Artifact).where(Artifact.universe_id == w.id)
+        ).all()
+        meta = {a.type: a.name for a in artifacts}
+        
+        if fields:
+            # Construct a dict with requested fields
+            res = {}
+            for f in fields:
+                if hasattr(w, f):
+                    res[f] = getattr(w, f)
+                elif f in meta:
+                    res[f] = meta[f]
+                else:
+                    res[f] = None
+            results.append(res)
+        else:
+            results.append(
+                UniverseResponse(
+                    id=w.id,
+                    uuid=w.uuid,
+                    slug=w.slug or f"universe-{w.id}",
+                    name=w.name,
+                    summary=w.summary,
+                    is_explored=w.is_explored,
+                )
+            )
+    return results
 
 
 @router.post("/{world_id}/reset-explored")
@@ -259,8 +263,8 @@ def delete_world(world_id: int):
 @router.post("/reset-database")
 def reset_database(create_snapshot: bool = True, snapshot_name: str = "Auto-Reset-Snapshot"):
     if create_snapshot:
-        from app.db.unconfirmed_schema import Snapshot
-        with Session(unconfirmed_engine) as snap_session:
+        from app.db.notebook_schema import Snapshot
+        with Session(notebook_engine) as snap_session:
             snapshot = Snapshot(
                 name=snapshot_name,
                 snapshot_type="FULL",
@@ -309,27 +313,24 @@ def reset_database(create_snapshot: bool = True, snapshot_name: str = "Auto-Rese
                     if not exists:
                         session.add(
                             Universe(
-                                slug=slug,
-                                name=w_data.get("name"),
-                                franchise=w_data.get("franchise"),
-                                category=w_data.get("category"),
-                                continuity=w_data.get("continuity"),
-                                era=w_data.get("era"),
-                                summary=None,
-                                is_explored=False,
-                            )
+                                 slug=slug,
+                                 name=w_data.get("name"),
+                                 summary=None,
+                                 is_explored=False,
+                             )
+
                         )
         session.commit()
 
-    with Session(unconfirmed_engine) as session:
-        # Same FK-ordering issue as above: unconfirmed.db also enables
-        # PRAGMA foreign_keys=ON (unconfirmed_session.py), and
-        # UnconfirmedClaim.universe_id references unconfirmed_universe.id.
-        # Deleting UnconfirmedUniverse before UnconfirmedClaim raises an
+    with Session(notebook_engine) as session:
+        # Same FK-ordering issue as above: notebook.db also enables
+        # PRAGMA foreign_keys=ON (notebook_session.py), and
+        # NotebookClaim.universe_id references notebook_universe.id.
+        # Deleting NotebookUniverse before NotebookClaim raises an
         # IntegrityError the moment any claim rows exist -- this was the
-        # actual cause of "reset has issues with Unconfirmed.db". Child
+        # actual cause of "reset has issues with Notebook.db". Child
         # table must be deleted first.
-        for table in [NotebookEntry, UnconfirmedUniverse]:
+        for table in [NotebookEntry, NotebookUniverse]:
             session.exec(table.__table__.delete())
         session.commit()
 
@@ -348,7 +349,6 @@ def list_registry(q: str | None = Query(default=None)):
         entries = [
             e for e in entries
             if q_lower in e.get("name", "").lower()
-            or q_lower in e.get("franchise", "").lower()
             or q_lower in e.get("id", "").lower()
         ]
     return {"worlds": entries[:50]}
@@ -384,10 +384,6 @@ def get_world_by_uuid(uuid: str):
         "uuid": world.uuid,
         "slug": world.slug,
         "name": world.name,
-        "franchise": world.franchise,
-        "category": world.category,
-        "continuity": world.continuity,
-        "era": world.era,
         "summary": world.summary,
         "is_explored": world.is_explored,
     }

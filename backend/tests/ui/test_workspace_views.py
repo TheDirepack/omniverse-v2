@@ -3,8 +3,8 @@ from sqlmodel import Session
 
 from app.db.schema import Universe
 from app.db.session import engine
-from app.db.unconfirmed_schema import NotebookEntry, ResearchSource, TimelineEntry
-from app.db.unconfirmed_session import unconfirmed_engine
+from app.db.notebook_schema import NotebookEntry, ResearchSource, TimelineEntry
+from app.db.notebook_session import notebook_engine
 from app.main import app
 
 client = TestClient(app)
@@ -17,7 +17,7 @@ def test_workspace_notebook_view():
         session.refresh(u)
         u_uuid = u.uuid
 
-    with Session(unconfirmed_engine) as session:
+    with Session(notebook_engine) as session:
         entry = NotebookEntry(
             universe_uuid=u_uuid,
             title="My Note",
@@ -51,7 +51,7 @@ def test_workspace_sources_view():
         session.refresh(u)
         u_uuid = u.uuid
 
-    with Session(unconfirmed_engine) as session:
+    with Session(notebook_engine) as session:
         source = ResearchSource(
             universe_uuid=u_uuid,
             url="https://example.com",
@@ -74,7 +74,7 @@ def test_workspace_timeline_view():
         session.refresh(u)
         u_uuid = u.uuid
 
-    with Session(unconfirmed_engine) as session:
+    with Session(notebook_engine) as session:
         event = TimelineEntry(
             universe_uuid=u_uuid,
             title="The Big Bang",

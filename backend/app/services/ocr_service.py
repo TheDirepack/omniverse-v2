@@ -9,7 +9,7 @@ from app.core.document import Document
 from app.core.gpu_detection import (
     is_gpu_available,
 )
-from app.db.unconfirmed_schema import AcquisitionArtifact
+from app.db.notebook_schema import AcquisitionArtifact
 
 _GPU_SETTING_KEY = "ocr_use_gpu"
 

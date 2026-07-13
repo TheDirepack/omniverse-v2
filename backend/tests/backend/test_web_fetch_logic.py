@@ -35,7 +35,7 @@ def test_extract_internal_links(fetcher):
     soup = BeautifulSoup(html, "html.parser")
 
     # Test default (max 20)
-    links = fetcher._extract_internal_links(soup, base_url="http://example.com")
+    links = fetcher._extract_weighted_links(soup, base_url="http://example.com")
 
     # Fusion Engine should be High value and have score 2, and section
     # "Technical Specifications"
@@ -82,7 +82,7 @@ def test_extract_internal_links_max(fetcher):
     soup = BeautifulSoup(html, "html.parser")
 
     # Test capping at 2
-    links = fetcher._extract_internal_links(
+    links = fetcher._extract_weighted_links(
         soup, base_url="http://example.com", max_links=2
     )
     assert len(links) == 2

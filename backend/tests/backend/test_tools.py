@@ -163,9 +163,9 @@ class TestRegistry:
         for name in [
             "queryClaims",
             "upsertArtifacts",
-            "queryUnconfirmedClaims",
-            "saveUnconfirmedClaim",
-            "deleteUnconfirmedClaim",
+            "queryNotebookClaims",
+            "saveNotebookEntry",
+            "deleteNotebookClaim",
         ]:
             assert name in AGENT_TOOLS, f"Missing tool: {name}"
 

@@ -60,7 +60,7 @@ Tests use ephemeral SQLite at `/dev/shm/omniverse_tests/`. Autouse fixture drops
 - **Main DB**: SQLite via SQLModel at `DATABASE_URL` (default `backend/data/omniverse_v2.db`). Stores the canonical Knowledge Graph (Artifacts and Relations).
 - **Settings DB**: `backend/data/settings.db`. Agent routes, provider configs, settings.
 - **Operational DB**: `backend/data/operational.db`. Execution state, logs.
-- **Staging DB**: `backend/data/unconfirmed.db`. Persistent research workspace (Notebook entries, curated sources, and timelines).
+- **Staging DB**: `backend/data/notebook.db`. Persistent research workspace (Notebook entries, curated sources, and timelines).
 - **Extrapolation DB**: `backend/data/extrapolation.db`. Isolated storage for speculative theories; must never contaminate canon DB.
 
 All default to `backend/data/` but overridable via env vars.
@@ -113,4 +113,4 @@ Global `ACTIVE_RUNS` / `ABORTED_RUNS` sets in `core/state.py`. Abort checked bet
 - **CSRF**: Removed (local dev tool, cookie/header check added friction without proportional benefit).
 
 ## Maintenance Scripts
-- `cleanup_worlds_general.py`: Strips trailing parentheses from universe names in Main and Unconfirmed DBs.
+- `cleanup_worlds_general.py`: Strips trailing parentheses from universe names in Main and Staging DBs.

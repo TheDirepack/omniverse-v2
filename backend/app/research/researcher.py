@@ -11,7 +11,6 @@ from app.core.validation import audit_success
 from app.core.validators import validate_research_json
 from app.core.runtime_state import is_aborted
 from app.core.agent_config import get_tools_for_agent
-from app.core.tools import tool_query_unconfirmed_claims, tool_query_unconfirmed_artifacts
 from app.services.execution_service import ExecutionService
 from app.services.research_workspace import WorkspaceService
 from app.services.knowledge_retriever import KnowledgeRetrieverService
@@ -229,7 +228,6 @@ class WorldResearcher:
         research_queue = retry_handler.get_research_queue()
         feedback_summary = retry_handler.get_feedback_summary()
 
-        unconfirmed_data = await tool_query_unconfirmed_artifacts({})
         workspace_index = self.workspace_service.get_full_workspace_index(self.target.uuid)
         notebook_content = self.workspace_service.get_notebook_content(self.run_id, self.target.uuid)
         notebook_section = f"\n\n### CURRENT WORKING NOTES (From Research Notebook):\n{notebook_content or 'No notes yet.'}"
@@ -240,7 +238,6 @@ class WorldResearcher:
             focus=self.focus,
             previous_dataset=retry_handler.last_result,
             outstanding_corrections=feedback_summary,
-            unconfirmed_data=unconfirmed_data,
             verified_claims=context["verified_claims"] if i == 0 else None,
             knowledge_graph=context["knowledge_graph"] if i == 0 else None,
             multiverse_leads=context["multiverse_leads"] if i == 0 else None,

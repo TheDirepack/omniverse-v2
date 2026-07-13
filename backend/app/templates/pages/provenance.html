@@ -14,15 +14,15 @@
         <!-- Stage 1: The Claim -->
         <div class="relative">
             <div class="absolute -left-[26px] top-0 w-5 h-5 rounded-full bg-blue-500 border-4 border-white dark:border-gray-900"></div>
-            <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow border-l-4 {% if is_unconfirmed %}border-amber-500{% else %}border-blue-600{% endif %}">
+            <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow border-l-4 {% if is_notebook %}border-amber-500{% else %}border-blue-600{% endif %}">
                 <div class="flex justify-between items-start mb-2">
-                    <span class="text-xs font-bold uppercase {% if is_unconfirmed %}text-amber-600{% else %}text-blue-600{% endif %}">
-                        {% if is_unconfirmed %}Unconfirmed Claim{% else %}Verified Claim{% endif %}
+                    <span class="text-xs font-bold uppercase {% if is_notebook %}text-amber-600{% else %}text-blue-600{% endif %}">
+                        {% if is_notebook %}Notebook Claim{% else %}Verified Claim{% endif %}
                     </span>
                     <span class="text-xs text-gray-400">{{ claim.created_at }}</span>
                 </div>
                 <div class="text-lg font-medium">
-                     {% if is_unconfirmed %}
+                     {% if is_notebook %}
                          <span class="font-bold">{{ claim.subject }}</span> 
                          <span class="text-blue-500 font-semibold">{{ claim.predicate }}</span> 
                          <span>{{ claim.object_val }}</span>

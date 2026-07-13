@@ -12,6 +12,7 @@ dependencies = [
     "langchain",
     "langgraph",
     "litellm",
+    "aiohttp>=3.14.1",
     "cloakbrowser",
     "beautifulsoup4",
     "pydantic-settings",

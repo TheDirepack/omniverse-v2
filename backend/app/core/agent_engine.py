@@ -1,4 +1,5 @@
 import json
+import asyncio
 from enum import Enum, auto
 from typing import Any
 
@@ -7,10 +8,13 @@ from sqlalchemy.exc import OperationalError, ProgrammingError
 from app.core.acquisition_cache import acquisition_cache
 from app.core.agent_event_types import AgentEventType
 from app.core.agent_logger import agent_logger
+from app.core.context_manager import ContextManager
 from app.core.importers.ocr_importer import ocr_importer
 from app.core.router import router
 from app.core.tools import AGENT_TOOLS
-from app.db.unconfirmed_schema import AcquisitionArtifact
+from app.db.notebook_schema import AcquisitionArtifact
+
+context_manager = ContextManager()
 
 
 class Capability(Enum):
@@ -29,7 +33,7 @@ TOOL_CAPABILITIES = {
     "updateArtifact": Capability.WRITE_MAIN_DB,
     "loadNotebookEntry": Capability.READ_WORKSPACE,
     "saveNotebookEntry": Capability.WRITE_WORKSPACE,
-    "deleteUnconfirmedArtifact": Capability.WRITE_WORKSPACE,
+    "deleteNotebookArtifact": Capability.WRITE_WORKSPACE,
     "webSearch": Capability.ACQUISITION,
     "fetchPage": Capability.ACQUISITION,
     "ocrImage": Capability.ACQUISITION,
@@ -196,7 +200,16 @@ async def run_agent(
     from app.core.runtime_state import set_current_run_id
     set_current_run_id(run_id)
 
+    # Append context pruning notice to system prompt
+    system_prompt += (
+        "\n\n[CONTEXT MANAGEMENT NOTICE]: Raw observations from fetchPage, webSearch, and ocrImage "
+        "are automatically pruned from your history once you use a writing tool (upsertArtifacts, "
+        "updateArtifact, or saveNotebookEntry). Ensure you have extracted all necessary information "
+        "from your sources before committing it to the database."
+    )
+
     for attempt in range(max_retries + 1):
+        model = None # Track current model for token counting
         if history:
             messages = list(history)
             # Ensure system prompt is current if it's the first message or needs update
@@ -220,9 +233,6 @@ async def run_agent(
 
         # Filter tools and prepare litellm-compatible tool definitions
         disabled_tools = set()
-        print(f"DEBUG: AGENT_TOOLS keys: {list(AGENT_TOOLS.keys())}")
-
-        # Filter by capabilities if provided
         filtered_tools_names = tools_names
         if required_capabilities is not None:
             filtered_tools_names = [
@@ -269,9 +279,20 @@ async def run_agent(
             if await is_aborted(run_id):
                 raise RuntimeError(f"Run {run_id} was aborted by user.")
 
+            # Context Management: Compress history if token budget is exceeded
+            if model:
+                current_tokens = context_manager.count_tokens(messages, model)
+                if current_tokens > context_manager.max_tokens * context_manager.summary_threshold:
+                    messages = await context_manager.compress_context(
+                        messages=messages,
+                        model=model,
+                        router_instance=router,
+                        system_prompt=system_prompt,
+                        user_goal=user_prompt
+                    )
+
             # Enforce minimum turns before allowing submission
             if _turn < min_turns:
-                # We don't stop the agent, but we will block the submit tool if it tries to call it.
                 pass
 
             active_tools = litellm_tools
@@ -299,290 +320,239 @@ async def run_agent(
             message = response.choices[0].message
             content = message.content
             tool_calls = getattr(message, "tool_calls", None)
-            print(f"DEBUG: tool_calls={tool_calls}")
-
-            # Log agent thinking/turn
-
 
             if content:
                 agent_logger.log(
-                   agent=agent_name,
-                   event_type=AgentEventType.THOUGHT,
-                   content=content,
-                   model=model,
-                   key_id=key_id,
-               )
-
+                    agent=agent_name,
+                    event_type=AgentEventType.THOUGHT,
+                    content=content,
+                    model=model,
+                    key_id=key_id,
+                )
             elif tool_calls:
-               # Log that the agent is acting even if it didn't "think" in text
-               tool_names = [tc.function.name for tc in tool_calls]
-               agent_logger.log(
-                   agent=agent_name,
-                   event_type=AgentEventType.THOUGHT,
-                   content=f"Agent decided to use tools: {', '.join(tool_names)}",
-                   model=model,
-                   key_id=key_id,
-               )
+                tool_names = [tc.function.name for tc in tool_calls]
+                agent_logger.log(
+                    agent=agent_name,
+                    event_type=AgentEventType.THOUGHT,
+                    content=f"Agent decided to use tools: {', '.join(tool_names)}",
+                    model=model,
+                    key_id=key_id,
+                )
+
             if tool_calls:
-               # Append assistant message with tool calls to history
-               messages.append(
-                   {
-                       "role": "assistant",
-                       "content": content,
-                       "tool_calls": [
-                           {
-                               "id": tc.id,
-                               "type": tc.type,
-                               "function": {
-                                   "name": tc.function.name,
-                                   "arguments": tc.function.arguments,
-                               },
-                           }
-                           for tc in tool_calls
-                       ],
-                   }
-               )
-               for tool_call in tool_calls:
-                   name = tool_call.function.name
-                   args = json.loads(tool_call.function.arguments)
+                messages.append(
+                    {
+                        "role": "assistant",
+                        "content": content,
+                        "tool_calls": [
+                            {
+                                "id": tc.id,
+                                "type": tc.type,
+                                "function": {
+                                    "name": tc.function.name,
+                                    "arguments": tc.function.arguments,
+                                },
+                            }
+                            for tc in tool_calls
+                        ],
+                    }
+                )
+                for tool_call in tool_calls:
+                    name = tool_call.function.name
+                    args = json.loads(tool_call.function.arguments)
 
-                   if name == submit_tool_name:
-                       # 1. Enforce minimum turns
-                       if _turn < min_turns:
-                           messages.append(
-                               {
-                                   "role": "tool",
-                                   "tool_call_id": tool_call.id,
-                                   "name": name,
-                                   "content": (
-                                       f"Submission rejected: Minimum research turns ({min_turns}) "
-                                       f"not yet reached. Current turn: {_turn + 1}. Please "
-                                       f"continue exploring and verifying claims before submitting."
-                                   ),
-                               }
-                           )
-                           continue
+                    if name == submit_tool_name:
+                        # 1. Enforce minimum turns
+                        if _turn < min_turns:
+                            messages.append(
+                                {
+                                    "role": "tool",
+                                    "tool_call_id": tool_call.id,
+                                    "name": name,
+                                    "content": f"Submission rejected: Minimum research turns ({min_turns}) not yet reached. Current turn: {_turn + 1}. Please continue exploring and verifying claims before submitting.",
+                                }
+                            )
+                            continue
 
-                       args_dataset = args.get("dataset")
-                       if args_dataset:
-                           try:
-                               dataset = (
-                                   json.loads(args_dataset)
-                                   if isinstance(args_dataset, str)
-                                   else args_dataset
-                               )
-                               claims = dataset.get("Verified_Claims", [])
-                               graph = dataset.get("Knowledge_Graph", [])
+                        args_dataset = args.get("dataset")
+                        if args_dataset:
+                            try:
+                                dataset = json.loads(args_dataset) if isinstance(args_dataset, str) else args_dataset
+                                claims = dataset.get("Verified_Claims", [])
+                                graph = dataset.get("Knowledge_Graph", [])
+                                pending_leads = [lead for lead in graph if lead.get("Status") == "Pending" and int(lead.get("Priority", 0)) >= 7]
+                                if len(claims) < 5 and pending_leads:
+                                    messages.append({
+                                        "role": "tool",
+                                        "tool_call_id": tool_call.id,
+                                        "name": name,
+                                        "content": f"Coverage Gap Detected: You have only {len(claims)} verified claims and {len(pending_leads)} high-priority pending leads. Why are you concluding now? Please address the priority leads before submitting.",
+                                    })
+                                    continue
+                                if len(claims) < 3:
+                                    messages.append({
+                                        "role": "tool",
+                                        "tool_call_id": tool_call.id,
+                                        "name": name,
+                                        "content": "Coverage too low: Less than 3 verified claims found. Please continue researching to ensure a minimal knowledge base.",
+                                    })
+                                    continue
+                            except json.JSONDecodeError:
+                                messages.append({
+                                    "role": "tool",
+                                    "tool_call_id": tool_call.id,
+                                    "name": name,
+                                    "content": "Submission rejected: The dataset provided is not valid JSON. Please ensure you return a properly formatted JSON object.",
+                                })
+                                return True, "Submission rejected: The dataset provided is not valid JSON. Please ensure you return a properly formatted JSON object.", messages
+                            except Exception as e:
+                                messages.append({
+                                    "role": "tool",
+                                    "tool_call_id": tool_call.id,
+                                    "name": name,
+                                    "content": f"Submission rejected: Error parsing dataset: {e!s}. Please check your formatting.",
+                                })
+                                continue
 
-                               pending_leads = [
-                                   lead
-                                   for lead in graph
-                                   if lead.get("Status") == "Pending"
-                                   and int(lead.get("Priority", 0)) >= 7
-                               ]
+                        return True, args_dataset or content or "Findings submitted.", messages
 
-                               if len(claims) < 5 and pending_leads:
-                                   messages.append(
-                                       {
-                                           "role": "tool",
-                                           "tool_call_id": tool_call.id,
-                                           "name": name,
-                                           "content": (
-                                               f"Coverage Gap Detected: You have only {len(claims)} "
-                                               f"verified claims and {len(pending_leads)} high-priority "
-                                               f"pending leads. Why are you concluding now? Please "
-                                               f"address the priority leads before submitting."
-                                           ),
-                                       }
-                                   )
-                                   continue
+                    if name in available_tools:
+                        agent_logger.log(
+                            agent=agent_name,
+                            event_type=AgentEventType.TOOL_REQ,
+                            content=f"Calling {name} with args {json.dumps(args)}",
+                            model=model,
+                            key_id=key_id,
+                        )
 
-                               if len(claims) < 3:
-                                   messages.append(
-                                       {
-                                           "role": "tool",
-                                           "tool_call_id": tool_call.id,
-                                           "name": name,
-                                           "content": "Coverage too low: Less than 3 verified claims found. Please continue researching to ensure a minimal knowledge base.",
-                                       }
-                                   )
-                                   continue
-                           except json.JSONDecodeError:
-                               messages.append(
-                                   {
-                                       "role": "tool",
-                                       "tool_call_id": tool_call.id,
-                                       "name": name,
-                                       "content": "Submission rejected: The dataset provided is not valid JSON. Please ensure you return a properly formatted JSON object.",
-                                   }
-                               )
-                               return True, "Submission rejected: The dataset provided is not valid JSON. Please ensure you return a properly formatted JSON object.", messages
-                           except Exception as e:
-                               messages.append(
-                                   {
-                                       "role": "tool",
-                                       "tool_call_id": tool_call.id,
-                                       "name": name,
-                                       "content": f"Submission rejected: Error parsing dataset: {e!s}. Please check your formatting.",
-                                   }
-                               )
-                               continue
+                        if name == "executePlan":
+                            plan = args.get("plan", [])
+                            plan_observations = [None] * len(plan)
+                            results_history = [None] * len(plan)
+                            completed_steps = set()
 
-                       # If the tool provides a dataset, use it; otherwise, fallback to content
-                       return (
-                           True,
-                           args_dataset or content or "Findings submitted.",
-                           messages,
-                       )
+                            while len(completed_steps) < len(plan):
+                                ready_steps = []
+                                for i, step in enumerate(plan):
+                                    if i in completed_steps:
+                                        continue
+                                    tool_args = step.get("args", {}).copy() if isinstance(step.get("args"), dict) else {}
+                                    can_run = True
+                                    for v in tool_args.values():
+                                        if isinstance(v, str) and v.startswith("$result_"):
+                                            try:
+                                                idx = int(v.split("_")[1])
+                                                if idx >= len(plan) or (idx >= 0 and results_history[idx] is None):
+                                                    can_run = False
+                                                    break
+                                            except (ValueError, IndexError):
+                                                pass
+                                    if can_run:
+                                        ready_steps.append(i)
 
-                   if name in available_tools:
-                       print(f"DEBUG: name='{name}', available_tools={list(available_tools.keys())}")
-                       # Log tool request
-                       agent_logger.log(
-                           agent=agent_name,
-                           event_type=AgentEventType.TOOL_REQ,
-                           content=f"Calling {name} with args {json.dumps(args)}",
-                           model=model,
-                           key_id=key_id,
-                       )
+                                if not ready_steps:
+                                    break
 
-                       if name == "executePlan":
-                           plan = args.get("plan", [])
-                           plan_observations = []
-                           results_history = []
+                                tasks = []
+                                for i in ready_steps:
+                                    step = plan[i]
+                                    tool_name = step.get("tool")
+                                    tool_args = step.get("args", {}).copy() if isinstance(step.get("args"), dict) else {}
+                                    for k, v in tool_args.items():
+                                        if isinstance(v, str) and v.startswith("$result_"):
+                                            try:
+                                                idx = int(v.split("_")[1])
+                                                if 0 <= idx < len(results_history):
+                                                    tool_args[k] = results_history[idx]
+                                            except (ValueError, IndexError):
+                                                pass
+                                    if agent_name:
+                                        agent_logger.log(
+                                            agent=agent_name,
+                                            event_type=AgentEventType.STEP,
+                                            content=f"Executing step {i+1}/{len(plan)} (Concurrent): {tool_name} with {tool_args}",
+                                            model=model or "unknown",
+                                            key_id=key_id or "unknown",
+                                        )
+                                    tasks.append(_execute_tool(tool_name, tool_args, run_id, agent_name=agent_name, model=model, key_id=key_id))
 
-                           for i, step in enumerate(plan):
-                               tool_name = step.get("tool")
-                               tool_args = (
-                                   step.get("args", {}).copy()
-                                   if isinstance(step.get("args"), dict)
-                                   else {}
-                               )
+                                results = await asyncio.gather(*tasks, return_exceptions=True)
+                                for i, res in zip(ready_steps, results):
+                                    if isinstance(res, Exception):
+                                        obs = f"Step {i} failed: {res!s}"
+                                    else:
+                                        obs = res
+                                    results_history[i] = obs
+                                    plan_observations[i] = f"Step {i} ({plan[i].get('tool')}): {obs}"
+                                    completed_steps.add(i)
 
-                               # Resolve placeholders like $result_0
-                               for k, v in tool_args.items():
-                                   if isinstance(v, str) and v.startswith("$result_"):
-                                       try:
-                                           idx = int(v.split("_")[1])
-                                           if idx < len(results_history):
-                                               tool_args[k] = results_history[idx]
-                                       except (ValueError, IndexError):
-                                           pass
+                                observation = "\\n\\n".join([o for o in plan_observations if o is not None])
+                        else:
+                            try:
+                                observation = await _execute_tool(name, args, run_id, agent_name=agent_name, model=model, key_id=key_id)
+                                tool_failures[name] = 0
+                            except Exception as e:
+                                count = tool_failures.get(name, 0) + 1
+                                tool_failures[name] = count
+                                failure_type = _classify_failure(e)
+                                if failure_type == "INFRASTRUCTURE_FAILURE":
+                                    if count == 1:
+                                        observation = f"SYSTEM ERROR in tool {name}: {e!s}. This is an infrastructure failure. If it fails again, the tool will be disabled for this run."
+                                    else:
+                                        disabled_tools.add(name)
+                                        observation = f"CRITICAL FAILURE in tool {name}: {e!s}. Tool has been disabled for the remainder of this run due to repeated infrastructure errors."
+                                else:
+                                    if count < 3:
+                                        observation = f"Error executing tool {name}: {e!s}. Please analyze the error, correct your parameters, and try again. (Attempt {count}/3)"
+                                    else:
+                                        observation = f"Tool {name} has failed {count} times consecutively. It may be fundamentally broken or the requested operation is impossible. Please attempt a different approach or use an alternative tool."
 
-                               # Log the granular step
-                               if agent_name:
-                                   agent_logger.log(
-                                       agent=agent_name,
-                                       event_type=AgentEventType.STEP,
-                                       content=f"Executing step {i+1}/{len(plan)}: {tool_name} with {tool_args}",
-                                       model=model or "unknown",
-                                       key_id=key_id or "unknown",
-                                   )
+                            messages.append(
+                                {
+                                    "role": "tool",
+                                    "tool_call_id": tool_call.id,
+                                    "name": name,
+                                    "content": observation,
+                                }
+                            )
 
-                               try:
-                                   obs = await _execute_tool(
-                                       tool_name,
-                                       tool_args,
-                                       run_id,
-                                       agent_name=agent_name,
-                                       model=model,
-                                       key_id=key_id,
-                                   )
-                                   results_history.append(obs)
-                                   plan_observations.append(
-                                       f"Step {i} ({tool_name}): {obs}"
-                                   )
-                               except Exception as e:
-                                   err_obs = f"Step {i} ({tool_name}) failed: {e!s}"
-                                   results_history.append(err_obs)
-                                   plan_observations.append(err_obs)
+                            agent_logger.log(
+                                agent=agent_name,
+                                event_type=AgentEventType.TOOL_RES,
+                                content=f"Observation from {name}: {observation}",
+                                model=model,
+                                key_id=key_id,
+                            )
+                    else:
+                        messages.append(
+                            {
+                                "role": "tool",
+                                "tool_call_id": tool_call.id,
+                                "name": name,
+                                "content": f"Error: Tool {name} not found.",
+                            }
+                        )
 
-                           observation = "\n\n".join(plan_observations)
-                       else:
-                           try:
-                               observation = await _execute_tool(
-                                   name,
-                                   args,
-                                   run_id,
-                                   agent_name=agent_name,
-                                   model=model,
-                                   key_id=key_id,
-                               )
-                               tool_failures[name] = 0
-                           except Exception as e:
-                               count = tool_failures.get(name, 0) + 1
-                               tool_failures[name] = count
+                    
+                    # Prune raw observations if a writing tool was used
+                    messages = context_manager.prune_raw_observations(messages, name)
+                    continue
 
-                               failure_type = _classify_failure(e)
-                               if failure_type == "INFRASTRUCTURE_FAILURE":
-                                   if count == 1:
-                                       observation = f"SYSTEM ERROR in tool {name}: {e!s}. This is an infrastructure failure. If it fails again, the tool will be disabled for this run."
-                                   else:
-                                       disabled_tools.add(name)
-                                       observation = f"CRITICAL FAILURE in tool {name}: {e!s}. Tool has been disabled for the remainder of this run due to repeated infrastructure errors."
-                               else:
-                                   if count < 3:
-                                       observation = f"Error executing tool {name}: {e!s}. Please analyze the error, correct your parameters, and try again. (Attempt {count}/3)"
-                                   else:
-                                       observation = f"Tool {name} has failed {count} times consecutively. It may be fundamentally broken or the requested operation is impossible. Please attempt a different approach or use an alternative tool."
+                if not content:
+                    messages.append(
+                        {
+                            "role": "user",
+                            "content": "Please use the available tools to research and eventually call the submit tool.",
+                        }
+                    )
+                    continue
 
-                           messages.append(
-                               {
-                                   "role": "tool",
-                                   "tool_call_id": tool_call.id,
-                                   "name": name,
-                                   "content": observation,
-                               }
-                           )
-
-                           # Log tool response
-                           agent_logger.log(
-                               agent=agent_name,
-                               event_type=AgentEventType.TOOL_RES,
-                               content=f"Observation from {name}: {observation}",
-                               model=model,
-                               key_id=key_id,
-                           )
-                   else:
-                       messages.append(
-                           {
-                               "role": "tool",
-                               "tool_call_id": tool_call.id,
-                               "name": name,
-                               "content": f"Error: Tool {name} not found.",
-                           }
-                       )
-
-               # After executing tool calls, the agent needs to process observations
-               continue
-
-            # No tool calls at all.
-            if not content:
-               messages.append(
-                   {
-                       "role": "user",
-                       "content": "Please use the available tools to research and eventually call the submit tool.",
-                   }
-               )
-               continue
-
-            return (
-               True,
-               content,
-               messages
-            )
+                return (True, content, messages)
 
         if attempt < max_retries:
             continue
 
-        return (
-            False,
-            "MAX_TURNS_REACHED",
-            messages
-        )
+        return (False, "MAX_TURNS_REACHED", messages)
 
-    return (
-        False,
-        "Error: Max turns reached without submission.",
-        messages
-    )
+    return (False, "Error: Max turns reached without submission.", messages)
+

@@ -11,44 +11,23 @@
           hx-target="#world-modal-content"
           hx-swap="innerHTML"
           class="grid grid-cols-2 gap-4">
-        <div class="col-span-2">
-            <label for="world-name" class="block text-sm font-medium mb-1">Name *</label>
-            <input type="text" id="world-name" name="name" required
-                   class="w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-        </div>
-        <div>
-            <label for="world-franchise" class="block text-sm font-medium mb-1">Franchise</label>
-            <input type="text" id="world-franchise" name="franchise"
-                   class="w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-        </div>
-        <div>
-            <label for="world-category" class="block text-sm font-medium mb-1">Category</label>
-            <input type="text" id="world-category" name="category"
-                   class="w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                   placeholder="Science Fantasy, Space Opera...">
-        </div>
-        <div>
-            <label for="world-continuity" class="block text-sm font-medium mb-1">Continuity</label>
-            <input type="text" id="world-continuity" name="continuity"
-                   class="w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                   placeholder="Games, Anime, Movies...">
-        </div>
-        <div>
-            <label for="world-era" class="block text-sm font-medium mb-1">Era</label>
-            <input type="text" id="world-era" name="era"
-                   class="w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-        </div>
-        <div>
-            <label for="world-parent-id" class="block text-sm font-medium mb-1">Parent World</label>
-            <select id="world-parent-id" name="parent_id"
+         <div class="col-span-2">
+             <label for="world-name" class="block text-sm font-medium mb-1">Name *</label>
+             <input type="text" id="world-name" name="name" required
                     class="w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-                <option value="">None (top-level)</option>
-                {% for parent in parents %}
-                <option value="{{ parent.id }}">{{ parent.name }}</option>
-                {% endfor %}
-            </select>
-        </div>
-        <div class="col-span-2">
+         </div>
+         <div>
+             <label for="world-parent-id" class="block text-sm font-medium mb-1">Parent World</label>
+             <select id="world-parent-id" name="parent_id"
+                     class="w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                 <option value="">None (top-level)</option>
+                 {% for parent in parents %}
+                 <option value="{{ parent.id }}">{{ parent.name }}</option>
+                 {% endfor %}
+             </select>
+         </div>
+         <div class="col-span-2">
+
             <button type="submit"
                     class="bg-blue-600 text-white px-6 py-2 rounded text-sm hover:bg-blue-700 transition">
                 Create World

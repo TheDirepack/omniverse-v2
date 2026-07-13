@@ -1,5 +1,5 @@
 from app.core.document import Document, DocumentImporter
-from app.db.unconfirmed_schema import AcquisitionArtifact
+from app.db.notebook_schema import AcquisitionArtifact
 
 
 class WebPageImporter(DocumentImporter):

@@ -6,8 +6,8 @@ from sqlmodel import Session, SQLModel, create_engine, select
 from app.core.context import set_current_universe
 from app.core.tools import tool_save_notebook_entry, tool_upsert_artifacts
 from app.db.schema import Artifact, Universe
-from app.db.unconfirmed_schema import (
-    unconfirmed_metadata,
+from app.db.notebook_schema import (
+    notebook_metadata,
 )
 
 
@@ -15,13 +15,13 @@ from app.db.unconfirmed_schema import (
 def mem_engine():
     engine = create_engine("sqlite:///:memory:")
     SQLModel.metadata.create_all(engine)
-    unconfirmed_metadata.create_all(engine)
+    notebook_metadata.create_all(engine)
     return engine
 
 @pytest.mark.asyncio
 async def test_deterministic_promotion_flow(mem_engine):
     with patch("app.core.tools.engine", mem_engine), \
-          patch("app.core.tools.unconfirmed_engine", mem_engine):
+          patch("app.core.tools.notebook_engine", mem_engine):
 
         with Session(mem_engine) as session:
             u = Universe(name="PromoteWorld", slug="promote-world")
@@ -77,7 +77,7 @@ async def test_symmetric_entity_resolution(mem_engine):
     from app.core.context import set_current_universe
     set_current_universe("SymmetryWorld")
     with patch("app.core.tools.engine", mem_engine), \
-          patch("app.core.tools.unconfirmed_engine", mem_engine):
+          patch("app.core.tools.notebook_engine", mem_engine):
         with Session(mem_engine) as session:
             u = Universe(name="SymmetryWorld", slug="symmetry-world")
             session.add(u)

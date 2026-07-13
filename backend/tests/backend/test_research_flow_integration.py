@@ -6,8 +6,8 @@ from sqlmodel import Session
 from app.core.domain import ResearchTarget
 from app.db.schema import Universe
 from app.db.session import engine
-from app.db.unconfirmed_schema import NotebookEntry
-from app.db.unconfirmed_session import unconfirmed_engine
+from app.db.notebook_schema import NotebookEntry
+from app.db.notebook_session import notebook_engine
 from app.research.researcher import research_single_world
 
 
@@ -42,7 +42,7 @@ async def test_research_workspace_integration_flow():
 
     with patch("app.research.researcher.run_agent", side_effect=prompt_capturer):
         # Pre-populate workspace
-        with Session(unconfirmed_engine) as session:
+        with Session(notebook_engine) as session:
             u_uuid = target.uuid
             session.add(
                 NotebookEntry(

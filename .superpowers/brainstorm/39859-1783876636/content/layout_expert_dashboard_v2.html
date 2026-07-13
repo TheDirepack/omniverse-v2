@@ -1,0 +1,181 @@
+<h2>Expert Dashboard v2: High Density & Logic Shift</h2>
+<p class="subtitle">Optimized for high-volume world/artifact management. Compact layouts, search-first interfaces.</p>
+
+<div class="split">
+  <!-- RESEARCH VIEW (World Selection) -->
+  <div class="mockup">
+    <div class="mockup-header">Research: World Selection</div>
+    <div class="mockup-body" style="background: #f3f4f6; color: #111827; font-family: sans-serif; height: 600px; display: flex; overflow: hidden; border: 1px solid #ddd; border-radius: 8px;">
+      <!-- Sidebar -->
+      <div style="width: 200px; background: #ffffff; border-right: 1px solid #e5e7eb; display: flex; flex-direction: column; padding: 0.75rem;">
+        <div style="font-weight: bold; font-size: 1rem; margin-bottom: 1.5rem; color: #2563eb; padding-left: 0.5rem;">Omniverse V2</div>
+        <div style="display: flex; flex-direction: column; gap: 0.25rem;">
+          <div style="padding: 0.375rem 0.75rem; background: #eff6ff; color: #1e40af; border-radius: 0.25rem; font-weight: 500; font-size: 0.875rem; cursor: pointer;">🔍 Research</div>
+          <div style="padding: 0.375rem 0.75rem; color: #4b5563; border-radius: 0.25rem; font-size: 0.875rem; cursor: pointer;">📚 Knowledge</div>
+          <div style="padding: 0.375rem 0.75rem; color: #4b5563; border-radius: 0.25rem; font-size: 0.875rem; cursor: pointer;">⚖️ Tiering</div>
+          <div style="padding: 0.375rem 0.75rem; color: #4b5563; border-radius: 0.25rem; font-size: 0.875rem; cursor: pointer;">⚙️ Execution</div>
+          <div style="padding: 0.375rem 0.75rem; color: #4b5563; border-radius: 0.25rem; font-size: 0.875rem; cursor: pointer;">🛠️ Settings</div>
+        </div>
+      </div>
+      
+      <!-- Main Area -->
+      <div style="flex: 1; display: flex; flex-direction: column; overflow: hidden;">
+        <!-- Control Bar -->
+        <div style="height: 56px; background: #ffffff; border-bottom: 1px solid #e5e7eb; display: flex; align-items: center; justify-content: space-between; padding: 0 1rem;">
+          <div style="display: flex; align-items: center; gap: 0.75rem; flex: 1;">
+            <input class="mock-input" style="width: 400px; height: 32px; padding: 0 0.75rem; border: 1px solid #d1d5db; border-radius: 0.25rem; font-size: 0.875rem;" placeholder="Search worlds by name, tags, or keywords...">
+            <select style="height: 32px; padding: 0 0.5rem; border: 1px solid #d1d5db; border-radius: 0.25rem; font-size: 0.875rem; background: white;">
+              <option>All Categories</option>
+              <option>High Fantasy</option>
+              <option>Sci-Fi</option>
+              <option>Cosmic Horror</option>
+            </select>
+          </div>
+          <button class="mock-button" style="background: #2563eb; color: white; border: none; padding: 0.5rem 1rem; border-radius: 0.25rem; font-size: 0.875rem; font-weight: 600; cursor: pointer;">+ Add World</button>
+        </div>
+        
+        <!-- World List (Dense) -->
+        <div style="flex: 1; padding: 1rem; overflow-y: auto;">
+          <table style="width: 100%; border-collapse: collapse; font-size: 0.875rem; text-align: left;">
+            <thead style="background: #e5e7eb; color: #4b5563; font-weight: 600;">
+              <tr>
+                <th style="padding: 0.5rem; border-bottom: 1px solid #d1d5db;">World Name</th>
+                <th style="padding: 0.5rem; border-bottom: 1px solid #d1d5db;">Category</th>
+                <th style="padding: 0.5rem; border-bottom: 1px solid #d1d5db;">Status</th>
+                <th style="padding: 0.5rem; border-bottom: 1px solid #d1d5db;">Last Researched</th>
+                <th style="padding: 0.5rem; border-bottom: 1px solid #d1d5db;">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr style="border-bottom: 1px solid #e5e7eb; cursor: pointer; background: #fff;" onmouseover="this.style.background='#f9fafb'" onmouseout="this.style.background='#fff'">
+                <td style="padding: 0.5rem; font-weight: 500;">The Elder Scrolls</td>
+                <td style="padding: 0.5rem;">High Fantasy</td>
+                <td style="padding: 0.5rem;"><span style="font-size: 0.75rem; background: #dcfce7; color: #166534; padding: 2px 6px; border-radius: 4px;">Complete</span></td>
+                <td style="padding: 0.5rem;">2026-07-10</td>
+                <td style="padding: 0.5rem;"><button style="font-size: 0.75rem; padding: 2px 8px; border: 1px solid #d1d5db; border-radius: 4px; cursor: pointer;">Research</button></td>
+              </tr>
+              <tr style="border-bottom: 1px solid #e5e7eb; cursor: pointer; background: #fff;" onmouseover="this.style.background='#f9fafb'" onmouseout="this.style.background='#fff'">
+                <td style="padding: 0.5rem; font-weight: 500;">Warhammer 40k</td>
+                <td style="padding: 0.5rem;">Grimdark Sci-Fi</td>
+                <td style="padding: 0.5rem;"><span style="font-size: 0.75rem; background: #fef9c3; color: #854d0e; padding: 2px 6px; border-radius: 4px;">In Progress</span></td>
+                <td style="padding: 0.5rem;">2026-07-12</td>
+                <td style="padding: 0.5rem;"><button style="font-size: 0.75rem; padding: 2px 8px; border: 1px solid #d1d5db; border-radius: 4px; cursor: pointer;">Research</button></td>
+              </tr>
+              <tr style="border-bottom: 1px solid #e5e7eb; cursor: pointer; background: #fff;" onmouseover="this.style.background='#f9fafb'" onmouseout="this.style.background='#fff'">
+                <td style="padding: 0.5rem; font-weight: 500;">Cosmere</td>
+                <td style="padding: 0.5rem;">Epic Fantasy</td>
+                <td style="padding: 0.5rem;"><span style="font-size: 0.75rem; background: #f3f4f6; color: #4b5563; padding: 2px 6px; border-radius: 4px;">Untiered</span></td>
+                <td style="padding: 0.5rem;">-</td>
+                <td style="padding: 0.5rem;"><button style="font-size: 0.75rem; padding: 2px 8px; border: 1px solid #d1d5db; border-radius: 4px; cursor: pointer;">Research</button></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- KNOWLEDGE VIEW (Artifacts) -->
+  <div class="mockup">
+    <div class="mockup-header">Knowledge: Artifacts</div>
+    <div class="mockup-body" style="background: #f3f4f6; color: #111827; font-family: sans-serif; height: 600px; display: flex; overflow: hidden; border: 1px solid #ddd; border-radius: 8px;">
+      <!-- Sidebar (Same as above) -->
+      <div style="width: 200px; background: #ffffff; border-right: 1px solid #e5e7eb; display: flex; flex-direction: column; padding: 0.75rem;">
+        <div style="font-weight: bold; font-size: 1rem; margin-bottom: 1.5rem; color: #2563eb; padding-left: 0.5rem;">Omniverse V2</div>
+        <div style="display: flex; flex-direction: column; gap: 0.25rem;">
+          <div style="padding: 0.375rem 0.75rem; color: #4b5563; border-radius: 0.25rem; font-size: 0.875rem; cursor: pointer;">🔍 Research</div>
+          <div style="padding: 0.375rem 0.75rem; background: #eff6ff; color: #1e40af; border-radius: 0.25rem; font-weight: 500; font-size: 0.875rem; cursor: pointer;">📚 Knowledge</div>
+          <div style="padding: 0.375rem 0.75rem; color: #4b5563; border-radius: 0.25rem; font-size: 0.875rem; cursor: pointer;">⚖️ Tiering</div>
+          <div style="padding: 0.375rem 0.75rem; color: #4b5563; border-radius: 0.25rem; font-size: 0.875rem; cursor: pointer;">⚙️ Execution</div>
+          <div style="padding: 0.375rem 0.75rem; color: #4b5563; border-radius: 0.25rem; font-size: 0.875rem; cursor: pointer;">🛠️ Settings</div>
+        </div>
+      </div>
+      
+      <!-- Main Area -->
+      <div style="flex: 1; display: flex; flex-direction: column; overflow: hidden;">
+        <!-- Control Bar -->
+        <div style="height: 56px; background: #ffffff; border-bottom: 1px solid #e5e7eb; display: flex; align-items: center; justify-content: space-between; padding: 0 1rem;">
+          <div style="display: flex; align-items: center; gap: 0.75rem; flex: 1;">
+            <span style="font-weight: 600; font-size: 0.875rem; color: #374151;">World: <span style="color: #2563eb;">The Elder Scrolls</span></span>
+            <div style="width: 1px; height: 20px; background: #e5e7eb;"></div>
+            <input class="mock-input" style="width: 300px; height: 32px; padding: 0 0.75rem; border: 1px solid #d1d5db; border-radius: 0.25rem; font-size: 0.875rem;" placeholder="Filter artifacts...">
+            <select style="height: 32px; padding: 0 0.5rem; border: 1px solid #d1d5db; border-radius: 0.25rem; font-size: 0.875rem; background: white;">
+              <option>All Types</option>
+              <option>Entity</option>
+              <option>Claim</option>
+              <option>Specification</option>
+            </select>
+          </div>
+          <button class="mock-button" style="background: #f3f4f6; border: 1px solid #d1d5db; padding: 4px 8px; border-radius: 0.25rem; font-size: 0.8rem;">Export JSON</button>
+        </div>
+        
+        <!-- Content Split -->
+        <div style="flex: 1; display: flex; overflow: hidden;">
+          <!-- Artifact List (Super Dense) -->
+          <div style="width: 300px; border-right: 1px solid #e5e7eb; overflow-y: auto; background: white;">
+            <div style="padding: 0.5rem; font-size: 0.75rem; font-weight: bold; color: #9ca3af; text-transform: uppercase; border-bottom: 1px solid #e5e7eb; background: #f9fafb;">Artifacts</div>
+            <div style="display: flex; flex-direction: column;">
+              <!-- Hover State Example -->
+              <div style="padding: 0.5rem 0.75rem; border-bottom: 1px solid #f3f4f6; cursor: pointer; background: #eff6ff; border-left: 3px solid #2563eb;" title="Hover: The Divine Fire is an ancient flame that powers the central forge.">
+                <div style="font-size: 0.8125rem; font-weight: 500; color: #1e40af;">Divine Fire</div>
+                <div style="font-size: 0.7rem; color: #6b7280; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">The Divine Fire is an ancient flame...</div>
+              </div>
+              <div style="padding: 0.5rem 0.75rem; border-bottom: 1px solid #f3f4f6; cursor: pointer; background: white; transition: background 0.2s;" onmouseover="this.style.background='#f9fafb'" onmouseout="this.style.background='white'">
+                <div style="font-size: 0.8125rem; font-weight: 500; color: #374151;">High Priest</div>
+                <div style="font-size: 0.7rem; color: #6b7280; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">The authority of the priesthood...</div>
+              </div>
+              <div style="padding: 0.5rem 0.75rem; border-bottom: 1px solid #f3f4f6; cursor: pointer; background: white; transition: background 0.2s;" onmouseover="this.style.background='#f9fafb'" onmouseout="this.style.background='white'">
+                <div style="font-size: 0.8125rem; font-weight: 500; color: #374151;">Aetherium Forge</div>
+                <div style="font-size: 0.7rem; color: #6b7280; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Ancient forge using Aetherium...</div>
+              </div>
+            </div>
+          </div>
+          
+          <!-- Inspector (Deep Dive) -->
+          <div style="flex: 1; background: #f9fafb; padding: 1.25rem; overflow-y: auto;">
+            <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 1rem;">
+              <h3 style="font-weight: 700; font-size: 1.25rem; color: #111827;">Divine Fire</h3>
+              <span style="font-size: 0.75rem; background: #dcfce7; color: #166534; padding: 2px 6px; border-radius: 4px; font-weight: 600;">Verified</span>
+            </div>
+            
+            <div style="display: flex; flex-direction: column; gap: 1.25rem;">
+              <div class="section">
+                <div class="label" style="font-size: 0.7rem; font-weight: bold; color: #9ca3af; text-transform: uppercase; margin-bottom: 0.25rem;">Full Description</div>
+                <div style="font-size: 0.875rem; color: #4b5563; line-height: 1.6; background: white; padding: 0.75rem; border: 1px solid #e5e7eb; border-radius: 0.375rem;">
+                  The Divine Fire is an ancient flame that powers the central forge of the capital city. It is said to be an ember from the creation of the universe, capable of refining any metal into a celestial alloy.
+                </div>
+              </div>
+              
+              <div class="section">
+                <div class="label" style="font-size: 0.7rem; font-weight: bold; color: #9ca3af; text-transform: uppercase; margin-bottom: 0.25rem;">Evidence & Provenance</div>
+                <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+                  <div style="font-size: 0.8125rem; background: white; border: 1px solid #e5e7eb; padding: 0.5rem; border-radius: 0.25rem; display: flex; justify-content: space-between; align-items: center;">
+                    <span style="color: #2563eb; text-decoration: underline; cursor: pointer;">Archive of the Ages (p. 42)</span>
+                    <span style="font-size: 0.7rem; color: #9ca3af;">Conf: High</span>
+                  </div>
+                  <div style="font-size: 0.8125rem; background: white; border: 1px solid #e5e7eb; padding: 0.5rem; border-radius: 0.25rem; display: flex; justify-content: space-between; align-items: center;">
+                    <span style="color: #2563eb; text-decoration: underline; cursor: pointer;">Chronicles of Forge (Ch. 3)</span>
+                    <span style="font-size: 0.7rem; color: #9ca3af;">Conf: Medium</span>
+                  </div>
+                </div>
+              </div>
+              
+              <div class="section">
+                <div class="label" style="font-size: 0.7rem; font-weight: bold; color: #9ca3af; text-transform: uppercase; margin-bottom: 0.25rem;">Related Artifacts</div>
+                <div style="display: flex; flex-wrap: wrap; gap: 0.5rem;">
+                  <div style="font-size: 0.75rem; background: #e5e7eb; padding: 2px 8px; border-radius: 12px; color: #374151; cursor: pointer;">High Priest</div>
+                  <div style="font-size: 0.75rem; background: #e5e7eb; padding: 2px 8px; border-radius: 12px; color: #374151; cursor: pointer;">Aetherium Forge</div>
+                </div>
+              </div>
+              
+              <div style="display: flex; gap: 0.75rem; margin-top: 1rem;">
+                <button class="mock-button" style="flex: 1; padding: 0.5rem; background: #2563eb; color: white; border-radius: 0.25rem; font-weight: 600; font-size: 0.875rem; cursor: pointer;">Edit Artifact</button>
+                <button class="mock-button" style="padding: 0.5rem; background: white; border: 1px solid #d1d5db; border-radius: 0.25rem; font-size: 0.875rem; cursor: pointer;">Delete</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

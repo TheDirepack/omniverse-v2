@@ -1,11 +1,11 @@
 from sqlmodel import Session
 
-from app.db.unconfirmed_session import unconfirmed_engine
+from app.db.notebook_session import notebook_engine
 from app.services.research_workspace import WorkspaceService
 
 
 def test_notebook_operations():
-    with Session(unconfirmed_engine) as session:
+    with Session(notebook_engine) as session:
         service = WorkspaceService(session=session)
         u_uuid = "test-universe-uuid"
 
@@ -43,7 +43,7 @@ def test_notebook_operations():
         assert updated.summary == "Updated summary"
 
 def test_source_operations():
-    with Session(unconfirmed_engine) as session:
+    with Session(notebook_engine) as session:
         service = WorkspaceService(session=session)
         u_uuid = "test-universe-uuid-sources"
 
@@ -72,7 +72,7 @@ def test_source_operations():
         assert updated.extraction_status == "COMPLETE"
 
 def test_timeline_operations():
-    with Session(unconfirmed_engine) as session:
+    with Session(notebook_engine) as session:
         service = WorkspaceService(session=session)
         u_uuid = "test-universe-uuid-timeline"
 
@@ -92,7 +92,7 @@ def test_timeline_operations():
         assert timeline[0].title == "The Great War"
 
         # Add participants/location/etc
-        # We need a dummy entity id for this since we are using unconfirmed_engine
+        # We need a dummy entity id for this since we are using notebook_engine
         # but the schema refers to entity.id (which is in main db).
         # In tests, we can just use an integer.
         service.add_timeline_participant(event.id, entity_id=1, role="Commander")

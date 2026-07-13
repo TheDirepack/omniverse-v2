@@ -22,7 +22,7 @@ This module provides a detailed breakdown of the FastAPI backend application, se
 | `runs` | `routers/runs.py` | Execution tracking | `/api/runs`, `/api/runs/{id}/abort` |
 | `settings` | `routers/settings.py` | System config | `/api/settings`, `/api/settings/providers` |
 | `providers` | `routers/providers.py` | LLM providers | `/api/providers` |
-| `unconfirmed` | `routers/unconfirmed.py` | Staging DB | `/api/unconfirmed` |
+| `notebook` | `routers/notebook.py` | Staging DB | `/api/notebook` |
 | `routes` | `routers/routes.py` | Route management | `/api/routes` |
 
 ---
@@ -134,7 +134,7 @@ Manager → Research → DB Integrator → Mark Explored → Summary → Finishe
 | Module | File | Purpose |
 | :--- | :--- | :--- |
 | **Schema** | `schema.py` | Main DB table definitions (Universe, Artifact, etc.) |
-| **Unconfirmed** | `unconfirmed_schema.py` | Staging DB definitions |
+| **Notebook** | `notebook_schema.py` | Staging DB definitions |
 | **Session** | `session.py` | DB session creation |
 | **Settings Session** | `settings_session.py` | Settings DB session |
 | **Operational Session** | `operational_session.py` | Operational DB session |

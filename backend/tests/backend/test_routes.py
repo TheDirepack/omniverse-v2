@@ -567,8 +567,8 @@ class TestResetAndClear:
 
 
 class TestResearch:
-    def test_unconfirmed_claims(self, api_client):
-        r = api_client.get("/api/research/claims/unconfirmed")
+    def test_notebook_claims(self, api_client):
+        r = api_client.get("/api/research/claims/notebook")
         assert r.status_code == 200
         data = r.json()
         assert isinstance(data, list)

@@ -19,12 +19,12 @@ from app.db.schema import (
 )
 from app.services.predicate_service import PredicateService
 from app.db.session import engine
-from app.db.unconfirmed_schema import (
+from app.db.notebook_schema import (
     AcquisitionArtifact,
     NotebookEntry,
-    UnconfirmedUniverse,
+    NotebookUniverse,
 )
-from app.db.unconfirmed_session import unconfirmed_engine
+from app.db.notebook_session import notebook_engine
 from app.services.knowledge_retriever import KnowledgeRetrieverService
 from app.services.research_workspace import WorkspaceService
 from app.services.universe_service import UniverseService
@@ -173,6 +173,43 @@ async def tool_add_timeline_detail(args: dict[str, Any]) -> str:
 
     return f"Added {detail_type} {value_id} to timeline event {timeline_id}."
 
+
+async def tool_query_notebook_claims(args: dict[str, Any]) -> str:
+    universe_name = get_current_universe()
+    if not universe_name:
+        return "Error: No active universe context."
+
+    predicate_filter = args.get("predicate")
+
+    with Session(notebook_engine) as session:
+        universe = session.exec(
+            select(NotebookUniverse).where(NotebookUniverse.name == universe_name)
+        ).first()
+        if not universe:
+            return f"Notebook universe {universe_name} not found."
+
+        # Filter for entries of kind 'Claim'
+        statement = select(NotebookEntry).where(
+            NotebookEntry.universe_uuid == universe.uuid,
+            NotebookEntry.kind == "Claim"
+        )
+        if predicate_filter:
+            # Simple keyword search in title or summary for notebook claims
+            statement = statement.where(
+                (NotebookEntry.title.contains(predicate_filter)) | 
+                (NotebookEntry.summary.contains(predicate_filter))
+            )
+        
+        entries = session.exec(statement).all()
+        
+        if not entries:
+            return f"No notebook claims found for {universe_name} matching filter '{predicate_filter or 'any'}'."
+
+        lines = [
+            f"({e.id}) {e.title} | {e.summary} | Status: {e.status} | Priority: {e.priority}"
+            for e in entries
+        ]
+        return "\n".join(lines)
 
 async def tool_web_search(args: dict[str, Any]) -> str:
     queries = args.get("queries", [])
@@ -516,18 +553,6 @@ async def tool_query_claims(args: dict[str, Any]) -> str:
             for c in claims
         ]
         return "\n".join(lines)
-
-async def tool_delete_unconfirmed_claim(args: dict[str, Any]) -> str:
-    return "No unconfirmed atomic claims found in the research workspace."
-
-async def tool_query_unconfirmed_claims(args: dict[str, Any]) -> str:
-    return "No unconfirmed atomic claims found in the research workspace."
-
-async def tool_query_unconfirmed_artifacts(args: dict[str, Any]) -> str:
-    return "No unconfirmed artifacts found in the research workspace."
-
-async def tool_delete_unconfirmed_artifact(args: dict[str, Any]) -> str:
-    return "No unconfirmed artifacts found to delete."
 
 async def tool_delete_artifact(args: dict[str, Any]) -> str:
     universe_name = get_current_universe()
@@ -945,7 +970,7 @@ async def tool_link_entity_to_canonical(args: dict[str, Any]) -> str:
         return f"Entity {entity_name} in {current_name} {status}."
 
 
-async def tool_delete_unconfirmed_claim(args: dict[str, Any]) -> str:
+async def tool_delete_notebook_claim(args: dict[str, Any]) -> str:
     """Accepts either a single `claim_id`, or a batch via `claim_ids`: [id, ...]."""
     claim_ids = args.get("claim_ids")
     if not claim_ids:
@@ -960,12 +985,12 @@ async def tool_delete_unconfirmed_claim(args: dict[str, Any]) -> str:
         return "Error: No active universe context."
 
     deleted, errors = [], []
-    with Session(unconfirmed_engine) as session:
+    with Session(notebook_engine) as session:
         universe = session.exec(
-            select(UnconfirmedUniverse).where(UnconfirmedUniverse.name == universe_name)
+            select(NotebookUniverse).where(NotebookUniverse.name == universe_name)
         ).first()
         for claim_id in claim_ids:
-            claim = session.get(UnconfirmedClaim, claim_id)
+            claim = session.get(NotebookClaim, claim_id)
             if not claim:
                 errors.append(f"{claim_id} not found")
                 continue
@@ -976,7 +1001,7 @@ async def tool_delete_unconfirmed_claim(args: dict[str, Any]) -> str:
             deleted.append(str(claim_id))
         session.commit()
 
-    result = f"Deleted {len(deleted)} unconfirmed claim(s): {', '.join(deleted) if deleted else 'none'}."
+    result = f"Deleted {len(deleted)} notebook claim(s): {', '.join(deleted) if deleted else 'none'}."
     if errors:
         result += " Errors: " + "; ".join(errors)
     return result
@@ -1117,15 +1142,19 @@ AGENT_TOOLS: dict[str, dict[str, Any]] = {
             "required": [],
         },
     },
-    "queryUnconfirmedClaims": {
-        "func": tool_query_unconfirmed_claims,
-        "description": "Retrieve all unconfirmed atomic claims (S-P-O) for the active universe.",
-        "parameters": {"type": "object", "properties": {}, "required": []},
-    },
-    "queryUnconfirmedArtifacts": {
-        "func": tool_query_unconfirmed_artifacts,
-        "description": "Retrieve all unconfirmed artifacts from the research workspace for the active universe.",
-        "parameters": {"type": "object", "properties": {}, "required": []},
+    "queryNotebookClaims": {
+        "func": tool_query_notebook_claims,
+        "description": "Query unverified claims from the research notebook for the current universe. Optionally filter by a keyword in the title or summary.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "predicate": {
+                    "type": "string",
+                    "description": "The keyword to filter by.",
+                }
+            },
+            "required": [],
+        },
     },
     "linkUniverses": {
         "func": tool_link_universes,
@@ -1166,25 +1195,6 @@ AGENT_TOOLS: dict[str, dict[str, Any]] = {
                                 },
             },
             "required": ["entity_name"],
-        },
-    },
-    "deleteUnconfirmedClaim": {
-        "func": tool_delete_unconfirmed_claim,
-        "description": "Delete unconfirmed claim(s) by ID for the active universe.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "claim_id": {
-                    "type": "integer",
-                    "description": "Single-item mode: the ID of the unconfirmed claim to delete.",
-                },
-                "claim_ids": {
-                    "type": "array",
-                    "items": {"type": "integer"},
-                    "description": "Batch mode (preferred): all IDs to delete in one call.",
-                },
-            },
-            "required": [],
         },
     },
     "loadNotebookEntry": {

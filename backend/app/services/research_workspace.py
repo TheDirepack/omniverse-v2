@@ -3,7 +3,7 @@ from typing import Optional
 
 from sqlmodel import Session, select
 
-from app.db.unconfirmed_schema import (
+from app.db.notebook_schema import (
     NotebookEntry,
     ResearchSource,
     TimelineClaim,
@@ -12,12 +12,14 @@ from app.db.unconfirmed_schema import (
     TimelineParticipant,
     TimelineSource,
 )
-from app.db.unconfirmed_session import unconfirmed_engine
+from app.db.notebook_session import notebook_engine
+from app.services.universe_service import UniverseService
 
 
 class WorkspaceService:
-    def __init__(self, session: Optional[Session] = None):
-        self.session = session or Session(unconfirmed_engine)
+    def __init__(self, session: Optional[Session] = None, universe_service: Optional[UniverseService] = None):
+        self.session = session or Session(notebook_engine)
+        self.universe_service = universe_service
 
     def __enter__(self):
         return self
@@ -37,16 +39,22 @@ class WorkspaceService:
         )
         return self.session.exec(statement).all()
 
-    def get_notebook_index_str(self, universe_uuid: str) -> str:
+    def get_notebook_index_str(self, universe_uuid: str, limit: int = 50) -> str:
         """Generates a concise list of notebook entries for the agent's context."""
         entries = self.get_notebook_index(universe_uuid)
         if not entries:
             return "No active research notes."
+        
+        display_entries = entries[:limit]
         lines = [
             f"[{e.id}] {e.title} (Status: {e.status}, Priority: {e.priority})"
-            for e in entries
+            for e in display_entries
         ]
-        return "RESEARCH NOTES:\n" + "\n".join(lines)
+        
+        result = "RESEARCH NOTES:\n" + "\n".join(lines)
+        if len(entries) > limit:
+            result += f"\n(... and {len(entries) - limit} more. Use loadNotebookEntry with entry_id to see details ...)"
+        return result
 
     def get_notebook_content(self, run_id: Optional[str], universe_uuid: str) -> str:
         """Returns the concatenated summaries of notebook entries for a world.
@@ -76,7 +84,6 @@ class WorkspaceService:
         return False
 
     def upsert_notebook_entry(
-
         self,
         universe_uuid: str,
         title: str,
@@ -131,16 +138,22 @@ class WorkspaceService:
         )
         return self.session.exec(statement).all()
 
-    def get_sources_index_str(self, universe_uuid: str) -> str:
+    def get_sources_index_str(self, universe_uuid: str, limit: int = 50) -> str:
         """Generates a concise list of useful sources for the agent's context."""
         sources = self.get_sources(universe_uuid)
         if not sources:
             return "No curated sources saved."
+        
+        display_sources = sources[:limit]
         lines = [
             f"[{s.id}] {s.title or s.url} (Reliability: {s.reliability or 'Unknown'})"
-            for s in sources
+            for s in display_sources
         ]
-        return "USEFUL SOURCES:\n" + "\n".join(lines)
+        
+        result = "USEFUL SOURCES:\n" + "\n".join(lines)
+        if len(sources) > limit:
+            result += f"\n(... and {len(sources) - limit} more. Use manageSource to interact with sources ...)"
+        return result
 
 
     def upsert_source(
@@ -193,21 +206,50 @@ class WorkspaceService:
         )
         return self.session.exec(statement).all()
 
-    def get_timeline_index_str(self, universe_uuid: str) -> str:
+    def get_timeline_index_str(self, universe_uuid: str, limit: int = 50) -> str:
         """Generates a concise list of timeline events for the agent's context."""
         events = self.get_timeline(universe_uuid)
         if not events:
             return "No timeline events recorded."
-        lines = [f"[{e.id}] {e.title} (Era: {e.era or 'Unknown'})" for e in events]
-        return "TIMELINE EVENTS:\n" + "\n".join(lines)
+        
+        display_events = events[:limit]
+        lines = [f"[{e.id}] {e.title} (Era: {e.era or 'Unknown'})" for e in display_events]
+        
+        result = "TIMELINE EVENTS:\n" + "\n".join(lines)
+        if len(events) > limit:
+            result += f"\n(... and {len(events) - limit} more. Use addTimelineDetail to add more ...)"
+        return result
 
     def get_full_workspace_index(self, universe_uuid: str) -> str:
-        """Aggregates all indices into a single context block."""
-        return (
-            f"{self.get_notebook_index_str(universe_uuid)}\n\n"
-            f"{self.get_sources_index_str(universe_uuid)}\n\n"
-            f"{self.get_timeline_index_str(universe_uuid)}"
+        """Aggregates all indices into a single context block, using truncation to avoid context overflow."""
+        # Use limits to prevent context overflow
+        notebook_str = self.get_notebook_index_str(universe_uuid, limit=15)
+        sources_str = self.get_sources_index_str(universe_uuid, limit=15)
+        timeline_str = self.get_timeline_index_str(universe_uuid, limit=15)
+
+        index = (
+            f"{notebook_str}\n\n"
+            f"{sources_str}\n\n"
+            f"{timeline_str}"
         )
+        
+        if self.universe_service:
+            universe = self.universe_service.get_universe_by_uuid(universe_uuid)
+            if universe:
+                artifacts = self.universe_service.get_artifacts_summary(universe.id)
+                if artifacts:
+                    limit = 30
+                    display_artifacts = artifacts[:limit]
+                    artifact_lines = [f"- {name} ({atype})" for name, atype in display_artifacts]
+                    index += f"\n\nCANONICAL ARTIFACTS:\n" + "\n".join(artifact_lines)
+                    if len(artifacts) > limit:
+                        index += f"\n(... and {len(artifacts) - limit} more. Use queryArtifacts to search for specific artifacts ...)"
+                else:
+                    index += "\n\nCANONICAL ARTIFACTS:\nNo artifacts found."
+            else:
+                index += "\n\nCANONICAL ARTIFACTS:\nUniverse not found."
+
+        return index
 
     def create_timeline_event(
         self,
@@ -236,9 +278,7 @@ class WorkspaceService:
         self.session.refresh(event)
         return event
 
-    def add_timeline_participant(
-        self, timeline_id: int, entity_id: int, role: Optional[str] = None
-    ):
+    def add_timeline_participant(self, timeline_id: int, entity_id: int, role: Optional[str] = None):
         participant = TimelineParticipant(
             timeline_id=timeline_id, entity_id=entity_id, role=role
         )

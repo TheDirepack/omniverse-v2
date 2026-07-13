@@ -20,14 +20,14 @@ suffix = f"_{worker_id}" if worker_id else ""
 # Test database URLs
 DB_TIMEOUT = 60
 TEST_DB_URL = f"sqlite:///{SHM_DIR}/omniverse_test{suffix}.db?timeout={DB_TIMEOUT}"
-TEST_UNCONFIRMED_URL = f"sqlite:///{SHM_DIR}/omniverse_test_unconfirmed{suffix}.db?timeout={DB_TIMEOUT}"
+TEST_NOTEBOOK_URL = f"sqlite:///{SHM_DIR}/omniverse_test_notebook{suffix}.db?timeout={DB_TIMEOUT}"
 TEST_EXTRAPOLATION_URL = f"sqlite:///{SHM_DIR}/omniverse_test_extrapolation{suffix}.db?timeout={DB_TIMEOUT}"
 TEST_SETTINGS_URL = f"sqlite:///{SHM_DIR}/omniverse_test_settings{suffix}.db?timeout={DB_TIMEOUT}"
 TEST_OPERATIONAL_URL = f"sqlite:///{SHM_DIR}/omniverse_test_operational{suffix}.db?timeout={DB_TIMEOUT}"
 
 # Override env vars for tests BEFORE importing app
 os.environ["DATABASE_URL"] = TEST_DB_URL
-os.environ["UNCONFIRMED_DB_URL"] = TEST_UNCONFIRMED_URL
+os.environ["NOTEBOOK_DB_URL"] = TEST_NOTEBOOK_URL
 os.environ["EXTRAPOLATION_DB_URL"] = TEST_EXTRAPOLATION_URL
 os.environ["SETTINGS_DATABASE_URL"] = TEST_SETTINGS_URL
 os.environ["OPERATIONAL_DATABASE_URL"] = TEST_OPERATIONAL_URL
@@ -44,10 +44,10 @@ def _enable_fks(dbapi_connection, _connection_record):
 # Create test engines
 engine = create_engine(TEST_DB_URL, connect_args={"check_same_thread": False})
 sa_event.listens_for(engine, "connect")(_enable_fks)
-unconfirmed_engine = create_engine(
-    TEST_UNCONFIRMED_URL, connect_args={"check_same_thread": False}
+notebook_engine = create_engine(
+    TEST_NOTEBOOK_URL, connect_args={"check_same_thread": False}
 )
-sa_event.listens_for(unconfirmed_engine, "connect")(_enable_fks)
+sa_event.listens_for(notebook_engine, "connect")(_enable_fks)
 extrapolation_engine = create_engine(
     TEST_EXTRAPOLATION_URL, connect_args={"check_same_thread": False}
 )
@@ -207,19 +207,13 @@ def session():
 @pytest.fixture
 def clean_db(session):
     tables = [
-        "inferredclaimpath", "inferredclaim",
         "artifactrelation", "artifact",
-        "claimattribute",
-        "claim",
         "evidencechunk", "evidence",
-        "entityalias", "entity",
         "worldtier", "anomaly", "universerelation",
         "modelconfig", "providerkey", "agentroutefallback",
         "providerconfig", "setting",
-        "inferencerule",
-        "predicate",
-        "universe", "tiersystem",
-        "executionstate",
+        "tiersystem",
+        "universe", "executionstate",
     ]
     for t in tables:
         session.execute(text(f"DELETE FROM {t}"))
@@ -243,7 +237,7 @@ def _clear_acquisition_cache():
 
     from app.core import agent_engine as _ae
     from app.core.acquisition_cache import acquisition_cache
-    from app.db.unconfirmed_session import unconfirmed_engine
+    from app.db.notebook_session import notebook_engine
 
     _ae._current_run_id = None
 
@@ -256,7 +250,7 @@ def _clear_acquisition_cache():
     repo.session.exec(text("DELETE FROM acquisition_artifact"))
     repo.session.commit()
 
-    with Session(unconfirmed_engine) as us:
+    with Session(notebook_engine) as us:
         # Delete child tables first to avoid IntegrityError
         us.exec(text("DELETE FROM timeline_source"))
         us.exec(text("DELETE FROM timeline_participant"))
@@ -268,7 +262,7 @@ def _clear_acquisition_cache():
         us.exec(text("DELETE FROM provenance_edge"))
         us.exec(text("DELETE FROM world_acquisition_usage"))
         us.exec(text("DELETE FROM acquisition_artifact"))
-        us.exec(text("DELETE FROM unconfirmed_universe"))
+        us.exec(text("DELETE FROM notebook_universe"))
         us.commit()
 
     yield

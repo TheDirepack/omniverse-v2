@@ -9,7 +9,7 @@ from app.core.tools import (
     tool_record_timeline_event,
     tool_save_notebook_entry,
 )
-from app.db.unconfirmed_schema import NotebookEntry, ResearchSource, TimelineEntry
+from app.db.notebook_schema import NotebookEntry, ResearchSource, TimelineEntry
 
 
 @pytest.mark.asyncio

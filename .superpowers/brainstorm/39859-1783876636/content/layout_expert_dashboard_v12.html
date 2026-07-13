@@ -1,0 +1,117 @@
+<h2>Expert Dashboard v12: Backend-Aligned Settings</h2>
+<p class="subtitle">Strict alignment with Provider -> Key and Route -> Provider logic.</p>
+
+<div class="split">
+  <!-- SETTINGS VIEW -->
+  <div class="mockup">
+    <div class="mockup-header">System Settings</div>
+    <div class="mockup-body" style="background: #f8fafc; color: #1e293b; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; height: 600px; display: flex; overflow: hidden; border: 1px solid #cbd5e1;">
+      <!-- Sidebar (Same) -->
+      <div style="width: 180px; background: #f1f5f9; border-right: 1px solid #cbd5e1; display: flex; flex-direction: column; padding: 0;">
+        <div style="padding: 12px 8px; background: #e2e8f0; border-bottom: 1px solid #cbd5e1; font-weight: 800; font-size: 0.85rem; color: #2563eb;">OMNIVERSE_V2</div>
+        <div style="display: flex; flex-direction: column; padding: 8px 0;">
+          <div style="padding: 6px 12px; background: transparent; color: #64748b; font-size: 0.8rem; cursor: pointer;">🔍 Research</div>
+          <div style="padding: 6px 12px; background: transparent; color: #64748b; font-size: 0.8rem; cursor: pointer;">📚 Knowledge</div>
+          <div style="padding: 6px 12px; background: transparent; color: #64748b; font-size: 0.8rem; cursor: pointer;">⚖️ Tiering</div>
+          <div style="padding: 6px 12px; background: transparent; color: #64748b; font-size: 0.8rem; cursor: pointer;">⚙️ Execution</div>
+          <div style="padding: 6px 12px; background: #fff; border-left: 3px solid #2563eb; color: #2563eb; font-size: 0.8rem; font-weight: 600; cursor: pointer;">🛠️ Settings</div>
+        </div>
+      </div>
+      
+      <!-- Main Area -->
+      <div style="flex: 1; display: flex; flex-direction: column; overflow: hidden;">
+        <!-- TAB BAR -->
+        <div style="height: 44px; background: #fff; border-bottom: 1px solid #cbd5e1; display: flex; align-items: center; padding: 0 12px; gap: 4px;" role="tablist">
+          <button role="tab" aria-selected="false" style="height: 36px; padding: 0 16px; background: transparent; border: 1px solid transparent; border-bottom: 1px solid transparent; border-radius: 4px 4px 0 0; font-size: 0.8rem; color: #64748b; cursor: pointer;">General</button>
+          <button role="tab" aria-selected="true" style="height: 36px; padding: 0 16px; background: #eff6ff; border: 1px solid #cbd5e1; border-bottom: 1px solid #fff; border-radius: 4px 4px 0 0; font-size: 0.8rem; font-weight: 600; color: #2563eb; cursor: pointer;">Providers</button>
+          <button role="tab" aria-selected="false" style="height: 36px; padding: 0 16px; background: transparent; border: 1px solid transparent; border-bottom: 1px solid transparent; border-radius: 4px 4px 0 0; font-size: 0.8rem; color: #64748b; cursor: pointer;">Routes</button>
+          <button role="tab" aria-selected="false" style="height: 36px; padding: 0 16px; background: transparent; border: 1px solid transparent; border-bottom: 1px solid transparent; border-radius: 4px 4px 0 0; font-size: 0.8rem; color: #64748b; cursor: pointer;">Health</button>
+        </div>
+        
+        <!-- PROVIDERS TAB CONTENT -->
+        <div style="flex: 1; display: flex; overflow: hidden;">
+          <!-- Provider List (Left) -->
+          <div style="width: 300px; border-right: 1px solid #cbd5e1; overflow-y: auto; background: #fff;">
+            <div style="padding: 8px; background: #f1f5f9; border-bottom: 1px solid #cbd5e1; display: flex; justify-content: space-between; align-items: center;">
+              <span style="font-size: 0.75rem; font-weight: 700; color: #64748b; text-transform: uppercase;">Providers</span>
+              <button style="font-size: 0.7rem; padding: 2px 6px; border: 1px solid #cbd5e1; background: #fff; cursor: pointer; border-radius: 4px;">+ New</button>
+            </div>
+            <div style="display: flex; flex-direction: column;">
+              <div style="padding: 8px; border-bottom: 1px solid #f1f5f9; cursor: pointer; background: #eff6ff; border-left: 3px solid #2563eb;">
+                <div style="font-size: 0.8rem; font-weight: 600;">OpenAI-Main</div>
+                <div style="font-size: 0.7rem; color: #64748b;">openai / gpt-4o, gpt-3.5-turbo</div>
+              </div>
+              <div style="padding: 8px; border-bottom: 1px solid #f1f5f9; cursor: pointer; background: #fff;">
+                <div style="font-size: 0.8rem; font-weight: 600;">Anthropic-Pro</div>
+                <div style="font-size: 0.7rem; color: #64748b;">anthropic / claude-3-5-sonnet</div>
+              </div>
+              <div style="padding: 8px; border-bottom: 1px solid #f1f5f9; cursor: pointer; background: #fff;">
+                <div style="font-size: 0.8rem; font-weight: 600;">Local-Ollama</div>
+                <div style="font-size: 0.7rem; color: #64748b;">ollama / llama3, mistral</div>
+              </div>
+            </div>
+          </div>
+          
+          <!-- Provider Detail Inspector (Right) -->
+          <div style="flex: 1; background: #f8fafc; padding: 16px; overflow-y: auto;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+              <h3 style="font-weight: 800; font-size: 1.1rem; margin: 0;">OpenAI-Main</h3>
+              <div style="display: flex; gap: 8px;">
+                <button style="font-size: 0.75rem; padding: 4px 8px; border: 1px solid #cbd5e1; background: #fff; border-radius: 4px; cursor: pointer;">Delete</button>
+                <button style="font-size: 0.75rem; padding: 4px 8px; background: #2563eb; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-weight: 600;">Save Provider</button>
+              </div>
+            </div>
+            
+            <div style="display: flex; flex-direction: column; gap: 20px;">
+              <!-- Basic Config -->
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                <div style="display: flex; flex-direction: column; gap: 4px;">
+                  <label style="font-size: 0.7rem; font-weight: 700; color: #64748b; text-transform: uppercase;">Provider Type</label>
+                  <input style="height: 30px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 0.8rem; padding: 0 8px; background: #fff;" value="openai">
+                </div>
+                <div style="display: flex; flex-direction: column; gap: 4px;">
+                  <label style="font-size: 0.7rem; font-weight: 700; color: #64748b; text-transform: uppercase;">Base URL</label>
+                  <input style="height: 30px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 0.8rem; padding: 0 8px; background: #fff;" value="https://api.openai.com/v1">
+                </div>
+              </div>
+
+              <div style="display: flex; flex-direction: column; gap: 4px;">
+                <label style="font-size: 0.7rem; font-weight: 700; color: #64748b; text-transform: uppercase;">Supported Models (CSV)</label>
+                <input style="height: 30px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 0.8rem; padding: 0 8px; background: #fff;" value="gpt-4o, gpt-4-turbo, gpt-3.5-turbo">
+              </div>
+
+              <!-- API Keys Section -->
+              <div style="display: flex; flex-direction: column; gap: 8px;">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                  <label style="font-size: 0.7rem; font-weight: 700; color: #64748b; text-transform: uppercase;">API Keys & Priority</label>
+                  <button style="font-size: 0.7rem; padding: 2px 8px; border: 1px solid #cbd5e1; background: #fff; border-radius: 4px; cursor: pointer;">+ Add Key</button>
+                </div>
+                <table style="width: 100%; border-collapse: collapse; font-size: 0.8rem;">
+                  <thead style="background: #f1f5f9; color: #64748b; text-align: left;">
+                    <tr>
+                      <th style="padding: 4px 8px; border-bottom: 1px solid #cbd5e1;">Key</th>
+                      <th style="padding: 4px 8px; border-bottom: 1px solid #cbd5e1; width: 80px; text-align: center;">Priority</th>
+                      <th style="padding: 4px 8px; border-bottom: 1px solid #cbd5e1; width: 60px; text-align: right;">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr style="border-bottom: 1px solid #f1f5f9;">
+                      <td style="padding: 4px 8px;"><input style="width: 100%; height: 24px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 0.75rem; padding: 0 4px;" value="sk-proj-..."></td>
+                      <td style="padding: 4px 8px; text-align: center;"><input style="width: 40px; height: 24px; border: 1px solid #cbd5e1; border-radius: 4px; text-align: center; font-size: 0.75rem;" value="10"></td>
+                      <td style="padding: 4px 8px; text-align: right;"><button style="font-size: 0.7rem; color: #ef4444; border: none; background: none; cursor: pointer;">Delete</button></td>
+                    </tr>
+                    <tr style="border-bottom: 1px solid #f1f5f9;">
+                      <td style="padding: 4px 8px;"><input style="width: 100%; height: 24px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 0.75rem; padding: 0 4px;" value="sk-proj-..."></td>
+                      <td style="padding: 4px 8px; text-align: center;"><input style="width: 40px; height: 24px; border: 1px solid #cbd5e1; border-radius: 4px; text-align: center; font-size: 0.75rem;" value="5"></td>
+                      <td style="padding: 4px 8px; text-align: right;"><button style="font-size: 0.7rem; color: #ef4444; border: none; background: none; cursor: pointer;">Delete</button></td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

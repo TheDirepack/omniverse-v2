@@ -3,8 +3,8 @@ set -e
 
 BASE_DIR="$(cd "$(dirname "$0")" && pwd)"
 BACKUP_DIR="/tmp/omniverse_backup"
-MAIN_DBS=("omniverse_v2.db" "unconfirmed.db" "extrapolation.db" "settings.db")
-TEMP_DB_FILES=("/tmp/omniverse_test.db" "/tmp/omniverse_test_unconfirmed.db" "/tmp/omniverse_test_extrapolation.db" "/tmp/omniverse_test_settings.db")
+MAIN_DBS=("omniverse_v2.db" "notebook.db" "extrapolation.db" "settings.db")
+TEMP_DB_FILES=("/tmp/omniverse_test.db" "/tmp/omniverse_test_notebook.db" "/tmp/omniverse_test_extrapolation.db" "/tmp/omniverse_test_settings.db")
 DATA_DIR="$BASE_DIR/backend/data"
 
 cleanup() {

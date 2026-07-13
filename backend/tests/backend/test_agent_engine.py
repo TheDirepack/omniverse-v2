@@ -252,7 +252,7 @@ class TestRunAgentFetchCache:
     """Fetch cache is respected — already-cached URLs are not re-fetched."""
 
     async def test_cached_url_not_fetched_again(self):
-        from app.db.unconfirmed_schema import AcquisitionArtifact
+        from app.db.notebook_schema import AcquisitionArtifact
         from app.repositories.acquisition_cache import AcquisitionCacheRepository
 
         # Pre-populate cache with artifact
@@ -323,7 +323,7 @@ class TestReadPageCached:
 
     async def test_cache_hit_returns_content_without_fetching(self):
         from app.core.agent_engine import _read_page_cached
-        from app.db.unconfirmed_schema import AcquisitionArtifact
+        from app.db.notebook_schema import AcquisitionArtifact
         from app.repositories.acquisition_cache import AcquisitionCacheRepository
 
         repo = AcquisitionCacheRepository()
@@ -1027,6 +1027,7 @@ class TestRunAgentStatefulEdgeCases:
         called_messages = mock_router.call_args[1]["messages"]
         assert len(called_messages) == 2  # system + user, no duplicate
 
+
 class TestCapabilityGating:
     """Verify that tools are filtered based on required_capabilities."""
 
@@ -1084,3 +1085,157 @@ class TestCapabilityGating:
             assert "webSearch" in tool_names
             assert "upsertClaims" not in tool_names
             assert "submitFindings" in tool_names
+
+class TestRunAgentPerformance:
+    """Tests for performance optimizations: concurrency and context management."""
+
+    async def test_execute_plan_concurrency_and_dependencies(self):
+        """Verify that independent steps in a plan run and dependencies are respected."""
+        plan = [
+            {"tool": "tool0", "args": {"q": "0"}},
+            {"tool": "tool1", "args": {"q": "1"}},
+            {"tool": "tool2", "args": {"q": "$result_0"}},
+            {"tool": "tool3", "args": {"q": "$result_1"}},
+        ]
+        plan_tc = _make_tool_call("executePlan", {"plan": plan})
+        submit_tc = _make_tool_call("submitFindings", {})
+
+        call_count = 0
+        async def mock_run(*_args, **_kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return (_make_response(content=None, tool_calls=[plan_tc]), "m", "k")
+            return (_make_response(content="done", tool_calls=[submit_tc]), "m", "k")
+
+        tool_results = {}
+        async def mock_tool(args):
+            q = args.get("q")
+            tool_results[q] = f"res_{q}"
+            return f"res_{q}"
+
+        with (
+            patch("app.core.agent_engine.router.run_model", new=mock_run),
+            patch(
+                "app.core.agent_engine.AGENT_TOOLS",
+                {
+                    "tool0": {"func": mock_tool, "description": "t0", "parameters": {}},
+                    "tool1": {"func": mock_tool, "description": "t1", "parameters": {}},
+                    "tool2": {"func": mock_tool, "description": "t2", "parameters": {}},
+                    "tool3": {"func": mock_tool, "description": "t3", "parameters": {}},
+                    "executePlan": {"func": None, "description": "ep", "parameters": {}},
+                },
+            ),
+        ):
+            success, result, _ = await run_agent(
+                agent_name="TEST",
+                system_prompt="sys",
+                user_prompt="user",
+                step="s",
+                run_id="run-perf",
+                tools_names=["executePlan", "tool0", "tool1", "tool2", "tool3"],
+                submit_tool_name="submitFindings",
+                max_turns=5,
+            )
+        
+        assert success is True
+        assert "res_res_0" in tool_results
+        assert "res_res_1" in tool_results
+
+    async def test_context_pruning_triggered(self):
+        """Verify raw observations are pruned after a writing tool call."""
+        fetch_tc = _make_tool_call("fetchPage", {"url": "http://x.com"}, tc_id="tc-fetch")
+        upsert_tc = _make_tool_call("upsertArtifacts", {"name": "A"}, tc_id="tc-up")
+        submit_tc = _make_tool_call("submitFindings", {}, tc_id="tc-sub")
+
+        call_count = 0
+        async def spy_run_model(*args, **kwargs):
+            nonlocal call_count
+            captured_messages.append(kwargs.get("messages", []))
+            call_count += 1
+            if call_count == 1:
+                return (_make_response(content=None, tool_calls=[fetch_tc]), "m", "k")
+            if call_count == 2:
+                return (_make_response(content=None, tool_calls=[upsert_tc]), "m", "k")
+            return (_make_response(content="done", tool_calls=[submit_tc]), "m", "k")
+
+        async def mock_fetch(args):
+            return "Big raw content from web"
+
+        async def mock_upsert(args):
+            return "Artifact upserted"
+
+        captured_messages = []
+        with (
+            patch("app.core.agent_engine.router.run_model", new=spy_run_model),
+            patch(
+                "app.core.agent_engine.AGENT_TOOLS",
+                {
+                    "fetchPage": {"func": mock_fetch, "description": "f", "parameters": {}},
+                    "upsertArtifacts": {"func": mock_upsert, "description": "u", "parameters": {}},
+                },
+            ),
+        ):
+            await run_agent(
+                agent_name="TEST",
+                system_prompt="sys",
+                user_prompt="user",
+                step="s",
+                run_id="run-prune",
+                tools_names=["fetchPage", "upsertArtifacts"],
+                submit_tool_name="submitFindings",
+            )
+        
+        final_messages = captured_messages[-1]
+        for m in final_messages:
+            if m.get("role") == "tool":
+                assert "Big raw content" not in m.get("content", "")
+
+    async def test_context_compression_triggered(self):
+        """Verify history is compressed when token limit is reached."""
+        from app.core.agent_engine import context_manager
+        original_limit = context_manager.max_tokens
+        context_manager.max_tokens = 10
+        context_manager.summary_threshold = 0.1
+        
+        try:
+            think_tc = _make_tool_call("someTool", {})
+            submit_tc = _make_tool_call("submitFindings", {})
+            
+            call_count = 0
+            async def spy_run_model(*args, **kwargs):
+                nonlocal call_count
+                captured_messages.append(kwargs.get("messages", []))
+                call_count += 1
+                if call_count < 3:
+                    return (_make_response(content="Thinking...", tool_calls=[think_tc]), "m", "k")
+                return (_make_response(content="done", tool_calls=[submit_tc]), "m", "k")
+
+            captured_messages = []
+            with (
+                patch("app.core.agent_engine.router.run_model", new=spy_run_model),
+                patch(
+                    "app.core.agent_engine.AGENT_TOOLS",
+                    {"someTool": {"func": AsyncMock(return_value="ok"), "description": "t", "parameters": {}}},
+                ),
+            ):
+                await run_agent(
+                    agent_name="TEST",
+                    system_prompt="sys",
+                    user_prompt="user",
+                    step="s",
+                    run_id="run-compress",
+                    tools_names=["someTool"],
+                    submit_tool_name="submitFindings",
+                )
+            
+            found_summary = False
+            for msgs in captured_messages:
+                for m in msgs:
+                    if m.get("role") == "system" and "Context Summary" in m.get("content", ""):
+                        found_summary = True
+                        break
+            assert found_summary is True
+        finally:
+            context_manager.max_tokens = original_limit
+            context_manager.summary_threshold = 0.8

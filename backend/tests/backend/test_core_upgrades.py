@@ -191,7 +191,7 @@ def test_get_researcher_prompt_assembly():
         requirements="Find everything",
         verified_claims="(S --P--> O)",
         knowledge_graph='{"S": {"facts": []}}',
-        unconfirmed_data="Unconfirmed claim X",
+        notebook_data="Notebook claim X",
     )
 
     system = prompt["system"]
@@ -199,5 +199,5 @@ def test_get_researcher_prompt_assembly():
     assert "(S --P--> O)" in system
     assert "EXISTING KNOWLEDGE GRAPH" in system
     assert '{"S": {"facts": []}}' in system
-    assert "STAGING DATABASE (Unconfirmed Claims)" in system
-    assert "Unconfirmed claim X" in system
+    assert "STAGING DATABASE (Notebook Claims)" in system
+    assert "Notebook claim X" in system

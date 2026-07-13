@@ -480,12 +480,18 @@ class WebFetcher:
         total_text = " ".join([s["content"] for s in sections])
         word_count = len(total_text.split())
 
+        # For compatibility with tools and tests, provide a flattened main_content
+        main_content = "\n\n".join([s["content"] for s in sections])
+        if not main_content:
+            main_content = self._extract_text_from_soup(filtered_soup)
+
         return {
             "metadata": {
                 "url": base_url,
                 "word_count": word_count,
                 "page_type": "ARTICLE", # simplified for now
             },
+            "main_content": main_content,
             "overview": overview,
             "sections": sections,
             "tables": tables,
@@ -588,7 +594,7 @@ class WebFetcher:
         self,
         url: str,
         include_freshness: bool = True,
-        _max_links: int = 20,
+        max_links: int = 20,
         run_id: str | None = None,
         html_filtering: dict[str, Any] | None = None
     ) -> dict[str, Any]:

@@ -2,17 +2,17 @@ from datetime import datetime
 
 from sqlmodel import Session, select
 
-from app.db.unconfirmed_schema import (
+from app.db.notebook_schema import (
     AcquisitionArtifact,
     ProvenanceEdge,
     WorldAcquisitionUsage,
 )
-from app.db.unconfirmed_session import unconfirmed_engine
+from app.db.notebook_session import notebook_engine
 
 
 class AcquisitionCacheRepository:
     def __init__(self, session: Session | None = None):
-        self.session = session or Session(unconfirmed_engine)
+        self.session = session or Session(notebook_engine)
 
     def get_by_hash(self, content_hash: str) -> AcquisitionArtifact | None:
         return self.session.exec(

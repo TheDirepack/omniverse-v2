@@ -1,7 +1,7 @@
 import json
 from unittest.mock import patch
 
-from app.db.schema import Artifact, ArtifactRelation
+from app.db.schema import Artifact, ArtifactRelation, ArtifactVersion
 from app.services.universe_service import UniverseService
 
 
@@ -384,7 +384,7 @@ class TestEntityCanonical:
         ephemeral_db.refresh(e2)
         svc.set_entity_canonical(e2.id, e1.id)
         reloaded = ephemeral_db.get(Artifact, e2.id)
-        assert reloaded.canonical_entity_id == e1.id
+        assert json.loads(reloaded.payload_json).get("canonical_entity_id") == e1.id
 
 
 
@@ -503,4 +503,78 @@ class TestUniverseServiceSessionHandling:
         svc = UniverseService(session=ephemeral_db)
         svc.create_universe(name="WithSession")
         svc.close()
+        # session not ours to close; _repo never created
         assert ephemeral_db.is_active
+
+class TestMergeWorldsPerformance:
+    """Verify the optimized merge_worlds handles large datasets and complex relations."""
+
+    def test_large_scale_merge_correctness(self, ephemeral_db):
+        svc = UniverseService(session=ephemeral_db)
+        keep = svc.create_universe(name="Keep")
+        merge = svc.create_universe(name="Merge")
+
+        # 1. Create many artifacts in both
+        # We create 50 artifacts in each. 10 of them share the same name.
+        for i in range(50):
+            name = f"Entity_{i}" if i < 10 else f"MergeEntity_{i}"
+            a = Artifact(name=name, type="entity", universe_id=merge.id, payload_json="{}")
+            ephemeral_db.add(a)
+        
+        for i in range(50):
+            name = f"Entity_{i}" if i < 10 else f"KeepEntity_{i}"
+            a = Artifact(name=name, type="entity", universe_id=keep.id, payload_json="{}")
+            ephemeral_db.add(a)
+        
+        ephemeral_db.commit()
+
+        # 2. Create version history for some entities
+        # For the shared entities, add versions to both
+        all_artifacts = ephemeral_db.exec(__import__("sqlmodel").select(Artifact)).all()
+        entities = [a for a in all_artifacts if a.type == "entity"]
+        
+        for a in entities:
+            v = ArtifactVersion(artifact_id=a.id, version=1, payload_json="v1", evidence_refs="[]")
+            ephemeral_db.add(v)
+        
+        ephemeral_db.commit()
+
+        # 3. Create relations
+        # Create some overlapping relations
+        # Entity_0 (Keep) -> Entity_1 (Keep)
+        # Entity_0 (Merge) -> Entity_1 (Merge)
+        e0_keep = ephemeral_db.exec(__import__("sqlmodel").select(Artifact).where(Artifact.name == "Entity_0", Artifact.universe_id == keep.id)).first()
+        e1_keep = ephemeral_db.exec(__import__("sqlmodel").select(Artifact).where(Artifact.name == "Entity_1", Artifact.universe_id == keep.id)).first()
+        e0_merge = ephemeral_db.exec(__import__("sqlmodel").select(Artifact).where(Artifact.name == "Entity_0", Artifact.universe_id == merge.id)).first()
+        e1_merge = ephemeral_db.exec(__import__("sqlmodel").select(Artifact).where(Artifact.name == "Entity_1", Artifact.universe_id == merge.id)).first()
+
+        rel1 = ArtifactRelation(universe_id=keep.id, from_artifact_id=e0_keep.id, to_artifact_id=e1_keep.id, relation_type="LORE")
+        rel2 = ArtifactRelation(universe_id=merge.id, from_artifact_id=e0_merge.id, to_artifact_id=e1_merge.id, relation_type="LORE")
+        ephemeral_db.add_all([rel1, rel2])
+        ephemeral_db.commit()
+
+        # Run merge
+        result = svc.merge_worlds(keep.id, merge.id)
+        assert result["status"] == "success"
+
+        # Verification:
+        # - Shared entities (0-9) should be merged into the keep entities.
+        # - Total entities in keep should be 50 (keep) + 40 (unique merge) = 90.
+        final_entities = ephemeral_db.exec(__import__("sqlmodel").select(Artifact).where(Artifact.universe_id == keep.id)).all()
+        assert len(final_entities) == 90
+
+        # - Relation deduplication: Only one "LORE" relation between Entity_0 and Entity_1 should exist.
+        final_rels = ephemeral_db.exec(__import__("sqlmodel").select(ArtifactRelation).where(
+            ArtifactRelation.from_artifact_id == e0_keep.id,
+            ArtifactRelation.to_artifact_id == e1_keep.id,
+            ArtifactRelation.relation_type == "LORE"
+        )).all()
+        assert len(final_rels) == 1
+
+        # - Version shifting: Entities should have their versions shifted.
+        # Entity_0 had v1 in keep and v1 in merge. After merge, it should have v1 and v2.
+        versions = ephemeral_db.exec(__import__("sqlmodel").select(ArtifactVersion).where(ArtifactVersion.artifact_id == e0_keep.id)).all()
+        assert len(versions) == 2
+        v_nums = sorted([v.version for v in versions])
+        assert v_nums == [1, 2]
+

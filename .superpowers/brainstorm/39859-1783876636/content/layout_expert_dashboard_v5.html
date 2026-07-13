@@ -1,0 +1,240 @@
+<h2>Expert Dashboard v5: Brutalist Utility</h2>
+<p class="subtitle">Zero fluff. High density. Utility-first. All borders and padding minimized.</p>
+
+<div class="split">
+  <!-- RESEARCH VIEW -->
+  <div class="mockup">
+    <div class="mockup-header">Research: World Selection</div>
+    <div class="mockup-body" style="background: #eee; color: #000; font-family: monospace; height: 600px; display: flex; overflow: hidden; border: 1px solid #000;">
+      <!-- Sidebar -->
+      <div style="width: 160px; background: #ddd; border-right: 1px solid #000; display: flex; flex-direction: column; padding: 4px;">
+        <div style="font-weight: bold; font-size: 0.9rem; margin-bottom: 1rem; padding: 2px;">OMNIVERSE_V2</div>
+        <div style="display: flex; flex-direction: column; gap: 2px;">
+          <div style="padding: 2px 4px; background: #bbb; border: 1px solid #000; font-size: 0.8rem; cursor: pointer;">🔍 RESEARCH</div>
+          <div style="padding: 2px 4px; background: #eee; border: 1px solid transparent; font-size: 0.8rem; cursor: pointer;">📚 KNOWLEDGE</div>
+          <div style="padding: 2px 4px; background: #eee; border: 1px solid transparent; font-size: 0.8rem; cursor: pointer;">⚖️ TIERING</div>
+          <div style="padding: 2px 4px; background: #eee; border: 1px solid transparent; font-size: 0.8rem; cursor: pointer;">⚙️ EXECUTION</div>
+          <div style="padding: 2px 4px; background: #eee; border: 1px solid transparent; font-size: 0.8rem; cursor: pointer;">🛠️ SETTINGS</div>
+        </div>
+      </div>
+      
+      <!-- Main Area -->
+      <div style="flex: 1; display: flex; flex-direction: column; overflow: hidden;">
+        <!-- GLOBAL FOCUS -->
+        <div style="background: #fff; border-bottom: 1px solid #000; padding: 4px 8px; display: flex; align-items: center; gap: 8px;">
+          <span style="font-weight: bold; font-size: 0.8rem;">FOCUS:</span>
+          <input style="flex: 1; height: 24px; border: 1px solid #000; font-size: 0.8rem; padding: 0 4px;" placeholder="Set global research objective...">
+        </div>
+
+        <!-- CONTROL BAR -->
+        <div style="height: 40px; background: #ddd; border-bottom: 1px solid #000; display: flex; align-items: center; justify-content: space-between; padding: 0 8px; gap: 8px;">
+          <div style="display: flex; align-items: center; gap: 4px; flex: 1;">
+            <input style="width: 250px; height: 24px; border: 1px solid #000; font-size: 0.8rem; padding: 0 4px;" placeholder="Search worlds...">
+            <button style="height: 24px; padding: 0 8px; border: 1px solid #000; background: #fff; font-size: 0.7rem; cursor: pointer; position: relative;">
+               ⚙️ Filter
+               <!-- Filter Pop-up Mockup -->
+               <div style="position: absolute; top: 25px; left: 0; width: 250px; background: #fff; border: 1px solid #000; z-index: 100; padding: 8px; box-shadow: 4px 4px 0 #000; font-size: 0.7rem;">
+                 <div style="font-weight: bold; margin-bottom: 4px; border-bottom: 1px solid #000;">QUERY BUILDER</div>
+                 <div style="display: flex; gap: 2px; margin-bottom: 4px;">
+                   <select style="flex:1; font-size: 0.7rem;"><option>Category</option></select>
+                   <select style="width: 40px; font-size: 0.7rem;"><option>is</option></select>
+                   <input style="flex:1; font-size: 0.7rem;" value="Fantasy">
+                 </div>
+                 <div style="display: flex; gap: 2px; margin-bottom: 8px;">
+                   <select style="flex:1; font-size: 0.7rem;"><option>Artifact</option></select>
+                   <select style="width: 40px; font-size: 0.7rem;"><option>exists</option></select>
+                   <input style="flex:1; font-size: 0.7rem;" value="Divine">
+                 </div>
+                 <button style="width: 100%; background: #000; color: #fff; border: none; padding: 2px; font-size: 0.7rem;">Apply</button>
+               </div>
+            </button>
+            <select style="height: 24px; border: 1px solid #000; font-size: 0.8rem; background: #fff;">
+              <option>All Cats</option>
+              <option>Fantasy</option>
+              <option>Sci-Fi</option>
+            </select>
+          </div>
+          <div style="display: flex; gap: 4px;">
+            <button style="height: 24px; border: 1px solid #000; background: #fff; font-size: 0.8rem; cursor: pointer; padding: 0 8px;">+ Add</button>
+            <button style="height: 24px; background: #000; color: #fff; border: none; font-size: 0.8rem; font-weight: bold; cursor: pointer; padding: 0 8px;">START</button>
+          </div>
+        </div>
+        
+        <!-- World List (Brutalist Table) -->
+        <div style="flex: 1; padding: 4px; overflow-y: auto;">
+          <table style="width: 100%; border-collapse: collapse; font-size: 0.8rem; text-align: left;">
+            <thead style="background: #bbb; color: #000; font-weight: bold;">
+              <tr>
+                <th style="border: 1px solid #000; padding: 2px 4px; width: 20px;"><input type="checkbox" checked></th>
+                <th style="border: 1px solid #000; padding: 2px 4px;">World</th>
+                <th style="border: 1px solid #000; padding: 2px 4px;">Category</th>
+                <th style="border: 1px solid #000; padding: 2px 4px;">Last</th>
+                <th style="border: 1px solid #000; padding: 2px 4px;">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr style="border: 1px solid #000; background: #fff;">
+                <td style="border: 1px solid #000; padding: 2px 4px;"><input type="checkbox" checked></td>
+                <td style="border: 1px solid #000; padding: 2px 4px; font-weight: bold;">Elder Scrolls</td>
+                <td style="border: 1px solid #000; padding: 2px 4px;">Fantasy</td>
+                <td style="border: 1px solid #000; padding: 2px 4px;">07-10</td>
+                <td style="border: 1px solid #000; padding: 2px 4px;"><button style="font-size: 0.7rem; border: 1px solid #000; background: #eee; cursor: pointer;">Explore</button></td>
+              </tr>
+              <tr style="border: 1px solid #000; background: #eee;">
+                <td style="border: 1px solid #000; padding: 2px 4px;"><input type="checkbox" checked></td>
+                <td style="border: 1px solid #000; padding: 2px 4px; font-weight: bold;">Warhammer 40k</td>
+                <td style="border: 1px solid #000; padding: 2px 4px;">Sci-Fi</td>
+                <td style="border: 1px solid #000; padding: 2px 4px;">07-12</td>
+                <td style="border: 1px solid #000; padding: 2px 4px;"><button style="font-size: 0.7rem; border: 1px solid #000; background: #eee; cursor: pointer;">Explore</button></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- KNOWLEDGE VIEW -->
+  <div class="mockup">
+    <div class="mockup-header">Knowledge: Artifacts</div>
+    <div class="mockup-body" style="background: #eee; color: #000; font-family: monospace; height: 600px; display: flex; overflow: hidden; border: 1px solid #000;">
+      <!-- Sidebar (Same) -->
+      <div style="width: 160px; background: #ddd; border-right: 1px solid #000; display: flex; flex-direction: column; padding: 4px;">
+        <div style="font-weight: bold; font-size: 0.9rem; margin-bottom: 1rem; padding: 2px;">OMNIVERSE_V2</div>
+        <div style="display: flex; flex-direction: column; gap: 2px;">
+          <div style="padding: 2px 4px; background: #eee; border: 1px solid transparent; font-size: 0.8rem; cursor: pointer;">🔍 RESEARCH</div>
+          <div style="padding: 2px 4px; background: #bbb; border: 1px solid #000; font-size: 0.8rem; cursor: pointer;">📚 KNOWLEDGE</div>
+          <div style="padding: 2px 4px; background: #eee; border: 1px solid transparent; font-size: 0.8rem; cursor: pointer;">⚖️ TIERING</div>
+          <div style="padding: 2px 4px; background: #eee; border: 1px solid transparent; font-size: 0.8rem; cursor: pointer;">⚙️ EXECUTION</div>
+          <div style="padding: 2px 4px; background: #eee; border: 1px solid transparent; font-size: 0.8rem; cursor: pointer;">🛠️ SETTINGS</div>
+        </div>
+      </div>
+      
+      <!-- Main Area -->
+      <div style="flex: 1; display: flex; flex-direction: column; overflow: hidden;">
+        <!-- Control Bar -->
+        <div style="height: 40px; background: #ddd; border-bottom: 1px solid #000; display: flex; align-items: center; justify-content: space-between; padding: 0 8px; gap: 8px;">
+          <div style="display: flex; align-items: center; gap: 4px; flex: 1;">
+            <span style="font-weight: bold; font-size: 0.8rem;">World: Elder Scrolls</span>
+            <div style="width: 1px; height: 16px; background: #000;"></div>
+            <input style="width: 200px; height: 24px; border: 1px solid #000; font-size: 0.8rem; padding: 0 4px;" placeholder="Filter artifacts...">
+            <button style="height: 24px; padding: 0 8px; border: 1px solid #000; background: #fff; font-size: 0.7rem; cursor: pointer;">⚙️ Filter</button>
+          </div>
+          <button style="height: 24px; background: #000; color: #fff; border: none; font-size: 0.7rem; font-weight: bold; cursor: pointer; padding: 0 8px;">🚀 FOCUSED RES</button>
+        </div>
+        
+        <!-- Content Split -->
+        <div style="flex: 1; display: flex; overflow: hidden;">
+          <!-- Artifact List -->
+          <div style="width: 250px; border-right: 1px solid #000; overflow-y: auto; background: #fff;">
+            <div style="padding: 2px 4px; font-size: 0.7rem; font-weight: bold; background: #ddd; border-bottom: 1px solid #000;">ARTIFACTS</div>
+            <div style="display: flex; flex-direction: column;">
+              <div style="padding: 2px 4px; border-bottom: 1px solid #eee; cursor: pointer; background: #bbb; border-left: 4px solid #000;" title="The Divine Fire is an ancient flame...">
+                <div style="font-size: 0.8rem; font-weight: bold;">Divine Fire</div>
+                <div style="font-size: 0.7rem; color: #444; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">The Divine Fire is an ancient...</div>
+              </div>
+              <div style="padding: 2px 4px; border-bottom: 1px solid #eee; cursor: pointer; background: #fff; font-size: 0.8rem;">High Priest</div>
+            </div>
+          </div>
+          
+          <!-- Inspector -->
+          <div style="flex: 1; background: #eee; padding: 8px; overflow-y: auto;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+              <h3 style="font-weight: bold; font-size: 1.1rem; margin: 0;">Divine Fire</h3>
+              <span style="font-size: 0.7rem; background: #fff; border: 1px solid #000; padding: 1px 4px; font-weight: bold;">VERIFIED</span>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 8px;">
+              <div style="font-size: 0.8rem;">
+                <div style="font-weight: bold; font-size: 0.7rem; text-transform: uppercase;">Description</div>
+                <div style="background: #fff; border: 1px solid #000; padding: 4px; font-size: 0.85rem; line-height: 1.4;">
+                  The Divine Fire is an ancient flame that powers the central forge of the capital city...
+                </div>
+              </div>
+              <div style="font-size: 0.8rem;">
+                <div style="font-weight: bold; font-size: 0.7rem; text-transform: uppercase;">Evidence</div>
+                <div style="display: flex; flex-direction: column; gap: 2px;">
+                  <div style="background: #fff; border: 1px solid #000; padding: 2px 4px; font-size: 0.75rem; display: flex; justify-content: space-between;">
+                    <span>Archive of the Ages (p. 42)</span>
+                    <span style="color: #666;">High</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- EXECUTION VIEW (Ultra Dense) -->
+  <div class="mockup">
+    <div class="mockup-header">Execution: Run Monitoring</div>
+    <div class="mockup-body" style="background: #eee; color: #000; font-family: monospace; height: 600px; display: flex; overflow: hidden; border: 1px solid #000;">
+      <!-- Sidebar (Same) -->
+      <div style="width: 160px; background: #ddd; border-right: 1px solid #000; display: flex; flex-direction: column; padding: 4px;">
+        <div style="font-weight: bold; font-size: 0.9rem; margin-bottom: 1rem; padding: 2px;">OMNIVERSE_V2</div>
+        <div style="display: flex; flex-direction: column; gap: 2px;">
+          <div style="padding: 2px 4px; background: #eee; border: 1px solid transparent; font-size: 0.8rem; cursor: pointer;">🔍 RESEARCH</div>
+          <div style="padding: 2px 4px; background: #eee; border: 1px solid transparent; font-size: 0.8rem; cursor: pointer;">📚 KNOWLEDGE</div>
+          <div style="padding: 2px 4px; background: #eee; border: 1px solid transparent; font-size: 0.8rem; cursor: pointer;">⚖️ TIERING</div>
+          <div style="padding: 2px 4px; background: #bbb; border: 1px solid #000; font-size: 0.8rem; cursor: pointer;">⚙️ EXECUTION</div>
+          <div style="padding: 2px 4px; background: #eee; border: 1px solid transparent; font-size: 0.8rem; cursor: pointer;">🛠️ SETTINGS</div>
+        </div>
+      </div>
+      
+      <!-- Main Area -->
+      <div style="flex: 1; display: flex; flex-direction: column; overflow: hidden;">
+        <!-- Top Bar -->
+        <div style="height: 40px; background: #ddd; border-bottom: 1px solid #000; display: flex; align-items: center; justify-content: space-between; padding: 0 8px; gap: 8px;">
+          <div style="display: flex; align-items: center; gap: 4px; flex: 1;">
+            <input style="width: 200px; height: 24px; border: 1px solid #000; font-size: 0.8rem; padding: 0 4px;" placeholder="Filter runs...">
+            <button style="height: 24px; padding: 0 8px; border: 1px solid #000; background: #fff; font-size: 0.7rem; cursor: pointer;">⚙️ Filter</button>
+          </div>
+          <div style="display: flex; gap: 4px;">
+            <button style="height: 24px; background: #fff; border: 1px solid #000; font-size: 0.7rem; font-weight: bold; cursor: pointer; padding: 0 8px;">VIEW ALL LOGS</button>
+            <button style="height: 24px; background: #f00; color: #fff; border: none; font-size: 0.7rem; font-weight: bold; cursor: pointer; padding: 0 8px;">ABORT ALL</button>
+          </div>
+        </div>
+        
+        <!-- Active Runs List (Table) -->
+        <div style="flex: 1; padding: 4px; overflow-y: auto;">
+          <table style="width: 100%; border-collapse: collapse; font-size: 0.8rem; text-align: left;">
+            <thead style="background: #bbb; color: #000; font-weight: bold;">
+              <tr>
+                <th style="border: 1px solid #000; padding: 2px 4px;">World</th>
+                <th style="border: 1px solid #000; padding: 2px 4px;">Focus</th>
+                <th style="border: 1px solid #000; padding: 2px 4px; width: 120px;">Progress</th>
+                <th style="border: 1px solid #000; padding: 2px 4px; width: 60px;">%</th>
+                <th style="border: 1px solid #000; padding: 2px 4px;">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr style="border: 1px solid #000; background: #fff;">
+                <td style="border: 1px solid #000; padding: 2px 4px;">Elder Scrolls</td>
+                <td style="border: 1px solid #000; padding: 2px 4px;">Divine Artifacts</td>
+                <td style="border: 1px solid #000; padding: 2px 4px;">
+                  <div style="width: 100%; height: 8px; background: #eee; border: 1px solid #000;">
+                    <div style="width: 65%; height: 100%; background: #000;"></div>
+                  </div>
+                </td>
+                <td style="border: 1px solid #000; padding: 2px 4px; text-align: center;">65%</td>
+                <td style="border: 1px solid #000; padding: 2px 4px;"><button style="font-size: 0.7rem; border: 1px solid #000; background: #eee; cursor: pointer;">Logs</button></td>
+              </tr>
+              <tr style="border: 1px solid #000; background: #eee;">
+                <td style="border: 1px solid #000; padding: 2px 4px;">Warhammer 40k</td>
+                <td style="border: 1px solid #000; padding: 2px 4px;">Chaos Gods</td>
+                <td style="border: 1px solid #000; padding: 2px 4px;">
+                  <div style="width: 100%; height: 8px; background: #eee; border: 1px solid #000;">
+                    <div style="width: 30%; height: 100%; background: #000;"></div>
+                  </div>
+                </td>
+                <td style="border: 1px solid #000; padding: 2px 4px; text-align: center;">30%</td>
+                <td style="border: 1px solid #000; padding: 2px 4px;"><button style="font-size: 0.7rem; border: 1px solid #000; background: #eee; cursor: pointer;">Logs</button></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

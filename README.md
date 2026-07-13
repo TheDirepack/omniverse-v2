@@ -43,7 +43,7 @@ For detailed architectural information, refer to `AGENTS.md`.
 
 - **Backend Layered Structure**: Organized into `api/`, `services/`, `repositories/`, `agents/`, `workflow/`, `research/`, `core/`, `db/`, and `views/`.
 - **Knowledge Graph & Provenance**: Utilizes an Artifact-based Knowledge Graph (Entities, Claims, Specifications, and Events) with a robust provenance system based on Evidence links and Artifact Versioning.
-- **Databases**: Main DB (`backend/data/omniverse_v2.db`), Settings DB (`backend/data/settings.db`), Operational DB (`backend/data/operational.db`), Staging DB (`backend/data/unconfirmed.db`), Extrapolation DB (`backend/data/extrapolation.db`).
+- **Databases**: Main DB (`backend/data/omniverse_v2.db`), Settings DB (`backend/data/settings.db`), Operational DB (`backend/data/operational.db`), Staging DB (`backend/data/notebook.db`), Extrapolation DB (`backend/data/extrapolation.db`).
 - **Pipeline (LangGraph)**: `research` -> `db_integrator` -> `summary` -> `FINISHED`. Research results are promoted directly to the canonical Knowledge Graph.
 - **LLM Routing**: DB-driven fallback chain in `core/router.py` with various named agents.
 - **Browser**: `cloakbrowser` via `BrowserManager` singleton.
@@ -62,4 +62,4 @@ For detailed architectural information, refer to `AGENTS.md`.
 
 ## Maintenance Scripts
 
-- `cleanup_worlds_general.py`: Strips trailing parentheses from universe names in Main and Unconfirmed DBs.
+- `cleanup_worlds_general.py`: Strips trailing parentheses from universe names in Main and Staging DBs.

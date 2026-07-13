@@ -78,40 +78,38 @@ class UniverseService:
     ) -> Sequence[Any]:
         session = self.session or Session(engine)
         try:
-            return UniverseRepository(session).get_all(
+            results = UniverseRepository(session).get_all(
                 limit=limit, offset=offset, fields=fields
             )
+            if fields:
+                valid_fields = [f for f in fields if hasattr(Universe, f)]
+                return [
+                    dict(zip(valid_fields, r))
+                    if isinstance(r, tuple)
+                    else {f: getattr(r, f, None) for f in valid_fields}
+                    for r in results
+                ]
+            return results
         finally:
             if not self.session:
                 session.close()
 
     def filter_universes(
         self,
-        universes: Sequence[Any],
         q: str = "",
         explored: str = "",
-        franchise: str = ""
-    ) -> list[Any]:
-        result = list(universes)
-        if q:
-            q_lower = q.lower()
-            result = [
-                w for w in result
-                if q_lower in (w.name or "").lower()
-                or (w.franchise and q_lower in w.franchise.lower())
-                or (w.continuity and q_lower in w.continuity.lower())
-                or (w.era and q_lower in w.era.lower())
-            ]
-        if explored == "yes":
-            result = [w for w in result if w.is_explored]
-        elif explored == "no":
-            result = [w for w in result if not w.is_explored]
-        if franchise:
-            f_lower = franchise.lower()
-            result = [
-                w for w in result if w.franchise and f_lower in w.franchise.lower()
-            ]
-        return result
+        franchise: str = "",
+        limit: int = 5000,
+        offset: int = 0,
+    ) -> list[Universe]:
+        session = self.session or Session(engine)
+        try:
+            return list(UniverseRepository(session).filter_universes(
+                q=q, explored=explored, franchise=franchise, limit=limit, offset=offset
+            ))
+        finally:
+            if not self.session:
+                session.close()
 
     def get_by_names(self, names: list[str]) -> Sequence[Universe]:
         session = self.session or Session(engine)
@@ -155,15 +153,43 @@ class UniverseService:
             universe = Universe(
                 name=name,
                 slug=slug,
-                franchise=franchise,
-                category=category,
-                continuity=continuity,
-                era=era,
                 parent_id=parent_id,
                 summary=None,
                 is_explored=False,
             )
-            return repo.create(universe)
+            session.add(universe)
+            session.flush()
+
+            # Create artifacts for metadata
+            from app.db.schema import Artifact, ArtifactRelation
+            
+            world_art = Artifact(universe_id=universe.id, type="world", name=name)
+            session.add(world_art)
+            session.flush()
+
+            metadata = {
+                "franchise": franchise,
+                "category": category,
+                "continuity": continuity,
+                "era": era,
+            }
+
+            for m_type, m_value in metadata.items():
+                if m_value:
+                    m_art = Artifact(universe_id=universe.id, type=m_type, name=m_value)
+                    session.add(m_art)
+                    session.flush()
+                    
+                    rel = ArtifactRelation(
+                        universe_id=universe.id,
+                        from_artifact_id=world_art.id,
+                        to_artifact_id=m_art.id,
+                        relation_type="PART_OF",
+                    )
+                    session.add(rel)
+            
+            session.commit()
+            return universe
         finally:
             if not self.session:
                 session.close()
@@ -199,15 +225,12 @@ class UniverseService:
             universe = Universe(
                 slug=match["id"],
                 name=match["name"],
-                franchise=match.get("franchise"),
-                category=match.get("category"),
-                continuity=match.get("continuity"),
-                era=match.get("era"),
                 parent_id=parent_id,
                 summary=None,
                 is_explored=False,
             )
             res = repo.create(universe)
+
             session.commit()
             return res
         finally:
@@ -249,15 +272,13 @@ class UniverseService:
                 universe = Universe(
                     slug=slug,
                     name=name,
-                    franchise=entry.get("franchise"),
-                    category=entry.get("category"),
-                    continuity=entry.get("continuity"),
-                    era=entry.get("era"),
                     parent_id=parent_id,
                     summary=None,
                     is_explored=False,
                 )
                 session.add(universe)
+
+
                 existing_slugs.add(slug)
                 existing_names.add(name)
                 imported += 1
@@ -282,12 +303,12 @@ class UniverseService:
                 similarity = self._name_similarity(name_lower, w_name_lower)
                 if similarity >= threshold:
                     candidates.append({
-                        "id": w.id,
-                        "uuid": w.uuid,
-                        "name": w.name,
-                        "franchise": w.franchise,
-                        "similarity": similarity,
-                    })
+                         "id": w.id,
+                         "uuid": w.uuid,
+                         "name": w.name,
+                         "similarity": similarity,
+                     })
+
             return sorted(candidates, key=lambda x: x["similarity"], reverse=True)
         finally:
             if not self.session:

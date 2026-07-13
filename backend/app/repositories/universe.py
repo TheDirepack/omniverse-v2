@@ -40,6 +40,38 @@ class UniverseRepository:
             stmt = stmt.order_by(Universe.name)
         return self.session.exec(stmt.offset(offset).limit(limit)).all()
 
+    def filter_universes(
+        self,
+        q: str = "",
+        explored: str = "",
+        franchise: str = "",
+        limit: int = 100,
+        offset: int = 0,
+    ) -> Sequence[Universe]:
+        stmt = select(Universe)
+        if q:
+            # Filter by name or by franchise artifact
+            franchise_subquery = select(Artifact).where(
+                Artifact.universe_id == Universe.id,
+                Artifact.type == "franchise",
+                Artifact.name.contains(q)
+            ).exists()
+            stmt = stmt.where((Universe.name.contains(q)) | franchise_subquery)
+        if explored == "yes":
+            stmt = stmt.where(Universe.is_explored)
+        elif explored == "no":
+            stmt = stmt.where(~Universe.is_explored)
+        if franchise:
+            franchise_subquery = select(Artifact).where(
+                Artifact.universe_id == Universe.id,
+                Artifact.type == "franchise",
+                Artifact.name.contains(franchise)
+            ).exists()
+            stmt = stmt.where(franchise_subquery)
+        
+        stmt = stmt.order_by(Universe.name)
+        return self.session.exec(stmt.offset(offset).limit(limit)).all()
+
     def get_by_names(self, names: list[str]) -> Sequence[Universe]:
         return self.session.exec(select(Universe).where(Universe.name.in_(names))).all()
 

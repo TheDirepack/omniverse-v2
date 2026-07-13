@@ -4,8 +4,8 @@ from sqlmodel import Session, select
 
 from app.db.schema import Universe
 from app.db.session import engine
-from app.db.unconfirmed_schema import UnconfirmedUniverse
-from app.db.unconfirmed_session import unconfirmed_engine
+from app.db.notebook_schema import NotebookUniverse
+from app.db.notebook_session import notebook_engine
 
 # Pattern to match trailing parentheses: optional space, then
 # (anything) at the end of the string
@@ -32,18 +32,18 @@ def main():
         session.commit()
         print(f"Updated {updated_count} universes in main DB.")
 
-    # Unconfirmed DB
-    with Session(unconfirmed_engine) as session:
-        universes = session.exec(select(UnconfirmedUniverse)).all()
+    # Notebook DB
+    with Session(notebook_engine) as session:
+        universes = session.exec(select(NotebookUniverse)).all()
         updated_count = 0
         for u in universes:
             cleaned = clean_name(u.name)
             if cleaned != u.name:
-                print(f"Unconfirmed DB: {u.name} -> {cleaned}")
+                print(f"Notebook DB: {u.name} -> {cleaned}")
                 u.name = cleaned
                 updated_count += 1
         session.commit()
-        print(f"Updated {updated_count} universes in unconfirmed DB.")
+        print(f"Updated {updated_count} universes in notebook DB.")
 
 
 if __name__ == "__main__":

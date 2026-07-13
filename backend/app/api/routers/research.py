@@ -9,7 +9,7 @@ from app.services.universe_service import UniverseService
 router = APIRouter(prefix="/research", tags=["research"])
 
 
-class UnconfirmedClaimResponse(BaseModel):
+class NotebookClaimResponse(BaseModel):
     subject: str
     predicate: str
     object_val: str
@@ -63,27 +63,27 @@ def get_claims(
     return service.get_claims(universe_ids, limit=limit, offset=offset, fields=fields)
 
 
-@router.get("/claims/unconfirmed", response_model=list[UnconfirmedClaimResponse])
-def get_unconfirmed_claims(universe_ids: str | None = None):
+@router.get("/claims/notebook", response_model=list[NotebookClaimResponse])
+def get_notebook_claims(universe_ids: str | None = None):
     from sqlmodel import Session, select
 
-    from app.db.unconfirmed_schema import UnconfirmedClaim, UnconfirmedUniverse
-    from app.db.unconfirmed_session import unconfirmed_engine
+    from app.db.notebook_schema import NotebookClaim, NotebookUniverse
+    from app.db.notebook_session import notebook_engine
 
-    with Session(unconfirmed_engine) as session:
-        query = select(UnconfirmedClaim, UnconfirmedUniverse.name).join(
-            UnconfirmedUniverse
+    with Session(notebook_engine) as session:
+        query = select(NotebookClaim, NotebookUniverse.name).join(
+            NotebookUniverse
         )
         if universe_ids:
             names = [n.strip() for n in universe_ids.split(",") if n.strip()]
-            query = query.where(UnconfirmedUniverse.name.in_(names))
+            query = query.where(NotebookUniverse.name.in_(names))
 
         results = session.exec(query).all()
         output = []
         for claim, name in results:
             claim_dict = claim.model_dump()
             claim_dict["universe_name"] = name
-            output.append(UnconfirmedClaimResponse(**claim_dict))
+            output.append(NotebookClaimResponse(**claim_dict))
 
         return output
 

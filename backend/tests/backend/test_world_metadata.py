@@ -1,6 +1,6 @@
 import pytest
 from fastapi.testclient import TestClient
-from sqlmodel import Session, create_engine
+from sqlmodel import Session, create_engine, select
 
 from app.db.schema import Universe
 from app.main import app
@@ -32,10 +32,6 @@ def test_universe_model_fields(session):
     u = Universe(
         name="Test World",
         slug="test-world",
-        franchise="Test Franchise",
-        category="Test Category",
-        continuity="Test Continuity",
-        era="Test Era",
         summary="Test Summary",
         is_explored=True,
     )
@@ -43,12 +39,39 @@ def test_universe_model_fields(session):
     session.commit()
     session.refresh(u)
 
+    # Metadata is now stored as Artifacts
+    from app.db.schema import Artifact
+    
+    # We need to create them since we're using Universe() directly here
+    # In a real scenario, we'd use UniverseService.create_universe
+    from app.services.universe_service import UniverseService
+    svc = UniverseService(session=session)
+    
+    # Re-create using service to ensure artifacts are created
+    session.delete(u)
+    session.commit()
+    u = svc.create_universe(
+        name="Test World",
+        franchise="Test Franchise",
+        category="Test Category",
+        continuity="Test Continuity",
+        era="Test Era",
+    )
+    u.summary = "Test Summary"
+    u.is_explored = True
+    session.add(u)
+    session.commit()
+
     assert u.name == "Test World"
-    assert u.slug == "test-world"
-    assert u.franchise == "Test Franchise"
-    assert u.category == "Test Category"
-    assert u.continuity == "Test Continuity"
-    assert u.era == "Test Era"
+    
+    # Check for artifacts
+    artifacts = session.exec(select(Artifact).where(Artifact.universe_id == u.id)).all()
+    artifact_map = {a.type: a.name for a in artifacts}
+    
+    assert artifact_map.get("franchise") == "Test Franchise"
+    assert artifact_map.get("category") == "Test Category"
+    assert artifact_map.get("continuity") == "Test Continuity"
+    assert artifact_map.get("era") == "Test Era"
     assert u.summary == "Test Summary"
     assert u.is_explored is True
 

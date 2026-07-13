@@ -2,21 +2,21 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse
-from sqlmodel import Session
+from sqlmodel import Session, select
 
-from app.core.dependencies import get_main_session, get_unconfirmed_session
+from app.core.dependencies import get_main_session, get_notebook_session
 from app.core.templates import templates
 from app.db.schema import Artifact, Evidence
-from app.db.unconfirmed_schema import NotebookEntry
+from app.db.notebook_schema import NotebookEntry
 
 router = APIRouter(tags=["provenance_views"])
 
 
-@router.get("/unconfirmed/{claim_id}", response_class=HTMLResponse)
-async def unconfirmed_claim_provenance(
+@router.get("/notebook/{claim_id}", response_class=HTMLResponse)
+async def notebook_claim_provenance(
     request: Request,
     claim_id: int,
-    session: Annotated[Session, Depends(get_unconfirmed_session)],
+    session: Annotated[Session, Depends(get_notebook_session)],
 ):
     entry = session.get(NotebookEntry, claim_id)
     if not entry:
@@ -35,7 +35,7 @@ async def unconfirmed_claim_provenance(
         evidence_chunk=None,
         evidence=None,
         artifact=artifact,
-        is_unconfirmed=True
+        is_notebook=True
     ))
 
 @router.get("/claim/{claim_id}", response_class=HTMLResponse)
@@ -51,12 +51,19 @@ async def claim_provenance(
     # Resolve Evidence
     evidence_chunk = None
     evidence = None
-    if artifact.evidence_id:
-        # We need a way to get the chunk. For now, we'll use a simplified approach.
-        from app.db.schema import EvidenceChunk
-        evidence_chunk = main_session.get(EvidenceChunk, artifact.evidence_id)
-        if evidence_chunk:
-            evidence = main_session.get(Evidence, evidence_chunk.evidence_id)
+    if artifact.evidence_refs:
+        import json
+        refs = json.loads(artifact.evidence_refs)
+        if refs:
+            # Just take the first evidence reference for the provenance view
+            ev_id = refs[0]
+            from app.db.schema import EvidenceChunk
+            # Find the first chunk associated with this evidence
+            evidence_chunk = main_session.exec(
+                select(EvidenceChunk).where(EvidenceChunk.evidence_id == ev_id)
+            ).first()
+            if evidence_chunk:
+                evidence = main_session.get(Evidence, evidence_chunk.evidence_id)
 
     # Resolve Provenance Artifact
     prov_artifact = None

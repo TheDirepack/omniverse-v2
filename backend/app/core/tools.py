@@ -27,7 +27,7 @@ from app.db.notebook_schema import (
 from app.db.notebook_session import notebook_engine
 from app.services.knowledge_retriever import KnowledgeRetrieverService
 from app.services.research_workspace import WorkspaceService
-from app.services.universe_service import UniverseService
+from app.services.settings_service import SettingsService
 
 
 async def tool_load_notebook_entry(args: dict[str, Any]) -> str:
@@ -599,7 +599,7 @@ async def tool_upsert_artifacts(args: dict[str, Any]) -> str:
         if not universe:
             return f"Universe {universe_name} not found."
 
-        def get_or_create_artifact(name: str, art_type: str, payload: dict = None):
+        def get_or_create_artifact(name: str, art_type: str, payload: dict = None) -> tuple[Artifact, bool]:
             # 1. Try to find by name and type
             art = session.exec(
                 select(Artifact).where(
@@ -609,7 +609,7 @@ async def tool_upsert_artifacts(args: dict[str, Any]) -> str:
                 )
             ).first()
             if art:
-                return art
+                return art, False
             
             # 2. Try to find by payload (Merge duplicate factual content)
             if payload:
@@ -626,7 +626,7 @@ async def tool_upsert_artifacts(args: dict[str, Any]) -> str:
                     art.name = name
                     session.add(art)
                     session.flush()
-                    return art
+                    return art, False
             
             # 3. Create new
             art = Artifact(
@@ -636,7 +636,10 @@ async def tool_upsert_artifacts(args: dict[str, Any]) -> str:
             )
             session.add(art)
             session.flush()
-            return art
+            return art, True
+
+        settings_service = SettingsService()
+        max_versions = int(settings_service.get_setting("MAX_ARTIFACT_VERSIONS").value) if settings_service.get_setting("MAX_ARTIFACT_VERSIONS") else 10
 
         created, updated = [], []
 
@@ -652,16 +655,7 @@ async def tool_upsert_artifacts(args: dict[str, Any]) -> str:
             if not art_type or not name:
                 continue
 
-            existing_art = session.exec(
-                select(Artifact).where(
-                    Artifact.universe_id == universe.id,
-                    Artifact.type == art_type,
-                    Artifact.name == name
-                )
-            ).first()
-
-            is_new = existing_art is None
-            art = get_or_create_artifact(name, art_type, payload)
+            art, is_new = get_or_create_artifact(name, art_type, payload)
 
             # Handle Evidence Deduplication (URL + Section)
             evidence_ids = []
@@ -712,8 +706,8 @@ async def tool_upsert_artifacts(args: dict[str, Any]) -> str:
                 obj_name = payload.get("object")
                 if not subj_name or not obj_name:
                     continue
-                subj_art = get_or_create_artifact(subj_name, "entity")
-                obj_art = get_or_create_artifact(obj_name, "entity")
+                subj_art, _ = get_or_create_artifact(subj_name, "entity")
+                obj_art, _ = get_or_create_artifact(obj_name, "entity")
                 payload_data = {
                     "subject_id": subj_art.id,
                     "subject_name": subj_name,
@@ -727,7 +721,7 @@ async def tool_upsert_artifacts(args: dict[str, Any]) -> str:
                 parent_name = payload.get("parent")
                 if not parent_name:
                     continue
-                parent_art = get_or_create_artifact(parent_name, "entity")
+                parent_art, _ = get_or_create_artifact(parent_name, "entity")
                 payload_data = {
                     "parent_id": parent_art.id,
                     "key": payload.get("key"),
@@ -741,9 +735,6 @@ async def tool_upsert_artifacts(args: dict[str, Any]) -> str:
 
             # Artifact Versioning (Internal Database Feature)
             if not is_new:
-                from app.services.settings_service import SettingsService
-                max_versions = int(SettingsService().get_setting("MAX_ARTIFACT_VERSIONS").value) if SettingsService().get_setting("MAX_ARTIFACT_VERSIONS") else 10
-                
                 # Archive current state to ArtifactVersion before updating
                 # We use a separate session or flush to ensure current is captured
                 old_version = session.exec(
@@ -765,12 +756,13 @@ async def tool_upsert_artifacts(args: dict[str, Any]) -> str:
                 
                 # Prune old versions
                 if new_ver_num > max_versions:
+                    from sqlalchemy import delete
                     session.exec(
-                        select(ArtifactVersion).where(
+                        delete(ArtifactVersion).where(
                             ArtifactVersion.artifact_id == art.id,
                             ArtifactVersion.version <= new_ver_num - max_versions
                         )
-                    ).delete()
+                    )
 
             session.add(art)
             if is_new:

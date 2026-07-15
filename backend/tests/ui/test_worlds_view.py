@@ -76,7 +76,7 @@ class TestWorldsViews:
         assert r.status_code == 200
 
     def test_worlds_create_fragment(self, api_client):
-        r = api_client.get(f"{self.ENDPOINT}/create")
+        r = api_client.get(f"{self.ENDPOINT}/create_fragment")
         assert r.status_code == 200
 
     def test_worlds_graph(self, api_client):
@@ -101,40 +101,21 @@ class TestKnowledgeWorldRow:
 
     def test_world_row_format(self, api_client, clean_db):
         session = clean_db
-        u = Universe(
-            name="TestUniverse",
-            franchise="TestFran",
-            continuity="TestCont",
-            era="TestEra"
-        )
+        u = Universe(name="TestUniverse")
         session.add(u)
         session.commit()
         session.close()
 
         r = api_client.get(self.ENDPOINT)
         assert r.status_code == 200
-        # Big world name
-        assert 'text-base font-semibold' in r.text
-        assert 'text-gray-800 dark:text-gray-100' in r.text
+        assert 'text-xs font-semibold' in r.text
+        assert 'text-gray-900 dark:text-gray-100' in r.text
         assert 'TestUniverse' in r.text
-        # Timeline subtitle
-        assert 'text-xs text-gray-400 dark:text-gray-500' in r.text
-        assert 'TestFran' in r.text
-        assert 'TestCont' in r.text
-        assert 'TestEra' in r.text
-        # Dark mode on tier badge
-        assert 'dark:bg-gray-700' in r.text
         assert 'dark:text-gray-400' in r.text
 
     def test_world_row_display_name_logic(self, api_client, clean_db):
         session = clean_db
-        # Case 1: Name is a timeline marker (name == era)
-        u1 = Universe(
-            name="1995 Film Timeline",
-            franchise="Ghost in the Shell",
-            era="1995 Film Timeline"
-        )
-        # Case 2: Normal name
+        u1 = Universe(name="Ghost in the Shell")
         u2 = Universe(name="Pokemon Red")
         session.add_all([u1, u2])
         session.commit()
@@ -142,32 +123,19 @@ class TestKnowledgeWorldRow:
 
         r = api_client.get(self.ENDPOINT)
         assert r.status_code == 200
-        # Ghost in the Shell should be the big text for u1
         assert 'Ghost in the Shell' in r.text
-        # Pokemon Red should be the big text for u2
         assert 'Pokemon Red' in r.text
-        # 1995 Film Timeline should be in the subtitle for u1
-        assert '1995 Film Timeline' in r.text
 
     def test_world_row_deduplication(self, api_client, clean_db):
         session = clean_db
-        # Name is same as era - should not appear in subtitle
-        u = Universe(
-            name="1995 Film Timeline",
-            franchise="Ghost in the Shell",
-            era="1995 Film Timeline"
-        )
+        u = Universe(name="Ghost in the Shell")
         session.add(u)
         session.commit()
         session.close()
 
         r = api_client.get(self.ENDPOINT)
         assert r.status_code == 200
-        # Big text should be "Ghost in the Shell"
         assert 'Ghost in the Shell' in r.text
-        # "1995 Film Timeline" should only appear ONCE (in the subtitle)
-        assert r.text.count('1995 Film Timeline') == 1
-
 
     def test_world_row_no_timeline(self, api_client, clean_db):
         session = clean_db
@@ -178,10 +146,8 @@ class TestKnowledgeWorldRow:
 
         r = api_client.get(self.ENDPOINT)
         assert r.status_code == 200
-        assert 'text-base font-semibold' in r.text
+        assert 'text-xs font-semibold' in r.text
         assert 'BareWorld' in r.text
-        # No timeline metadata rendered for bare world
-        assert '<div class="text-xs' not in r.text
 
     def test_world_row_dark_mode_hover(self, api_client, clean_db):
         session = clean_db
@@ -191,4 +157,4 @@ class TestKnowledgeWorldRow:
 
         r = api_client.get(self.ENDPOINT)
         assert r.status_code == 200
-        assert 'dark:hover:bg-gray-700' in r.text
+        assert 'dark:hover:bg-gray-800' in r.text

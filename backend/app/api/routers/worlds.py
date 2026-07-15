@@ -1,7 +1,8 @@
 import json
 from pathlib import Path
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, Request, Depends
+from fastapi import APIRouter, BackgroundTasks, Form, HTTPException, Query, Request, Depends
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
@@ -28,6 +29,10 @@ router = APIRouter(prefix="/worlds", tags=["worlds"])
 
 class AddWorldPayload(BaseModel):
     world_name: str
+    franchise: str | None = None
+    category: str | None = None
+    continuity: str | None = None
+    era: str | None = None
     parent_id: int | None = None
     auto_research: bool = True
 
@@ -56,6 +61,59 @@ class UniverseResponse(BaseModel):
     summary: str | None = None
     is_explored: bool
 
+
+@router.post("/research")
+async def research_worlds(
+    request: Request,
+    background_tasks: BackgroundTasks
+):
+    worlds = []
+    try:
+        body = await request.json()
+        if isinstance(body, list):
+            worlds = body
+        elif isinstance(body, dict):
+            worlds = body.get("payload") or body.get("worlds") or []
+    except Exception:
+        try:
+            form = await request.form()
+            worlds = form.getlist("payload") or form.getlist("worlds") or []
+        except Exception:
+            pass
+
+    if not worlds:
+        return {"status": "error", "message": "No worlds provided"}
+
+    import uuid
+    run_id = str(uuid.uuid4())
+    from app.api.routers.runs import run_pipeline_in_background
+
+    background_tasks.add_task(
+        run_pipeline_in_background, run_id, worlds
+    )
+    response = JSONResponse(content={"status": "queued", "run_id": run_id, "worlds": worlds})
+    if request.headers.get("HX-Request") == "true":
+        response.headers["HX-Redirect"] = "/logs/"
+    return response
+
+
+@router.get("/search")
+def search_worlds(
+    q: str | None = None,
+    explored: str | None = None,
+    franchise: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+    session: Session = Depends(get_main_session)
+):
+    service = UniverseService(session)
+    return service.filter_universes(
+        q=q or "", 
+        explored=explored or "", 
+        franchise=franchise or "", 
+        limit=limit, 
+        offset=offset
+    )
 
 @router.post("/snapshots")
 def create_snapshot(payload: SnapshotPayload):
@@ -136,14 +194,18 @@ def import_world(payload: ImportWorldPayload, background_tasks: BackgroundTasks)
 
 
 @router.post("/create")
-def create_world(payload: AddWorldPayload, background_tasks: BackgroundTasks):
-    service = UniverseService()
+def create_world(payload: AddWorldPayload, background_tasks: BackgroundTasks, session: Session = Depends(get_main_session)):
+    service = UniverseService(session)
     existing = service.get_universe(payload.world_name)
     if existing:
         return {"status": "exists", "world_name": payload.world_name, "id": existing.id}
 
     world = service.create_universe(
         name=payload.world_name,
+        franchise=payload.franchise,
+        category=payload.category,
+        continuity=payload.continuity,
+        era=payload.era,
         parent_id=payload.parent_id,
     )
 
@@ -161,11 +223,18 @@ def create_world(payload: AddWorldPayload, background_tasks: BackgroundTasks):
 
 
 @router.post("/")
-def add_world(payload: AddWorldPayload, background_tasks: BackgroundTasks):
-    service = UniverseService()
+def add_world(payload: AddWorldPayload, background_tasks: BackgroundTasks, session: Session = Depends(get_main_session)):
+    service = UniverseService(session)
     world = service.get_universe(payload.world_name)
     if not world:
-        world = service.create_universe(payload.world_name)
+        world = service.create_universe(
+            name=payload.world_name,
+            franchise=payload.franchise,
+            category=payload.category,
+            continuity=payload.continuity,
+            era=payload.era,
+            parent_id=payload.parent_id,
+        )
 
     if payload.auto_research:
         import uuid

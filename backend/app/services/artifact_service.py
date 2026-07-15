@@ -17,11 +17,15 @@ class ArtifactService:
         return self._repo
 
     def list_artifacts(
-        self, universe_id: int, search_query: str | None = None, limit: int = 100, offset: int = 0
+        self, universe_id: int | None = None, search_query: str | None = None, limit: int = 100, offset: int = 0
     ) -> Sequence[Artifact]:
-        if search_query:
+        if search_query and universe_id is not None:
             return self.repo.search_artifacts(universe_id, search_query, limit, offset)
-        return self.repo.get_by_universe(universe_id, limit, offset)
+        elif search_query:
+            return self.repo.search_all_artifacts(search_query, limit, offset)
+        elif universe_id is not None:
+            return self.repo.get_by_universe(universe_id, limit, offset)
+        return self.repo.get_all(limit, offset)
 
     def get_artifact_details(self, artifact_id: int) -> Artifact | None:
         return self.repo.get_artifact_with_details(artifact_id)

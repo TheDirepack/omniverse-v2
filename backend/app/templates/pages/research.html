@@ -3,98 +3,143 @@
 {% block title %}Research - Omniverse{% endblock %}
 
 {% block content %}
-<div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-    <!-- Main Panel -->
-    <div class="md:col-span-2 space-y-6">
-        <!-- Research Job Dashboard -->
-        <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow">
-            <div id="research-history"
-                 hx-get="{{ url_for('runs_history') }}"
-                 hx-trigger="load"
-                 hx-swap="innerHTML">
-                <p class="text-gray-500 dark:text-gray-400 italic">Loading research jobs...</p>
-            </div>
+<div class="flex flex-col h-full overflow-hidden">
+    <!-- CONTROL BAR -->
+    <div class="h-12 border-b border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 flex items-center px-4 gap-4 shrink-0">
+        <div class="flex items-center gap-2 flex-1">
+            <span class="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Focus:</span>
+            <select class="h-7 px-2 text-xs bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    name="explored" hx-include="this"
+                    hx-get="/worlds/database-worlds"
+                    hx-trigger="change"
+                    hx-target="#worlds-list">
+                <option value="">All Universes</option>
+                <option value="no">Unexplored</option>
+                <option value="yes">Explored</option>
+            </select>
+        </div>
+        
+        <div class="flex items-center gap-2">
+            <input type="text" 
+                   placeholder="Search worlds..." 
+                   class="h-7 px-3 text-xs bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-sm focus:outline-none focus:ring-1 focus:ring-blue-500 w-64"
+                   name="q" hx-include="this"
+                   hx-get="/worlds/database-worlds" 
+                   hx-trigger="keyup changed delay:300ms" 
+                   hx-target="#worlds-list" 
+                   hx-indicator="#research-indicator">
         </div>
 
-        <!-- Researcher Workspace -->
-        <div class="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
-            <div class="border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50 px-6 py-3">
-                                <div class="flex items-center justify-between">
-                                    <h2 class="text-xl font-semibold">Research Workspace: {{ world.name }}</h2>
-                                    <div class="flex gap-2">
-                        <button hx-get="{{ url_for('workspace_notebook') }}" 
-                                hx-target="#workspace-content"
-                                class="px-3 py-1 text-xs font-medium rounded-md bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition">
-                            Notebook
-                        </button>
-                        <button hx-get="{{ url_for('workspace_sources') }}" 
-                                hx-target="#workspace-content"
-                                class="px-3 py-1 text-xs font-medium rounded-md bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition">
-                            Sources
-                        </button>
-                        <button hx-get="{{ url_for('workspace_timeline') }}" 
-                                hx-target="#workspace-content"
-                                class="px-3 py-1 text-xs font-medium rounded-md bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 transition">
-                            Timeline
-                        </button>
-                    </div>
-                </div>
-            </div>
-            <div class="grid grid-cols-1 lg:grid-cols-2 gap-0">
-                <div id="workspace-content" class="p-6 border-r border-gray-200 dark:border-gray-700 min-h-[400px]">
-                    <div class="flex items-center justify-center h-full text-gray-500 dark:text-gray-400 italic text-sm">
-                        Select a workspace view to begin.
-                    </div>
-                </div>
-                <div id="workspace-detail-panel" class="p-6 bg-gray-50 dark:bg-gray-900/30 min-h-[400px]">
-                    <div class="flex items-center justify-center h-full text-gray-500 dark:text-gray-400 italic text-sm">
-                        Select an item to view details.
-                    </div>
-                </div>
-            </div>
-        </div>
+        <div id="research-indicator" class="htmx-indicator text-xs animate-spin">⌛</div>
     </div>
 
-    <!-- Right Panel -->
-    <div class="space-y-6">
-        <!-- World Management -->
-        <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow space-y-4">
-            <h2 class="text-xl font-semibold mb-4">World Management</h2>
-            <div class="grid grid-cols-1 gap-3">
-                 <button data-action="open-world-modal" data-type="import" 
-                         class="w-full py-2 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition">
-                    Import World
+    <!-- MAIN WORKSPACE -->
+    <div class="flex-1 flex overflow-hidden">
+        <!-- Worlds Table -->
+        <div class="flex-1 overflow-y-auto p-4 no-scrollbar">
+            <div class="mb-4 flex justify-between items-end">
+                <div>
+                    <h1 class="text-lg font-bold tracking-tight text-gray-900 dark:text-white">Research Hub</h1>
+                    <p class="text-xs text-gray-500 dark:text-gray-400">Select a universe to start research or manage existing data.</p>
+                </div>
+                <button class="px-3 py-1.5 bg-blue-600 text-white text-xs font-semibold rounded-sm hover:bg-blue-700 transition-colors flex items-center gap-2"
+                        hx-get="/worlds/create_fragment" 
+                        hx-target="#modal-content"
+                        hx-swap="innerHTML">
+                    <span>+</span> Create Custom World
                 </button>
-                 <button data-action="open-world-modal" data-type="create" 
-                         class="w-full py-2 px-4 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-medium transition">
-                    Create World
-                </button>
+            </div>
+
+            <div id="worlds-list" class="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-sm overflow-hidden">
+                {% include "fragments/database_worlds.html" %}
             </div>
         </div>
 
-        <!-- Active Research Queue -->
-        <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow">
-            <h2 class="text-xl font-semibold mb-4">Active Research</h2>
-            <div id="research-queue"
-                 hx-get="{{ url_for('research_queue') }}"
-                 hx-trigger="every 5s"
-                 hx-swap="innerHTML">
-                <p class="text-gray-500 dark:text-gray-400 italic">Checking for active runs...</p>
+        <!-- Right Sidebar: World Creation / Import -->
+        <aside class="w-80 border-l border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 p-4 flex flex-col gap-6">
+            <div class="space-y-4">
+                <h3 class="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Quick Actions</h3>
+                <div class="flex flex-col gap-2">
+                    <button class="h-8 bg-blue-600 text-white text-xs font-semibold rounded-sm hover:bg-blue-700"
+                            hx-get="/worlds/import"
+                            hx-target="#modal-content"
+                            hx-swap="innerHTML">
+                        Import from Registry
+                    </button>
+                    <button class="h-8 bg-purple-600 text-white text-xs font-semibold rounded-sm hover:bg-purple-700"
+                            hx-get="/worlds/create_fragment"
+                            hx-target="#modal-content"
+                            hx-swap="innerHTML">
+                        Create Custom World
+                    </button>
+                    <button class="h-8 bg-yellow-600 text-white text-xs font-semibold rounded-sm hover:bg-yellow-700"
+                            hx-post="/worlds/reset-all-explored"
+                            hx-target="#worlds-list"
+                            hx-confirm="Reset explored status for ALL worlds?">
+                        ↺ Reset All Explored
+                    </button>
+                </div>
             </div>
-        </div>
-
-        <!-- Focused Search -->
-        <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow text-center">
-            <h2 class="text-xl font-semibold mb-4">Focused Search</h2>
-            <p class="text-sm text-gray-500 dark:text-gray-400 mb-6">
-                Trigger a targeted research job to fill specific gaps in the knowledge graph.
-            </p>
-             <button data-action="open-focused-search" 
-                     class="w-full py-2 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition">
-                Launch Focused Search
-            </button>
-        </div>
+        </aside>
     </div>
 
+    <!-- BULK ACTION BAR (Floating) -->
+    <div id="bulk-action-bar" class="hidden fixed bottom-6 left-1/2 -translate-x-1/2 h-12 bg-gray-900 text-white px-6 rounded-full shadow-2xl border border-gray-700 flex items-center gap-6 z-50">
+        <span id="selected-count" class="text-xs font-medium text-gray-400">0 worlds selected</span>
+        <div class="h-4 w-px bg-gray-700"></div>
+        <button class="text-xs font-semibold hover:text-blue-400 transition-colors"
+                hx-post="/api/worlds/research" 
+                hx-vals="js:{payload: Array.from(document.querySelectorAll('.world-checkbox:checked')).map(cb => cb.value)}"
+                hx-target="#worlds-list">
+            🚀 Start Bulk Research
+        </button>
+        <button class="text-xs font-semibold hover:text-yellow-400 transition-colors"
+                hx-post="/worlds/reset-selected-explored"
+                hx-vals="js:{ids: Array.from(document.querySelectorAll('.world-checkbox:checked')).map(cb => cb.value)}"
+                hx-target="#worlds-list"
+                hx-confirm="Reset explored status for selected worlds?">
+            ↺ Reset Explored
+        </button>
+        <div class="h-4 w-px bg-gray-700"></div>
+        <button class="text-xs font-semibold hover:text-red-400 transition-colors"
+                hx-post="/worlds/delete-selected"
+                hx-vals="js:{uuids: Array.from(document.querySelectorAll('.world-checkbox:checked')).map(cb => cb.value)}"
+                hx-target="#worlds-list"
+                hx-confirm="Delete selected worlds?">
+            🗑️ Delete Selected
+        </button>
+    </div>
 </div>
+
+<div id="modal-root" class="fixed inset-0 bg-black/50 flex items-center justify-center hidden z-50" onclick="if(event.target===this)this.classList.add('hidden')">
+    <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-lg w-full mx-4 p-6 max-h-[80vh] overflow-y-auto">
+        <div class="flex justify-end">
+            <button onclick="document.getElementById('modal-root').classList.add('hidden')" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">&times;</button>
+        </div>
+        <div id="modal-content"></div>
+    </div>
+</div>
+
+<script>
+    document.addEventListener('htmx:afterSwap', function(e) {
+        if (e.detail.target.id === 'modal-content') {
+            document.getElementById('modal-root').classList.remove('hidden');
+        }
+    });
+    // Simple checkbox handler for bulk actions
+    document.addEventListener('change', function(e) {
+        if (e.target.classList.contains('world-checkbox')) {
+            const checked = document.querySelectorAll('.world-checkbox:checked');
+            const bar = document.getElementById('bulk-action-bar');
+            const count = document.getElementById('selected-count');
+            
+            if (checked.length > 0) {
+                bar.classList.remove('hidden');
+                count.innerText = `${checked.length} world${checked.length > 1 ? 's' : ''} selected`;
+            } else {
+                bar.classList.add('hidden');
+            }
+        }
+    });
+</script>
 {% endblock %}

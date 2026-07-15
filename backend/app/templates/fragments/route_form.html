@@ -1,0 +1,134 @@
+<script>
+window.__providers = {{ providers | tojson | safe }};
+function renderProviderModels() {
+    var providerSelect = document.querySelector('select[name="provider_id"]');
+    var container = document.getElementById('provider-models');
+    var hidden = document.querySelector('input[name="models"]');
+    if (!providerSelect || !container || !hidden) return;
+
+    var providerId = parseInt(providerSelect.value);
+    var provider = window.__providers ? window.__providers.find(function(p) { return p.id === providerId; }) : null;
+    if (!provider || !provider.models) {
+        container.innerHTML = '<span class="text-xs text-gray-400 italic">No models configured for this provider</span>';
+        return;
+    }
+
+    var selected = hidden.value ? hidden.value.split(',').map(function(s) { return s.trim(); }).filter(Boolean) : [];
+    var allModels = provider.models.split(',').map(function(s) { return s.trim(); }).filter(Boolean);
+
+    container.innerHTML = allModels.map(function(m) {
+        var isSelected = selected.indexOf(m) >= 0;
+        var cls = isSelected
+            ? 'bg-blue-100 dark:bg-blue-900/30 border-blue-300 dark:border-blue-700 text-blue-700 dark:text-blue-300'
+            : 'bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:border-gray-400 dark:hover:border-gray-600';
+        return '<button type="button" onclick="toggleRouteModel(\'' + m.replace(/'/g, "\\'") + '\')" class="px-2 py-0.5 text-xs rounded-sm border transition-colors ' + cls + '">'
+            + (isSelected ? '✓ ' : '') + m + '</button>';
+    }).join('');
+}
+
+function toggleRouteModel(modelName) {
+    var hidden = document.querySelector('input[name="models"]');
+    if (!hidden) return;
+    var models = hidden.value ? hidden.value.split(',').map(function(s) { return s.trim(); }).filter(Boolean) : [];
+    var idx = models.indexOf(modelName);
+    if (idx >= 0) {
+        models.splice(idx, 1);
+    } else {
+        models.push(modelName);
+    }
+    hidden.value = models.join(', ');
+    renderProviderModels();
+}
+</script>
+
+{% if active_route %}
+<form hx-post="/settings/routes/upsert" hx-target="#settings-content">
+    <input type="hidden" name="route_id" value="{{ active_route.id }}">
+    <div class="space-y-4">
+        <div class="flex justify-between items-center mb-2">
+            <h4 class="text-xs font-bold text-gray-900 dark:text-white">Edit Route</h4>
+            <button type="submit" class="text-[10px] px-2 py-0.5 bg-blue-600 text-white rounded-sm font-bold">Save</button>
+        </div>
+        <div class="flex flex-col gap-1">
+            <label class="text-[10px] font-bold text-gray-400 uppercase">Task Type</label>
+            <select name="task_type" class="h-8 border border-gray-300 dark:border-gray-700 px-2 py-1 text-xs bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 rounded-sm">
+                <option value="DEFAULT" {% if active_route and active_route.task_type == 'DEFAULT' %}selected{% endif %}>Default</option>
+                <option value="research" {% if active_route and active_route.task_type == 'research' %}selected{% endif %}>Research</option>
+                <option value="summary" {% if active_route and active_route.task_type == 'summary' %}selected{% endif %}>Summary</option>
+                <option value="db_integrator" {% if active_route and active_route.task_type == 'db_integrator' %}selected{% endif %}>DB Integrator</option>
+                <option value="tiering" {% if active_route and active_route.task_type == 'tiering' %}selected{% endif %}>Tiering</option>
+                <option value="extrapolation" {% if active_route and active_route.task_type == 'extrapolation' %}selected{% endif %}>Extrapolation</option>
+                {% if active_route and active_route.task_type not in ['DEFAULT', 'research', 'summary', 'db_integrator', 'tiering', 'extrapolation'] %}
+                <option value="{{ active_route.task_type }}" selected>{{ active_route.task_type }}</option>
+                {% endif %}
+            </select>
+        </div>
+
+        <div class="flex flex-col gap-1">
+            <label class="text-[10px] font-bold text-gray-400 uppercase">Provider</label>
+            <select name="provider_id" class="h-8 border border-gray-300 dark:border-gray-700 px-2 py-1 text-xs bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 rounded-sm"
+                    onchange="renderProviderModels()">
+                {% for p in providers %}
+                <option value="{{ p.id }}" {% if p.id == active_route.provider_id %}selected{% endif %}>{{ p.name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div class="flex flex-col gap-1">
+            <label class="text-[10px] font-bold text-gray-400 uppercase">Models</label>
+            <div id="provider-models" class="flex flex-wrap gap-1.5 min-h-[24px]"></div>
+            <input type="hidden" name="models" value="{{ active_route.models or '' }}">
+            <script>renderProviderModels();</script>
+        </div>
+
+        <div class="flex flex-col gap-1">
+            <label class="text-[10px] font-bold text-gray-400 uppercase">Priority</label>
+            <input type="number" name="priority" value="{{ active_route.priority or 0 }}"
+                    class="h-8 border border-gray-300 dark:border-gray-700 px-2 py-1 text-xs bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 rounded-sm">
+        </div>
+
+    </div>
+</form>
+{% else %}
+<form hx-post="/settings/routes/upsert" hx-target="#settings-content">
+    <div class="space-y-4">
+        <div class="flex justify-between items-center mb-2">
+            <h4 class="text-xs font-bold text-gray-900 dark:text-white">New Route</h4>
+            <button type="submit" class="text-[10px] px-2 py-0.5 bg-blue-600 text-white rounded-sm font-bold">Save</button>
+        </div>
+        <div class="flex flex-col gap-1">
+            <label class="text-[10px] font-bold text-gray-400 uppercase">Task Type</label>
+            <select name="task_type" class="h-8 border border-gray-300 dark:border-gray-700 px-2 py-1 text-xs bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 rounded-sm">
+                <option value="DEFAULT" selected>Default</option>
+                <option value="research">Research</option>
+                <option value="summary">Summary</option>
+                <option value="db_integrator">DB Integrator</option>
+                <option value="tiering">Tiering</option>
+                <option value="extrapolation">Extrapolation</option>
+            </select>
+        </div>
+
+        <div class="flex flex-col gap-1">
+            <label class="text-[10px] font-bold text-gray-400 uppercase">Provider</label>
+            <select name="provider_id" class="h-8 border border-gray-300 dark:border-gray-700 px-2 py-1 text-xs bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 rounded-sm"
+                    onchange="renderProviderModels()">
+                {% for p in providers %}
+                <option value="{{ p.id }}">{{ p.name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="flex flex-col gap-1">
+            <label class="text-[10px] font-bold text-gray-400 uppercase">Models</label>
+            <div id="provider-models" class="flex flex-wrap gap-1.5 min-h-[24px]"></div>
+            <input type="hidden" name="models" value="">
+            <script>renderProviderModels();</script>
+        </div>
+        <div class="flex flex-col gap-1">
+            <label class="text-[10px] font-bold text-gray-400 uppercase">Priority</label>
+            <input type="number" name="priority" value="0"
+                    class="h-8 border border-gray-300 dark:border-gray-700 px-2 py-1 text-xs bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 rounded-sm">
+        </div>
+    </div>
+</form>
+{% endif %}
+

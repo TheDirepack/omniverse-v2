@@ -11,15 +11,12 @@ from app.core.tools import (
     _store_artifact,
     build_freshness_comparison_report,
     tool_compare_source_freshness,
-    tool_delete_unconfirmed_artifact,
     tool_link_entity_to_canonical,
     tool_link_universes,
     tool_save_notebook_entry,
     tool_upsert_artifacts,
 )
 from app.db.schema import Artifact, Universe
-from app.db.unconfirmed_schema import NotebookEntry, UnconfirmedUniverse
-from app.db.unconfirmed_session import unconfirmed_engine
 
 
 @pytest.fixture(autouse=True)
@@ -205,67 +202,6 @@ class TestToolSaveNotebookEntry:
             "summary": "",
         })
         assert "Error: Missing title or summary" in result
-
-
-class TestToolDeleteUnconfirmedArtifact:
-    async def test_no_artifact_id(self):
-        result = await tool_delete_unconfirmed_artifact({})
-        assert "Missing" in result
-
-    async def test_no_active_context(self):
-        result = await tool_delete_unconfirmed_artifact({"claim_id": 1})
-        assert "No active universe context" in result
-
-    async def test_delete_nonexistent(self):
-        set_current_universe("DelTest")
-        u = UnconfirmedUniverse(name="DelTest")
-        with Session(unconfirmed_engine) as s:
-            s.add(u)
-            s.commit()
-        result = await tool_delete_unconfirmed_artifact({"claim_ids": [999]})
-        assert "Deleted 0" in result
-
-    async def test_delete_wrong_universe(self):
-        u1 = UnconfirmedUniverse(name="DelA", universe_uuid="uuid-a")
-        u2 = UnconfirmedUniverse(name="DelB", universe_uuid="uuid-b")
-        with Session(unconfirmed_engine) as s:
-            s.add_all([u1, u2])
-            s.commit()
-            s.refresh(u1)
-            ne = NotebookEntry(
-                universe_uuid=u1.universe_uuid, title="S", summary="O", kind="Observation"
-            )
-
-
-            s.add(ne)
-            s.commit()
-            nid = ne.id
-        set_current_universe("DelB")
-        result = await tool_delete_unconfirmed_artifact({"claim_ids": [nid]})
-        assert "Deleted 0" in result
-        assert "does not belong to current universe" in result
-
-    async def test_delete_success(self):
-        set_current_universe("DelOk")
-        with Session(unconfirmed_engine) as s:
-            u = s.exec(
-                select(UnconfirmedUniverse).where(UnconfirmedUniverse.name == "DelOk")
-            ).first()
-            if not u:
-                u = UnconfirmedUniverse(name="DelOk", universe_uuid="uuid-ok")
-                s.add(u)
-                s.commit()
-                s.refresh(u)
-            ne = NotebookEntry(
-                universe_uuid=u.universe_uuid, title="S", summary="O", kind="Observation"
-            )
-
-
-            s.add(ne)
-            s.commit()
-            nid = ne.id
-        result = await tool_delete_unconfirmed_artifact({"claim_ids": [nid]})
-        assert "Deleted 1" in result
 
 
 class TestToolUpsertArtifacts:

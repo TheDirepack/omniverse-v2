@@ -119,6 +119,8 @@ class SettingsRepository:
             "HIDE_WEBSEARCH_CONTENT": "false",
             "BROWSER_POOL_SIZE": "2",
             "BROWSER_MAX_CONCURRENCY_PER_INSTANCE": "5",
+            "MAX_TOKENS": "32000",
+            "COMPRESSION_THRESHOLD": "0.8",
         }
 
         for key, value in defaults.items():

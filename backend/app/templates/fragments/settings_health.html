@@ -48,6 +48,59 @@
 
     <div class="pt-6 border-t border-gray-200 dark:border-gray-700 space-y-4">
         <div class="flex justify-between items-center">
+            <h2 class="text-xl font-semibold">Circuit Breakers</h2>
+        </div>
+
+        {% if circuit_breakers %}
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead>
+                    <tr class="border-b border-gray-200 dark:border-gray-700">
+                        <th class="text-left py-2 px-3 font-medium text-gray-500">Provider</th>
+                        <th class="text-left py-2 px-3 font-medium text-gray-500">Model</th>
+                        <th class="text-center py-2 px-3 font-medium text-gray-500">Failures</th>
+                        <th class="text-left py-2 px-3 font-medium text-gray-500">Disabled Until</th>
+                        <th class="text-center py-2 px-3 font-medium text-gray-500">Status</th>
+                        <th class="text-center py-2 px-3 font-medium text-gray-500">Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for cb in circuit_breakers %}
+                    {% set active = cb.disabled_until and cb.disabled_until > now %}
+                    <tr class="border-b border-gray-100 dark:border-gray-800 {{ 'bg-red-50 dark:bg-red-900/10' if active else '' }}">
+                        <td class="py-2 px-3 text-xs">{{ cb.provider_id }}</td>
+                        <td class="py-2 px-3 font-mono text-xs">{{ cb.model }}</td>
+                        <td class="py-2 px-3 text-center text-xs">{{ cb.failure_count }}/5</td>
+                        <td class="py-2 px-3 text-xs">{{ cb.disabled_until.strftime('%H:%M UTC') if cb.disabled_until else '—' }}</td>
+                        <td class="py-2 px-3 text-center">
+                            {% if active %}
+                            <span class="text-red-500 text-xs font-bold">DISABLED</span>
+                            {% elif cb.failure_count > 0 %}
+                            <span class="text-orange-400 text-xs font-medium">DEGRADED</span>
+                            {% else %}
+                            <span class="text-green-500 text-xs font-medium">OK</span>
+                            {% endif %}
+                        </td>
+                        <td class="py-2 px-3 text-center">
+                            <button class="text-xs bg-orange-500 text-white px-2 py-1 rounded hover:bg-orange-600 transition"
+                                    hx-post="/settings/reset-health/{{ cb.candidate_hash }}"
+                                    hx-target="#settings-content"
+                                    hx-swap="innerHTML">
+                                Reset
+                            </button>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="text-gray-500 dark:text-gray-400 italic text-sm">No circuit breaker data. All candidates healthy.</p>
+        {% endif %}
+    </div>
+
+    <div class="pt-6 border-t border-gray-200 dark:border-gray-700 space-y-4">
+        <div class="flex justify-between items-center">
             <h2 class="text-xl font-semibold">System Snapshots</h2>
             <button class="bg-blue-600 text-white px-4 py-2 rounded text-sm hover:bg-blue-700 transition"
                     hx-get="/settings/snapshots"

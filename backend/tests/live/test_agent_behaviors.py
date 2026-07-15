@@ -27,6 +27,7 @@ async def test_researcher_smoke_end_to_end():
     with Session(engine) as session:
         session.add(u)
         session.commit()
+        session.refresh(u)
 
     # This tests the whole loop: run_agent -> tools -> validator
     result = await research_single_world(u.uuid, "live-run")
@@ -59,22 +60,26 @@ async def test_critic_judgment_depth():
     critic_prompt = get_critic_prompt(
         data=shallow_data, criteria="Technical specifications required"
     )
-    res_shallow, _ = await run_agent(
+    res_shallow, _, _ = await run_agent(
         agent_name="Logic Auditor",
         system_prompt=critic_prompt["system"],
         user_prompt=critic_prompt["user"],
+        step="Audit Depth",
         run_id="test-depth-1",
+        tools_names=[],
         submit_tool_name="submit_audit"
     )
 
     critic_prompt_deep = get_critic_prompt(
         data=deep_data, criteria="Technical specifications required"
     )
-    res_deep, _ = await run_agent(
+    res_deep, _, _ = await run_agent(
         agent_name="Logic Auditor",
         system_prompt=critic_prompt_deep["system"],
         user_prompt=critic_prompt_deep["user"],
+        step="Audit Depth",
         run_id="test-depth-2",
+        tools_names=[],
         submit_tool_name="submit_audit"
     )
 
@@ -96,11 +101,13 @@ async def test_theorist_no_new_powers():
 
     prompt = get_extrapolation_prompt("Test Char", sparse_data, comparison)
 
-    theory, _ = await run_agent(
+    _success, theory, _ = await run_agent(
         agent_name="Ontological Theorist",
         system_prompt=prompt["system"],
         user_prompt=prompt["user"],
+        step="Theory Check",
         run_id="test-no-powers",
+        tools_names=[],
         submit_tool_name="submit_theory"
     )
 
@@ -131,12 +138,13 @@ async def test_db_architect_contradiction_handling():
     # We mock the actual DB part but use a real LLM to see if it plans a contradiction
     # Actually, just testing the tool logic is enough for the DB part,
     # but the prompt's "Intelligent Merging" is what we want to test.
-
+    
     # For a behavioral test, we'd run the agent and check its reasoning.
-    res, _ = await run_agent(
+    _success, res, _ = await run_agent(
         agent_name="DB Architect",
         system_prompt=prompt["system"],
         user_prompt=f"Verified Data: {json.dumps(data)}",
+        step="Contradiction Check",
         run_id="test-contradiction",
         tools_names=["upsertClaims"],
         submit_tool_name="submit_integration"

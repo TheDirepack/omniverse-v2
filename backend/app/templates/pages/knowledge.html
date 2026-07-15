@@ -3,41 +3,81 @@
 {% block title %}Knowledge - Omniverse{% endblock %}
 
 {% block content %}
-<div class="space-y-8">
-    <div class="flex justify-between items-center">
-        <h1 class="text-3xl font-bold">Knowledge Explorer</h1>
-        <p class="text-gray-500 italic">The canonical Knowledge Graph.</p>
+<div class="flex flex-col h-full overflow-hidden">
+    <!-- CONTROL BAR -->
+    <div class="h-12 border-b border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 flex items-center px-4 gap-4 shrink-0">
+        <div class="flex items-center gap-2 flex-1">
+            <span class="text-[10px] font-bold text-gray-400 uppercase tracking-widest shrink-0">Worlds</span>
+            <input type="text"
+                   name="q"
+                   id="world-search"
+                   placeholder="Search worlds..."
+                   class="h-7 px-3 text-xs bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-sm focus:outline-none focus:ring-1 focus:ring-blue-500 w-48"
+                   hx-get="/knowledge/worlds"
+                   hx-trigger="keyup changed delay:300ms"
+                   hx-target="#world-list-panel"
+                   hx-include="#has-artifacts">
+            <label class="flex items-center gap-1 text-[10px] text-gray-500 dark:text-gray-400 cursor-pointer shrink-0">
+                <input type="checkbox" name="has_artifacts" id="has-artifacts" value="true"
+                       hx-get="/knowledge/worlds"
+                       hx-trigger="change"
+                       hx-target="#world-list-panel"
+                       hx-include="#world-search">
+                Only with artifacts
+            </label>
+        </div>
+
+        <div class="flex items-center gap-2">
+            <span class="text-[10px] font-bold text-gray-400 uppercase tracking-widest shrink-0">Search</span>
+            <input type="text"
+                   id="artifact-search"
+                   placeholder="Search all artifacts..."
+                   class="h-7 px-3 text-xs bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-sm focus:outline-none focus:ring-1 focus:ring-blue-500 w-64"
+                   hx-get="/api/artifacts/search"
+                   hx-trigger="keyup changed delay:300ms"
+                   hx-target="#artifact-list"
+                   hx-indicator="#knowledge-indicator">
+            <div id="knowledge-indicator" class="htmx-indicator text-xs animate-spin">⌛</div>
+        </div>
     </div>
 
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        <!-- World Hierarchy -->
-        <div class="lg:col-span-1 bg-white dark:bg-gray-800 p-6 rounded-lg shadow">
-            <h2 class="text-xl font-semibold mb-4">World Hierarchy</h2>
-            <div class="mb-4">
-                <input type="text" name="q" 
-                       placeholder="Filter worlds..."
-                       class="w-full border rounded px-3 py-2 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                       hx-get="{{ url_for('list_worlds') }}"
-                       hx-target="#world-tree"
-                       hx-trigger="keyup changed delay:300ms">
-            </div>
-            <div id="world-tree" 
-                  hx-get="{{ url_for('list_worlds') }}" 
-                  hx-trigger="load" 
-                  hx-swap="innerHTML">
-                <p class="text-gray-500 dark:text-gray-400 italic">Loading worlds...</p>
+    <!-- MAIN WORKSPACE: 3 panels -->
+    <div class="flex-1 flex overflow-hidden">
+        <!-- World List (Left) -->
+        <div id="world-list-panel" class="w-64 border-r border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950 overflow-y-auto no-scrollbar shrink-0"
+             hx-get="/knowledge/worlds"
+             hx-trigger="load"
+             hx-swap="innerHTML">
+            <div class="p-4 text-center text-xs text-gray-400 italic">
+                Loading worlds...
             </div>
         </div>
 
+        <!-- Artifact List (Middle) -->
+        <div id="artifact-list" class="w-80 border-r border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950 overflow-y-auto no-scrollbar shrink-0">
+            <div class="p-4 text-center text-xs text-gray-400 italic">
+                Select a world or search artifacts.
+            </div>
+        </div>
 
-        <!-- Detail View -->
-        <div class="lg:col-span-2 bg-white dark:bg-gray-800 p-6 rounded-lg shadow min-h-[400px]">
-            <div id="detail-view">
-                <div class="flex flex-col items-center justify-center h-full text-gray-500 dark:text-gray-400 italic">
-                    <p>Select a world or entity to view details</p>
-                </div>
+        <!-- Artifact Detail (Right) -->
+        <div id="artifact-detail" class="flex-1 bg-gray-50 dark:bg-gray-900 p-6 overflow-y-auto no-scrollbar">
+            <div class="flex flex-col items-center justify-center h-full text-gray-400 italic text-xs">
+                Select an artifact to inspect its details and provenance.
             </div>
         </div>
     </div>
 </div>
+
+<script>
+    // Include the search query with artifact search and searches
+    document.body.addEventListener('htmx:configRequest', function(evt) {
+        if (evt.detail.path.includes('/api/artifacts/search')) {
+            var q = document.getElementById('artifact-search');
+            if (q && q.value) evt.detail.parameters.q = q.value;
+
+            // When no world is selected, don't send universe_id so it searches all
+        }
+    });
+</script>
 {% endblock %}

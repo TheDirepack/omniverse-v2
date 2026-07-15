@@ -91,7 +91,7 @@ class SettingsService:
                         "provider_type": p.provider_type,
                         "base_url": p.base_url,
                         "models": p.models,
-                        "keys": [
+                        "api_keys": [
                             {"id": k.id, "api_key": k.api_key, "priority": k.priority}
                             for k in keys
                         ],
@@ -288,11 +288,38 @@ class SettingsService:
                     "message": f"Setting 'MAX_ARTIFACT_VERSIONS' must be an integer. Current value: {max_versions}",
                 })
 
+            max_tokens = general.get("MAX_TOKENS")
+            if max_tokens is None:
+                issues.append({
+                    "severity": "WARNING",
+                    "message": "Setting 'MAX_TOKENS' is missing. Using default (32000).",
+                })
+            elif not str(max_tokens).isdigit():
+                issues.append({
+                    "severity": "ERROR",
+                    "message": f"Setting 'MAX_TOKENS' must be an integer. Current value: {max_tokens}",
+                })
+
+            comp_threshold = general.get("COMPRESSION_THRESHOLD")
+            if comp_threshold is None:
+                issues.append({
+                    "severity": "WARNING",
+                    "message": "Setting 'COMPRESSION_THRESHOLD' is missing. Using default (0.8).",
+                })
+            else:
+                try:
+                    float(comp_threshold)
+                except ValueError:
+                    issues.append({
+                        "severity": "ERROR",
+                        "message": f"Setting 'COMPRESSION_THRESHOLD' must be a float. Current value: {comp_threshold}",
+                    })
+
             # 2. Validate Providers
             providers = all_settings.get("providers", [])
             provider_ids = {p["id"] for p in providers}
             for p in providers:
-                if not p["keys"]:
+                if not p["api_keys"]:
                     issues.append({
                         "severity": "WARNING",
                         "message": f"Provider '{p['name']}' has no API keys configured.",
@@ -301,7 +328,7 @@ class SettingsService:
                 # Fix PERF401 & E501
                 issues.extend([
                     {"severity": "WARNING", "message": f"Provider '{p['name']}' has an empty API key."}
-                    for k in p["keys"] if not k["api_key"]
+                    for k in p["api_keys"] if not k["api_key"]
                 ])
 
                 if p["provider_type"] != "custom" and not p["base_url"]:
@@ -340,7 +367,6 @@ class SettingsService:
             new_routes = []
             for dr in default_routes:
                 from app.db.schema import AgentRouteFallback
-
                 route = AgentRouteFallback(
                     task_type=agent_name,
                     provider_id=dr.provider_id,
@@ -381,7 +407,10 @@ class SettingsService:
     def get_agent_routes(self) -> list[dict[str, Any]]:
         session = self.session or Session(settings_engine)
         try:
-            routes = SettingsRepository(session).get_agent_routes()
+            repo = SettingsRepository(session)
+            routes = repo.get_agent_routes()
+            providers = repo.get_providers()
+            provider_map = {p.id: p.name for p in providers if p.id}
             return [
                 {
                     "id": r.id,
@@ -389,9 +418,31 @@ class SettingsService:
                     "provider_id": r.provider_id,
                     "models": r.models,
                     "priority": r.priority,
+                    "provider_name": provider_map.get(r.provider_id) if r.provider_id else None,
                 }
                 for r in routes
             ]
+        finally:
+            if not self.session:
+                session.close()
+
+    def get_agent_route_by_id(self, route_id: int) -> dict[str, Any] | None:
+        session = self.session or Session(settings_engine)
+        try:
+            repo = SettingsRepository(session)
+            route = repo.get_route_by_id(route_id)
+            if not route:
+                return None
+            provider = repo.get_providers()
+            provider_map = {p.id: p.name for p in provider if p.id}
+            return {
+                "id": route.id,
+                "task_type": route.task_type,
+                "provider_id": route.provider_id,
+                "models": route.models,
+                "priority": route.priority,
+                "provider_name": provider_map.get(route.provider_id) if route.provider_id else None,
+            }
         finally:
             if not self.session:
                 session.close()
@@ -407,18 +458,18 @@ class SettingsService:
                     raise ValueError("Provider record missing ID")
                 keys = repo.get_keys_for_provider(p.id)
                 provider_list.append(
-                    {
-                        "id": p.id,
-                        "name": p.name,
-                        "provider_type": p.provider_type,
-                        "base_url": p.base_url,
-                        "models": p.models,
-                        "keys": [
-                            {"id": k.id, "api_key": k.api_key, "priority": k.priority}
-                            for k in keys
-                        ],
-                    }
-                )
+                        {
+                            "id": p.id,
+                            "name": p.name,
+                            "provider_type": p.provider_type,
+                            "base_url": p.base_url,
+                            "models": p.models,
+                            "api_keys": [
+                                {"id": k.id, "api_key": k.api_key, "priority": k.priority}
+                                for k in keys
+                            ],
+                        }
+                    )
             return provider_list
         finally:
             if not self.session:
@@ -433,5 +484,96 @@ class SettingsService:
             if not self.session:
                 session.close()
 
-    def close(self):
-        """No-op. Internal sessions are closed per-method-call."""
+    def sync_provider_models(self, provider_id: int) -> str:
+        session = self.session or Session(settings_engine)
+        try:
+            repo = SettingsRepository(session)
+            provider = repo.get_provider_by_id(provider_id)
+            if not provider:
+                raise ValueError("Provider not found")
+
+            keys = repo.get_keys_for_provider(provider_id)
+            api_key = keys[0].api_key if keys else None
+            base_url = (provider.base_url or "").rstrip("/")
+            ptype = (provider.provider_type or "").lower()
+
+            if ptype == "gemini" and api_key:
+                import httpx
+                resp = httpx.get(
+                    f"{base_url}/models",
+                    params={"key": api_key},
+                    timeout=10,
+                )
+                resp.raise_for_status()
+                data = resp.json()
+                models = [
+                    m["name"].replace("models/", "")
+                    for m in data.get("models", [])
+                    if "name" in m
+                ]
+                return ", ".join(sorted(models))
+
+            if ptype == "openai" and api_key and base_url:
+                import httpx
+                resp = httpx.get(
+                    f"{base_url}/models",
+                    headers={"Authorization": f"Bearer {api_key}"},
+                    timeout=10,
+                )
+                resp.raise_for_status()
+                data = resp.json()
+                models = [m["id"] for m in data.get("data", []) if "id" in m]
+                return ", ".join(sorted(models))
+
+            if ptype == "anthropic" and api_key:
+                import httpx
+                resp = httpx.get(
+                    "https://api.anthropic.com/v1/models",
+                    headers={"x-api-key": api_key, "anthropic-version": "2023-06-01"},
+                    timeout=10,
+                )
+                resp.raise_for_status()
+                data = resp.json()
+                models = [m["id"] for m in data.get("data", []) if "id" in m]
+                return ", ".join(sorted(models))
+
+            if ptype == "groq" and api_key:
+                import httpx
+                resp = httpx.get(
+                    "https://api.groq.com/openai/v1/models",
+                    headers={"Authorization": f"Bearer {api_key}"},
+                    timeout=10,
+                )
+                resp.raise_for_status()
+                data = resp.json()
+                models = [m["id"] for m in data.get("data", []) if "id" in m]
+                return ", ".join(sorted(models))
+
+            # Generic fallback for custom/unknown providers — try fetching /models endpoint
+            if base_url:
+                import httpx
+                try:
+                    headers = {}
+                    if api_key:
+                        headers["Authorization"] = f"Bearer {api_key}"
+                    resp = httpx.get(
+                        f"{base_url}/models",
+                        headers=headers,
+                        timeout=10,
+                    )
+                    resp.raise_for_status()
+                    data = resp.json()
+                    models = (
+                        [m["id"] for m in data.get("data", []) if "id" in m]
+                        or [m["name"] for m in data.get("models", []) if "name" in m]
+                    )
+                    if models:
+                        return ", ".join(sorted(models))
+                except Exception:
+                    pass
+
+            return "No models synced"
+        finally:
+            if not self.session:
+                session.close()
+

@@ -1,7 +1,8 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 from sqlmodel import Session
 
+from app.core.dependencies import get_main_session
 from app.db.settings_session import settings_engine
 from app.repositories.settings import SettingsRepository
 from app.services.settings_service import SettingsService
@@ -30,6 +31,18 @@ class ModelStatusResponse(BaseModel):
 def get_settings():
     service = SettingsService()
     return service.get_all_settings()
+
+
+@router.get("/providers")
+def get_providers(session: Session = Depends(get_main_session)):
+    service = SettingsService(session)
+    return service.get_providers()
+
+
+@router.get("/routes")
+def get_routes(session: Session = Depends(get_main_session)):
+    service = SettingsService(session)
+    return service.get_agent_routes()
 
 
 @router.post("/general")

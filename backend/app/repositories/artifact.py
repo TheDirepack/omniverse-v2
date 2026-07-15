@@ -29,3 +29,13 @@ class ArtifactRepository:
             )
         )
         return self.session.exec(stmt).first()
+
+    def get_all(self, limit: int = 100, offset: int = 0) -> list[Artifact]:
+        stmt = select(Artifact).offset(offset).limit(limit)
+        return list(self.session.exec(stmt).all())
+
+    def search_all_artifacts(self, query: str, limit: int = 100, offset: int = 0) -> list[Artifact]:
+        stmt = select(Artifact).where(
+            (Artifact.name.contains(query)) | (Artifact.description.contains(query))
+        ).offset(offset).limit(limit)
+        return list(self.session.exec(stmt).all())

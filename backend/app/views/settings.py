@@ -1,5 +1,6 @@
 import json
 import shutil
+from datetime import datetime
 from pathlib import Path
 
 from fastapi import APIRouter, Form, Request
@@ -10,10 +11,42 @@ from app.core.templates import templates
 from app.db.settings_session import settings_engine
 from app.db.notebook_schema import Snapshot
 from app.db.notebook_session import notebook_engine
+from app.db.operational_session import operational_engine
+from app.db.schema import CandidateHealth
 from app.repositories.settings import SettingsRepository
 from app.services.settings_service import PROVIDER_PRESETS, SettingsService
 
 router = APIRouter(tags=["settings_views"])
+
+
+def _render_providers(
+    request: Request,
+    data: dict,
+    active_provider_id: int | None = None,
+) -> HTMLResponse:
+    from app.agents.agent_names import AGENT_NAMES
+
+    active_provider = None
+    if active_provider_id is not None:
+        active_provider = next(
+            (p for p in data["providers"] if p["id"] == active_provider_id), None
+        )
+    elif data["providers"]:
+        active_provider = data["providers"][0]
+        active_provider_id = active_provider["id"]
+
+    template = templates.env.get_template("fragments/settings_providers.html")
+    return HTMLResponse(
+        content=template.render(
+            request=request,
+            providers=data["providers"],
+            routes=data["agent_routes"],
+            agent_names=AGENT_NAMES,
+            presets=PROVIDER_PRESETS,
+            active_provider=active_provider,
+            active_provider_id=active_provider_id,
+        )
+    )
 
 
 @router.get("/", response_class=HTMLResponse)
@@ -74,18 +107,33 @@ async def settings_general_delete(request: Request, key: str = Form(...)):
 async def settings_tab_providers(request: Request):
     service = SettingsService()
     data = service.get_all_settings()
-    from app.agents.agent_names import AGENT_NAMES
+    return _render_providers(request, data)
 
-    template = templates.env.get_template("fragments/settings_providers.html")
-    return HTMLResponse(
-        content=template.render(
-            request=request,
-            providers=data["providers"],
-            agent_routes=data["agent_routes"],
-            agent_names=AGENT_NAMES,
-            presets=PROVIDER_PRESETS,
-        )
-    )
+
+@router.get("/providers/new", response_class=HTMLResponse)
+async def settings_providers_new(request: Request):
+    template = templates.env.get_template("fragments/provider_form.html")
+    return HTMLResponse(content=template.render(request=request, active_provider=None))
+
+
+@router.get("/providers/{provider_id}", response_class=HTMLResponse)
+async def settings_provider_detail(request: Request, provider_id: int):
+    service = SettingsService()
+    provider = service.get_provider_by_id(provider_id)
+    if not provider:
+        return HTMLResponse("Provider not found", status_code=404)
+    
+    from sqlmodel import Session
+    from app.db.settings_session import settings_engine
+    from app.repositories.settings import SettingsRepository
+    with Session(settings_engine) as session:
+        repo = SettingsRepository(session)
+        api_keys = repo.get_keys_for_provider(provider_id)
+
+    template = templates.env.get_template("fragments/provider_form.html")
+    return HTMLResponse(content=template.render(
+        request=request, active_provider=provider, api_keys=api_keys
+    ))
 
 
 @router.post("/providers/upsert", response_class=HTMLResponse)
@@ -105,24 +153,9 @@ async def settings_provider_upsert(
         "base_url": base_url,
         "models": models,
     }
-    service.upsert_provider(payload)
+    result = service.upsert_provider(payload)
     data = service.get_all_settings()
-    from app.agents.agent_names import AGENT_NAMES
-
-    template = templates.env.get_template("fragments/settings_providers.html")
-    response = HTMLResponse(
-        content=template.render(
-            request=request,
-            providers=data["providers"],
-            agent_routes=data["agent_routes"],
-            agent_names=AGENT_NAMES,
-            presets=PROVIDER_PRESETS,
-        )
-    )
-    response.headers["HX-Trigger"] = (
-        '{"showToast": {"value": "Provider updated", "type": "info"}}'
-    )
-    return response
+    return _render_providers(request, data, active_provider_id=result["provider"]["id"])
 
 
 @router.post("/providers/{provider_id}/update", response_class=HTMLResponse)
@@ -146,18 +179,7 @@ async def settings_provider_update(
         }
         service.upsert_provider(payload)
     data = service.get_all_settings()
-    from app.agents.agent_names import AGENT_NAMES
-
-    template = templates.env.get_template("fragments/settings_providers.html")
-    return HTMLResponse(
-        content=template.render(
-            request=request,
-            providers=data["providers"],
-            agent_routes=data["agent_routes"],
-            agent_names=AGENT_NAMES,
-            presets=PROVIDER_PRESETS,
-        )
-    )
+    return _render_providers(request, data, active_provider_id=provider_id)
 
 
 @router.post("/providers/{provider_id}/keys/{key_id}/edit", response_class=HTMLResponse)
@@ -173,18 +195,7 @@ async def settings_provider_edit_key(
         provider_id=provider_id, api_key=api_key, priority=priority, key_id=key_id
     )
     data = service.get_all_settings()
-    from app.agents.agent_names import AGENT_NAMES
-
-    template = templates.env.get_template("fragments/settings_providers.html")
-    return HTMLResponse(
-        content=template.render(
-            request=request,
-            providers=data["providers"],
-            agent_routes=data["agent_routes"],
-            agent_names=AGENT_NAMES,
-            presets=PROVIDER_PRESETS,
-        )
-    )
+    return _render_providers(request, data, active_provider_id=provider_id)
 
 
 @router.post("/providers/{provider_id}/keys", response_class=HTMLResponse)
@@ -199,41 +210,19 @@ async def settings_provider_add_key(
         provider_id=provider_id, api_key=api_key, priority=priority
     )
     data = service.get_all_settings()
-    from app.agents.agent_names import AGENT_NAMES
-
-    template = templates.env.get_template("fragments/settings_providers.html")
-    return HTMLResponse(
-        content=template.render(
-            request=request,
-            providers=data["providers"],
-            agent_routes=data["agent_routes"],
-            agent_names=AGENT_NAMES,
-            presets=PROVIDER_PRESETS,
-        )
-    )
+    return _render_providers(request, data, active_provider_id=provider_id)
 
 
 @router.post(
     "/providers/{provider_id}/keys/{key_id}/delete", response_class=HTMLResponse
 )
 async def settings_provider_delete_key(
-    request: Request, _provider_id: int, key_id: int
+    request: Request, provider_id: int, key_id: int
 ):
     service = SettingsService()
     service.delete_provider_key(key_id)
     data = service.get_all_settings()
-    from app.agents.agent_names import AGENT_NAMES
-
-    template = templates.env.get_template("fragments/settings_providers.html")
-    return HTMLResponse(
-        content=template.render(
-            request=request,
-            providers=data["providers"],
-            agent_routes=data["agent_routes"],
-            agent_names=AGENT_NAMES,
-            presets=PROVIDER_PRESETS,
-        )
-    )
+    return _render_providers(request, data, active_provider_id=provider_id)
 
 
 @router.post("/providers/{provider_id}/delete", response_class=HTMLResponse)
@@ -241,18 +230,17 @@ async def settings_provider_delete(request: Request, provider_id: int):
     service = SettingsService()
     service.delete_provider(provider_id)
     data = service.get_all_settings()
-    from app.agents.agent_names import AGENT_NAMES
+    return _render_providers(request, data)
 
-    template = templates.env.get_template("fragments/settings_providers.html")
-    return HTMLResponse(
-        content=template.render(
-            request=request,
-            providers=data["providers"],
-            agent_routes=data["agent_routes"],
-            agent_names=AGENT_NAMES,
-            presets=PROVIDER_PRESETS,
-        )
-    )
+
+@router.post("/providers/{provider_id}/sync", response_class=HTMLResponse)
+async def settings_provider_sync(request: Request, provider_id: int):
+    service = SettingsService()
+    try:
+        models = service.sync_provider_models(provider_id)
+        return HTMLResponse(content=models)
+    except Exception as e:
+        return HTMLResponse(f"Sync failed: {str(e)}", status_code=500)
 
 
 @router.get("/tab/routes", response_class=HTMLResponse)
@@ -265,7 +253,7 @@ async def settings_tab_routes(request: Request):
     return HTMLResponse(
         content=template.render(
             request=request,
-            agent_routes=data["agent_routes"],
+            routes=data["agent_routes"],
             providers=data["providers"],
             agent_names=AGENT_NAMES,
         )
@@ -296,7 +284,7 @@ async def settings_route_upsert(
     response = HTMLResponse(
         content=template.render(
             request=request,
-            agent_routes=data["agent_routes"],
+            routes=data["agent_routes"],
             providers=data["providers"],
             agent_names=AGENT_NAMES,
         )
@@ -318,7 +306,7 @@ async def settings_route_delete(request: Request, route_id: int):
     return HTMLResponse(
         content=template.render(
             request=request,
-            agent_routes=data["agent_routes"],
+            routes=data["agent_routes"],
             providers=data["providers"],
             agent_names=AGENT_NAMES,
         )
@@ -336,7 +324,7 @@ async def settings_route_override(request: Request, agent_name: str):
     return HTMLResponse(
         content=template.render(
             request=request,
-            agent_routes=data["agent_routes"],
+            routes=data["agent_routes"],
             providers=data["providers"],
             agent_names=AGENT_NAMES,
         )
@@ -355,11 +343,31 @@ async def settings_route_reorder(request: Request, route_ids: str = Form(...)):
     return HTMLResponse(
         content=template.render(
             request=request,
-            agent_routes=data["agent_routes"],
+            routes=data["agent_routes"],
             providers=data["providers"],
             agent_names=AGENT_NAMES,
         )
     )
+
+
+@router.get("/routes/new", response_class=HTMLResponse)
+async def settings_routes_new(request: Request):
+    service = SettingsService()
+    providers = service.get_providers()
+    template = templates.env.get_template("fragments/route_form.html")
+    return HTMLResponse(content=template.render(request=request, active_route=None, providers=providers))
+
+
+@router.get("/routes/{route_id}", response_class=HTMLResponse)
+async def settings_route_detail(request: Request, route_id: int):
+    service = SettingsService()
+    route = service.get_agent_route_by_id(route_id)
+    if not route:
+        return HTMLResponse("Route not found", status_code=404)
+    
+    providers = service.get_providers()
+    template = templates.env.get_template("fragments/route_form.html")
+    return HTMLResponse(content=template.render(request=request, active_route=route, providers=providers))
 
 
 def _get_model_status():
@@ -374,7 +382,7 @@ def _get_model_status():
                 {
                     "task_type": route.task_type,
                     "configured": bool(
-                        provider and provider.provider_type and route.models
+                        provider and provider.provider_type
                     ),
                     "provider": provider.name if provider else None,
                     "models": route.models,
@@ -383,17 +391,31 @@ def _get_model_status():
         return {"initialized": True, "routes": route_status}
 
 
+def _get_circuit_breakers():
+    with Session(operational_engine) as session:
+        return session.exec(
+            select(CandidateHealth).order_by(CandidateHealth.failure_count.desc())
+        ).all()
+
+
 @router.get("/tab/health", response_class=HTMLResponse)
 async def settings_tab_health(request: Request):
     status = _get_model_status()
+    circuit_breakers = _get_circuit_breakers()
     template = templates.env.get_template("fragments/settings_health.html")
 
-    # Include snapshots in the health tab
     with Session(notebook_engine) as session:
         snapshots = session.exec(select(Snapshot)).all()
 
+    now = datetime.utcnow()
     return HTMLResponse(
-        content=template.render(request=request, status=status, snapshots=snapshots)
+        content=template.render(
+            request=request,
+            status=status,
+            snapshots=snapshots,
+            circuit_breakers=circuit_breakers,
+            now=now,
+        )
     )
 
 
@@ -402,21 +424,57 @@ async def settings_reset_health(request: Request):
     service = SettingsService()
     service.reset_candidate_health()
     status = _get_model_status()
+    circuit_breakers = _get_circuit_breakers()
     template = templates.env.get_template("fragments/settings_health.html")
 
     with Session(notebook_engine) as session:
         snapshots = session.exec(select(Snapshot)).all()
 
+    now = datetime.utcnow()
     return HTMLResponse(
-        content=template.render(request=request, status=status, snapshots=snapshots)
+        content=template.render(
+            request=request,
+            status=status,
+            snapshots=snapshots,
+            circuit_breakers=circuit_breakers,
+            now=now,
+        )
     )
+
+
+@router.post("/reset-health/{candidate_hash}", response_class=HTMLResponse)
+async def settings_reset_single_health(request: Request, candidate_hash: str):
+    with Session(operational_engine) as session:
+        health = session.get(CandidateHealth, candidate_hash)
+        if health:
+            session.delete(health)
+            session.commit()
+
+    status = _get_model_status()
+    circuit_breakers = _get_circuit_breakers()
+    template = templates.env.get_template("fragments/settings_health.html")
+
+    with Session(notebook_engine) as session:
+        snapshots = session.exec(select(Snapshot)).all()
+
+    now = datetime.utcnow()
+    return HTMLResponse(
+        content=template.render(
+            request=request,
+            status=status,
+            snapshots=snapshots,
+            circuit_breakers=circuit_breakers,
+            now=now,
+        )
+    )
+
 
 @router.get("/snapshots", response_class=HTMLResponse)
 async def settings_snapshots_fragment(request: Request):
     with Session(notebook_engine) as session:
         snapshots = session.exec(select(Snapshot)).all()
 
-    template = templates.env.get_template("fragments/world_snapshots.html")
+    template = templates.env.get_template("world_snapshots.html")
     return HTMLResponse(content=template.render(request=request, snapshots=snapshots))
 
 

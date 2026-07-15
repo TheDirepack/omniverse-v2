@@ -1,20 +1,20 @@
 {% if parsed_logs %}
 {% for log in parsed_logs %}
-<div class="px-3 py-1.5 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors border-b border-gray-200 dark:border-gray-700">
-    <div class="flex items-start gap-2">
-        <span class="shrink-0 w-16 text-gray-400">{{ log.timestamp.split()[1] if log.timestamp else '' }}</span>
-        <span class="shrink-0 w-20 text-gray-500 truncate" title="{{ log.agent }}">{{ log.agent }}</span>
-        <span class="shrink-0 w-16 text-gray-500 truncate" title="{{ log.world }}">{{ log.world }}</span>
+<div class="px-3 py-1 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors border-b border-gray-200 dark:border-gray-700 font-mono text-xs leading-relaxed">
+    <div class="flex items-start gap-1">
+        <span class="shrink-0 w-14 text-gray-400">{{ log.timestamp.split()[1] if log.timestamp else '' }}</span>
+        <span class="shrink-0 w-12 text-gray-500 truncate" title="{{ log.agent }}">{{ log.agent }}</span>
+        <span class="shrink-0 w-8 text-gray-500 truncate" title="{{ log.world }}">{{ log.world }}</span>
         <span class="shrink-0 font-semibold {{ log.color_class }}">{{ log.event_type }}</span>
-        <span class="text-gray-700 dark:text-gray-300 break-words min-w-0">{{ log.content }}</span>
+        <span class="text-gray-700 dark:text-gray-300 min-w-0 whitespace-pre-wrap break-all">{{ log.content }}</span>
     </div>
 </div>
 {% endfor %}
 
 {% if has_more %}
 <div id="load-more-trigger" class="p-3 text-center border-t border-gray-200 dark:border-gray-700">
-    <button class="px-4 py-2 bg-gray-200 dark:bg-gray-700 rounded hover:bg-gray-300 dark:hover:bg-gray-600 transition text-sm"
-             hx-get="{{ url_for('logs_list', limit=limit, offset=next_offset, filter=filter, agent=agent, world=world, model=model, event_type=event_type, tool=tool) }}"
+    <button class="px-4 py-2 bg-gray-200 dark:bg-gray-700 rounded hover:bg-gray-300 dark:hover:bg-gray-600 transition text-xs"
+             hx-get="/logs/list?limit={{ limit }}&amp;offset={{ next_offset }}&amp;filter={{ filter or '' }}&amp;agent={{ agent or '' }}&amp;world={{ world or '' }}&amp;model={{ model or '' }}&amp;event_type={{ event_type or '' }}&amp;tool={{ tool or '' }}"
             hx-target="#load-more-trigger"
             hx-swap="outerHTML">
         Load More
@@ -22,7 +22,7 @@
 </div>
 {% endif %}
 {% else %}
-<div class="flex items-center justify-center h-32 text-gray-400">
+<div class="flex items-center justify-center h-32 text-gray-400 text-xs">
     No logs found.
 </div>
 {% endif %}

@@ -1,162 +1,67 @@
-<div id="database-worlds" class="space-y-3">
-    {% if batch_started is defined and batch_started %}
-    <div class="bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300 px-4 py-2 rounded text-sm">
-        ✅ Started research for {{ batch_started }} world(s).
-    </div>
-    {% endif %}
+<div class="text-xs text-gray-500 dark:text-gray-400 mb-2 px-1">{{ worlds|length }} world(s)</div>
 
-    <form id="world-filter-form"
-           hx-get="{{ url_for('database_worlds') }}"
-          hx-target="#database-worlds"
-          hx-swap="outerHTML"
-          hx-indicator="#db-worlds-indicator"
-          class="space-y-2">
-        <div class="flex gap-2">
-            <input type="search" name="q" value="{{ q or '' }}"
-                   placeholder="Filter worlds..."
-                   class="w-full border rounded px-3 py-2 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                   oninput="debounceFilter()">
-            <button type="submit"
-                    class="bg-blue-600 text-white px-4 py-2 rounded text-sm hover:bg-blue-700 transition">
-                Filter
-            </button>
-        </div>
-        <div class="flex gap-2 text-sm">
-            <select name="explored"
-                    class="border rounded px-2 py-1.5 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    onchange="debounceFilter()">
-                <option value="" {% if explored == '' %}selected{% endif %}>All</option>
-                <option value="yes" {% if explored == 'yes' %}selected{% endif %}>Explored</option>
-                <option value="no" {% if explored == 'no' %}selected{% endif %}>Unexplored</option>
-            </select>
-            <input type="text" name="franchise" value="{{ franchise or '' }}"
-                   placeholder="Franchise..."
-                   class="border rounded px-2 py-1.5 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 w-40"
-                   oninput="debounceFilter()">
-        </div>
-    </form>
-
-    <div class="flex items-center justify-between text-sm text-gray-500 dark:text-gray-400">
-        <div class="flex items-center gap-2">
-            <span>{{ worlds|length }} world(s)</span>
-            <button class="text-xs bg-amber-500 text-white px-2 py-1 rounded hover:bg-amber-600 transition"
-                     hx-post="{{ url_for('reset_all_explored') }}"
-                    hx-target="#database-worlds"
-                    hx-swap="outerHTML"
-                    hx-confirm="Reset explored status for all worlds?"
-                    hx-indicator="#db-worlds-indicator">
-                Reset Explored
-            </button>
-        </div>
-        <div class="flex gap-2">
-            <button id="research-selected-btn"
-                    class="bg-indigo-600 text-white px-3 py-1.5 rounded text-xs hover:bg-indigo-700 transition hidden"
-                    hx-post="{{ url_for('batch_research') }}"
-                    hx-target="#database-worlds"
-                    hx-swap="outerHTML"
-                    hx-indicator="#db-worlds-indicator"
-                    hx-include="#batch-world-uuids">
-                Research Selected (0)
-            </button>
-        </div>
-    </div>
-
-    <input type="hidden" id="batch-world-uuids" name="universe_uuids" value="">
-
-    {% if worlds %}
-    <div class="divide-y divide-gray-200 dark:divide-gray-700 max-h-96 overflow-y-auto">
+<table class="w-full text-left border-collapse text-xs">
+    <thead class="bg-gray-50 dark:bg-gray-800 text-gray-500 dark:text-gray-400 uppercase tracking-wider font-bold border-b border-gray-200 dark:border-gray-700">
+        <tr>
+            <th class="p-2 w-10"></th>
+            <th class="p-2">World Name</th>
+            <th class="p-2">Status</th>
+            <th class="p-2">Last Researched</th>
+            <th class="p-2 text-right">Actions</th>
+        </tr>
+    </thead>
+    <tbody class="divide-y divide-gray-100 dark:divide-gray-800">
         {% for world in worlds %}
-        <div class="py-2.5 flex justify-between items-start">
-            <div class="flex items-start gap-2 min-w-0 flex-1">
-                <input type="checkbox"
-                       class="world-checkbox shrink-0 mt-1"
-                       data-uuid="{{ world.uuid }}"
-                       onchange="updateBatchResearch()">
-                <div class="min-w-0">
-                    <div class="flex items-center gap-2">
-                        <span class="text-base font-semibold truncate">{{ world.display_name }}</span>
-                        <button class="text-xs px-1.5 py-0.5 rounded shrink-0 {{ 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300' if world.is_explored else 'bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400' }}"
-                                 hx-post="{{ url_for('toggle_explored', world_id=world.id) }}"
-                                hx-target="#database-worlds"
-                                hx-swap="outerHTML"
-                                hx-indicator="#db-worlds-indicator"
-                                title="Toggle explored">
-                            {{ 'Explored' if world.is_explored else 'Un' }}
-                        </button>
-                    </div>
-                    <div class="text-xs text-gray-400 dark:text-gray-500 truncate mt-0.5">
-                        {% if world.franchise and world.franchise != world.display_name %}{{ world.franchise }}{% endif %}
-                        {% if world.continuity and world.continuity != world.display_name %}{% if world.franchise and world.franchise != world.display_name %} • {% endif %}{{ world.continuity }}{% endif %}
-                        {% if world.era and world.era != world.display_name %}{% if world.franchise and world.franchise != world.display_name or (world.continuity and world.continuity != world.display_name) %} • {% endif %}{{ world.era }}{% endif %}
-                        {% if not (world.franchise and world.franchise != world.display_name) and not (world.continuity and world.continuity != world.display_name) and not (world.era and world.era != world.display_name) %}
-                        <span class="italic">no timeline data</span>
-                        {% endif %}
-                    </div>
-                    {% if world.summary %}
-                    <details class="mt-1 text-xs text-gray-500 dark:text-gray-400 cursor-pointer">
-                        <summary class="hover:text-blue-600 transition">Quick Summary</summary>
-                        <div class="mt-1 p-2 bg-gray-50 dark:bg-gray-800 rounded border border-gray-200 dark:border-gray-700 leading-relaxed">
-                            {{ world.summary }}
-                        </div>
-                    </details>
-                    {% endif %}
+        <tr class="hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors group">
+            <td class="p-2 text-center">
+                <input type="checkbox" class="world-checkbox rounded-sm border-gray-300 dark:border-gray-700 text-blue-600 focus:ring-blue-500" value="{{ world.uuid }}">
+            </td>
+            <td class="p-2">
+                <div class="font-semibold text-gray-900 dark:text-gray-100 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+                    {{ world.name }}
                 </div>
-            </div>
-            <div class="flex items-center gap-1 shrink-0 ml-2">
-                <button class="text-xs bg-blue-600 text-white px-2 py-1 rounded hover:bg-blue-700 transition"
-                         hx-post="{{ url_for('set_active_world') }}"
-                         hx-vals='{"world_id": "{{ world.uuid }}"}'
-                         hx-target="body"
-                         hx-swap="none"
-                         hx-on::after-request="if (event.detail.successful) { window.location.href='/research' }"
-                         hx-indicator="#db-worlds-indicator">
-                    Open Knowledge
-                </button>
-                <button class="text-xs bg-red-600 text-white px-1.5 py-1 rounded hover:bg-red-700 transition"
-                         hx-post="{{ url_for('delete_world', world_id=world.id) }}"
-                         hx-target="#database-worlds"
-                         hx-swap="outerHTML"
-                         hx-confirm="Delete {{ world.name }} and all associated data?"
-                         hx-indicator="#db-worlds-indicator">
-                    ✕
-                </button>
-            </div>
-        </div>
+                <div class="text-[10px] text-gray-400 dark:text-gray-500 font-mono">{{ world.uuid[:8] }}...</div>
+            </td>
+            <td class="p-2">
+                {% if world.is_explored %}
+                <span class="px-1.5 py-0.5 rounded-sm bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 text-[9px] font-bold uppercase">Explored</span>
+                {% else %}
+                <span class="px-1.5 py-0.5 rounded-sm bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400 text-[9px] font-bold uppercase">Pending</span>
+                {% endif %}
+            </td>
+            <td class="p-2 text-gray-500 dark:text-gray-400 italic">
+                {{ world.last_researched or 'Never' }}
+            </td>
+            <td class="p-2 text-right">
+                <div class="flex justify-end gap-2">
+                    <a href="/worlds/details/{{ world.uuid }}" 
+                       class="px-2 py-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-300 rounded-sm hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-[10px] font-medium">
+                        Open
+                    </a>
+                    {% if world.is_explored %}
+                    <button hx-post="/worlds/{{ world.id }}/toggle-explored" 
+                            hx-target="#worlds-list"
+                            class="px-2 py-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 text-gray-500 dark:text-gray-400 rounded-sm hover:bg-yellow-50 dark:hover:bg-yellow-900/10 transition-colors text-[10px] font-medium"
+                            title="Reset explored status">
+                        ↺
+                    </button>
+                    {% endif %}
+                    <button hx-post="/worlds/{{ world.id }}/delete" 
+                            hx-target="#worlds-list" 
+                            hx-confirm="Delete this world?"
+                            class="p-1 text-gray-400 hover:text-red-500 dark:hover:text-red-400 transition-colors">
+                        ✕
+                    </button>
+                </div>
+            </td>
+        </tr>
         {% endfor %}
-    </div>
-    {% else %}
-    <p class="text-gray-500 dark:text-gray-400 italic text-sm">
-        {% if q %}No worlds matching "{{ q }}".{% else %}No worlds in database.{% endif %}
-    </p>
-    {% endif %}
-</div>
-
-<script>
-(function() {
-    window.debounceTimer = window.debounceTimer || null;
-
-    window.debounceFilter = function() {
-        clearTimeout(window.debounceTimer);
-        window.debounceTimer = setTimeout(function() {
-            htmx.trigger('#world-filter-form', 'submit');
-        }, 400);
-    };
-
-    window.updateBatchResearch = function() {
-        const checkboxes = document.querySelectorAll('.world-checkbox:checked');
-        const uuids = Array.from(checkboxes).map(function(cb) { return cb.getAttribute('data-uuid'); });
-        const hidden = document.getElementById('batch-world-uuids');
-        const researchBtn = document.getElementById('research-selected-btn');
-        if (hidden) hidden.value = uuids.join(',');
-        var show = uuids.length > 0;
-        if (researchBtn) {
-            if (show) {
-                researchBtn.classList.remove('hidden');
-                researchBtn.textContent = 'Research Selected (' + uuids.length + ')';
-            } else {
-                researchBtn.classList.add('hidden');
-            }
-        }
-    };
-})();
-</script>
+        {% if not worlds %}
+        <tr>
+            <td colspan="5" class="p-8 text-center text-gray-400 dark:text-gray-500 italic text-xs">
+                No worlds in database.
+            </td>
+        </tr>
+        {% endif %}
+    </tbody>
+</table>

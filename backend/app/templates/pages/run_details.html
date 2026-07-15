@@ -153,7 +153,8 @@
 
         const logEntry = document.createElement('div');
         logEntry.className = 'mb-1';
-        logEntry.innerHTML = `<span class="text-gray-600">[${data.created_at.split('T')[1].split('.')[0]}]</span> <span class="text-blue-400">${data.node_name}:</span> ${data.thought}`;
+        const ts = data.created_at ? data.created_at.split('T')[1]?.split('.')[0] || '' : '';
+        logEntry.innerHTML = `<span class="text-gray-600">[${ts}]</span> <span class="text-blue-400">${data.node_name || ''}:</span> ${data.thought || ''}`;
         logsDiv.appendChild(logEntry);
         logsDiv.scrollTop = logsDiv.scrollHeight;
     };

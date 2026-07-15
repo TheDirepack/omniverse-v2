@@ -3,9 +3,11 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+import logging
+import sys
 
-# from app.api.routers.inference import router as inference_router
 from app.api.routers.providers import router as providers_router
+from app.api.routers.artifacts import router as artifacts_router
 from app.api.routers.research import router as research_router
 from app.api.routers.routes import router as routes_router
 from app.api.routers.runs import router as runs_router
@@ -27,9 +29,13 @@ from app.views.worlds import router as worlds_views_router
 
 BASE_DIR = Path(__file__).resolve().parent
 
+logger = logging.getLogger("startup")
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+    print("LIFESPAN: Starting", file=sys.stdout, flush=True)
     init_db()
+    print("LIFESPAN: init_db complete", file=sys.stdout, flush=True)
 
     # DB Connectivity check
     try:
@@ -38,32 +44,34 @@ async def lifespan(_app: FastAPI):
         from app.db.session import engine
         with Session(engine) as session:
             session.exec(text("SELECT 1"))
-        import logging
-        logging.getLogger("startup").info("Database connectivity verified.")
+        logger.info("Database connectivity verified.")
     except Exception:
-        import logging
-        logging.getLogger("startup").exception("Database connectivity check failed")
+        logger.exception("Database connectivity check failed")
 
     # Reconcile stale runs on startup
     from app.services.execution_service import ExecutionService
     exec_service = ExecutionService()
     exec_service.reconcile_stale_runs()
     exec_service.close()
+    print("LIFESPAN: reconcile_stale_runs complete", file=sys.stdout, flush=True)
 
     # Validate settings on startup
     from app.services.settings_service import SettingsService
     settings_service = SettingsService()
     issues = settings_service.validate_settings()
     for issue in issues:
-        import logging
         level = logging.ERROR if issue["severity"] == "ERROR" else logging.WARNING
-        logging.getLogger("startup").log(
+        logger.log(
             level, "Settings Validation %s: %s", issue["severity"], issue["message"]
         )
+    print("LIFESPAN: settings_validation complete", file=sys.stdout, flush=True)
 
     await browser_manager.start()
+    print("LIFESPAN: browser_manager.start complete", file=sys.stdout, flush=True)
     yield
+    print("LIFESPAN: just yielded", file=sys.stdout, flush=True)
     await browser_manager.stop()
+    print("LIFESPAN: browser_manager.stop complete", file=sys.stdout, flush=True)
 
 app = FastAPI(
     title="Omniverse Tier List 2.0 API",
@@ -82,8 +90,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-# CSRF removed — local dev tool, cookie/header check adds friction without
-# proportional benefit
 
 @app.get("/api/health")
 async def health():
@@ -107,4 +113,4 @@ app.include_router(routes_router, prefix="/api")
 app.include_router(providers_router, prefix="/api")
 app.include_router(worlds_router, prefix="/api")
 app.include_router(runs_router, prefix="/api")
-# app.include_router(inference_router, prefix="/api")
+app.include_router(artifacts_router, prefix="/api/artifacts")

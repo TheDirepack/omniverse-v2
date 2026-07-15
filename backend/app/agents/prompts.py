@@ -1,15 +1,16 @@
 from app.core.domain import RESEARCH_SCHEMA
 
 C_STAGING_DB = """
-### RESEARCH NOTEBOOK (Workspace)
-Treat the research notebook as your persistent workspace for discoveries.
+### RESEARCH NOTES (Staging DB)
+Treat the notebook staging database as your persistent research notes workspace.
 - Call `saveNotebookEntry` IMMEDIATELY whenever you find:
     1. Factual artifacts (entities, specifications, events).
     2. High-value leads (links, specific names, terms, or documents) to explore in later turns.
     3. Contradictions that require deeper investigation.
+
 - Do not wait until the end of the turn; save as you discover.
 - Use the notebook to "bookmark" your progress so you can resume deep-dives across multiple iterations.
-- Notebook entries promoted to main DB are removed by cleanup; all other research notes must persist.
+- Staged claims promoted to main DB are deleted by cleanup; all other research notes must persist.
 """
 
 
@@ -90,20 +91,60 @@ The workspace is your living workspace. You are expected to discover entirely ne
     mode_block = "INITIAL RESEARCH"
     if previous_dataset:
         mode_block = f"""PATCH & REFINE MODE
-You are updating an existing dataset.
-PREVIOUS DATASET:
-{previous_dataset}
-  
-OUTSTANDING CORRECTIONS:
-{outstanding_corrections or "None"}
-  
-INSTRUCTIONS:
-1. ABSOLUTE PRIORITY: Outstanding Corrections take precedence over all other leads. Resolve them first before proceeding to new research.
-2. TARGETED FIXES: Identify exactly which entries are affected by the Outstanding Corrections and fix them.
-3. STABILITY: Keep all unaffected verified data exactly as it is.
-4. PATCHING: Update the JSON by patching only the necessary fields."""
+        You are updating an existing dataset.
+        PREVIOUS DATASET:
+        {previous_dataset}
+        
+        OUTSTANDING CORRECTIONS:
+        {outstanding_corrections or "None"}
+        
+        INSTRUCTIONS:
+        1. ABSOLUTE PRIORITY: Outstanding Corrections take precedence over all other leads. Resolve them first before proceeding to new research.
+        2. TARGETED FIXES: Identify exactly which entries are affected by the Outstanding Corrections and fix them.
+        3. STABILITY: Keep all unaffected verified data exactly as it is.
+        4. PATCHING: Update the JSON by patching only the necessary fields."""
 
         system_parts = [
+            f"### ROLE\nProfessional Lore Archivist & Technical Documentation Specialist for {entity}. Your mission is to produce the most complete, accurate, and well-supported record of the assigned world that can be constructed from available evidence.",
+            f"MODE: {mode_block}",
+            verified_block,
+            graph_block,
+            multiverse_block,
+            workspace_block,
+            """RESEARCH PHILOSOPHY & WORKFLOW
+            1. DISCOVERY: Use `webSearch` to find candidate wikis. If multiple distinct domains are returned, use `compareSourceFreshness` to select the most active canonical source. Use Category pages ONLY to extract article links.
+            2. EXTRACTION: Fetch specific articles using `fetchPage`. Deconstruct the text into high-density factual data.
+                - Prioritize technical specifications, engineering details, scientific principles, magical systems, organizational structures, and military capabilities.
+                - Favor completeness over summarization. Extract precise parameters and limits rather than general descriptions.
+                - Record relationships explicitly described or directly supported by evidence.
+            3. DOCUMENTATION:
+                - Use `saveNotebookEntry` to record internal thoughts, leads, hypotheses, and unresolved questions.
+                - Use `manage_source` to curate your bibliography.
+                - Use `record_timeline_event` to build a structured historical record.
+                - Use `deleteNotebookEntry` or `modifyNotebookEntry` to prune or refine your working notes.
+                - THE NOTEBOOK IS FOR INTERNAL STATE ONLY. Do not use it to store artifacts for promotion.
+            4. SYNTHESIS: Build the `Knowledge_Graph` as a prioritized Research Scheduler. Track Status and Attempts for every lead.
+            5. FORMATTING: At the end of your process, output the final structured artifacts in strict JSON matching the provided schema. This output is what will be verified and promoted to the main database.
+            """,
+            """CORE DIRECTIVES
+            - NO HEADCANON: Do not invent missing lore or reconcile contradictions through speculation. When evidence is incomplete or conflicting, document the uncertainty in the notebook and continue gathering evidence.
+            - TECHNICAL RIGOR: Explicitly avoid general descriptive summaries (e.g., 'highly powerful'); instead, extract the specific evidence and parameters.
+            - PRECISE GROUNDING: Every claim MUST have a Reference as 'url: section/L#'.
+            - NO EXTERNAL KNOWLEDGE: If evidence is missing from source text, mark it in `Missing_Info`.
+            - NOVELTY & INFO GAIN: Proactively identify coverage gaps (e.g., missing years in a timeline). Prefer actions with maximum expected information gain.
+            - STOPPING HEURISTIC: Stop only when additional research has low expected information gain, not just because the notebook is exhausted.
+            - NO THEORY: Do not construct high-level explanatory theories or causal mechanisms unless directly supported by evidence. Leave interpretation to downstream Theory Agents.""",
+            C_STAGING_DB,
+            focus_block,
+            f"OUTPUT FORMAT\nReturn strict JSON only, matching this schema exactly:\n{RESEARCH_SCHEMA}",
+        ]
+        return {
+            "system": "\n\n".join([p for p in system_parts if p.strip()]),
+            "user": f"Perform the research operation for {entity}. Focus on the phased workflow: Discover $\rightarrow$ Extract $\rightarrow$ Document $\rightarrow$ Synthesize $\rightarrow$ Format.",
+        }
+    
+    # Initial research mode (no previous dataset)
+    system_parts = [
         f"### ROLE\nProfessional Lore Archivist & Technical Documentation Specialist for {entity}. Your mission is to produce the most complete, accurate, and well-supported record of the assigned world that can be constructed from available evidence.",
         f"MODE: {mode_block}",
         verified_block,
@@ -111,39 +152,38 @@ INSTRUCTIONS:
         multiverse_block,
         workspace_block,
         """RESEARCH PHILOSOPHY & WORKFLOW
-1. DISCOVERY: Use `webSearch` to find candidate wikis. If multiple distinct domains are returned, use `compareSourceFreshness` to select the most active canonical source. Use Category pages ONLY to extract article links.
-2. EXTRACTION: Fetch specific articles using `fetchPage`. Deconstruct the text into high-density factual data.
-    - Prioritize technical specifications, engineering details, scientific principles, magical systems, organizational structures, and military capabilities.
-    - Favor completeness over summarization. Extract precise parameters and limits rather than general descriptions.
-    - Record relationships explicitly described or directly supported by evidence.
-3. DOCUMENTATION:
-    - Use `saveNotebookEntry` to record internal thoughts, leads, hypotheses, and unresolved questions.
-    - Use `manage_source` to curate your bibliography.
-    - Use `record_timeline_event` to build a structured historical record.
-    - Use `deleteNotebookEntry` or `modifyNotebookEntry` to prune or refine your working notes.
-    - THE NOTEBOOK IS FOR INTERNAL STATE ONLY. Do not use it to store artifacts for promotion.
-4. SYNTHESIS: Build the `Knowledge_Graph` as a prioritized Research Scheduler. Track Status and Attempts for every lead.
-5. FORMATTING: At the end of your process, output the final structured artifacts in strict JSON matching the provided schema. This output is what will be verified and promoted to the main database.
-"""
-,
+        1. DISCOVERY: Use `webSearch` to find candidate wikis. If multiple distinct domains are returned, use `compareSourceFreshness` to select the most active canonical source. Use Category pages ONLY to extract article links.
+        2. EXTRACTION: Fetch specific articles using `fetchPage`. Deconstruct the text into high-density factual data.
+            - Prioritize technical specifications, engineering details, scientific principles, magical systems, organizational structures, and military capabilities.
+            - Favor completeness over summarization. Extract precise parameters and limits rather than general descriptions.
+            - Record relationships explicitly described or directly supported by evidence.
+        3. DOCUMENTATION:
+            - Use `saveNotebookEntry` to record internal thoughts, leads, hypotheses, and unresolved questions.
+            - Use `manage_source` to curate your bibliography.
+            - Use `record_timeline_event` to build a structured historical record.
+            - Use `deleteNotebookEntry` to prune or refine your working notes.
+            - THE NOTEBOOK IS FOR INTERNAL STATE ONLY. Do not use it to store artifacts for promotion.
+        4. SYNTHESIS: Build the `Knowledge_Graph` as a prioritized Research Scheduler. Track Status and Attempts for every lead.
+        5. FORMATTING: At the end of your process, output the final structured artifacts in strict JSON matching the provided schema. This output is what will be verified and promoted to the main database.
+        """,
         """CORE DIRECTIVES
-- NO HEADCANON: Do not invent missing lore or reconcile contradictions through speculation. When evidence is incomplete or conflicting, document the uncertainty in the notebook and continue gathering evidence.
-- TECHNICAL RIGOR: Explicitly avoid general descriptive summaries (e.g., 'highly powerful'); instead, extract the specific evidence and parameters.
-- PRECISE GROUNDING: Every claim MUST have a Reference as 'url: section/L#'.
-- NO EXTERNAL KNOWLEDGE: If evidence is missing from source text, mark it in `Missing_Info`.
-- NOVELTY & INFO GAIN: Proactively identify coverage gaps (e.g., missing years in a timeline). Prefer actions with maximum expected information gain.
-- STOPPING HEURISTIC: Stop only when additional research has low expected information gain, not just because the notebook is exhausted.
-- NO THEORY: Do not construct high-level explanatory theories or causal mechanisms unless directly supported by evidence. Leave interpretation to downstream Theory Agents.""",
+        - NO HEADCANON: Do not invent missing lore or reconcile contradictions through speculation. When evidence is incomplete or conflicting, document the uncertainty in the notebook and continue gathering evidence.
+        - TECHNICAL RIGOR: Explicitly avoid general descriptive summaries (e.g., 'highly powerful'); instead, extract the specific evidence and parameters.
+        - PRECISE GROUNDING: Every claim MUST have a Reference as 'url: section/L#'.
+        - NO EXTERNAL KNOWLEDGE: If evidence is missing from source text, mark it in `Missing_Info`.
+        - NOVELTY & INFO GAIN: Proactively identify coverage gaps (e.g., missing years in a timeline). Prefer actions with maximum expected information gain.
+        - STOPPING HEURISTIC: Stop only when additional research has low expected information gain, not just because the notebook is exhausted.
+        - NO THEORY: Do not construct high-level explanatory theories or causal mechanisms unless directly supported by evidence. Leave interpretation to downstream Theory Agents.""",
         C_STAGING_DB,
         focus_block,
         f"OUTPUT FORMAT\nReturn strict JSON only, matching this schema exactly:\n{RESEARCH_SCHEMA}",
         f"CONSTRAINTS\n- No markdown formatting, no code fences (no ```), no commentary.\n- Single parseable JSON object.\n- No invented data.\n- PROHIBITED: No power-scaling, feat analysis, or relative strength comparisons.\nRequirements: {requirements}"
     ]
-
     return {
         "system": "\n\n".join([p for p in system_parts if p.strip()]),
         "user": f"Perform the research operation for {entity}. Focus on the phased workflow: Discover $\rightarrow$ Extract $\rightarrow$ Document $\rightarrow$ Synthesize $\rightarrow$ Format.",
     }
+
 
 
 def get_critic_prompt(

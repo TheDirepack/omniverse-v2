@@ -4,10 +4,13 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, BackgroundTasks, Form, Query, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, Form, Query, Request
 from fastapi.responses import HTMLResponse
+from sqlmodel import Session, select
 
 from app.core.templates import templates
+from app.core.dependencies import get_main_session
+from app.db.schema import Artifact
 from app.services.universe_service import UniverseService
 
 router = APIRouter(tags=["worlds_views"])
@@ -82,6 +85,29 @@ async def delete_world(request: Request, world_id: int):
     worlds = uni_service.get_all_universes(limit=5000)
     return _render_worlds(request, worlds)
 
+@router.post("/delete-selected", response_class=HTMLResponse)
+async def delete_selected(request: Request, uuids: str = Form(default="[]"), session: Session = Depends(get_main_session)):
+    uuid_list = json.loads(uuids)
+    uni_service = UniverseService(session)
+    for uuid_str in uuid_list:
+        world = uni_service.get_universe_by_uuid(uuid_str)
+        if world:
+            uni_service.delete_universe(world.id)
+    worlds = uni_service.get_all_universes(limit=5000)
+    return _render_worlds(request, worlds)
+
+@router.post("/reset-selected-explored", response_class=HTMLResponse)
+async def reset_selected_explored(request: Request, ids: str = Form(default="[]")):
+    import json
+    id_list = json.loads(ids)
+    uni_service = UniverseService()
+    for uuid_str in id_list:
+        world = uni_service.get_universe_by_uuid(uuid_str)
+        if world:
+            uni_service.reset_explored(world.id)
+    worlds = uni_service.get_all_universes(limit=5000)
+    return _render_worlds(request, worlds)
+
 @router.post("/reset-all-explored", response_class=HTMLResponse)
 async def reset_all_explored(request: Request):
     uni_service = UniverseService()
@@ -95,6 +121,36 @@ async def set_active_world(_request: Request, world_id: str = Form(...)):
     response.set_cookie(key="active_world_id", value=world_id)
     return response
 
+
+
+@router.post("/import", response_class=HTMLResponse)
+async def worlds_import_action_form(request: Request):
+    # Try to get world_id from form data first, then from JSON body
+    world_id = None
+    
+    try:
+        form_data = await request.form()
+        world_id = form_data.get("world_id")
+    except Exception:
+        pass
+
+    if not world_id:
+        try:
+            body = await request.json()
+            world_id = body.get("world_id")
+        except Exception:
+            pass
+
+    if not world_id:
+        return HTMLResponse(
+            content='<p class="text-red-500">Missing world ID.</p>', 
+            status_code=400
+        )
+
+    service = UniverseService()
+    world = service.import_from_registry(world_id)
+    worlds = service.get_all_universes(limit=5000)
+    return _render_worlds(request, worlds)
 
 
 @router.get("/import", response_class=HTMLResponse)
@@ -176,7 +232,7 @@ async def worlds_import_all_action(request: Request):
     )
 
 
-@router.get("/create", response_class=HTMLResponse)
+@router.get("/create_fragment", response_class=HTMLResponse)
 async def worlds_create_fragment(request: Request):
     service = UniverseService()
     parents = service.get_all_universes(limit=200)
@@ -238,6 +294,30 @@ async def world_neighborhood(request: Request, uuid: str):
     return HTMLResponse(
         content=template.render(request=request, world=world, related=related)
     )
+
+@router.get("/details/{uuid}", response_class=HTMLResponse)
+async def world_details_page(request: Request, uuid: str, session: Session = Depends(get_main_session)):
+    service = UniverseService(session)
+    world = service.get_universe_by_uuid(uuid)
+    if not world:
+        return HTMLResponse("World not found", status_code=404)
+    
+    artifacts = session.exec(select(Artifact).where(Artifact.universe_id == world.id)).all()
+
+    notebook_entries = []
+    try:
+        from app.services.research_workspace import WorkspaceService
+        ws = WorkspaceService()
+        notebook_entries = ws.get_notebook_index(uuid)
+    except Exception:
+        pass
+    
+    return templates.TemplateResponse(request, "pages/world_details.html", {
+        "world": world,
+        "artifacts": artifacts,
+        "notebook_entries": notebook_entries,
+    })
+
 
 
 # Remove snapshots endpoints - moved to settings.py

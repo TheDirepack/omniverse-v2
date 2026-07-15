@@ -112,7 +112,7 @@ async def reject_claim(
     return response
 
 @router.post("/entity/{entity_id}/merge", response_class=HTMLResponse)
-async def merge_entity(_entity_id: int):
+async def merge_entity(entity_id: int):
     # Stubbed
     return ""
 

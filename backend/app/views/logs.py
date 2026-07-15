@@ -11,7 +11,7 @@ from app.services.universe_service import UniverseService
 router = APIRouter(tags=["logs_views"])
 
 LOG_LINE_RE = re.compile(
-    r"^\[(.+?)\] \[(.+?)\] \[(.+?)\] \[(.+?)\] \[(.+?)\] \[(\w+)\] (.+)$"
+    r"^\[(.+?)\] \[(.+?)\] \[(.+?)\] \[(.+?)\] \[(.+?)\] \[([\w.]+)\] (.+)$"
 )
 
 EVENT_COLORS = {
@@ -35,6 +35,7 @@ def _parse_log_line(line: str) -> dict | None:
     if not m:
         return None
     timestamp, agent, model, key_id, world, event_type, content = m.groups()
+    event_type = event_type.removeprefix("AgentEventType.")
     return {
         "timestamp": timestamp,
         "agent": agent,
@@ -97,7 +98,7 @@ async def logs_page(request: Request):
     )
 
 
-@router.get("/list", response_class=HTMLResponse)
+@router.get("/list", response_class=HTMLResponse, name="logs_list")
 async def logs_list(
     request: Request,
     limit: int = 100,
@@ -128,8 +129,20 @@ async def logs_list(
         data = {"logs": [], "has_more": False}
 
     logs = data.get("logs", [])
-    parsed_logs = []
+
+    # Reassemble multiline entries: lines that don't match the log format
+    # are continuations of the previous entry.
+    reassembled = []
     for line in logs:
+        if LOG_LINE_RE.match(line.strip()):
+            reassembled.append(line)
+        elif reassembled:
+            reassembled[-1] += "\n" + line
+        else:
+            reassembled.append(line)
+
+    parsed_logs = []
+    for line in reassembled:
         parsed = _parse_log_line(line)
         if parsed:
             parsed_logs.append(parsed)

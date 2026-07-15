@@ -1,283 +1,170 @@
-<div class="space-y-6">
-    <h2 class="text-xl font-semibold">LLM Providers</h2>
-
-    <script>
-    (function() {
-        window.PROVIDER_PRESETS = {{ presets|tojson|safe }};
-
-        window.applyPreset = function(select) {
-            const preset = window.PROVIDER_PRESETS[select.value];
-            if (!preset) return;
-            const card = select.closest('.provider-card') || select.closest('.add-provider-form');
-            const typeInput = card.querySelector('[name=provider_type]');
-            const urlInput = card.querySelector('[name=base_url]');
-            const modelsInput = card.querySelector('[name=models]');
-            if (typeInput) typeInput.value = preset.provider_type;
-            if (urlInput) urlInput.value = preset.base_url;
-
-            // Auto-sync live models if we have a provider ID
-            const providerId = card.dataset.id;
-            if (providerId && modelsInput) {
-                fetch(`/api/providers/${providerId}/models`)
-                    .then(r => r.json())
-                    .then(d => {
-                        if (d.models && d.models.length) {
-                            modelsInput.value = d.models.join(',');
-                        }
-                    })
-                    .catch(e => console.error('Auto-sync failed:', e));
-            }
-        };
-
-        window.toggleEdit = function(btn) {
-            const card = btn.closest('.provider-card');
-            card.querySelector('.view-mode').classList.toggle('hidden');
-            card.querySelector('.edit-mode').classList.toggle('hidden');
-        };
-    })();
-    </script>
-
-    {% if providers %}
-    <div class="grid gap-4">
-        {% for provider in providers %}
-        <div class="provider-card border border-gray-200 dark:border-gray-700 rounded-lg p-4" data-id="{{ provider.id }}">
-            <!-- View Mode -->
-            <div class="view-mode">
-                <div class="flex justify-between items-start mb-2">
-                    <div>
-                        <h3 class="font-medium">{{ provider.name }}</h3>
-                        <div class="text-xs text-gray-500 space-y-0.5 mt-1">
-                            <div>Type: <span class="font-mono">{{ provider.provider_type or '—' }}</span></div>
-                            <div>Base URL: <span class="font-mono text-xs truncate max-w-md inline-block align-bottom">{{ provider.base_url or '—' }}</span></div>
-                            <div>Models: <span class="font-mono">{{ provider.models or '—' }}</span></div>
-                        </div>
-                    </div>
-                    <div class="flex gap-2 shrink-0">
-                        <button class="text-blue-600 hover:text-blue-800 text-xs border border-blue-300 rounded px-2 py-1"
-                                     data-action="toggle-edit"
-                            Edit
-                        </button>
-                        <button class="text-red-500 hover:text-red-700 text-xs border border-red-300 rounded px-2 py-1"
-                                 hx-post="{{ url_for('settings_provider_delete', provider_id=provider.id) }}"
-                                hx-target="#settings-content"
-                                hx-swap="innerHTML"
-                                hx-confirm="Delete this provider and all its keys?">
-                            Delete
-                        </button>
-                    </div>
-                </div>
-
-                <!-- API Keys (view mode) -->
-                <div class="bg-gray-50 dark:bg-gray-900 rounded p-3 mt-3">
-                    <h4 class="text-xs font-semibold text-gray-500 uppercase mb-2">API Keys</h4>
-                    {% if provider["keys"] %}
-                    <div class="space-y-1 mb-2">
-                        {% for key in provider["keys"] %}
-                        <div class="flex justify-between items-center text-xs py-1 px-2 bg-white dark:bg-gray-800 rounded">
-                            <span class="font-mono">••••••••••••{{ key.api_key[-4:] if key.api_key|length > 4 else key.api_key }}</span>
-                            <div class="flex gap-2 items-center">
-                                <span class="text-gray-400">priority {{ key.priority }}</span>
-                                <button class="text-red-400 hover:text-red-600"
-                                         hx-post="{{ url_for('settings_provider_delete_key', provider_id=provider.id, key_id=key.id) }}"
-                                        hx-target="#settings-content"
-                                        hx-swap="innerHTML"
-                                        hx-confirm="Delete this API key?">
-                                    ✕
-                                </button>
-                            </div>
-                        </div>
-                        {% endfor %}
-                    </div>
-                    {% else %}
-                    <p class="text-xs text-gray-400 italic mb-2">No API keys configured.</p>
-                    {% endif %}
-                     <form hx-post="{{ url_for('settings_provider_add_key', provider_id=provider.id) }}"
-                           hx-target="#settings-content"
-                           hx-swap="innerHTML"
-                           class="flex gap-2 items-center">
-                         <label for="key-add-{{ provider.id }}" class="sr-only">New API key</label>
-                         <input type="text" id="key-add-{{ provider.id }}" name="api_key" placeholder="New API key..."
-                                class="flex-1 border rounded px-2 py-1 text-xs bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                required>
-                         <label for="key-prio-{{ provider.id }}" class="sr-only">Priority</label>
-                         <input type="number" id="key-prio-{{ provider.id }}" name="priority" value="0" min="0"
-                                class="w-16 border rounded px-2 py-1 text-xs bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                placeholder="Prio">
-                         <button type="submit"
-                                 class="bg-green-600 text-white px-3 py-1 rounded text-xs hover:bg-green-700 transition">
-                             Add
-                         </button>
-                     </form>
-
-                </div>
-            </div>
-
-            <!-- Edit Mode (hidden by default) -->
-            <div class="edit-mode hidden">
-                 <form hx-post="{{ url_for('settings_provider_update', provider_id=provider.id) }}"
-                      hx-target="#settings-content"
-                      hx-swap="innerHTML"
-                      class="space-y-3">
-                    <div class="flex justify-between items-center mb-2">
-                        <h3 class="font-medium">Edit Provider</h3>
-                        <div class="flex gap-2">
-                            <button type="button" class="text-gray-600 hover:text-gray-800 text-xs border border-gray-300 rounded px-2 py-1"
-                                    data-action="toggle-edit"
-                                Cancel
-                            </button>
-                            <button type="submit"
-                                    class="bg-blue-600 text-white px-3 py-1 rounded text-xs hover:bg-blue-700 transition">
-                                Save
-                            </button>
-                        </div>
-                    </div>
-
-                    <div class="grid grid-cols-2 gap-3">
-                        <div>
-                            <label class="block text-xs text-gray-500 mb-1">Name</label>
-                            <input type="text" name="name" value="{{ provider.name }}"
-                                   class="w-full border rounded px-2 py-1.5 text-sm bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500">
-                        </div>
-                        <div>
-                            <label class="block text-xs text-gray-500 mb-1">Type</label>
-                            <select name="provider_type" onchange="applyPreset(this)"
-                                    class="w-full border rounded px-2 py-1.5 text-sm bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500">
-                                <option value="">—</option>
-                                {% for key, preset in presets.items() %}
-                                <option value="{{ key }}" {% if provider.provider_type == preset.provider_type %}selected{% endif %}>{{ key }}</option>
-                                {% endfor %}
-                            </select>
-                        </div>
-                        <div>
-                            <label class="block text-xs text-gray-500 mb-1">Base URL</label>
-                            <input type="text" name="base_url" value="{{ provider.base_url or '' }}"
-                                   class="w-full border rounded px-2 py-1.5 text-sm bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500">
-                        </div>
-                        <div>
-                            <label class="block text-xs text-gray-500 mb-1">Models (comma-separated)</label>
-                            <div class="flex gap-1">
-                                <input type="text" name="models" value="{{ provider.models or '' }}"
-                                       class="flex-1 border rounded px-2 py-1.5 text-sm bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500">
-                                <button type="button"
-                                        class="bg-purple-600 text-white px-2 py-1 rounded text-xs hover:bg-purple-700 transition whitespace-nowrap"
-                                        onclick="
-                                            fetch('/api/providers/{{ provider.id }}/models')
-                                                .then(r => r.json())
-                                                .then(d => {
-                                                    const inp = this.closest('.edit-mode').querySelector('[name=models]');
-                                                    if (d.models && d.models.length) inp.value = d.models.join(',');
-                                                })
-                                                .catch(() => alert('Failed to fetch models'));
-                                        ">
-                                    Sync
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- API Keys editing -->
-                    <div class="bg-gray-50 dark:bg-gray-900 rounded p-3">
-                        <h4 class="text-xs font-semibold text-gray-500 uppercase mb-2">API Keys</h4>
-                        {% if provider["keys"] %}
-                        <div class="space-y-2 mb-2">
-                            {% for key in provider["keys"] %}
-                             <form hx-post="{{ url_for('settings_provider_edit_key', provider_id=provider.id, key_id=key.id) }}"
-                                  hx-target="#settings-content"
-                                  hx-swap="innerHTML"
-                                  class="flex gap-2 items-center text-xs">
-                                 <input type="password" name="api_key" value=""
-                                        class="flex-1 border rounded px-2 py-1 bg-white dark:bg-gray-800 font-mono text-xs"
-                                        placeholder="Enter key to change...">
-                                <input type="number" name="priority" value="{{ key.priority }}" min="0"
-                                       class="w-16 border rounded px-2 py-1 bg-white dark:bg-gray-800 text-xs">
-                                <button type="submit"
-                                        class="text-green-600 hover:text-green-800">
-                                    Save
-                                </button>
-                                <button type="button" class="text-red-400 hover:text-red-600"
-                                         hx-post="{{ url_for('settings_provider_delete_key', provider_id=provider.id, key_id=key.id) }}"
-                                        hx-target="#settings-content"
-                                        hx-swap="innerHTML"
-                                        hx-confirm="Delete this key?">
-                                    ✕
-                                </button>
-                            </form>
-                            {% endfor %}
-                        </div>
-                        {% else %}
-                        <p class="text-xs text-gray-400 italic mb-2">No API keys.</p>
-                        {% endif %}
-                        <form hx-post="{{ url_for('settings_provider_add_key', provider_id=provider.id) }}"
-                              hx-target="#settings-content"
-                              hx-swap="innerHTML"
-                              class="flex gap-2 items-center">
-                            <input type="text" name="api_key" placeholder="Add key..."
-                                   class="flex-1 border rounded px-2 py-1 text-xs bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                   required>
-                            <input type="number" name="priority" value="0" min="0"
-                                   class="w-16 border rounded px-2 py-1 text-xs bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500">
-                            <button type="submit"
-                                    class="bg-green-600 text-white px-3 py-1 rounded text-xs hover:bg-green-700 transition">
-                                Add
-                            </button>
-                        </form>
-                    </div>
-                </form>
-            </div>
-        </div>
-        {% endfor %}
-    </div>
-    {% else %}
-    <p class="text-gray-500 dark:text-gray-400 italic">No providers configured.</p>
-    {% endif %}
-
-    <!-- Add Provider Form -->
-    <div class="add-provider-form border border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-4">
-        <h3 class="font-medium mb-3 text-sm">Add New Provider</h3>
-         <form hx-post="{{ url_for('settings_provider_upsert') }}"
-              hx-target="#settings-content"
-              hx-swap="innerHTML"
-              class="grid grid-cols-2 gap-3">
-            <div>
-                <label class="block text-xs text-gray-500 mb-1">Name *</label>
-                <input type="text" name="name" required
-                       class="w-full border rounded px-2 py-1.5 text-sm bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                       placeholder="My Provider">
-            </div>
-            <div>
-                <label class="block text-xs text-gray-500 mb-1">Preset (auto-fills below)</label>
-                <select onchange="applyPreset(this)"
-                        class="w-full border rounded px-2 py-1.5 text-sm bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500">
-                    <option value="">Select preset...</option>
-                    {% for key, preset in presets.items() %}
-                    <option value="{{ key }}">{{ key }}</option>
-                    {% endfor %}
-                </select>
-            </div>
-            <div>
-                <label class="block text-xs text-gray-500 mb-1">Type</label>
-                <input type="text" name="provider_type"
-                       class="w-full border rounded px-2 py-1.5 text-sm bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                       placeholder="openai / anthropic / custom">
-            </div>
-            <div>
-                <label class="block text-xs text-gray-500 mb-1">Base URL</label>
-                <input type="text" name="base_url"
-                       class="w-full border rounded px-2 py-1.5 text-sm bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                       placeholder="https://api.openai.com/v1">
-            </div>
-            <div>
-                <label class="block text-xs text-gray-500 mb-1">Models</label>
-                <input type="text" name="models"
-                       class="w-full border rounded px-2 py-1.5 text-sm bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                       placeholder="gpt-4o,gpt-4-turbo">
-            </div>
-            <div class="col-span-2">
-                <button type="submit"
-                        class="bg-blue-600 text-white px-4 py-2 rounded text-sm hover:bg-blue-700 transition">
-                    Add Provider
+<div class="flex flex-col h-full overflow-hidden">
+    <div class="flex h-full overflow-hidden">
+        <!-- Provider List (Left) -->
+        <div class="w-72 border-r border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 flex flex-col shrink-0">
+            <div class="p-2 border-b border-gray-200 dark:border-gray-800 flex justify-between items-center bg-white dark:bg-gray-800">
+                <span class="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Providers</span>
+                <button class="px-2 py-0.5 bg-blue-600 text-white text-[10px] font-bold rounded-sm hover:bg-blue-700 transition-colors" 
+                        hx-get="/settings/providers/new" 
+                        hx-target="#provider-inspector">
+                    + New
                 </button>
             </div>
-        </form>
+            <div class="flex-1 overflow-y-auto no-scrollbar">
+                {% for provider in providers %}
+                <div class="p-2 border-b border-gray-100 dark:border-gray-800 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors {% if provider.id == active_provider_id %}bg-blue-50 dark:bg-blue-900/20 border-l-4 border-l-blue-600{% else %}border-l-4 border-l-transparent{% endif %}"
+                     onclick="selectProvider('{{ provider.id }}')">
+                    <div class="text-xs font-semibold text-gray-900 dark:text-gray-100">{{ provider.name }}</div>
+                    <div class="text-[10px] text-gray-500 dark:text-gray-400 truncate">{{ provider.provider_type }} / {{ provider.models or 'No models' }}</div>
+                </div>
+                {% endfor %}
+                {% if not providers %}
+                <div class="p-4 text-center text-xs text-gray-400 italic">No providers configured.</div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Provider Detail Inspector (Right) -->
+        <div id="provider-inspector" class="flex-1 bg-white dark:bg-gray-950 p-6 overflow-y-auto no-scrollbar">
+            {% if active_provider %}
+            <form hx-post="/settings/providers/upsert" hx-target="#settings-content" hx-indicator="#settings-indicator">
+                <div class="flex justify-between items-start mb-6">
+                    <div>
+                        <h3 class="text-lg font-bold text-gray-900 dark:text-white">{{ active_provider.name }}</h3>
+                        <div class="text-xs text-gray-500 dark:text-gray-400">Provider Configuration</div>
+                    </div>
+                    <div class="flex gap-2">
+                        <button type="button" class="px-3 py-1.5 text-xs border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 rounded-sm hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                                hx-post="/settings/providers/{{ active_provider.id }}/delete"
+                                hx-target="#settings-content"
+                                hx-confirm="Delete this provider?">
+                            Delete
+                        </button>
+                        <button type="submit" class="px-3 py-1.5 bg-blue-600 text-white text-xs font-semibold rounded-sm hover:bg-blue-700 transition-colors shadow-sm">
+                            Save Changes
+                        </button>
+                    </div>
+                </div>
+
+                <input type="hidden" name="id" value="{{ active_provider.id }}">
+
+                <div class="grid grid-cols-2 gap-6 mb-6">
+                    <div class="flex flex-col gap-1">
+                        <label class="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Provider Name</label>
+                        <input type="text" name="name" value="{{ active_provider.name }}"
+                               class="h-9 border border-gray-300 dark:border-gray-700 px-3 py-1 text-xs bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500 rounded-sm">
+                    </div>
+                    <div class="flex flex-col gap-1">
+                        <label class="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Provider Type</label>
+                        <input type="text" name="provider_type" value="{{ active_provider.provider_type or '' }}" 
+                               class="h-9 border border-gray-300 dark:border-gray-700 px-3 py-1 text-xs bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500 rounded-sm">
+                    </div>
+                    <div class="flex flex-col gap-1">
+                        <label class="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Base URL</label>
+                        <input type="text" name="base_url" value="{{ active_provider.base_url or '' }}" 
+                               class="h-9 border border-gray-300 dark:border-gray-700 px-3 py-1 text-xs bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500 rounded-sm">
+                    </div>
+                </div>
+
+                <div class="flex flex-col gap-1 mb-8">
+                    <label class="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Supported Models</label>
+                    <div class="flex gap-2">
+                        <div class="flex-1">
+                            <div id="model-list" class="flex flex-wrap gap-1.5"></div>
+                            <input type="hidden" name="models" value="{{ active_provider.models or '' }}">
+                            <script>renderModelList();</script>
+                        </div>
+                        <button type="button" class="h-9 px-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 text-xs font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-sm flex items-center gap-1"
+                                onclick="renderModelList(); syncModels('{{ active_provider.id }}')">
+                            🔄 Sync
+                        </button>
+                    </div>
+                </div>
+
+                <div class="space-y-3">
+                    <div class="flex justify-between items-center">
+                        <label class="text-[10px] font-bold text-gray-400 uppercase tracking-widest">API Keys & Priority</label>
+                        <button type="button" class="text-[10px] px-2 py-0.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 text-gray-600 dark:text-gray-400 rounded-sm hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                                onclick="addProviderKey('{{ active_provider.id }}')">
+                            + Add Key
+                        </button>
+                    </div>
+                    <table class="w-full text-xs border-collapse">
+                        <thead class="bg-gray-50 dark:bg-gray-800 text-gray-500 dark:text-gray-400 text-left">
+                            <tr>
+                                <th class="p-2 border border-gray-200 dark:border-gray-700">Key</th>
+                                <th class="p-2 border border-gray-200 dark:border-gray-700 w-20 text-center">Prio</th>
+                                <th class="p-2 border border-gray-200 dark:border-gray-700 w-12 text-right">Act</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for key in active_provider.api_keys %}
+                            <tr class="bg-white dark:bg-gray-900">
+                                <td class="p-1 border border-gray-200 dark:border-gray-700">
+                                    <input type="password" name="keys[{{ loop.index0 }}].api_key" value="{{ key.api_key }}" 
+                                           class="w-full border-none p-1 bg-transparent focus:ring-0 text-xs text-gray-900 dark:text-gray-100">
+                                </td>
+                                <td class="p-1 border border-gray-200 dark:border-gray-700 text-center">
+                                    <input type="number" name="keys[{{ loop.index0 }}].priority" value="{{ key.priority }}" 
+                                           class="w-full border-none p-1 bg-transparent text-center text-xs text-gray-900 dark:text-gray-100">
+                                </td>
+                                <td class="p-1 border border-gray-200 dark:border-gray-700 text-right">
+                                    <button type="button" class="text-red-500 hover:text-red-700 transition-colors"
+                                            hx-post="/settings/providers/{{ active_provider.id }}/keys/{{ key.id }}/delete"
+                                            hx-target="#settings-content">
+                                        ✕
+                                    </button>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </form>
+            {% else %}
+            <!-- CREATE NEW PROVIDER FORM -->
+            <form hx-post="/settings/providers/upsert" hx-target="#settings-content" hx-indicator="#settings-indicator">
+                <div class="space-y-6">
+                    <div class="space-y-2">
+                        <h3 class="text-lg font-bold text-gray-900 dark:text-white">Create New Provider</h3>
+                        <p class="text-xs text-gray-500 dark:text-gray-400">Define a new API provider to use in your routes.</p>
+                    </div>
+
+                    <div class="space-y-4">
+                        <div class="flex flex-col gap-1">
+                            <label class="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Provider Name</label>
+                            <input type="text" name="name" required placeholder="e.g. OpenAI"
+                                   class="h-10 border border-gray-300 dark:border-gray-700 px-3 py-1 text-xs bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500 rounded-sm">
+                        </div>
+                        <div class="flex flex-col gap-1">
+                            <label class="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Provider Type</label>
+                            <input type="text" name="provider_type" placeholder="e.g. openai"
+                                   class="h-10 border border-gray-300 dark:border-gray-700 px-3 py-1 text-xs bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500 rounded-sm">
+                        </div>
+                        <div class="flex flex-col gap-1">
+                            <label class="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Base URL</label>
+                            <input type="text" name="base_url" placeholder="https://api.openai.com/v1"
+                                   class="h-10 border border-gray-300 dark:border-gray-700 px-3 py-1 text-xs bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500 rounded-sm">
+                        </div>
+                        <div class="flex flex-col gap-1">
+                            <label class="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Supported Models (CSV)</label>
+                            <input type="text" name="models" placeholder="gpt-4, gpt-3.5-turbo"
+                                   class="h-10 border border-gray-300 dark:border-gray-700 px-3 py-1 text-xs bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500 rounded-sm">
+                        </div>
+                    </div>
+
+                    <div class="flex gap-3 pt-4">
+                        <button type="submit" class="flex-1 py-2 bg-blue-600 text-white text-xs font-bold rounded-sm hover:bg-blue-700 transition-colors shadow-sm">
+                            Create Provider
+                        </button>
+                        <button type="button" class="px-4 py-2 text-xs font-semibold text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
+                                onclick="location.reload()">
+                            Cancel
+                        </button>
+                    </div>
+                </div>
+            </form>
+            {% endif %}
+        </div>
     </div>
 </div>

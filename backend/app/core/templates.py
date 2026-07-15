@@ -1,3 +1,5 @@
+import json
+
 from pathlib import Path
 
 from fastapi.templating import Jinja2Templates
@@ -35,8 +37,15 @@ def compute_resolved_fallback(
     return resolved
 
 
+def json_decode(value):
+    if isinstance(value, str):
+        return json.loads(value)
+    return value or []
+
+
 def init_jinja(env):
     env.globals["compute_resolved_fallback"] = compute_resolved_fallback
+    env.filters["json_decode"] = json_decode
 
 
 templates = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templates"))

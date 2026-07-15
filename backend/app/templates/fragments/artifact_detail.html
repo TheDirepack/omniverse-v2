@@ -1,0 +1,57 @@
+<div class="max-w-3xl mx-auto space-y-6">
+    <div class="flex justify-between items-start">
+        <div>
+            <div class="flex items-center gap-3 mb-2">
+                <span class="px-2 py-0.5 rounded-sm bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 text-[10px] font-bold uppercase">
+                    {{ art.type }}
+                </span>
+                <h2 class="text-xl font-bold text-gray-900 dark:text-white">{{ art.name or 'Unnamed Artifact' }}</h2>
+            </div>
+            <p class="text-sm text-gray-600 dark:text-gray-400 leading-relaxed">
+                {{ art.description or 'No detailed description available for this artifact.' }}
+            </p>
+        </div>
+        <div class="text-right">
+            <div class="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Confidence</div>
+            <div class="text-lg font-mono font-bold text-blue-600 dark:text-blue-400">{{ art.confidence or 'N/A' }}</div>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-2 gap-4">
+        <div class="p-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-sm">
+            <div class="text-[10px] font-bold text-gray-400 uppercase mb-1">Freshness</div>
+            <div class="text-xs text-gray-900 dark:text-gray-100">{{ art.freshness or 'Unknown' }}</div>
+        </div>
+        <div class="p-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-sm">
+            <div class="text-[10px] font-bold text-gray-400 uppercase mb-1">Verification Status</div>
+            <div class="text-xs text-gray-900 dark:text-gray-100">{{ art.verification_status }}</div>
+        </div>
+    </div>
+
+    <div class="space-y-3">
+        <h3 class="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Provenance & Evidence</h3>
+        <div class="space-y-2">
+            {% if art.evidence_refs %}
+                {% for ref in art.evidence_refs|json_decode %}
+                <div class="flex items-center justify-between p-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-sm group hover:border-blue-400 dark:hover:border-blue-600 transition-colors">
+                    <div class="flex items-center gap-3 overflow-hidden">
+                        <span class="text-xs text-gray-400 font-mono">#{{ loop.index }}</span>
+                        <a href="{{ ref.url }}" target="_blank" class="text-xs text-blue-600 dark:text-blue-400 hover:underline truncate">
+                            {{ ref.url }}
+                        </a>
+                    </div>
+                    <button class="opacity-0 group-hover:opacity-100 p-1 text-gray-400 hover:text-blue-500 transition-all" 
+                            hx-get="/provenance/claim/{{ art.id }}" 
+                             hx-target="#artifact-detail">
+                        🔍
+                    </button>
+                </div>
+                {% endfor %}
+            {% else %}
+                <div class="p-4 text-center text-xs text-gray-400 italic border border-dashed border-gray-300 dark:border-gray-700 rounded-sm">
+                    No evidence references found for this artifact.
+                </div>
+            {% endif %}
+        </div>
+    </div>
+</div>

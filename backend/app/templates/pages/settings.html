@@ -3,52 +3,143 @@
 {% block title %}Settings - Omniverse{% endblock %}
 
 {% block content %}
-<div class="space-y-6">
-    <div class="flex justify-between items-center">
-        <h1 class="text-3xl font-bold">Settings</h1>
+<div class="flex flex-col h-full overflow-hidden bg-white dark:bg-gray-950">
+    <!-- TAB BAR -->
+    <div class="h-11 border-b border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 flex items-center px-4 gap-1 shrink-0" role="tablist">
+        <button role="tab" 
+                id="tab-general"
+                class="tab-btn px-4 py-1 text-xs font-semibold border-b-2 transition-colors rounded-t-sm {% if request.url.path == '/settings' or request.url.path == '/settings/' %}border-blue-600 text-blue-600 dark:text-blue-400{% else %}border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200{% endif %}"
+                hx-get="{{ url_for('settings_tab_general') }}"
+                hx-target="#settings-content"
+                hx-swap="innerHTML"
+                hx-indicator="#settings-indicator"
+                onclick="setActiveTab(this)">
+            General
+        </button>
+        <button role="tab" 
+                id="tab-providers"
+                class="tab-btn px-4 py-1 text-xs font-medium border-b-2 transition-colors rounded-t-sm {% if '/settings/tab/providers' in request.url.path %}border-blue-600 text-blue-600 dark:text-blue-400{% else %}border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200{% endif %}"
+                hx-get="{{ url_for('settings_tab_providers') }}"
+                hx-target="#settings-content"
+                hx-swap="innerHTML"
+                hx-indicator="#settings-indicator"
+                onclick="setActiveTab(this)">
+            Providers
+        </button>
+        <button role="tab" 
+                id="tab-routes"
+                class="tab-btn px-4 py-1 text-xs font-medium border-b-2 transition-colors rounded-t-sm {% if '/settings/tab/routes' in request.url.path %}border-blue-600 text-blue-600 dark:text-blue-400{% else %}border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200{% endif %}"
+                hx-get="{{ url_for('settings_tab_routes') }}"
+                hx-target="#settings-content"
+                hx-swap="innerHTML"
+                hx-indicator="#settings-indicator"
+                onclick="setActiveTab(this)">
+            Agent Routes
+        </button>
+        <button role="tab" 
+                id="tab-health"
+                class="tab-btn px-4 py-1 text-xs font-medium border-b-2 transition-colors rounded-t-sm {% if '/settings/tab/health' in request.url.path %}border-blue-600 text-blue-600 dark:text-blue-400{% else %}border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200{% endif %}"
+                hx-get="{{ url_for('settings_tab_health') }}"
+                hx-target="#settings-content"
+                hx-swap="innerHTML"
+                hx-indicator="#settings-indicator"
+                onclick="setActiveTab(this)">
+            Health
+        </button>
+        <div id="settings-indicator" class="htmx-indicator flex items-center ml-auto px-4">
+            <span class="animate-spin text-xs">⌛</span>
+        </div>
     </div>
 
-    <div class="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
-        <div class="flex border-b border-gray-200 dark:border-gray-700">
-            <button class="tab-btn px-6 py-3 text-sm font-medium border-b-2 border-blue-600 text-blue-600"
-                    hx-get="{{ url_for('settings_tab_general') }}"
-                    hx-target="#settings-content"
-                    hx-swap="innerHTML"
-                    hx-indicator="#settings-indicator">
-                General
-            </button>
-            <button class="tab-btn px-6 py-3 text-sm font-medium text-gray-500 hover:text-gray-700 border-b-2 border-transparent hover:border-gray-300"
-                    hx-get="{{ url_for('settings_tab_providers') }}"
-                    hx-target="#settings-content"
-                    hx-swap="innerHTML"
-                    hx-indicator="#settings-indicator">
-                Providers
-            </button>
-            <button class="tab-btn px-6 py-3 text-sm font-medium text-gray-500 hover:text-gray-700 border-b-2 border-transparent hover:border-gray-300"
-                    hx-get="{{ url_for('settings_tab_routes') }}"
-                    hx-target="#settings-content"
-                    hx-swap="innerHTML"
-                    hx-indicator="#settings-indicator">
-                Agent Routes
-            </button>
-            <button class="tab-btn px-6 py-3 text-sm font-medium text-gray-500 hover:text-gray-700 border-b-2 border-transparent hover:border-gray-300"
-                    hx-get="{{ url_for('settings_tab_health') }}"
-                    hx-target="#settings-content"
-                    hx-swap="innerHTML"
-                    hx-indicator="#settings-indicator">
-                Health
-            </button>
-            <div id="settings-indicator" class="htmx-indicator flex items-center ml-auto px-4">
-                <span class="animate-spin inline-block">⌛</span>
-            </div>
-        </div>
-
-        <div id="settings-content" class="p-6"
-             hx-get="/settings/tab/general"
-             hx-trigger="load"
-             hx-swap="innerHTML">
-            <p class="text-gray-500 dark:text-gray-400 italic">Loading...</p>
+    <!-- SETTINGS CONTENT -->
+    <div id="settings-content" class="flex-1 overflow-y-auto bg-white dark:bg-gray-950 p-4"
+         hx-get="/settings/tab/general"
+         hx-trigger="load"
+         hx-swap="innerHTML">
+        <div class="flex items-center justify-center h-32 text-gray-400 dark:text-gray-600 italic text-xs">
+            Loading configuration...
         </div>
     </div>
 </div>
+
+<script>
+    function setActiveTab(element) {
+        document.querySelectorAll('.tab-btn').forEach(btn => {
+            btn.classList.remove('border-blue-600', 'text-blue-600', 'dark:text-blue-400');
+            btn.classList.add('border-transparent', 'text-gray-500', 'dark:text-gray-400');
+        });
+        element.classList.remove('border-transparent', 'text-gray-500', 'dark:text-gray-400');
+        element.classList.add('border-blue-600', 'text-blue-600', 'dark:text-blue-400');
+    }
+
+    function selectProvider(providerId) {
+        htmx.ajax('GET', `/settings/providers/${providerId}`, {
+            target: '#provider-inspector',
+            swap: 'innerHTML'
+        });
+    }
+
+    function selectRoute(routeId) {
+        htmx.ajax('GET', `/settings/routes/${routeId}`, {
+            target: '#route-editor',
+            swap: 'innerHTML'
+        });
+    }
+
+    function syncModels(providerId) {
+        const modelsInput = document.querySelector('input[name="models"]');
+        if (!modelsInput) return;
+        modelsInput.value = 'Syncing...';
+        renderModelList();
+        fetch('/settings/providers/' + providerId + '/sync', { method: 'POST' })
+            .then(r => r.text())
+            .then(text => { modelsInput.value = text; renderModelList(); })
+            .catch(() => { modelsInput.value = 'Sync failed'; renderModelList(); });
+    }
+
+    function renderModelList() {
+        const hidden = document.querySelector('input[name="models"]');
+        const container = document.getElementById('model-list');
+        if (!hidden || !container) return;
+        const models = hidden.value ? hidden.value.split(',').map(s => s.trim()).filter(Boolean) : [];
+        container.innerHTML = models.map((m, i) =>
+            `<span class="inline-flex items-center gap-1 px-2 py-0.5 bg-gray-100 dark:bg-gray-800 rounded text-xs border border-gray-300 dark:border-gray-700">
+                ${m}
+                <button type="button" onclick="removeModel(${i})" class="text-red-500 hover:text-red-700 leading-none">&times;</button>
+            </span>`
+        ).join('') +
+        `<button type="button" onclick="addModel()" class="px-2 py-0.5 border border-dashed border-gray-400 dark:border-gray-600 rounded text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300">+ Add</button>`;
+    }
+
+    function addModel() {
+        const name = prompt('Enter model name:');
+        if (!name || !name.trim()) return;
+        const hidden = document.querySelector('input[name="models"]');
+        if (!hidden) return;
+        const models = hidden.value ? hidden.value.split(',').map(s => s.trim()).filter(Boolean) : [];
+        models.push(name.trim());
+        hidden.value = models.join(', ');
+        renderModelList();
+    }
+
+    function removeModel(index) {
+        const hidden = document.querySelector('input[name="models"]');
+        if (!hidden) return;
+        const models = hidden.value ? hidden.value.split(',').map(s => s.trim()).filter(Boolean) : [];
+        models.splice(index, 1);
+        hidden.value = models.join(', ');
+        renderModelList();
+    }
+
+    function addProviderKey(providerId) {
+        const apiKey = prompt('Enter API key:');
+        if (!apiKey) return;
+        const priority = prompt('Enter priority (0-10):', '0') || '0';
+        htmx.ajax('POST', `/settings/providers/${providerId}/keys`, {
+            target: '#settings-content',
+            swap: 'innerHTML',
+            values: { api_key: apiKey, priority: priority }
+        });
+    }
+</script>
 {% endblock %}

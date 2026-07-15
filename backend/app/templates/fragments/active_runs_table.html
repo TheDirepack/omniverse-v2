@@ -1,0 +1,46 @@
+<table class="w-full text-left text-xs border-collapse">
+    <thead class="bg-gray-50 dark:bg-gray-800 text-gray-500 dark:text-gray-400 uppercase font-semibold border-b border-gray-200 dark:border-gray-700">
+        <tr>
+            <th class="px-4 py-2 font-medium">World Name</th>
+            <th class="px-4 py-2 font-medium">Focus</th>
+            <th class="px-4 py-2 font-medium w-48">Progress</th>
+            <th class="px-4 py-2 font-medium w-16 text-right">%</th>
+            <th class="px-4 py-2 font-medium text-center">Actions</th>
+        </tr>
+    </thead>
+    <tbody class="divide-y divide-gray-200 dark:divide-gray-700 bg-white dark:bg-gray-950">
+        {% for run in runs %}
+        <tr class="hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
+            <td class="px-4 py-2 font-medium truncate max-w-xs text-gray-900 dark:text-gray-100">{{ run.world }}</td>
+            <td class="px-4 py-2 text-gray-600 dark:text-gray-400 truncate max-w-xs">{{ run.focus }}</td>
+            <td class="px-4 py-2">
+                <div class="w-full bg-gray-200 dark:bg-gray-700 h-1.5 rounded-full overflow-hidden">
+                    <div class="bg-[#2563eb] h-full transition-all duration-500" style="width: {{ run.progress }}%"></div>
+                </div>
+            </td>
+            <td class="px-4 py-2 text-right text-gray-500 dark:text-gray-400">{{ run.progress }}%</td>
+            <td class="px-4 py-2 text-center space-x-2">
+                <button hx-get="/api/runs/{{ run.run_id }}" 
+                        hx-target="body"
+                        class="px-2 py-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition text-[10px] font-bold uppercase tracking-tighter">
+                    Logs
+                </button>
+                <button hx-post="/api/runs/abort" 
+                        hx-vals='{"runId": "{{ run.run_id }}"}'
+                        hx-target="#execution-table"
+                        hx-trigger="click"
+                        class="px-2 py-1 bg-white dark:bg-gray-800 border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 transition text-[10px] font-bold uppercase tracking-tighter">
+                    Abort
+                </button>
+            </td>
+        </tr>
+        {% endfor %}
+        {% if not runs %}
+        <tr>
+            <td colspan="5" class="px-4 py-12 text-center text-gray-400 dark:text-gray-500 italic">
+                No active research runs currently executing.
+            </td>
+        </tr>
+        {% endif %}
+    </tbody>
+</table>

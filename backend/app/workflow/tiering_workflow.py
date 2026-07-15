@@ -46,7 +46,7 @@ Correction Queue.
         f"Proposed Tier System:\n{tier_system_definition}\n\nDataset:\n{dataset}"
     )
 
-    audit_result, _ = await run_agent(
+    _success, audit_result, _ = await run_agent(
         agent_name="Logic Auditor",
         system_prompt=critic_system_prompt,
         user_prompt=critic_user_prompt,
@@ -317,7 +317,7 @@ async def architecture_node(state: dict[str, Any]) -> dict[str, Any]:
         amendment_prompt = get_rubric_amendment_prompt(
             rubric_text, dataset, anomaly_descriptions
         )
-        amended_definition, _ = await run_agent(
+        _success, amended_definition, _ = await run_agent(
             agent_name="Tier Architect",
             system_prompt=amendment_prompt["system"],
             user_prompt=amendment_prompt["user"],

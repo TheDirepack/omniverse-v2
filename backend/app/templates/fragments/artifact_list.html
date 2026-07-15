@@ -1,0 +1,21 @@
+<div class="divide-y divide-gray-100 dark:divide-gray-800">
+    {% for art in artifacts %}
+    <div class="p-3 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors border-l-4 border-l-transparent hover:border-l-blue-600"
+         hx-get="/api/artifacts/{{ art.id }}" 
+         hx-target="#artifact-detail">
+        <div class="flex justify-between items-start mb-1">
+            <span class="px-1 py-0.5 rounded-sm bg-blue-50 text-blue-600 dark:bg-blue-900/20 dark:text-blue-400 text-[9px] font-bold uppercase">
+                {{ art.type }}
+            </span>
+            <span class="text-[10px] font-mono text-gray-400">{{ art.confidence or '?' }}</span>
+        </div>
+        <div class="text-xs font-semibold text-gray-900 dark:text-gray-100 truncate">{{ art.name or 'Unnamed Artifact' }}</div>
+        <div class="text-[10px] text-gray-500 dark:text-gray-400 truncate">{{ art.description or 'No description available.' }}</div>
+    </div>
+    {% endfor %}
+    {% if not artifacts %}
+    <div class="p-8 text-center text-xs text-gray-400 italic">
+        No artifacts found for this world.
+    </div>
+    {% endif %}
+</div>

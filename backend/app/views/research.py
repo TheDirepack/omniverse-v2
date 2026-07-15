@@ -46,8 +46,10 @@ async def research_page(request: Request):
     if not world:
         return RedirectResponse(url="/research/choose-world", status_code=302)
 
+    worlds = uni_service.get_all_universes(limit=5000)
+
     template = templates.env.get_template("pages/research.html")
-    return HTMLResponse(content=template.render(request=request, world=world))
+    return HTMLResponse(content=template.render(request=request, world=world, worlds=worlds))
 
 
 @router.get("/choose-world", response_class=HTMLResponse)

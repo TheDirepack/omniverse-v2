@@ -97,7 +97,7 @@ class TestLogsPage:
         r = api_client.get("/logs/list", params={"tool": "webSearch"})
         assert r.status_code == 200
 
-    def test_logs_list_excludes_system_reminder(self, api_client, _clean_db):
+    def test_logs_list_excludes_system_reminder(self, api_client, clean_db):
         # Create a log entry to ensure the endpoint processes it
         r = api_client.get("/logs/list", params={"limit": 5})
         assert r.status_code == 200

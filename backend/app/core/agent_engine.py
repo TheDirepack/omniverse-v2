@@ -1,5 +1,5 @@
-import json
 import asyncio
+import json
 from enum import Enum, auto
 from typing import Any
 
@@ -33,7 +33,7 @@ TOOL_CAPABILITIES = {
     "updateArtifact": Capability.WRITE_MAIN_DB,
     "loadNotebookEntry": Capability.READ_WORKSPACE,
     "saveNotebookEntry": Capability.WRITE_WORKSPACE,
-    "deleteNotebookArtifact": Capability.WRITE_WORKSPACE,
+    "deleteNotebookEntry": Capability.WRITE_WORKSPACE,
     "webSearch": Capability.ACQUISITION,
     "fetchPage": Capability.ACQUISITION,
     "ocrImage": Capability.ACQUISITION,
@@ -42,8 +42,7 @@ TOOL_CAPABILITIES = {
 
 
 async def _read_page_cached(url: str) -> tuple[str, str]:
-    """
-    Read page content through AcquisitionCache (persistent, content-hash keyed, shared globally).
+    """Read page content through AcquisitionCache (persistent, content-hash keyed, shared globally).
     Returns (content_or_error_message, status).
     """
     from app.core.importers.web_page_importer import WebPageImporter
@@ -176,7 +175,6 @@ async def _execute_tool(
     return f"Error: Tool {name} not found."
 
 
-
 async def run_agent(
     agent_name: str,
     system_prompt: str,
@@ -189,16 +187,36 @@ async def run_agent(
     min_turns: int = 0,
     max_retries: int = 1,
     provider_id: int | None = None,
-    history: list[dict[str, str]] | None = None,
+    history: list[dict[str, Any]] | None = None,
     required_capabilities: set[Capability] | None = None,
 ) -> tuple[bool, str, list[dict[str, Any]]]:
-    """
-    Runs a tool-using agent loop.
+    """Runs a tool-using agent loop.
     Uses global AcquisitionCache (persistent, content-hash keyed, shared across runs).
     Returns (success, final_answer, full_messages_history).
     """
-    from app.core.runtime_state import set_current_run_id
+    from app.core.runtime_state import (
+        get_current_summary,
+        set_current_run_id,
+        set_current_summary,
+    )
+    from app.services.settings_service import SettingsService
+
     set_current_run_id(run_id)
+
+    # Reconfigure context manager from settings
+    settings_service = SettingsService()
+    settings = settings_service.get_all_settings().get("general_settings", {})
+    max_tokens = int(settings.get("MAX_TOKENS", 32000))
+    summary_threshold = float(settings.get("COMPRESSION_THRESHOLD", 0.8))
+    context_manager.reconfigure(max_tokens, summary_threshold)
+
+    # If we are resuming, check if there's an existing summary
+    last_summary = get_current_summary()
+    if last_summary:
+        # If we have a summary, we might want to ensure it's in the history if not already
+        # But for simplicity, we'll let the compression logic handle it or
+        # we can inject it into the system prompt if it's a new run.
+        pass
 
     # Append context pruning notice to system prompt
     system_prompt += (
@@ -207,6 +225,7 @@ async def run_agent(
         "updateArtifact, or saveNotebookEntry). Ensure you have extracted all necessary information "
         "from your sources before committing it to the database."
     )
+
 
     for attempt in range(max_retries + 1):
         model = None # Track current model for token counting
@@ -230,6 +249,21 @@ async def run_agent(
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ]
+
+        # If we are resuming, check if there's an existing summary
+        last_summary = get_current_summary()
+        if last_summary:
+            summary_found = False
+            for m in messages:
+                if m.get("role") == "system" and last_summary in m.get("content", ""):
+                    summary_found = True
+                    break
+            if not summary_found:
+                if messages and messages[0]["role"] == "system":
+                    messages.insert(1, {"role": "system", "content": f"Context Summary of previous turns:\n{last_summary}"})
+                else:
+                    messages.insert(0, {"role": "system", "content": f"Context Summary of previous turns:\n{last_summary}"})
+
 
         # Filter tools and prepare litellm-compatible tool definitions
         disabled_tools = set()
@@ -283,13 +317,16 @@ async def run_agent(
             if model:
                 current_tokens = context_manager.count_tokens(messages, model)
                 if current_tokens > context_manager.max_tokens * context_manager.summary_threshold:
-                    messages = await context_manager.compress_context(
+                    messages, summary = await context_manager.compress_context(
                         messages=messages,
                         model=model,
                         router_instance=router,
                         system_prompt=system_prompt,
                         user_goal=user_prompt
                     )
+                    if summary:
+                        set_current_summary(summary)
+
 
             # Enforce minimum turns before allowing submission
             if _turn < min_turns:
@@ -487,25 +524,32 @@ async def run_agent(
                                     completed_steps.add(i)
 
                                 observation = "\\n\\n".join([o for o in plan_observations if o is not None])
-                        else:
-                            try:
-                                observation = await _execute_tool(name, args, run_id, agent_name=agent_name, model=model, key_id=key_id)
-                                tool_failures[name] = 0
-                            except Exception as e:
-                                count = tool_failures.get(name, 0) + 1
-                                tool_failures[name] = count
-                                failure_type = _classify_failure(e)
-                                if failure_type == "INFRASTRUCTURE_FAILURE":
-                                    if count == 1:
-                                        observation = f"SYSTEM ERROR in tool {name}: {e!s}. This is an infrastructure failure. If it fails again, the tool will be disabled for this run."
+                                agent_logger.log(
+                                    agent=agent_name,
+                                    event_type=AgentEventType.TOOL_RES,
+                                    content=f"Observation from executePlan: {observation}",
+                                    model=model,
+                                    key_id=key_id,
+                                )
+                            else:
+                                try:
+                                    observation = await _execute_tool(name, args, run_id, agent_name=agent_name, model=model, key_id=key_id)
+                                    tool_failures[name] = 0
+                                except Exception as e:
+                                    count = tool_failures.get(name, 0) + 1
+                                    tool_failures[name] = count
+                                    failure_type = _classify_failure(e)
+                                    if failure_type == "INFRASTRUCTURE_FAILURE":
+                                        if count == 1:
+                                            observation = f"SYSTEM ERROR in tool {name}: {e!s}. This is an infrastructure failure. If it fails again, the tool will be disabled for this run."
+                                        else:
+                                            disabled_tools.add(name)
+                                            observation = f"CRITICAL FAILURE in tool {name}: {e!s}. Tool has been disabled for the remainder of this run due to repeated infrastructure errors."
                                     else:
-                                        disabled_tools.add(name)
-                                        observation = f"CRITICAL FAILURE in tool {name}: {e!s}. Tool has been disabled for the remainder of this run due to repeated infrastructure errors."
-                                else:
-                                    if count < 3:
-                                        observation = f"Error executing tool {name}: {e!s}. Please analyze the error, correct your parameters, and try again. (Attempt {count}/3)"
-                                    else:
-                                        observation = f"Tool {name} has failed {count} times consecutively. It may be fundamentally broken or the requested operation is impossible. Please attempt a different approach or use an alternative tool."
+                                        if count < 3:
+                                            observation = f"Error executing tool {name}: {e!s}. Please analyze the error, correct your parameters, and try again. (Attempt {count}/3)"
+                                        else:
+                                            observation = f"Tool {name} has failed {count} times consecutively. It may be fundamentally broken or the requested operation is impossible. Please attempt a different approach or use an alternative tool."
 
                             messages.append(
                                 {
@@ -533,9 +577,23 @@ async def run_agent(
                             }
                         )
 
-                    
+
                     # Prune raw observations if a writing tool was used
                     messages = context_manager.prune_raw_observations(messages, name)
+
+                    # If it's a notebook writing tool, also trigger compression
+                    if name == "saveNotebookEntry" and model:
+                        current_tokens = context_manager.count_tokens(messages, model)
+                        if current_tokens > context_manager.max_tokens * context_manager.summary_threshold:
+                            messages, summary = await context_manager.compress_context(
+                                messages=messages,
+                                model=model,
+                                router_instance=router,
+                                system_prompt=system_prompt,
+                                user_goal=user_prompt
+                            )
+                            if summary:
+                                set_current_summary(summary)
                     continue
 
                 if not content:
@@ -555,4 +613,3 @@ async def run_agent(
         return (False, "MAX_TURNS_REACHED", messages)
 
     return (False, "Error: Max turns reached without submission.", messages)
-

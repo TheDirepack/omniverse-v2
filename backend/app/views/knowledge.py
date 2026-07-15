@@ -2,32 +2,66 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import HTMLResponse
-from sqlmodel import Session, select
+from sqlmodel import Session, select, func
 
 from app.core.dependencies import get_main_session, get_universe_service
 from app.core.templates import templates
-from app.db.schema import Artifact, ArtifactRelation
+from app.db.schema import Artifact, ArtifactRelation, Universe
 from app.services.universe_service import UniverseService
 
 router = APIRouter(tags=["knowledge_views"])
 
 @router.get("/", response_class=HTMLResponse)
-async def knowledge_page(request: Request):
+async def knowledge_page(request: Request, uni_service: Annotated[UniverseService, Depends(get_universe_service)]):
+    active_world_id = request.cookies.get("active_world_id")
+    current_world = None
+    if active_world_id:
+        current_world = uni_service.get_universe_by_uuid(active_world_id)
+
+    worlds = uni_service.get_all_universes(limit=5000)
+
     template = templates.env.get_template("pages/knowledge.html")
-    return HTMLResponse(content=template.render(request=request))
+    return HTMLResponse(content=template.render(request=request, current_world=current_world, worlds=worlds))
 
 @router.get("/worlds", response_class=HTMLResponse)
 async def list_worlds(
     request: Request,
+    session: Annotated[Session, Depends(get_main_session)],
     uni_service: Annotated[UniverseService, Depends(get_universe_service)],
     q: str = Query(default=""),
-    limit: int = 100,
+    has_artifacts: bool = Query(default=False),
+    limit: int = 5000,
     offset: int = 0,
 ):
     worlds = uni_service.get_all_universes(limit=limit, offset=offset)
-    filtered = uni_service.filter_universes(q=q)
-    template = templates.env.get_template("fragments/world_row.html")
-    return HTMLResponse(content=template.render(request=request, worlds=filtered))
+
+    if q:
+        worlds = [w for w in worlds if q.lower() in (w.name or "").lower()]
+
+    world_ids = [w.id for w in worlds]
+    if not world_ids:
+        return HTMLResponse(content=templates.env.get_template("fragments/world_list.html").render(request=request, worlds=[], selected_world_id=None))
+
+    counts_query = select(Artifact.universe_id, func.count(Artifact.id)).where(
+        Artifact.universe_id.in_(world_ids)
+    ).group_by(Artifact.universe_id)
+    counts = session.exec(counts_query).all()
+    artifact_counts = dict(counts)
+
+    result = []
+    for w in worlds:
+        count = artifact_counts.get(w.id, 0)
+        if has_artifacts and count == 0:
+            continue
+        result.append({
+            "id": w.id,
+            "name": w.name,
+            "franchise": getattr(w, "franchise", None),
+            "artifact_count": count,
+        })
+
+    template = templates.env.get_template("fragments/world_list.html")
+    return HTMLResponse(content=template.render(request=request, worlds=result, selected_world_id=None))
 
 @router.get("/worlds/{world_id}", response_class=HTMLResponse)
 async def world_detail(

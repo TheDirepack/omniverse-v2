@@ -5,7 +5,7 @@ from pydantic import BaseModel
 from sqlmodel import Session
 
 from app.core.context import set_current_universe
-from app.core.dependencies import get_unconfirmed_session
+from app.core.dependencies import get_notebook_session
 
 router = APIRouter(prefix="/unconfirmed", tags=["unconfirmed"])
 
@@ -16,6 +16,7 @@ class NotebookEntryPayload(BaseModel):
     details: str | None = None
     kind: str = "Observation"
     priority: int = 0
+    entry_id: int | None = None
 
 
 class NotebookEntryBatchPayload(BaseModel):
@@ -26,7 +27,7 @@ class NotebookEntryBatchPayload(BaseModel):
 @router.post("/entries")
 async def save_notebook_entries(
     payload: NotebookEntryBatchPayload,
-    session: Session = Depends(get_unconfirmed_session),
+    session: Session = Depends(get_notebook_session),
 ):
     set_current_universe(payload.universe_name)
 
@@ -35,6 +36,7 @@ async def save_notebook_entries(
     results = []
     for item in payload.items:
         res = await tool_save_notebook_entry({
+            "entry_id": item.entry_id,
             "title": item.title,
             "summary": item.summary,
             "details": item.details,
@@ -47,11 +49,11 @@ async def save_notebook_entries(
 
 
 @router.delete("/entries/{entry_id}")
-async def delete_notebook_entry(entry_id: int, session: Session = Depends(get_unconfirmed_session)):
-    from app.core.tools import tool_delete_unconfirmed_artifact
+async def delete_notebook_entry(entry_id: int, session: Session = Depends(get_notebook_session)):
+    from app.core.tools import tool_delete_notebook_entry
 
-    args = {"artifact_id": entry_id}
-    result = await tool_delete_unconfirmed_artifact(args)
+    args = {"entry_id": entry_id}
+    result = await tool_delete_notebook_entry(args)
 
     if "Error" in result:
         raise HTTPException(status_code=404, detail=result)

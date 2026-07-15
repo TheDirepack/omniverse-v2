@@ -31,7 +31,7 @@ async def summarize_universe(universe_id: int, run_id: str) -> str:
 
     prompt = get_summary_prompt(universe.name, structured_context)
 
-    summary, _ = await run_agent(
+    _success, summary, _ = await run_agent(
         agent_name="Universe Chronicler",
         system_prompt=prompt["system"],
         user_prompt=prompt["user"],

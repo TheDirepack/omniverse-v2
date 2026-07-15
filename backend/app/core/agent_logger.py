@@ -49,8 +49,7 @@ class AgentLogger:
         if not AgentLogger._is_logging_enabled():
             return
 
-        # Ensure event_type is a string for formatting
-        event_type_str = str(event_type)
+        event_type_str = event_type.value if isinstance(event_type, AgentEventType) else str(event_type)
 
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         world_name = get_current_universe() or "unknown"

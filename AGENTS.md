@@ -114,3 +114,39 @@ Global `ACTIVE_RUNS` / `ABORTED_RUNS` sets in `core/state.py`. Abort checked bet
 
 ## Maintenance Scripts
 - `cleanup_worlds_general.py`: Strips trailing parentheses from universe names in Main and Staging DBs.
+
+## Key Decisions
+
+### Knowledge Page Redesign (3-Panel Layout)
+- Replaced world dropdown + artifact list + inspector with 3-panel layout:
+  - **Left panel**: Worlds list with artifact count badges, search-by-name, "Only with artifacts" checkbox filter
+  - **Middle panel**: Artifact list for selected world (or global search results)
+  - **Right panel**: Artifact detail/inspector with provenance
+- Artifact search (`/api/artifacts/search`) and list (`/api/artifacts/list`) now support optional `universe_id` — when omitted, searches/returns all artifacts globally.
+- `WorldList` fragment (`/knowledge/worlds`) computes artifact count per world via `GROUP BY` query; supports `q` (name search) and `has_artifacts` (boolean filter) params.
+
+### Artifact API Template Fix
+- `templates.TemplateResponse()` produced Jinja2 cache errors (`TypeError: cannot use 'tuple' as a dict key`). Switched all artifact endpoints to `HTMLResponse(content=template.render(...))`.
+- Registered missing `json_decode` Jinja2 filter in `core/templates.py`.
+
+### Route Form Model Selector
+- Route form now shows all models from the selected provider as clickable toggle badges instead of a text/CSV input.
+- Provider models embedded as `window.__providers` JSON in the route form template.
+- Changing the provider dropdown auto-updates the model list.
+
+### Misc UI Fixes
+- Logs page dark mode: Added `dark:` variants to `logs.html` and `active_runs_table.html`.
+- Create World form dark mode: Added `dark:` classes to `world_create_form.html`.
+- Models badges: Added `<script>renderModelList();</script>` after hidden model inputs in `settings_providers.html`, `provider_form.html`, and `route_form.html` so badges render on initial load (not just after Sync/Add/Remove).
+- `logs_list` hardcoded URL in `log_list.html` instead of `url_for('logs_list', ...)` because FastAPI included routers don't expose route names at the app level.
+
+### Relevant Files
+- `backend/app/views/knowledge.py` — `list_worlds` endpoint with `has_artifacts` filter, artifact counts
+- `backend/app/templates/pages/knowledge.html` — 3-panel HTMX layout
+- `backend/app/templates/fragments/world_list.html` — world rows with artifact count badges
+- `backend/app/api/routers/artifacts.py` — optional `universe_id`, `HTMLResponse` pattern
+- `backend/app/services/artifact_service.py` — `universe_id=None` support
+- `backend/app/repositories/artifact.py` — `search_all_artifacts()` method
+- `backend/app/core/templates.py` — `json_decode` filter
+- `backend/app/templates/fragments/route_form.html` — provider model toggle badges
+- `backend/app/views/logs.py` — added `name="logs_list"` to route (unused, URL hardcoded instead)

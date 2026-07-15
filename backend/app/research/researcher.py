@@ -3,17 +3,17 @@ import json
 from typing import Any
 
 from app.agents.prompts import get_critic_prompt, get_researcher_prompt
+from app.core.agent_config import get_tools_for_agent
 from app.core.agent_engine import Capability, run_agent
 from app.core.context import set_current_universe
 from app.core.domain import ResearchTarget
 from app.core.retry_handler import RetryHandler
+from app.core.runtime_state import is_aborted
 from app.core.validation import audit_success
 from app.core.validators import validate_research_json
-from app.core.runtime_state import is_aborted
-from app.core.agent_config import get_tools_for_agent
 from app.services.execution_service import ExecutionService
-from app.services.research_workspace import WorkspaceService
 from app.services.knowledge_retriever import KnowledgeRetrieverService
+from app.services.research_workspace import WorkspaceService
 from app.services.settings_service import SettingsService
 from app.services.tiering_service import TieringService
 from app.services.universe_service import UniverseService
@@ -249,6 +249,13 @@ class WorldResearcher:
         if research_queue:
             user_prompt += f"\n\nLEADS: {research_queue}\nPrioritize these."
 
+        max_turns_setting = self.settings_service.get_setting("MAX_RESEARCH_TURNS")
+        max_turns = (
+            int(max_turns_setting.value)
+            if max_turns_setting and max_turns_setting.value
+            else 50
+        )
+
         min_turns_setting = self.settings_service.get_setting("MIN_RESEARCH_TURNS")
         min_turns = (
             int(min_turns_setting.value)
@@ -263,7 +270,9 @@ class WorldResearcher:
             step=f"Research (Attempt {i})",
             run_id=self.run_id,
             tools_names=researcher_tools,
-            max_turns=min_turns,
+            submit_tool_name="submit_research",
+            max_turns=max_turns,
+            min_turns=min_turns,
             history=loop_history,
             required_capabilities={
                 Capability.READ_MAIN_DB,

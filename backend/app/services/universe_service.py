@@ -189,6 +189,7 @@ class UniverseService:
                     session.add(rel)
             
             session.commit()
+            session.refresh(universe)
             return universe
         finally:
             if not self.session:
@@ -303,11 +304,11 @@ class UniverseService:
                 similarity = self._name_similarity(name_lower, w_name_lower)
                 if similarity >= threshold:
                     candidates.append({
-                         "id": w.id,
-                         "uuid": w.uuid,
-                         "name": w.name,
-                         "similarity": similarity,
-                     })
+                        "id": w.id,
+                        "uuid": w.uuid,
+                        "name": w.name,
+                        "similarity": similarity,
+                    })
 
             return sorted(candidates, key=lambda x: x["similarity"], reverse=True)
         finally:
@@ -471,8 +472,6 @@ class UniverseService:
             if not self.session:
                 session.close()
 
-
-
     def mark_explored(self, universe_id: int):
         session = self.session or Session(engine)
         try:
@@ -555,7 +554,7 @@ class UniverseService:
                 ids = [int(i) for i in universe_ids.split(",") if i.strip().isdigit()]
                 if ids:
                     query = query.where(ArtifactRelation.universe_id.in_(ids))
-
+            
             if fields:
                 valid_fields = [f for f in fields if hasattr(ArtifactRelation, f)]
                 proj_fields = [getattr(ArtifactRelation, f) for f in valid_fields]
@@ -569,7 +568,7 @@ class UniverseService:
                         ]
                         if ids:
                             query = query.where(ArtifactRelation.universe_id.in_(ids))
-
+            
             results = session.exec(query.offset(offset).limit(limit)).all()
             if fields:
                 valid_fields = [f for f in fields if hasattr(ArtifactRelation, f)]
@@ -579,11 +578,11 @@ class UniverseService:
                     else {f: getattr(r, f, None) for f in valid_fields}
                     for r in results
                 ]
+
             return results
         finally:
             if not self.session:
                 session.close()
-
 
     def update_summary(self, universe_id: int, summary: str):
         session = self.session or Session(engine)
@@ -659,7 +658,6 @@ class UniverseService:
             # Cascading cleanup to prevent IntegrityError
             # Order: Relations -> Artifacts -> WorldTier
             # -> Anomaly -> Relation -> EvidenceChunk -> Evidence -> Universe
-
             # 1. ArtifactRelations and Artifacts
             session.exec(
                 delete(ArtifactRelation).where(ArtifactRelation.universe_id == universe_id)
@@ -710,3 +708,25 @@ class UniverseService:
         if self._repo and not self.session:
             self._repo.session.close()
             self._repo = None
+
+    def get_universe_metadata(self, universe_id: int) -> dict[str, str | None]:
+        session = self.session or Session(engine)
+        try:
+            from app.db.schema import Artifact
+            from sqlmodel import select
+            stmt = select(Artifact).where(Artifact.universe_id == universe_id)
+            artifacts = session.exec(stmt).all()
+            
+            metadata = {
+                "franchise": None,
+                "continuity": None,
+                "era": None,
+                "category": None,
+            }
+            for a in artifacts:
+                if a.type in metadata:
+                    metadata[a.type] = a.name
+            return metadata
+        finally:
+            if not self.session:
+                session.close()

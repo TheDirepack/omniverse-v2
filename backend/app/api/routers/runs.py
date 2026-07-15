@@ -74,12 +74,13 @@ async def run_pipeline_in_background(run_id: str, universe_uuids: list[str]):
     for uuid_val in universe_uuids:
         u = uni_service.get_universe_by_uuid(uuid_val)
         if u:
+            metadata = uni_service.get_universe_metadata(u.id)
             target_worlds.append(ResearchTarget(
                 uuid=u.uuid,
                 name=u.name,
-                franchise=u.franchise,
-                continuity=u.continuity,
-                era=u.era,
+                franchise=metadata.get("franchise"),
+                continuity=metadata.get("continuity"),
+                era=metadata.get("era"),
                 slug=u.slug,
                 parent_id=u.parent_id
             ))
@@ -131,12 +132,13 @@ async def run_focused_search_in_background(
     for uuid_val in universe_uuids:
         u = uni_service.get_universe_by_uuid(uuid_val)
         if u:
+            metadata = uni_service.get_universe_metadata(u.id)
             target_worlds.append(ResearchTarget(
                 uuid=u.uuid,
                 name=u.name,
-                franchise=u.franchise,
-                continuity=u.continuity,
-                era=u.era,
+                franchise=metadata.get("franchise"),
+                continuity=metadata.get("continuity"),
+                era=metadata.get("era"),
                 slug=u.slug,
                 parent_id=u.parent_id
             ))
@@ -167,8 +169,6 @@ async def run_focused_search_in_background(
             RunPhase.FAILED,
             {"error": str(e)},
         )
-
-
 
     finally:
         await remove_run(run_id)
@@ -237,7 +237,6 @@ async def run_extrapolation_in_background(run_id: str, target_worlds: list[str])
             RunPhase.FAILED,
             {"error": str(e)},
         )
-
 
     finally:
         await remove_run(run_id)
@@ -338,16 +337,100 @@ def focused_search(payload: FocusedSearchPayload, background_tasks: BackgroundTa
 
 
 @router.post("/abort")
-async def abort_run_endpoint(payload: AbortRunPayload):
-    run_id = payload.run_id
+async def abort_run_endpoint(request: Request):
+    run_id = None
+    try:
+        body = await request.json()
+        run_id = body.get("runId") or body.get("run_id") or body.get("runid")
+    except Exception:
+        try:
+            form = await request.form()
+            run_id = form.get("runId") or form.get("run_id") or form.get("runid")
+        except Exception:
+            pass
+
+    if not run_id:
+        raise HTTPException(status_code=422, detail="Missing run_id")
+
     await abort_run(run_id)
     exec_service = ExecutionService()
     exec_service.log_transition(
         run_id, "Manager", "Abort requested", RunPhase.ABORT_REQUESTED, {}
     )
 
-
     return {"status": "abort_requested", "run_id": run_id}
+
+
+@router.post("/abort-all")
+async def abort_all_runs():
+    from app.core.runtime_state import get_active_runs, abort_run
+    active_runs = await get_active_runs()
+    for run_id in active_runs:
+        await abort_run(run_id)
+    
+    exec_service = ExecutionService()
+    for run_id in active_runs:
+        exec_service.log_transition(
+            run_id, "Manager", "Global abort requested", RunPhase.ABORT_REQUESTED, {}
+        )
+    
+    return {"status": "all_aborted", "count": len(active_runs)}
+
+
+@router.get("/active-detailed")
+async def get_active_runs_detailed(request: Request, filter: str | None = None):
+    from app.core.runtime_state import get_active_runs
+    from sqlmodel import Session, select
+    from app.db.schema import ExecutionState
+    from app.db.session import engine
+    
+    active_ids = await get_active_runs()
+    detailed_runs = []
+    
+    with Session(engine) as session:
+        for rid in active_ids:
+            latest = session.exec(
+                select(ExecutionState)
+                .where(ExecutionState.run_id == rid)
+                .order_by(ExecutionState.created_at.desc())
+                .limit(1)
+            ).first()
+            
+            if not latest:
+                continue
+                
+            import json
+            try:
+                state = json.loads(latest.state_snapshot)
+                target_worlds = state.get("target_worlds", [])
+                world_name = ", ".join(target_worlds) if target_worlds else "Unknown"
+                focus = state.get("focused_features", ["General Research"])
+                focus_str = ", ".join(focus) if isinstance(focus, list) else str(focus)
+            except:
+                world_name = "Unknown"
+                focus_str = "Unknown"
+
+            if filter and filter.lower() not in world_name.lower() and filter.lower() not in focus_str.lower():
+                continue
+                
+            # Simple progress estimation based on phase
+            phase = latest.status
+            progress = 0
+            if phase == RunPhase.RESEARCH: progress = 30
+            elif phase == RunPhase.INTEGRATING: progress = 60
+            elif phase == RunPhase.SUMMARIZING: progress = 90
+            elif phase == RunPhase.COMPLETED: progress = 100
+            
+            detailed_runs.append({
+                "run_id": rid,
+                "world": world_name,
+                "focus": focus_str,
+                "progress": progress,
+                "status": phase
+            })
+            
+    template = templates.env.get_template("fragments/active_runs_table.html")
+    return HTMLResponse(content=template.render(request=request, runs=detailed_runs))
 
 
 @router.get("/agent-activity", response_model=AgentActivityResponse)
@@ -414,7 +497,7 @@ async def run_details(request: Request, run_id: str):
 async def run_acquisition(request: Request, run_id: str):
     from sqlmodel import Session, select
 
-    from app.db.schema import AcquisitionArtifact, WorldAcquisitionUsage
+    from app.db.notebook_schema import AcquisitionArtifact, WorldAcquisitionUsage
     from app.db.notebook_session import notebook_session_factory
 
     with Session(notebook_session_factory()) as session:
@@ -433,6 +516,7 @@ async def run_acquisition(request: Request, run_id: str):
         )
     )
 
+
 @router.get("/{run_id}/phase-details", response_class=HTMLResponse)
 async def run_phase_details(request: Request, run_id: str):
     from sqlmodel import Session, select
@@ -445,6 +529,7 @@ async def run_phase_details(request: Request, run_id: str):
             select(ExecutionState)
             .where(ExecutionState.run_id == run_id)
             .order_by(ExecutionState.created_at.desc())
+            .limit(1)
         ).first()
 
     if not last_state:
@@ -475,7 +560,6 @@ def get_file_logs(
     tool: str | None = None,
 ):
     from app.core.agent_logger import LOG_FILE
-    from app.services.settings_service import SettingsService
 
     if not LOG_FILE.exists():
         return {"logs": [], "total": 0, "has_more": False}
@@ -483,18 +567,6 @@ def get_file_logs(
         has_filters = any([filter, agent, world, model, event_type, tool])
         with LOG_FILE.open(encoding="utf-8") as f:
             lines = f.readlines()
-
-        settings_service = SettingsService()
-        hide_webfetch = settings_service.get_setting("HIDE_WEBFETCH_CONTENT")
-        hide_websearch = settings_service.get_setting("HIDE_WEBSEARCH_CONTENT")
-
-        # Normalize to boolean
-        hide_webfetch = (
-            hide_webfetch.value.lower() == "true" if hide_webfetch else False
-        )
-        hide_websearch = (
-            hide_websearch.value.lower() == "true" if hide_websearch else False
-        )
 
         results = []
         for line in lines:
@@ -512,16 +584,8 @@ def get_file_logs(
             log_agent = parts[1].strip("[")
             log_model = parts[2].strip("[")
             log_world = parts[4].strip("[")
-            log_type = parts[5].strip("[")
+            log_type = parts[5].strip("[").removeprefix("AgentEventType.")
             log_content = " ".join(parts[6:])
-
-            if log_type == "TOOL_RES":
-                if hide_webfetch and "Observation from webFetch:" in log_content:
-                    log_content = "Observation from webFetch: [Content Hidden]"
-                    line = "] ".join(parts[:6]) + "] " + log_content
-                elif hide_websearch and "Observation from webSearch:" in log_content:
-                    log_content = "Observation from webSearch: [Content Hidden]"
-                    line = "] ".join(parts[:6]) + "] " + log_content
 
             if agent and agent.lower() not in log_agent.lower():
                 continue

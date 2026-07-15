@@ -137,6 +137,22 @@ class ResearchSource(NotebookModel, table=True):
 
 
 
+class NotebookClaim(NotebookModel, table=True):
+    __tablename__ = "notebook_claim"
+
+    id: int | None = Field(default=None, primary_key=True)
+    subject: str = Field(index=True)
+    predicate: str
+    object_val: str = Field(nullable=False)
+    context: str | None = None
+    artifact_id: int | None = None
+    reference: str | None = None
+    wiki_source: str | None = None
+    confidence: float | None = None
+    universe_id: int | None = Field(default=None, foreign_key="notebook_universe.id")
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
 class NotebookEntry(NotebookModel, table=True):
     __tablename__ = "notebook_entry"
 

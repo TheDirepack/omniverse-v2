@@ -231,6 +231,11 @@ def clean_db(session):
     return session
 
 
+@pytest.fixture
+def _clean_db(clean_db):
+    return clean_db
+
+
 @pytest.fixture(autouse=True)
 def _clear_acquisition_cache():
     from sqlmodel import Session, text

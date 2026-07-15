@@ -155,7 +155,11 @@ async def settings_provider_upsert(
     }
     result = service.upsert_provider(payload)
     data = service.get_all_settings()
-    return _render_providers(request, data, active_provider_id=result["provider"]["id"])
+    response = _render_providers(request, data, active_provider_id=result["provider"]["id"])
+    response.headers["HX-Trigger"] = (
+        '{"showToast": {"value": "Provider updated", "type": "info"}}'
+    )
+    return response
 
 
 @router.post("/providers/{provider_id}/update", response_class=HTMLResponse)

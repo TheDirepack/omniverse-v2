@@ -28,8 +28,16 @@
         </div>
         <div class="flex flex-col gap-1">
             <label class="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Provider Type</label>
-            <input type="text" name="provider_type" value="{{ active_provider.provider_type or '' }}" 
+            <select name="provider_type" onchange="updateBaseUrl(this)"
                     class="h-9 border border-gray-300 dark:border-gray-700 px-3 py-1 text-xs bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500 rounded-sm">
+                <option value="">Custom</option>
+                {% for key, val in presets.items() %}
+                <option value="{{ val.provider_type }}" {% if active_provider and active_provider.provider_type == val.provider_type %}selected{% endif %}
+                        data-base-url="{{ val.base_url }}">
+                    {{ key|capitalize }}
+                </option>
+                {% endfor %}
+            </select>
         </div>
         <div class="flex flex-col gap-1">
             <label class="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Base URL</label>
@@ -37,6 +45,17 @@
                     class="h-9 border border-gray-300 dark:border-gray-700 px-3 py-1 text-xs bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500 rounded-sm">
         </div>
     </div>
+
+<script>
+    function updateBaseUrl(select) {
+        const selectedOption = select.options[select.selectedIndex];
+        const baseUrl = selectedOption.getAttribute('data-base-url');
+        const baseUrlInput = select.form.querySelector('input[name="base_url"]');
+        if (baseUrl && baseUrlInput) {
+            baseUrlInput.value = baseUrl;
+        }
+    }
+</script>
 
     <div class="flex flex-col gap-1 mb-8">
         <label class="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Supported Models</label>
@@ -110,8 +129,15 @@
             </div>
             <div class="flex flex-col gap-1">
                 <label class="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Provider Type</label>
-                <input type="text" name="provider_type" placeholder="e.g. openai"
+                <select name="provider_type" onchange="updateBaseUrl(this)"
                         class="h-10 border border-gray-300 dark:border-gray-700 px-3 py-1 text-xs bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500 rounded-sm">
+                    <option value="">Custom</option>
+                    {% for key, val in presets.items() %}
+                    <option value="{{ val.provider_type }}" data-base-url="{{ val.base_url }}">
+                        {{ key|capitalize }}
+                    </option>
+                    {% endfor %}
+                </select>
             </div>
             <div class="flex flex-col gap-1">
                 <label class="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Base URL</label>

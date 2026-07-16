@@ -40,7 +40,7 @@ def list_artifacts(
 ):
     service = ArtifactService(session)
     artifacts = service.list_artifacts(universe_id=universe_id, limit=limit, offset=offset)
-    template = templates.env.get_template("fragments/artifact_list.html")
+    template = templates.env.get_template("components/artifact_list.html")
     return HTMLResponse(content=template.render(
         request=request, artifacts=artifacts
     ))
@@ -56,7 +56,7 @@ def search_artifacts(
 ):
     service = ArtifactService(session)
     artifacts = service.list_artifacts(universe_id=universe_id, search_query=q, limit=limit, offset=offset)
-    template = templates.env.get_template("fragments/artifact_list.html")
+    template = templates.env.get_template("components/artifact_list.html")
     return HTMLResponse(content=template.render(
         request=request, artifacts=artifacts
     ))
@@ -71,7 +71,7 @@ def get_artifact(
     art = service.get_artifact_details(artifact_id)
     if not art:
         raise HTTPException(status_code=404, detail="Artifact not found")
-    template = templates.env.get_template("fragments/artifact_detail.html")
+    template = templates.env.get_template("components/artifact_detail.html")
     return HTMLResponse(content=template.render(
         request=request, art=art
     ))

@@ -1,9 +1,23 @@
 from datetime import datetime
+from enum import Enum
 from uuid import uuid4
 
 from sqlalchemy import UniqueConstraint
 from sqlalchemy.orm import relationship
-from sqlmodel import Column, Field, ForeignKey, Relationship, SQLModel
+from sqlmodel import Column, Field, ForeignKey, SQLModel
+
+
+class ConfidenceLevel(str, Enum):
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+
+
+class FreshnessLevel(str, Enum):
+    CURRENT = "current"
+    DATED = "dated"
+    STALE = "stale"
+    UNCERTAIN = "uncertain"
 
 
 class Setting(SQLModel, table=True):
@@ -48,7 +62,7 @@ class Universe(SQLModel, table=True):
         default_factory=lambda: str(uuid4()), index=True, unique=True
     )
     slug: str | None = Field(default=None, index=True, unique=True)
-    name: str = Field(index=True)
+    name: str = Field(index=True, unique=True)
     parent_id: int | None = Field(default=None, foreign_key="universe.id")
     summary: str | None = None
     raw_data: str | None = None
@@ -107,7 +121,7 @@ class Anomaly(SQLModel, table=True):
 
 class ExecutionState(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
-    run_id: str
+    run_id: str = Field(index=True)
     node_name: str
     thought: str
     status: str
@@ -127,13 +141,17 @@ class ModelConfig(SQLModel, table=True):
 class Artifact(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     universe_id: int = Field(
-        sa_column=Column(ForeignKey("universe.id", ondelete="CASCADE"), nullable=False, index=True)
+        sa_column=Column(
+            ForeignKey("universe.id", ondelete="CASCADE"),
+            nullable=False,
+            index=True,
+        )
     )
     type: str = Field(index=True)
     name: str | None = Field(default=None, index=True)
     description: str | None = Field(default=None, index=True)
-    confidence: str | None = None
-    freshness: str | None = None
+    confidence: ConfidenceLevel | None = None
+    freshness: FreshnessLevel | None = None
     verification_status: str = Field(default="PENDING")
     evidence_refs: str = Field(default="[]", index=True)
     support_count: int = Field(default=0, index=True)
@@ -143,6 +161,15 @@ class Artifact(SQLModel, table=True):
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
+    @property
+    def evidence_refs_parsed(self) -> list[int]:
+        import json
+
+        try:
+            return json.loads(self.evidence_refs)
+        except (json.JSONDecodeError, TypeError):
+            return []
+
 
 class ArtifactRelation(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
@@ -150,10 +177,18 @@ class ArtifactRelation(SQLModel, table=True):
         sa_column=Column(ForeignKey("universe.id", ondelete="CASCADE"), nullable=False)
     )
     from_artifact_id: int = Field(
-        sa_column=Column(ForeignKey("artifact.id", ondelete="CASCADE"), nullable=False)
+        sa_column=Column(
+            ForeignKey("artifact.id", ondelete="CASCADE"),
+            nullable=False,
+            index=True,
+        )
     )
     to_artifact_id: int = Field(
-        sa_column=Column(ForeignKey("artifact.id", ondelete="CASCADE"), nullable=False)
+        sa_column=Column(
+            ForeignKey("artifact.id", ondelete="CASCADE"),
+            nullable=False,
+            index=True,
+        )
     )
     relation_type: str = Field(index=True)
     description: str | None = None

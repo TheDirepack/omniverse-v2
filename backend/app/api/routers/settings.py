@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlmodel import Session
 
@@ -60,6 +60,42 @@ def reset_candidate_health():
     service = SettingsService()
     service.reset_candidate_health()
     return {"status": "success", "message": "All candidate circuit breakers reset."}
+
+
+class ResetDbPayload(BaseModel):
+    db: str
+
+
+@router.post("/reset-db")
+def reset_database(payload: ResetDbPayload):
+    from app.db.extrapolation_session import reset_extrapolation_db
+    from app.db.notebook_session import reset_notebook_db
+    from app.db.operational_session import reset_operational_db
+    from app.db.session import reset_main_db
+    from app.db.settings_session import reset_settings_db
+
+    db_map = {
+        "main": reset_main_db,
+        "settings": reset_settings_db,
+        "operational": reset_operational_db,
+        "notebook": reset_notebook_db,
+        "extrapolation": reset_extrapolation_db,
+    }
+
+    if payload.db == "all":
+        for fn in db_map.values():
+            fn()
+    elif payload.db in db_map:
+        db_map[payload.db]()
+    else:
+        raise HTTPException(
+            status_code=400, detail=f"Unknown database: {payload.db}"
+        )
+
+    return {
+        "status": "success",
+        "message": f"Database '{payload.db}' reset successfully.",
+    }
 
 
 @router.get("/agent-names")

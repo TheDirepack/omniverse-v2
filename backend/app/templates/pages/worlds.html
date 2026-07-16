@@ -4,8 +4,19 @@
  
 {% block content %}
 <div class="space-y-6">
-    <div class="flex justify-between items-center">
-        <h1 class="text-3xl font-bold">Worlds</h1>
+    <div class="flex items-center justify-between">
+        <div>
+            <h1 class="text-3xl font-bold">Worlds</h1>
+            <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                Browse, manage, and explore individual universes. Use the <strong>Research</strong> section for bulk research operations.
+            </p>
+        </div>
+        <a href="/research" class="text-xs text-blue-600 dark:text-blue-400 hover:underline shrink-0">
+            ← Go to Research
+        </a>
+    </div>
+    <div class="bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800 rounded-sm p-3 text-xs text-amber-800 dark:text-amber-200">
+        ⚠️ This page is deprecated. All functionality has moved to <a href="/research" class="font-semibold underline">Research</a>.
     </div>
  
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -28,24 +39,41 @@
                 <h2 class="text-lg font-semibold mb-4">Manage Universes</h2>
                 <div class="flex flex-col gap-2">
                     <button class="w-full text-left px-4 py-2 rounded text-sm font-medium border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 transition"
-                            data-action="open-world-modal"
-                            data-type="import">
+                            hx-get="/worlds/import"
+                            hx-target="#world-modal-content"
+                            hx-trigger="click">
                         Import from Registry
                     </button>
                     <button class="w-full text-left px-4 py-2 rounded text-sm font-medium border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 transition"
-                            data-action="open-world-modal"
-                            data-type="create">
+                            hx-get="/worlds/create_fragment"
+                            hx-target="#world-modal-content"
+                            hx-trigger="click">
                         Create Custom Universe
                     </button>
-                    <button class="w-full text-left px-4 py-2 rounded text-sm font-medium border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 transition"
-                            data-action="open-world-modal"
-                            data-type="graph">
+                    <a href="/theory" class="block w-full text-left px-4 py-2 rounded text-sm font-medium border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 transition">
                         Explore World Graph
-                    </button>
+                    </a>
                 </div>
             </div>
         </div>
     </div>
 </div>
+
+<div id="world-modal" class="fixed inset-0 bg-black/50 flex items-center justify-center hidden z-50" onclick="if(event.target===this)this.classList.add('hidden')">
+    <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-lg w-full mx-4 p-6 max-h-[80vh] overflow-y-auto">
+        <div class="flex justify-end">
+            <button onclick="document.getElementById('world-modal').classList.add('hidden')" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">&times;</button>
+        </div>
+        <div id="world-modal-content"></div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('htmx:afterSwap', function(e) {
+    if (e.detail.target.id === 'world-modal-content') {
+        document.getElementById('world-modal').classList.remove('hidden');
+    }
+});
+</script>
 {% endblock %}
 

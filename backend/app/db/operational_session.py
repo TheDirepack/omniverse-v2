@@ -29,5 +29,11 @@ def init_operational_db():
 
 
 
+def reset_operational_db():
+    from app.db.session import _drop_all_tables
+    _drop_all_tables(operational_engine, SQLModel.metadata)
+    init_operational_db()
+
+
 def get_operational_session():
     return Session(operational_engine)

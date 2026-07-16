@@ -1,6 +1,6 @@
 from sqlmodel import Session
 
-from app.db.schema import Universe, UniverseRelation
+from app.db.schema import Artifact, Universe, UniverseRelation
 from app.db.session import engine
 
 
@@ -91,8 +91,15 @@ def test_database_worlds_filter_explored(client, clean_db):
 def test_database_worlds_filter_franchise(client, clean_db):
     session = clean_db
 
-    session.add(Universe(name="MarvelHero"))
-    session.add(Universe(name="DCHero"))
+    u1 = Universe(name="MarvelHero")
+    u2 = Universe(name="DCHero")
+    session.add(u1)
+    session.add(u2)
+    session.commit()
+    session.refresh(u1)
+    session.refresh(u2)
+    session.add(Artifact(universe_id=u1.id, type="franchise", name="Marvel"))
+    session.add(Artifact(universe_id=u2.id, type="franchise", name="DC"))
     session.commit()
 
     response = client.get("/worlds/database-worlds", params={"franchise": "Marvel"})
@@ -129,14 +136,14 @@ def test_database_worlds_delete(client, clean_db):
 
 
 def test_database_worlds_add_world(client, clean_db):
-    response = client.post("/worlds/create", json={"world_name": "NewTestWorld"})
+    response = client.post("/worlds/create", data={"name": "NewTestWorld"})
     assert response.status_code == 200
     assert "NewTestWorld" in response.text
 
 
 def test_database_worlds_add_world_with_metadata(client, clean_db):
-    response = client.post("/worlds/create", json={
-        "world_name": "FullMetaWorld",
+    response = client.post("/worlds/create", data={
+        "name": "FullMetaWorld",
         "franchise": "TestFranchise",
         "category": "TestCategory",
         "continuity": "TestContinuity",

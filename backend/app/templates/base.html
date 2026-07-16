@@ -65,28 +65,37 @@
         <aside class="w-64 h-full bg-gray-50 border-r border-gray-200 dark:bg-gray-900 dark:border-gray-800 flex flex-col shrink-0">
             <div class="p-4 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between">
                 <span class="text-xs font-black tracking-tighter uppercase text-gray-400 dark:text-gray-500">Omniverse V2</span>
-                <button onclick="toggleDarkMode()" class="p-1 rounded-sm bg-gray-200 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-300 dark:hover:bg-gray-700 transition-colors">
+                <button onclick="toggleDarkMode()" aria-label="Toggle dark mode" class="p-1 rounded-sm bg-gray-200 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-300 dark:hover:bg-gray-700 transition-colors">
                     <span class="dark:hidden">🌙</span><span class="hidden dark:inline">☀️</span>
                 </button>
             </div>
             <nav class="flex-1 p-4 space-y-1 overflow-y-auto no-scrollbar">
-                <a href="/" class="flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-sm text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-800 transition-colors">
-                    <span>🏠</span> Home
+                <a href="/" class="flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-sm transition-colors {% if current_path == '/' %}bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-semibold{% else %}text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-800{% endif %}" {% if current_path == '/' %}aria-current="page"{% endif %}>
+                    <span aria-hidden="true">🏠</span> Home
                 </a>
-                <a href="/research" class="flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-sm text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-800 transition-colors">
-                    <span>🔍</span> Research
+                <a href="/research" class="flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-sm transition-colors {% if current_path.startswith('/research') %}bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-semibold{% else %}text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-800{% endif %}" {% if current_path.startswith('/research') %}aria-current="page"{% endif %}>
+                    <span aria-hidden="true">🔍</span> Research
                 </a>
-                <a href="/knowledge" class="flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-sm text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-800 transition-colors">
-                    <span>🕸️</span> Knowledge
+                <a href="/validation" class="flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-sm transition-colors {% if current_path.startswith('/validation') %}bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-semibold{% else %}text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-800{% endif %}" {% if current_path.startswith('/validation') %}aria-current="page"{% endif %}>
+                    <span aria-hidden="true">✅</span> Validation
                 </a>
-                <a href="/logs" class="flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-sm text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-800 transition-colors">
-                    <span>📜</span> Logs
+                <a href="/knowledge" class="flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-sm transition-colors {% if current_path.startswith('/knowledge') %}bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-semibold{% else %}text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-800{% endif %}" {% if current_path.startswith('/knowledge') %}aria-current="page"{% endif %}>
+                    <span aria-hidden="true">🕸️</span> Knowledge
+                </a>
+                <a href="/theory" class="flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-sm transition-colors {% if current_path.startswith('/theory') %}bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-semibold{% else %}text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-800{% endif %}" {% if current_path.startswith('/theory') %}aria-current="page"{% endif %}>
+                    <span aria-hidden="true">⚖️</span> Theory
+                </a>
+                <a href="/flow" class="flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-sm transition-colors {% if current_path.startswith('/flow') %}bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-semibold{% else %}text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-800{% endif %}" {% if current_path.startswith('/flow') %}aria-current="page"{% endif %}>
+                    <span aria-hidden="true">🔄</span> Flow
+                </a>
+                <a href="/logs" class="flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-sm transition-colors {% if current_path.startswith('/logs') %}bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-semibold{% else %}text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-800{% endif %}" {% if current_path.startswith('/logs') %}aria-current="page"{% endif %}>
+                    <span aria-hidden="true">📜</span> Logs
                 </a>
                 <div class="pt-4 pb-2">
-                    <span class="px-3 text-[10px] font-bold uppercase tracking-widest text-gray-400 dark:text-gray-600">System</span>
+                    <h2 class="px-3 text-[10px] font-bold uppercase tracking-widest text-gray-400 dark:text-gray-600">System</h2>
                 </div>
-                <a href="/settings" class="flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-sm text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-800 transition-colors">
-                    <span>⚙️</span> Settings
+                <a href="/settings" class="flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-sm transition-colors {% if current_path.startswith('/settings') %}bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-semibold{% else %}text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-800{% endif %}" {% if current_path.startswith('/settings') %}aria-current="page"{% endif %}>
+                    <span aria-hidden="true">⚙️</span> Settings
                 </a>
             </nav>
             <div class="p-4 border-t border-gray-200 dark:border-gray-800">
@@ -99,5 +108,27 @@
             {% block content %}{% endblock %}
         </main>
     </div>
+
+    <script>
+    function showToast(message, type) {
+        var toast = document.createElement('div');
+        toast.className = 'fixed top-4 right-4 px-4 py-3 rounded-sm shadow-lg text-white text-sm z-50 transition-opacity duration-300';
+        toast.style.backgroundColor = type === 'success' ? '#16a34a' : type === 'error' ? '#dc2626' : '#2563eb';
+        toast.textContent = message;
+        document.body.appendChild(toast);
+        setTimeout(function() { toast.style.opacity = '0'; setTimeout(function() { toast.remove(); }, 300); }, 3000);
+    }
+    document.addEventListener('htmx:beforeSwap', function(evt) {
+        var trigger = evt.detail.xhr.getResponseHeader('HX-Trigger');
+        if (trigger) {
+            try {
+                var data = JSON.parse(trigger);
+                if (data.showToast) {
+                    showToast(data.showToast.value, data.showToast.type || 'info');
+                }
+            } catch(e) {}
+        }
+    });
+    </script>
 </body>
 </html>

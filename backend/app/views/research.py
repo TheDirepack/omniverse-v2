@@ -1,6 +1,4 @@
 import uuid
-from collections.abc import Sequence
-from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -9,27 +7,6 @@ from app.core.runtime_state import get_active_runs
 from app.core.templates import templates
 from app.services.research_workspace import WorkspaceService
 from app.services.universe_service import UniverseService
-
-# Remove _filter_worlds as it's now in UniverseService
-
-
-def _render_worlds(
-    request: Request,
-    worlds: Sequence[Any],
-    q: str = "",
-    explored: str = "",
-    franchise: str = "",
-    batch_started: int | None = None,
-) -> HTMLResponse:
-    uni_service = UniverseService()
-    filtered = uni_service.filter_universes(
-        worlds, q=q, explored=explored, franchise=franchise
-    )
-    template = templates.env.get_template("fragments/database_worlds.html")
-    return HTMLResponse(content=template.render(
-        request=request, worlds=filtered, q=q, explored=explored, franchise=franchise,
-        batch_started=batch_started,
-    ))
 
 router = APIRouter(tags=["research_views"])
 
@@ -49,7 +26,11 @@ async def research_page(request: Request):
     worlds = uni_service.get_all_universes(limit=5000)
 
     template = templates.env.get_template("pages/research.html")
-    return HTMLResponse(content=template.render(request=request, world=world, worlds=worlds))
+    return HTMLResponse(content=template.render(
+        request=request, world=world, worlds=worlds,
+        world_name=world.name if world else None,
+        current_path=str(request.url.path),
+    ))
 
 
 @router.get("/choose-world", response_class=HTMLResponse)
@@ -57,7 +38,9 @@ async def choose_world_page(request: Request):
     uni_service = UniverseService()
     universes = uni_service.get_all_universes(limit=5000)
     template = templates.env.get_template("pages/choose_world.html")
-    return HTMLResponse(content=template.render(request=request, universes=universes))
+    return HTMLResponse(content=template.render(
+        request=request, universes=universes, current_path=str(request.url.path)
+    ))
 
 
 
@@ -65,7 +48,7 @@ async def choose_world_page(request: Request):
 @router.get("/queue", response_class=HTMLResponse)
 async def research_queue(request: Request):
     active_run_ids = await get_active_runs()
-    template = templates.env.get_template("fragments/research_queue.html")
+    template = templates.env.get_template("components/research_queue.html")
     return HTMLResponse(
         content=template.render(request=request, active_run_ids=active_run_ids)
     )
@@ -73,7 +56,7 @@ async def research_queue(request: Request):
 
 @router.get("/focused-search", response_class=HTMLResponse)
 async def focused_search_fragment(request: Request):
-    template = templates.env.get_template("fragments/focused_search_panel.html")
+    template = templates.env.get_template("components/focused_search_panel.html")
     return HTMLResponse(content=template.render(request=request))
 
 
@@ -84,6 +67,7 @@ async def focused_search_submit(
     worlds: str = Form(...),
     features: str = Form(...),
 ):
+    # Lazy import to avoid circular dependency (runs.py imports from views)
     from app.api.routers.runs import run_focused_search_in_background
 
     world_list = [w.strip() for w in worlds.split(",") if w.strip()]
@@ -102,10 +86,37 @@ async def focused_search_submit(
     else:
         results = ["Provide at least one world and one feature."]
 
-    template = templates.env.get_template("fragments/focused_search_panel.html")
+    template = templates.env.get_template("components/focused_search_panel.html")
     return HTMLResponse(
         content=template.render(request=request, results=results)
     )
+
+
+@router.get("/results/{run_id}", response_class=HTMLResponse)
+async def research_results_page(request: Request, run_id: str):
+    from app.services.execution_service import ExecutionService
+
+    exec_service = ExecutionService()
+    states = exec_service.repo.get_logs_for_run(run_id, 0)
+    if not states:
+        from app.core.templates import render_error
+        return render_error(request, 404, f"Research run {run_id} not found")
+
+    from sqlmodel import select
+
+    from app.db.schema import Artifact
+    from app.db.session import Session, engine
+
+    with Session(engine) as session:
+        artifacts = session.exec(
+            select(Artifact).where(Artifact.run_id == run_id)
+        ).all()
+
+    template = templates.env.get_template("pages/research_results.html")
+    return HTMLResponse(content=template.render(
+        request=request, run_id=run_id, states=states, artifacts=artifacts,
+        current_path=str(request.url.path),
+    ))
 
 
 @router.get("/workspace/notebook", response_class=HTMLResponse)
@@ -122,7 +133,7 @@ async def workspace_notebook(request: Request):
     workspace_service = WorkspaceService()
     entries = workspace_service.get_notebook_index(world.uuid)
 
-    template = templates.env.get_template("fragments/research_notebook.html")
+    template = templates.env.get_template("components/research_notebook.html")
     return HTMLResponse(
         content=template.render(request=request, world=world, entries=entries)
     )
@@ -135,7 +146,7 @@ async def workspace_notebook_entry(request: Request, entry_id: int):
     if not entry:
         return HTMLResponse(content="Entry not found.", status_code=404)
 
-    template = templates.env.get_template("fragments/research_notebook_entry.html")
+    template = templates.env.get_template("components/research_notebook_entry.html")
     return HTMLResponse(content=template.render(request=request, entry=entry))
 
 
@@ -153,7 +164,7 @@ async def workspace_sources(request: Request):
     workspace_service = WorkspaceService()
     sources = workspace_service.get_sources(world.uuid)
 
-    template = templates.env.get_template("fragments/research_sources.html")
+    template = templates.env.get_template("components/research_sources.html")
     return HTMLResponse(
         content=template.render(request=request, world=world, sources=sources)
     )
@@ -173,7 +184,7 @@ async def workspace_timeline(request: Request):
     workspace_service = WorkspaceService()
     timeline = workspace_service.get_timeline(world.uuid)
 
-    template = templates.env.get_template("fragments/research_timeline.html")
+    template = templates.env.get_template("components/research_timeline.html")
     return HTMLResponse(
         content=template.render(request=request, world=world, timeline=timeline)
     )

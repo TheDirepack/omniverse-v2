@@ -94,7 +94,9 @@ async def logs_page(request: Request):
     opts = _get_filter_options()
     template = templates.env.get_template("pages/logs.html")
     return HTMLResponse(
-        content=template.render(request=request, **opts)
+        content=template.render(
+            request=request, current_path=str(request.url.path), **opts
+        )
     )
 
 
@@ -156,7 +158,7 @@ async def logs_list(
     has_more = data.get("has_more", False)
     next_offset = offset + limit
 
-    template = templates.env.get_template("fragments/log_list.html")
+    template = templates.env.get_template("components/log_list.html")
     return HTMLResponse(
         content=template.render(
             request=request,

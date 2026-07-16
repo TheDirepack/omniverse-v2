@@ -27,6 +27,11 @@
                         <span class="text-[10px] font-mono text-gray-400 bg-gray-100 dark:bg-gray-800 px-2 py-0.5 rounded-sm border border-gray-200 dark:border-gray-700">
                             {{ world.uuid }}
                         </span>
+                        {% if world.updated_at %}
+                        <div class="text-xs text-gray-500 dark:text-gray-400">
+                            Last updated: {{ world.updated_at.strftime('%Y-%m-%d %H:%M') if world.updated_at else 'Never' }}
+                        </div>
+                        {% endif %}
                         {% if world.is_explored %}
                         <span class="text-[10px] font-bold uppercase px-2 py-0.5 rounded-sm bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">Explored</span>
                         {% else %}
@@ -89,7 +94,7 @@
                                         {{ art.confidence or 'N/A' }}
                                     </td>
                                     <td class="p-2 text-right">
-                                        <a href="/knowledge" hx-get="/api/artifacts/{{ art.id }}" hx-target="#inspector" 
+                                        <a href="/knowledge?artifact_id={{ art.id }}" 
                                            class="text-blue-600 dark:text-blue-400 hover:underline text-[10px]">
                                             Inspect
                                         </a>

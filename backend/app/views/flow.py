@@ -15,7 +15,9 @@ router = APIRouter(tags=["flow_views"])
 @router.get("/", response_class=HTMLResponse)
 async def flow_page(request: Request):
     template = templates.env.get_template("pages/flow.html")
-    return HTMLResponse(content=template.render(request=request))
+    return HTMLResponse(content=template.render(
+        request=request, current_path=str(request.url.path)
+    ))
 
 @router.get("/trace", response_class=HTMLResponse)
 async def trace_claim_query(
@@ -38,7 +40,7 @@ async def trace_claim(
         return HTMLResponse("Artifact not found", status_code=404)
 
     # Simplified trace for now to avoid broken logic
-    template = templates.env.get_template("fragments/flow_step.html")
+    template = templates.env.get_template("components/flow_step.html")
     return HTMLResponse(content=template.render(
         request=request,
         claim=artifact,

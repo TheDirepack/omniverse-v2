@@ -1,9 +1,14 @@
+{% if batch_started %}
+<div class="text-xs text-green-700 dark:text-green-400 mb-2 px-1 font-semibold">Started research for {{ batch_started }} world(s)</div>
+{% endif %}
 <div class="text-xs text-gray-500 dark:text-gray-400 mb-2 px-1">{{ worlds|length }} world(s)</div>
 
 <table class="w-full text-left border-collapse text-xs">
     <thead class="bg-gray-50 dark:bg-gray-800 text-gray-500 dark:text-gray-400 uppercase tracking-wider font-bold border-b border-gray-200 dark:border-gray-700">
         <tr>
-            <th class="p-2 w-10"></th>
+            <th class="p-2 w-10 text-center">
+                <input type="checkbox" id="select-all-worlds" class="rounded-sm border-gray-300 dark:border-gray-700 text-blue-600 focus:ring-blue-500" onclick="toggleSelectAll(this)">
+            </th>
             <th class="p-2">World Name</th>
             <th class="p-2">Status</th>
             <th class="p-2">Last Researched</th>
@@ -34,6 +39,13 @@
             </td>
             <td class="p-2 text-right">
                 <div class="flex justify-end gap-2">
+                    <button hx-post="/api/worlds/research"
+                            hx-vals='{"payload": ["{{ world.uuid }}"]}'
+                            hx-trigger="click"
+                            hx-swap="none"
+                            class="px-2 py-1 bg-blue-600 text-white rounded-sm hover:bg-blue-700 transition-colors text-[10px] font-medium">
+                        Research
+                    </button>
                     <a href="/worlds/details/{{ world.uuid }}" 
                        class="px-2 py-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-300 rounded-sm hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-[10px] font-medium">
                         Open
@@ -59,9 +71,32 @@
         {% if not worlds %}
         <tr>
             <td colspan="5" class="p-8 text-center text-gray-400 dark:text-gray-500 italic text-xs">
-                No worlds in database.
+                {% if q %}No worlds matching "{{ q }}"{% else %}No worlds in database.{% endif %}
             </td>
         </tr>
         {% endif %}
     </tbody>
 </table>
+
+
+<script>
+function toggleSelectAll(source) {
+    checkboxes = document.querySelectorAll('.world-checkbox');
+    for(var i=0; i<checkboxes.length; i++) {
+        checkboxes[i].checked = source.checked;
+    }
+    document.getElementById('bulk-action-bar').classList.toggle('hidden', !source.checked);
+    document.getElementById('selected-count').textContent = source.checked ? checkboxes.length + ' worlds selected' : '0 worlds selected';
+}
+</script>
+{% if has_more %}
+<div class="text-center py-4" id="load-more-container">
+    <button class="text-xs text-blue-600 hover:text-blue-800 dark:text-blue-400 font-medium"
+            hx-get="/worlds/database-worlds?offset={{ next_offset }}&limit={{ limit }}{% if q %}&q={{ q }}{% endif %}"
+            hx-target="#load-more-container"
+            hx-swap="outerHTML"
+            hx-trigger="revealed">
+        Load more worlds...
+    </button>
+</div>
+{% endif %}

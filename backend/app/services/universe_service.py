@@ -1,4 +1,5 @@
 import json
+import logging
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
@@ -19,27 +20,12 @@ from app.db.schema import (
 from app.db.session import engine
 from app.repositories.universe import UniverseRepository
 
+logger = logging.getLogger(__name__)
+
 
 class UniverseService:
     def __init__(self, session: Session | None = None):
         self.session = session
-        self._repo: UniverseRepository | None = None
-
-    @property
-    def repo(self) -> UniverseRepository:
-        """Lazily-created, cached repo bound to a dedicated session held for
-        this UniverseService instance's lifetime. Restores the .repo access
-        pattern that several call sites across the pipeline (nodes.py,
-        summarizer.py, runs.py, and the workflow modules) depend on to make
-        multiple sequential repo calls within one execution.
-        """
-        if self._repo is None:
-            self._repo = UniverseRepository(self.session or Session(engine))
-        return self._repo
-
-    def _get_repo(self) -> UniverseRepository:
-        """Backward compatibility for legacy call sites."""
-        return self.repo
 
     def get_universe(self, name: str) -> Universe | None:
         session = self.session or Session(engine)
@@ -76,6 +62,8 @@ class UniverseService:
     def get_all_universes(
         self, limit: int = 100, offset: int = 0, fields: list[str] | None = None
     ) -> Sequence[Any]:
+        limit = min(max(limit, 1), 1000)
+        offset = max(offset, 0)
         session = self.session or Session(engine)
         try:
             results = UniverseRepository(session).get_all(
@@ -162,7 +150,7 @@ class UniverseService:
 
             # Create artifacts for metadata
             from app.db.schema import Artifact, ArtifactRelation
-            
+
             world_art = Artifact(universe_id=universe.id, type="world", name=name)
             session.add(world_art)
             session.flush()
@@ -179,7 +167,7 @@ class UniverseService:
                     m_art = Artifact(universe_id=universe.id, type=m_type, name=m_value)
                     session.add(m_art)
                     session.flush()
-                    
+
                     rel = ArtifactRelation(
                         universe_id=universe.id,
                         from_artifact_id=world_art.id,
@@ -187,7 +175,7 @@ class UniverseService:
                         relation_type="PART_OF",
                     )
                     session.add(rel)
-            
+
             session.commit()
             session.refresh(universe)
             return universe
@@ -196,99 +184,107 @@ class UniverseService:
                 session.close()
 
     def import_from_registry(self, world_id: str) -> Universe | None:
-        json_path = Path(__file__).parent.parent / "db" / "default_worlds.json"
-        if not json_path.exists():
-            return None
-        with json_path.open() as f:
-            entries = json.load(f)
-        match = next((e for e in entries if e.get("id") == world_id), None)
-        if not match:
-            return None
-
-        session = self.session or Session(engine)
         try:
-            repo = UniverseRepository(session)
-            existing_by_slug = repo.get_by_slug(match["id"])
-            if existing_by_slug:
-                return existing_by_slug
+            json_path = Path(__file__).parent.parent / "db" / "default_worlds.json"
+            if not json_path.exists():
+                return None
+            with json_path.open() as f:
+                entries = json.load(f)
+            match = next((e for e in entries if e.get("id") == world_id), None)
+            if not match:
+                return None
 
-            existing_by_name = repo.get_by_name(match["name"])
-            if existing_by_name:
-                return existing_by_name
+            session = self.session or Session(engine)
+            try:
+                repo = UniverseRepository(session)
+                existing_by_slug = repo.get_by_slug(match["id"])
+                if existing_by_slug:
+                    return existing_by_slug
 
-            parent_id = None
-            parent_ref = match.get("parent")
-            if parent_ref:
-                parent = repo.get_by_slug(parent_ref)
-                if parent and parent.id is not None:
-                    parent_id = parent.id
-
-            universe = Universe(
-                slug=match["id"],
-                name=match["name"],
-                parent_id=parent_id,
-                summary=None,
-                is_explored=False,
-            )
-            res = repo.create(universe)
-
-            session.commit()
-            return res
-        finally:
-            if not self.session:
-                session.close()
-
-    def import_all_from_registry(self) -> tuple[int, int]:
-        json_path = Path(__file__).parent.parent / "db" / "default_worlds.json"
-        if not json_path.exists():
-            return 0, 0
-        with json_path.open() as f:
-            entries = json.load(f)
-
-        session = self.session or Session(engine)
-        imported = 0
-        skipped = 0
-        try:
-            existing_slugs = set(filter(None, session.exec(select(Universe.slug)).all()))
-            existing_names = set(session.exec(select(Universe.name)).all())
-
-            parent_map: dict[str, int] = {}
-            for entry in entries:
-                slug = entry["id"]
-                name = entry["name"]
-                if slug in existing_slugs or name in existing_names:
-                    skipped += 1
-                    continue
+                existing_by_name = repo.get_by_name(match["name"])
+                if existing_by_name:
+                    return existing_by_name
 
                 parent_id = None
-                parent_ref = entry.get("parent")
+                parent_ref = match.get("parent")
                 if parent_ref:
-                    if parent_ref in parent_map:
-                        parent_id = parent_map[parent_ref]
-                    elif parent_ref in existing_slugs:
-                        parent_id = session.exec(
-                            select(Universe.id).where(Universe.slug == parent_ref)
-                        ).first()
+                    parent = repo.get_by_slug(parent_ref)
+                    if parent and parent.id is not None:
+                        parent_id = parent.id
 
                 universe = Universe(
-                    slug=slug,
-                    name=name,
+                    slug=match["id"],
+                    name=match["name"],
                     parent_id=parent_id,
                     summary=None,
                     is_explored=False,
                 )
-                session.add(universe)
+                res = repo.create(universe)
+
+                session.commit()
+                return res
+            finally:
+                if not self.session:
+                    session.close()
+        except Exception:
+            logger.exception("Failed to import world %s from registry", world_id)
+            raise
+
+    def import_all_from_registry(self) -> tuple[int, int]:
+        try:
+            json_path = Path(__file__).parent.parent / "db" / "default_worlds.json"
+            if not json_path.exists():
+                return 0, 0
+            with json_path.open() as f:
+                entries = json.load(f)
+
+            session = self.session or Session(engine)
+            imported = 0
+            skipped = 0
+            try:
+                existing_slugs = set(filter(None, session.exec(select(Universe.slug)).all()))
+                existing_names = set(session.exec(select(Universe.name)).all())
+
+                parent_map: dict[str, int] = {}
+                for entry in entries:
+                    slug = entry["id"]
+                    name = entry["name"]
+                    if slug in existing_slugs or name in existing_names:
+                        skipped += 1
+                        continue
+
+                    parent_id = None
+                    parent_ref = entry.get("parent")
+                    if parent_ref:
+                        if parent_ref in parent_map:
+                            parent_id = parent_map[parent_ref]
+                        elif parent_ref in existing_slugs:
+                            parent_id = session.exec(
+                                select(Universe.id).where(Universe.slug == parent_ref)
+                            ).first()
+
+                    universe = Universe(
+                        slug=slug,
+                        name=name,
+                        parent_id=parent_id,
+                        summary=None,
+                        is_explored=False,
+                    )
+                    session.add(universe)
 
 
-                existing_slugs.add(slug)
-                existing_names.add(name)
-                imported += 1
+                    existing_slugs.add(slug)
+                    existing_names.add(name)
+                    imported += 1
 
-            session.commit()
-            return imported, skipped
-        finally:
-            if not self.session:
-                session.close()
+                session.commit()
+                return imported, skipped
+            finally:
+                if not self.session:
+                    session.close()
+        except Exception:
+            logger.exception("Failed to import all worlds from registry")
+            raise
 
     def find_duplicates(
         self, name: str, threshold: float = 0.7
@@ -368,20 +364,20 @@ class UniverseService:
                             .where(ArtifactVersion.artifact_id == a.id)
                             .order_by(ArtifactVersion.version.asc())
                         ).all()
-                        
+
                         if versions:
                             max_ver_keep = session.exec(
                                 select(ArtifactVersion.version)
                                 .where(ArtifactVersion.artifact_id == existing.id)
                                 .order_by(ArtifactVersion.version.desc())
                             ).first()
-                            
+
                             offset = (max_ver_keep or 0)
                             for v in versions:
                                 v.artifact_id = existing.id
                                 v.version = v.version + offset
                                 session.add(v)
-                        
+
                         artifact_map[a.id] = existing.id
                     else:
                         a.universe_id = keep_id
@@ -554,7 +550,7 @@ class UniverseService:
                 ids = [int(i) for i in universe_ids.split(",") if i.strip().isdigit()]
                 if ids:
                     query = query.where(ArtifactRelation.universe_id.in_(ids))
-            
+
             if fields:
                 valid_fields = [f for f in fields if hasattr(ArtifactRelation, f)]
                 proj_fields = [getattr(ArtifactRelation, f) for f in valid_fields]
@@ -568,7 +564,7 @@ class UniverseService:
                         ]
                         if ids:
                             query = query.where(ArtifactRelation.universe_id.in_(ids))
-            
+
             results = session.exec(query.offset(offset).limit(limit)).all()
             if fields:
                 valid_fields = [f for f in fields if hasattr(ArtifactRelation, f)]
@@ -704,19 +700,17 @@ class UniverseService:
                 session.close()
 
     def close(self):
-        """Closes the internal session if lazily created."""
-        if self._repo and not self.session:
-            self._repo.session.close()
-            self._repo = None
+        """No-op — kept for backward compatibility."""
 
     def get_universe_metadata(self, universe_id: int) -> dict[str, str | None]:
         session = self.session or Session(engine)
         try:
-            from app.db.schema import Artifact
             from sqlmodel import select
+
+            from app.db.schema import Artifact
             stmt = select(Artifact).where(Artifact.universe_id == universe_id)
             artifacts = session.exec(stmt).all()
-            
+
             metadata = {
                 "franchise": None,
                 "continuity": None,

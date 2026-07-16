@@ -60,3 +60,16 @@ def init_db(engine_override=None):
         init_settings_db()
     except Exception as e:
         print(f"Error initializing settings database: {e}")
+
+
+def _drop_all_tables(engine, metadata):
+    with engine.connect() as conn:
+        conn.exec_driver_sql("PRAGMA foreign_keys = OFF")
+        metadata.drop_all(conn, checkfirst=True)
+        conn.exec_driver_sql("PRAGMA foreign_keys = ON")
+        conn.commit()
+
+
+def reset_main_db():
+    _drop_all_tables(engine, SQLModel.metadata)
+    init_db()

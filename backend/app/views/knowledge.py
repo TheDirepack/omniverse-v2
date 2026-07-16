@@ -2,26 +2,30 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import HTMLResponse
-from sqlmodel import Session, select, func
+from sqlmodel import Session, func, select
 
 from app.core.dependencies import get_main_session, get_universe_service
 from app.core.templates import templates
-from app.db.schema import Artifact, ArtifactRelation, Universe
+from app.core.utils import get_active_world_id
+from app.db.schema import Artifact, ArtifactRelation
 from app.services.universe_service import UniverseService
 
 router = APIRouter(tags=["knowledge_views"])
 
 @router.get("/", response_class=HTMLResponse)
 async def knowledge_page(request: Request, uni_service: Annotated[UniverseService, Depends(get_universe_service)]):
-    active_world_id = request.cookies.get("active_world_id")
+    active_world_uuid = get_active_world_id(request.cookies.get("active_world_id"))
     current_world = None
-    if active_world_id:
-        current_world = uni_service.get_universe_by_uuid(active_world_id)
+    if active_world_uuid:
+        current_world = uni_service.get_universe_by_uuid(active_world_uuid)
 
     worlds = uni_service.get_all_universes(limit=5000)
 
     template = templates.env.get_template("pages/knowledge.html")
-    return HTMLResponse(content=template.render(request=request, current_world=current_world, worlds=worlds))
+    return HTMLResponse(content=template.render(
+        request=request, current_world=current_world, worlds=worlds,
+        active_world_id=active_world_uuid, current_path=str(request.url.path),
+    ))
 
 @router.get("/worlds", response_class=HTMLResponse)
 async def list_worlds(
@@ -40,7 +44,7 @@ async def list_worlds(
 
     world_ids = [w.id for w in worlds]
     if not world_ids:
-        return HTMLResponse(content=templates.env.get_template("fragments/world_list.html").render(request=request, worlds=[], selected_world_id=None))
+        return HTMLResponse(content=templates.env.get_template("components/world_list.html").render(request=request, worlds=[], selected_world_id=None))
 
     counts_query = select(Artifact.universe_id, func.count(Artifact.id)).where(
         Artifact.universe_id.in_(world_ids)
@@ -60,7 +64,7 @@ async def list_worlds(
             "artifact_count": count,
         })
 
-    template = templates.env.get_template("fragments/world_list.html")
+    template = templates.env.get_template("components/world_list.html")
     return HTMLResponse(content=template.render(request=request, worlds=result, selected_world_id=None))
 
 @router.get("/worlds/{world_id}", response_class=HTMLResponse)
@@ -84,9 +88,20 @@ async def world_detail(
         select(ArtifactRelation).where(ArtifactRelation.universe_id == world_id)
     ).all()
 
-    template = templates.env.get_template("fragments/world_detail.html")
+    artifact_ids = set()
+    for c in claims:
+        artifact_ids.add(c.from_artifact_id)
+        artifact_ids.add(c.to_artifact_id)
+
+    artifacts_map = {}
+    if artifact_ids:
+        arts = session.exec(select(Artifact).where(Artifact.id.in_(artifact_ids))).all()
+        artifacts_map = {a.id: {"name": a.name, "type": a.type} for a in arts}
+
+    template = templates.env.get_template("components/world_detail.html")
     return HTMLResponse(content=template.render(
-        request=request, world=world, entities=entities, claims=claims
+        request=request, world=world, entities=entities, claims=claims,
+        artifact_names=artifacts_map,
     ))
 
 @router.get("/worlds/{world_id}/children", response_class=HTMLResponse)
@@ -96,7 +111,7 @@ async def world_children(
     uni_service: Annotated[UniverseService, Depends(get_universe_service)],
 ):
     children = uni_service.get_universe_relations(world_id, direction="out")
-    template = templates.env.get_template("fragments/world_row.html")
+    template = templates.env.get_template("components/world_row.html")
     return HTMLResponse(content=template.render(request=request, worlds=children))
 
 @router.get("/entities/{entity_id}", response_class=HTMLResponse)
@@ -113,7 +128,7 @@ async def entity_detail(
         select(ArtifactRelation).where(ArtifactRelation.from_artifact_id == entity_id)
     ).all()
 
-    template = templates.env.get_template("fragments/entity_detail.html")
+    template = templates.env.get_template("components/entity_detail.html")
     return HTMLResponse(
         content=template.render(request=request, entity=entity, claims=claims)
     )

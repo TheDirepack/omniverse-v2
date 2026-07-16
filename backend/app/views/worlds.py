@@ -1,44 +1,24 @@
 import asyncio
 import json
-from collections.abc import Sequence
 from pathlib import Path
-from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Form, Query, Request
 from fastapi.responses import HTMLResponse
 from sqlmodel import Session, select
 
-from app.core.templates import templates
 from app.core.dependencies import get_main_session
+from app.core.templates import render_worlds_table, templates
 from app.db.schema import Artifact
 from app.services.universe_service import UniverseService
 
 router = APIRouter(tags=["worlds_views"])
 
-# Remove _filter_worlds as it's now in UniverseService
-
-def _render_worlds(
-    request: Request,
-    worlds: Sequence[Any] | None = None,
-    q: str = "",
-    explored: str = "",
-    franchise: str = "",
-    batch_started: int | None = None,
-) -> HTMLResponse:
-    uni_service = UniverseService()
-    filtered = uni_service.filter_universes(
-        q=q, explored=explored, franchise=franchise
-    )
-    template = templates.env.get_template("fragments/database_worlds.html")
-    return HTMLResponse(content=template.render(
-        request=request, worlds=filtered, q=q, explored=explored, franchise=franchise,
-        batch_started=batch_started,
-    ))
-
 @router.get("/", response_class=HTMLResponse)
 async def worlds_page(request: Request):
     template = templates.env.get_template("pages/worlds.html")
-    return HTMLResponse(content=template.render(request=request))
+    return HTMLResponse(content=template.render(
+        request=request, current_path=str(request.url.path)
+    ))
 
 @router.get("/database-worlds", response_class=HTMLResponse)
 async def database_worlds(
@@ -48,8 +28,8 @@ async def database_worlds(
     franchise: str = Query(default=""),
 ):
     uni_service = UniverseService()
-    worlds = uni_service.get_all_universes(limit=5000)
-    return _render_worlds(request, worlds, q=q, explored=explored, franchise=franchise)
+    worlds = uni_service.filter_universes(q=q, explored=explored, franchise=franchise, limit=5000)
+    return render_worlds_table(request, worlds, q=q, explored=explored, franchise=franchise)
 
 @router.post("/batch-research", response_class=HTMLResponse)
 async def batch_research(
@@ -66,7 +46,7 @@ async def batch_research(
         background_tasks.add_task(run_pipeline_in_background, run_id, [name])
     uni_service = UniverseService()
     worlds = uni_service.get_all_universes(limit=5000)
-    return _render_worlds(request, worlds, batch_started=len(names))
+    return render_worlds_table(request, worlds, batch_started=len(names))
 
 
 @router.post("/{world_id}/toggle-explored", response_class=HTMLResponse)
@@ -75,7 +55,7 @@ async def toggle_explored(request: Request, world_id: int):
     uni_service = UniverseService()
     uni_service.reset_explored(world_id)
     worlds = uni_service.get_all_universes(limit=5000)
-    return _render_worlds(request, worlds)
+    return render_worlds_table(request, worlds)
 
 @router.post("/{world_id}/delete", response_class=HTMLResponse)
 async def delete_world(request: Request, world_id: int):
@@ -83,7 +63,7 @@ async def delete_world(request: Request, world_id: int):
     uni_service = UniverseService()
     uni_service.delete_universe(world_id)
     worlds = uni_service.get_all_universes(limit=5000)
-    return _render_worlds(request, worlds)
+    return render_worlds_table(request, worlds)
 
 @router.post("/delete-selected", response_class=HTMLResponse)
 async def delete_selected(request: Request, uuids: str = Form(default="[]"), session: Session = Depends(get_main_session)):
@@ -94,7 +74,8 @@ async def delete_selected(request: Request, uuids: str = Form(default="[]"), ses
         if world:
             uni_service.delete_universe(world.id)
     worlds = uni_service.get_all_universes(limit=5000)
-    return _render_worlds(request, worlds)
+    return render_worlds_table(request, worlds)
+
 
 @router.post("/reset-selected-explored", response_class=HTMLResponse)
 async def reset_selected_explored(request: Request, ids: str = Form(default="[]")):
@@ -106,14 +87,14 @@ async def reset_selected_explored(request: Request, ids: str = Form(default="[]"
         if world:
             uni_service.reset_explored(world.id)
     worlds = uni_service.get_all_universes(limit=5000)
-    return _render_worlds(request, worlds)
+    return render_worlds_table(request, worlds)
 
 @router.post("/reset-all-explored", response_class=HTMLResponse)
 async def reset_all_explored(request: Request):
     uni_service = UniverseService()
     uni_service.reset_all_explored()
     worlds = uni_service.get_all_universes(limit=5000)
-    return _render_worlds(request, worlds)
+    return render_worlds_table(request, worlds)
 
 @router.post("/set-active-world", response_class=HTMLResponse)
 async def set_active_world(_request: Request, world_id: str = Form(...)):
@@ -127,7 +108,7 @@ async def set_active_world(_request: Request, world_id: str = Form(...)):
 async def worlds_import_action_form(request: Request):
     # Try to get world_id from form data first, then from JSON body
     world_id = None
-    
+
     try:
         form_data = await request.form()
         world_id = form_data.get("world_id")
@@ -142,15 +123,17 @@ async def worlds_import_action_form(request: Request):
             pass
 
     if not world_id:
-        return HTMLResponse(
-            content='<p class="text-red-500">Missing world ID.</p>', 
-            status_code=400
-        )
+        from app.core.templates import render_error
+        return render_error(request, 400, "Missing world ID")
 
     service = UniverseService()
     world = service.import_from_registry(world_id)
     worlds = service.get_all_universes(limit=5000)
-    return _render_worlds(request, worlds)
+    response = render_worlds_table(request, worlds)
+    response.headers["HX-Trigger"] = (
+        '{"showToast": {"value": "World imported", "type": "success"}}'
+    )
+    return response
 
 
 @router.get("/import", response_class=HTMLResponse)
@@ -188,7 +171,7 @@ async def worlds_import_fragment(request: Request, q: str = Query(default="")):
                 and e.get("name") not in existing_names
             ]
 
-    template = templates.env.get_template("fragments/world_import_list.html")
+    template = templates.env.get_template("components/world_import_list.html")
     return HTMLResponse(content=template.render(request=request, entries=entries, q=q))
 
 
@@ -203,13 +186,17 @@ async def worlds_import_action(request: Request, world_id: str):
             with json_path.open() as f:
                 return json.load(f)
         entries = await asyncio.to_thread(_read_json)
-    template = templates.env.get_template("fragments/world_import_list.html")
-    return HTMLResponse(
+    template = templates.env.get_template("components/world_import_list.html")
+    response = HTMLResponse(
         content=template.render(
             request=request, entries=entries[:50],
             imported=world.name if world else None
         )
     )
+    response.headers["HX-Trigger"] = (
+        '{"showToast": {"value": "World imported", "type": "success"}}'
+    )
+    return response
 
 
 @router.post("/import-all", response_class=HTMLResponse)
@@ -223,20 +210,24 @@ async def worlds_import_all_action(request: Request):
             with json_path.open() as f:
                 return json.load(f)
         entries = await asyncio.to_thread(_read_json)
-    template = templates.env.get_template("fragments/world_import_list.html")
-    return HTMLResponse(
+    template = templates.env.get_template("components/world_import_list.html")
+    response = HTMLResponse(
         content=template.render(
             request=request, entries=entries[:50],
             imported=f"{imported} worlds (skipped {skipped})"
         )
     )
+    response.headers["HX-Trigger"] = (
+        '{"showToast": {"value": "Worlds imported", "type": "success"}}'
+    )
+    return response
 
 
 @router.get("/create_fragment", response_class=HTMLResponse)
 async def worlds_create_fragment(request: Request):
     service = UniverseService()
     parents = service.get_all_universes(limit=200)
-    template = templates.env.get_template("fragments/world_create_form.html")
+    template = templates.env.get_template("components/world_create_form.html")
     return HTMLResponse(content=template.render(request=request, parents=parents))
 
 
@@ -253,11 +244,8 @@ async def worlds_create_action(
     service = UniverseService()
     existing = service.get_universe(name)
     if existing:
-        from fastapi.responses import HTMLResponse as Resp
-        return Resp(
-            content=f'<p class="text-red-500">World "{name}" already exists.</p>',
-            status_code=409,
-        )
+        from app.core.templates import render_error
+        return render_error(request, 409, f'World "{name}" already exists')
     service.create_universe(
         name=name,
         franchise=franchise or None,
@@ -267,17 +255,21 @@ async def worlds_create_action(
         parent_id=parent_id or None,
     )
     parents = service.get_all_universes(limit=200)
-    template = templates.env.get_template("fragments/world_create_form.html")
-    return HTMLResponse(
+    template = templates.env.get_template("components/world_create_form.html")
+    response = HTMLResponse(
         content=template.render(request=request, parents=parents, created=name)
     )
+    response.headers["HX-Trigger"] = (
+        '{"showToast": {"value": "World created", "type": "success"}}'
+    )
+    return response
 
 
 @router.get("/graph", response_class=HTMLResponse)
 async def worlds_graph_fragment(request: Request):
     service = UniverseService()
     worlds = service.get_all_universes(limit=500)
-    template = templates.env.get_template("fragments/world_hierarchy.html")
+    template = templates.env.get_template("components/world_hierarchy.html")
     return HTMLResponse(content=template.render(request=request, worlds=worlds))
 
 
@@ -286,11 +278,10 @@ async def world_neighborhood(request: Request, uuid: str):
     service = UniverseService()
     world = service.get_universe_by_uuid(uuid)
     if not world:
-        return HTMLResponse(
-            "<p class='text-red-500'>World not found.</p>", status_code=404
-        )
+        from app.core.templates import render_error
+        return render_error(request, 404, "World not found")
     related = service.get_related_universes(world.id) if world.id else []
-    template = templates.env.get_template("fragments/world_neighborhood.html")
+    template = templates.env.get_template("components/world_neighborhood.html")
     return HTMLResponse(
         content=template.render(request=request, world=world, related=related)
     )
@@ -300,8 +291,9 @@ async def world_details_page(request: Request, uuid: str, session: Session = Dep
     service = UniverseService(session)
     world = service.get_universe_by_uuid(uuid)
     if not world:
-        return HTMLResponse("World not found", status_code=404)
-    
+        from app.core.templates import render_error
+        return render_error(request, 404, "World not found")
+
     artifacts = session.exec(select(Artifact).where(Artifact.universe_id == world.id)).all()
 
     notebook_entries = []
@@ -311,12 +303,12 @@ async def world_details_page(request: Request, uuid: str, session: Session = Dep
         notebook_entries = ws.get_notebook_index(uuid)
     except Exception:
         pass
-    
-    return templates.TemplateResponse(request, "pages/world_details.html", {
-        "world": world,
-        "artifacts": artifacts,
-        "notebook_entries": notebook_entries,
-    })
+
+    template = templates.env.get_template("pages/world_details.html")
+    return HTMLResponse(content=template.render(
+        request=request, world=world, artifacts=artifacts,
+        notebook_entries=notebook_entries, current_path=str(request.url.path),
+    ))
 
 
 

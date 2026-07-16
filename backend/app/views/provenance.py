@@ -6,8 +6,8 @@ from sqlmodel import Session, select
 
 from app.core.dependencies import get_main_session, get_notebook_session
 from app.core.templates import templates
-from app.db.schema import Artifact, Evidence
 from app.db.notebook_schema import NotebookEntry
+from app.db.schema import Artifact, Evidence
 
 router = APIRouter(tags=["provenance_views"])
 
@@ -35,7 +35,8 @@ async def notebook_claim_provenance(
         evidence_chunk=None,
         evidence=None,
         artifact=artifact,
-        is_notebook=True
+        is_notebook=True,
+        current_path=str(request.url.path),
     ))
 
 @router.get("/claim/{claim_id}", response_class=HTMLResponse)
@@ -79,6 +80,7 @@ async def claim_provenance(
         evidence_chunk=evidence_chunk,
         evidence=evidence,
         artifact=prov_artifact,
+        current_path=str(request.url.path),
     ))
 
 

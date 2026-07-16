@@ -1,9 +1,8 @@
-{% extends "base.html" %}
+{% extends "layout/3_panel.html" %}
 
 {% block title %}Research - Omniverse{% endblock %}
 
-{% block content %}
-<div class="flex flex-col h-full overflow-hidden">
+{% block control_bar %}
     <!-- CONTROL BAR -->
     <div class="h-12 border-b border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 flex items-center px-4 gap-4 shrink-0">
         <div class="flex items-center gap-2 flex-1">
@@ -32,57 +31,70 @@
 
         <div id="research-indicator" class="htmx-indicator text-xs animate-spin">⌛</div>
     </div>
+    {% if world_name %}
+    <div class="h-10 bg-blue-50 dark:bg-blue-900/20 border-b border-blue-200 dark:border-blue-800 px-4 flex items-center gap-3 shrink-0">
+        <span class="text-[10px] font-bold text-blue-600 dark:text-blue-400 uppercase tracking-widest">Active World:</span>
+        <span class="text-sm font-semibold text-blue-800 dark:text-blue-200">{{ world_name }}</span>
+        <a href="/research/choose-world" class="ml-auto text-xs text-blue-600 dark:text-blue-400 hover:underline">Change</a>
+    </div>
+    {% endif %}
+{% endblock %}
 
-    <!-- MAIN WORKSPACE -->
-    <div class="flex-1 flex overflow-hidden">
-        <!-- Worlds Table -->
-        <div class="flex-1 overflow-y-auto p-4 no-scrollbar">
-            <div class="mb-4 flex justify-between items-end">
-                <div>
-                    <h1 class="text-lg font-bold tracking-tight text-gray-900 dark:text-white">Research Hub</h1>
-                    <p class="text-xs text-gray-500 dark:text-gray-400">Select a universe to start research or manage existing data.</p>
-                </div>
-                <button class="px-3 py-1.5 bg-blue-600 text-white text-xs font-semibold rounded-sm hover:bg-blue-700 transition-colors flex items-center gap-2"
-                        hx-get="/worlds/create_fragment" 
-                        hx-target="#modal-content"
-                        hx-swap="innerHTML">
-                    <span>+</span> Create Custom World
-                </button>
-            </div>
+{% block left_panel %}
+    <!-- Placeholder for future left navigation -->
+    <div class="p-4 text-xs text-gray-400 italic">Research navigation pending...</div>
+{% endblock %}
 
-            <div id="worlds-list" class="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-sm overflow-hidden">
-                {% include "fragments/database_worlds.html" %}
+{% block center_workspace %}
+    <div class="p-4">
+        <div class="mb-4 flex justify-between items-end">
+            <div>
+                <h1 class="text-lg font-bold tracking-tight text-gray-900 dark:text-white">Research Hub</h1>
+                <p class="text-xs text-gray-500 dark:text-gray-400">Select a universe to start research or manage existing data.</p>
             </div>
+            <button class="px-3 py-1.5 bg-blue-600 text-white text-xs font-semibold rounded-sm hover:bg-blue-700 transition-colors flex items-center gap-2"
+                    hx-get="/worlds/create_fragment" 
+                    hx-target="#modal-content"
+                    hx-swap="innerHTML">
+                <span>+</span> Create Custom World
+            </button>
         </div>
 
-        <!-- Right Sidebar: World Creation / Import -->
-        <aside class="w-80 border-l border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 p-4 flex flex-col gap-6">
-            <div class="space-y-4">
-                <h3 class="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Quick Actions</h3>
-                <div class="flex flex-col gap-2">
-                    <button class="h-8 bg-blue-600 text-white text-xs font-semibold rounded-sm hover:bg-blue-700"
-                            hx-get="/worlds/import"
-                            hx-target="#modal-content"
-                            hx-swap="innerHTML">
-                        Import from Registry
-                    </button>
-                    <button class="h-8 bg-purple-600 text-white text-xs font-semibold rounded-sm hover:bg-purple-700"
-                            hx-get="/worlds/create_fragment"
-                            hx-target="#modal-content"
-                            hx-swap="innerHTML">
-                        Create Custom World
-                    </button>
-                    <button class="h-8 bg-yellow-600 text-white text-xs font-semibold rounded-sm hover:bg-yellow-700"
-                            hx-post="/worlds/reset-all-explored"
-                            hx-target="#worlds-list"
-                            hx-confirm="Reset explored status for ALL worlds?">
-                        ↺ Reset All Explored
-                    </button>
-                </div>
-            </div>
-        </aside>
+        <div id="worlds-list" class="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-sm overflow-hidden">
+            {% include "components/database_worlds.html" %}
+        </div>
     </div>
+{% endblock %}
 
+{% block right_inspector %}
+    <div class="p-4 flex flex-col gap-6">
+        <div class="space-y-4">
+            <h3 class="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Quick Actions</h3>
+            <div class="flex flex-col gap-2">
+                <button class="h-8 bg-blue-600 text-white text-xs font-semibold rounded-sm hover:bg-blue-700"
+                        hx-get="/worlds/import"
+                        hx-target="#modal-content"
+                        hx-swap="innerHTML">
+                    Import from Registry
+                </button>
+                <button class="h-8 bg-blue-600 text-white text-xs font-semibold rounded-sm hover:bg-blue-700"
+                        hx-get="/worlds/create_fragment"
+                        hx-target="#modal-content"
+                        hx-swap="innerHTML">
+                    Create Custom World
+                </button>
+                <button class="h-8 bg-yellow-600 text-white text-xs font-semibold rounded-sm hover:bg-yellow-700"
+                        hx-post="/worlds/reset-all-explored"
+                        hx-target="#worlds-list"
+                        hx-confirm="Reset explored status for ALL worlds?">
+                    ↺ Reset All Explored
+                </button>
+            </div>
+        </div>
+    </div>
+{% endblock %}
+
+{% block extra_content %}
     <!-- BULK ACTION BAR (Floating) -->
     <div id="bulk-action-bar" class="hidden fixed bottom-6 left-1/2 -translate-x-1/2 h-12 bg-gray-900 text-white px-6 rounded-full shadow-2xl border border-gray-700 flex items-center gap-6 z-50">
         <span id="selected-count" class="text-xs font-medium text-gray-400">0 worlds selected</span>
@@ -109,37 +121,39 @@
             🗑️ Delete Selected
         </button>
     </div>
-</div>
 
-<div id="modal-root" class="fixed inset-0 bg-black/50 flex items-center justify-center hidden z-50" onclick="if(event.target===this)this.classList.add('hidden')">
-    <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-lg w-full mx-4 p-6 max-h-[80vh] overflow-y-auto">
-        <div class="flex justify-end">
-            <button onclick="document.getElementById('modal-root').classList.add('hidden')" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">&times;</button>
+    <div id="modal-root" class="fixed inset-0 bg-black/50 flex items-center justify-center hidden z-50" onclick="if(event.target===this)closeModal()">
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-lg w-full mx-4 max-h-[80vh] overflow-y-auto">
+            <div class="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+                <h2 id="modal-title" class="text-lg font-bold">Loading...</h2>
+                <button onclick="closeModal()" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 text-2xl leading-none">&times;</button>
+            </div>
+            <div id="modal-content" class="p-6 min-h-[100px]">
+                <div class="flex items-center justify-center py-8">
+                    <span class="htmx-indicator animate-spin text-2xl">⌛</span>
+                </div>
+            </div>
         </div>
-        <div id="modal-content"></div>
     </div>
-</div>
-
-<script>
-    document.addEventListener('htmx:afterSwap', function(e) {
-        if (e.detail.target.id === 'modal-content') {
+    <script>
+    function closeModal() {
+        document.getElementById('modal-root').classList.add('hidden');
+        document.getElementById('modal-content').innerHTML = '<div class="flex items-center justify-center py-8"><span class="animate-spin text-2xl">⌛</span></div>';
+    }
+    document.body.addEventListener('htmx:beforeRequest', function(evt) {
+        if (evt.detail.target.id === 'modal-content') {
             document.getElementById('modal-root').classList.remove('hidden');
         }
     });
-    // Simple checkbox handler for bulk actions
-    document.addEventListener('change', function(e) {
-        if (e.target.classList.contains('world-checkbox')) {
-            const checked = document.querySelectorAll('.world-checkbox:checked');
-            const bar = document.getElementById('bulk-action-bar');
-            const count = document.getElementById('selected-count');
-            
-            if (checked.length > 0) {
-                bar.classList.remove('hidden');
-                count.innerText = `${checked.length} world${checked.length > 1 ? 's' : ''} selected`;
-            } else {
-                bar.classList.add('hidden');
-            }
+    document.body.addEventListener('htmx:afterSwap', function(evt) {
+        if (evt.detail.target.id === 'modal-content') {
+            document.getElementById('modal-title').textContent = document.title || 'Modal';
         }
     });
-</script>
+    document.body.addEventListener('htmx:responseError', function(evt) {
+        if (evt.detail.target.id === 'modal-content') {
+            evt.detail.target.innerHTML = '<div class="text-center py-8"><div class="text-red-600 dark:text-red-400 mb-2">⚠️ Error loading content</div><p class="text-sm text-gray-500 mb-4">Something went wrong. Please try again.</p><button onclick="closeModal()" class="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-sm rounded-sm">Close</button></div>';
+        }
+    });
+    </script>
 {% endblock %}

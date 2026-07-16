@@ -1,0 +1,13 @@
+INFO:     Started server process [403616]
+INFO:     Waiting for application startup.
+Settings Validation WARNING: Setting 'MAX_RESEARCH_ITERATIONS' is missing. Using default (2).
+Settings Validation WARNING: Setting 'MAX_ARTIFACT_VERSIONS' is missing. Using default (10).
+Settings Validation WARNING: Provider 'DEFAULT' has no API keys configured.
+Settings Validation ERROR: Route for 'DEFAULT' points to non-existent provider ID None.
+Settings Validation ERROR: Route for 'Researcher' points to non-existent provider ID None.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [403616]

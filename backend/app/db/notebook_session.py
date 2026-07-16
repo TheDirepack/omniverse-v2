@@ -31,5 +31,14 @@ def init_notebook_db():
     notebook_metadata.create_all(notebook_engine)
 
 
+def reset_notebook_db():
+    with notebook_engine.connect() as conn:
+        conn.exec_driver_sql("PRAGMA foreign_keys = OFF")
+        notebook_metadata.drop_all(conn, checkfirst=True)
+        conn.exec_driver_sql("PRAGMA foreign_keys = ON")
+        conn.commit()
+    init_notebook_db()
+
+
 def get_notebook_session():
     return Session(notebook_engine)

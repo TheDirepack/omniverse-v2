@@ -6,8 +6,8 @@ from sqlmodel import Session, select
 
 from app.core.dependencies import get_main_session, get_notebook_session
 from app.core.templates import templates
-from app.db.schema import Artifact
 from app.db.notebook_schema import NotebookEntry
+from app.db.schema import Artifact
 from app.services.universe_service import UniverseService
 
 router = APIRouter(tags=["validation_views"])
@@ -68,7 +68,8 @@ async def validation_page(
         active_runs=active_runs,
         recent_promotions=recent_promotions,
         recent_rejections=rejections,
-        duplicates=duplicates
+        duplicates=duplicates,
+        current_path=str(request.url.path),
     ))
 
 @router.post("/claim/{claim_id}/approve", response_class=HTMLResponse)

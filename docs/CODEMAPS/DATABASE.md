@@ -15,6 +15,7 @@ Omniverse V2 uses **multiple isolated SQLite databases** to prevent contaminatio
 | **Operational DB** | `operational.db` | Execution logs & state | `backend/data/` |
 | **Staging DB** | `notebook.db` | Research workspace | `backend/data/` |
 | **Extrapolation DB** | `extrapolation.db` | Speculative theories | `backend/data/` |
+| **Acquisition DB** | `acquisition.db` | Web artifacts cache | `backend/data/` |
 
 ---
 
@@ -284,6 +285,7 @@ The **Main DB** stores the polymorphic Knowledge Graph - the core of the system.
 - **Backend Module Map** ([BACKEND.md](BACKEND.md)) - Service/repository layer
 - **Architecture Map** ([ARCHITECTURE.md](ARCHITECTURE.md)) - System overview
 - **Frontend Map** ([FRONTEND.md](FRONTEND.md)) - Views and data access
+- **Agent Documentation** ([../..](../..)) - Agent engine and workflow details
 
 ---
 

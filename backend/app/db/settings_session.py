@@ -75,5 +75,11 @@ def init_settings_db():
 
 
 
+def reset_settings_db():
+    from app.db.session import _drop_all_tables
+    _drop_all_tables(settings_engine, SQLModel.metadata)
+    init_settings_db()
+
+
 def get_settings_session():
     return Session(settings_engine)

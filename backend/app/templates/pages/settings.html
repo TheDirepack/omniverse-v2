@@ -61,16 +61,46 @@
         </div>
     </div>
 </div>
+{% endblock %}
 
+{% block extra_content %}
 <script>
+    var TAB_HASHES = { 'tab-general': '', 'tab-providers': 'providers', 'tab-routes': 'routes', 'tab-health': 'health' };
+
+    function activateTabFromHash() {
+        var hash = window.location.hash.replace('#', '');
+        if (!hash) return;
+        var tabId = Object.keys(TAB_HASHES).find(function(k) { return TAB_HASHES[k] === hash; });
+        if (tabId) {
+            var btn = document.getElementById(tabId);
+            if (btn) btn.click();
+        }
+    }
+
+    document.addEventListener('htmx:afterSwap', function(evt) {
+        var tabs = document.querySelectorAll('.tab-btn');
+        tabs.forEach(function(btn) {
+            if (btn.getAttribute('hx-target') === '#' + evt.detail.target.id) {
+                setActiveTab(btn);
+            }
+        });
+        activateTabFromHash();
+    });
+
     function setActiveTab(element) {
-        document.querySelectorAll('.tab-btn').forEach(btn => {
+        document.querySelectorAll('.tab-btn').forEach(function(btn) {
             btn.classList.remove('border-blue-600', 'text-blue-600', 'dark:text-blue-400');
             btn.classList.add('border-transparent', 'text-gray-500', 'dark:text-gray-400');
         });
         element.classList.remove('border-transparent', 'text-gray-500', 'dark:text-gray-400');
         element.classList.add('border-blue-600', 'text-blue-600', 'dark:text-blue-400');
+        var hash = TAB_HASHES[element.id];
+        if (hash !== undefined) {
+            history.replaceState(null, '', hash ? '#' + hash : window.location.pathname);
+        }
     }
+
+    document.addEventListener('DOMContentLoaded', activateTabFromHash);
 
     function selectProvider(providerId) {
         htmx.ajax('GET', `/settings/providers/${providerId}`, {

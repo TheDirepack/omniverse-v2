@@ -1,27 +1,27 @@
 <div id="proposed-rules" hx-swap-oob="true">
     {% for rule in proposed %}
-        {% include "fragments/rule_item.html" %}
+        {% include "components/rule_item.html" %}
     {% else %}
         <p class="text-gray-500 italic">No proposed rules.</p>
     {% endfor %}
 </div>
 <div id="critiqued-rules" hx-swap-oob="true">
     {% for rule in critiqued %}
-        {% include "fragments/rule_item.html" %}
+        {% include "components/rule_item.html" %}
     {% else %}
         <p class="text-gray-500 italic">No critiqued rules.</p>
     {% endfor %}
 </div>
 <div id="approved-rules" hx-swap-oob="true">
     {% for rule in approved %}
-        {% include "fragments/rule_item.html" %}
+        {% include "components/rule_item.html" %}
     {% else %}
         <p class="text-gray-500 italic">No approved rules.</p>
     {% endfor %}
 </div>
 <div id="rejected-rules" hx-swap-oob="true">
     {% for rule in rejected %}
-        {% include "fragments/rule_item.html" %}
+        {% include "components/rule_item.html" %}
     {% else %}
         <p class="text-gray-500 italic">No rejected rules.</p>
     {% endfor %}

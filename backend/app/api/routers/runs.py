@@ -1,21 +1,32 @@
 import asyncio
 import json
+import re
 import uuid
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel, Field
+from sqlmodel import Session, select
 
+from app.agents.nodes import architecture_node
 from app.agents.workflow import app_graph
+from app.agents.workflow_state import OmniverseState
+from app.core.agent_logger import LOG_FILE
 from app.core.domain import ResearchTarget
 from app.core.enums import RunPhase
 from app.core.runtime_state import (
     abort_run,
     add_active_run,
     get_active_runs,
+    is_aborted,
     remove_run,
 )
 from app.core.templates import templates
+from app.db.notebook_schema import AcquisitionArtifact, WorldAcquisitionUsage
+from app.db.notebook_session import notebook_engine
+from app.db.schema import ExecutionState, Universe, WorldTier
+from app.db.session import engine
+from app.repositories.execution import ExecutionRepository
 from app.services.execution_service import ExecutionService
 from app.services.universe_service import UniverseService
 
@@ -60,8 +71,6 @@ class AgentActivityResponse(BaseModel):
 async def run_pipeline_in_background(run_id: str, universe_uuids: list[str]):
     exec_service = ExecutionService()
     uni_service = UniverseService()
-
-    from app.core.runtime_state import is_aborted
 
     if await is_aborted(run_id):
         exec_service.log_transition(
@@ -120,7 +129,6 @@ async def run_focused_search_in_background(
 ):
     exec_service = ExecutionService()
     uni_service = UniverseService()
-    from app.core.runtime_state import is_aborted
 
     if await is_aborted(run_id):
         raise RuntimeError(
@@ -175,10 +183,6 @@ async def run_focused_search_in_background(
 
 
 async def run_tiering_in_background(run_id: str):
-    from app.agents.nodes import architecture_node
-    from app.agents.workflow_state import OmniverseState
-    from app.core.runtime_state import is_aborted
-
     uni_service = UniverseService()
     exec_service = ExecutionService()
 
@@ -211,6 +215,14 @@ async def run_tiering_in_background(run_id: str):
         await architecture_node(state)
     except Exception as e:
         print(f"[API] Error executing tiering: {e}")
+        exec_service = ExecutionService()
+        exec_service.log_transition(
+            run_id, "Manager",
+            f"Critical Tiering Failure: {e!s}",
+            RunPhase.FAILED,
+            {"error": str(e)},
+        )
+        exec_service.close()
     finally:
         await remove_run(run_id)
 
@@ -227,8 +239,6 @@ async def run_extrapolation_in_background(run_id: str, target_worlds: list[str])
     try:
         await app_graph.ainvoke(inputs)
     except Exception as e:
-        from app.services.execution_service import ExecutionService
-
         exec_service = ExecutionService()
         exec_service.log_transition(
             run_id,
@@ -293,12 +303,6 @@ def trigger_extrapolation(
             raise HTTPException(
                 status_code=400, detail="tier value required for 'tier' scope"
             )
-        # Use repo for complex join
-        from sqlmodel import Session, select
-
-        from app.db.schema import Universe, WorldTier
-        from app.db.session import engine
-
         with Session(engine) as session:
             target_worlds = [
                 u.name
@@ -363,30 +367,24 @@ async def abort_run_endpoint(request: Request):
 
 @router.post("/abort-all")
 async def abort_all_runs():
-    from app.core.runtime_state import get_active_runs, abort_run
     active_runs = await get_active_runs()
     for run_id in active_runs:
         await abort_run(run_id)
-    
+
     exec_service = ExecutionService()
     for run_id in active_runs:
         exec_service.log_transition(
             run_id, "Manager", "Global abort requested", RunPhase.ABORT_REQUESTED, {}
         )
-    
+
     return {"status": "all_aborted", "count": len(active_runs)}
 
 
 @router.get("/active-detailed")
 async def get_active_runs_detailed(request: Request, filter: str | None = None):
-    from app.core.runtime_state import get_active_runs
-    from sqlmodel import Session, select
-    from app.db.schema import ExecutionState
-    from app.db.session import engine
-    
     active_ids = await get_active_runs()
     detailed_runs = []
-    
+
     with Session(engine) as session:
         for rid in active_ids:
             latest = session.exec(
@@ -395,11 +393,10 @@ async def get_active_runs_detailed(request: Request, filter: str | None = None):
                 .order_by(ExecutionState.created_at.desc())
                 .limit(1)
             ).first()
-            
+
             if not latest:
                 continue
-                
-            import json
+
             try:
                 state = json.loads(latest.state_snapshot)
                 target_worlds = state.get("target_worlds", [])
@@ -412,7 +409,7 @@ async def get_active_runs_detailed(request: Request, filter: str | None = None):
 
             if filter and filter.lower() not in world_name.lower() and filter.lower() not in focus_str.lower():
                 continue
-                
+
             # Simple progress estimation based on phase
             phase = latest.status
             progress = 0
@@ -420,7 +417,7 @@ async def get_active_runs_detailed(request: Request, filter: str | None = None):
             elif phase == RunPhase.INTEGRATING: progress = 60
             elif phase == RunPhase.SUMMARIZING: progress = 90
             elif phase == RunPhase.COMPLETED: progress = 100
-            
+
             detailed_runs.append({
                 "run_id": rid,
                 "world": world_name,
@@ -428,8 +425,8 @@ async def get_active_runs_detailed(request: Request, filter: str | None = None):
                 "progress": progress,
                 "status": phase
             })
-            
-    template = templates.env.get_template("fragments/active_runs_table.html")
+
+    template = templates.env.get_template("components/active_runs_table.html")
     return HTMLResponse(content=template.render(request=request, runs=detailed_runs))
 
 
@@ -467,7 +464,6 @@ async def runs_history(request: Request):
 
     results = []
     for run in runs:
-        import json
         try:
             state = json.loads(run.state_snapshot)
             target_worlds = state.get("target_worlds", [])
@@ -483,7 +479,7 @@ async def runs_history(request: Request):
             "created_at": str(run.created_at),
         })
 
-    template = templates.env.get_template("fragments/research_history.html")
+    template = templates.env.get_template("components/research_history.html")
     return HTMLResponse(content=template.render(request=request, runs=results))
 
 
@@ -495,12 +491,7 @@ async def run_details(request: Request, run_id: str):
 
 @router.get("/{run_id}/acquisition", response_class=HTMLResponse)
 async def run_acquisition(request: Request, run_id: str):
-    from sqlmodel import Session, select
-
-    from app.db.notebook_schema import AcquisitionArtifact, WorldAcquisitionUsage
-    from app.db.notebook_session import notebook_session_factory
-
-    with Session(notebook_session_factory()) as session:
+    with Session(notebook_engine) as session:
         stmt = (
             select(AcquisitionArtifact)
             .join(WorldAcquisitionUsage)
@@ -509,7 +500,7 @@ async def run_acquisition(request: Request, run_id: str):
         )
         artifacts = session.exec(stmt).all()
 
-    template = templates.env.get_template("fragments/acquisition_panel.html")
+    template = templates.env.get_template("components/acquisition_panel.html")
     return HTMLResponse(
         content=template.render(
             request=request, artifacts=artifacts, run_id=run_id
@@ -519,11 +510,6 @@ async def run_acquisition(request: Request, run_id: str):
 
 @router.get("/{run_id}/phase-details", response_class=HTMLResponse)
 async def run_phase_details(request: Request, run_id: str):
-    from sqlmodel import Session, select
-
-    from app.db.schema import ExecutionState
-    from app.db.session import engine
-
     with Session(engine) as session:
         last_state = session.exec(
             select(ExecutionState)
@@ -538,7 +524,7 @@ async def run_phase_details(request: Request, run_id: str):
             status_code=404,
         )
 
-    template = templates.env.get_template("fragments/run_phase_details.html")
+    template = templates.env.get_template("components/run_phase_details.html")
     return HTMLResponse(
         content=template.render(
             request=request,
@@ -546,6 +532,11 @@ async def run_phase_details(request: Request, run_id: str):
             state_snapshot=last_state.state_snapshot
         )
     )
+
+
+LOG_LINE_RE = re.compile(
+    r"^\[(.+?)\] \[(.+?)\] \[(.+?)\] \[(.+?)\] \[(.+?)\] \[([\w.]+)\] (.+)$"
+)
 
 
 @router.get("/logs/file")
@@ -559,8 +550,6 @@ def get_file_logs(
     event_type: str | None = None,
     tool: str | None = None,
 ):
-    from app.core.agent_logger import LOG_FILE
-
     if not LOG_FILE.exists():
         return {"logs": [], "total": 0, "has_more": False}
     try:
@@ -574,18 +563,18 @@ def get_file_logs(
             if not line:
                 continue
 
-            parts = line.split("] ")
-            if len(parts) < 6:
+            m = LOG_LINE_RE.match(line)
+            if not m:
                 if filter and filter.lower() not in line.lower():
                     continue
                 results.append(line)
                 continue
 
-            log_agent = parts[1].strip("[")
-            log_model = parts[2].strip("[")
-            log_world = parts[4].strip("[")
-            log_type = parts[5].strip("[").removeprefix("AgentEventType.")
-            log_content = " ".join(parts[6:])
+            log_agent = m.group(2)
+            log_model = m.group(3)
+            log_world = m.group(5)
+            log_type = m.group(6).removeprefix("AgentEventType.")
+            log_content = m.group(7)
 
             if agent and agent.lower() not in log_agent.lower():
                 continue
@@ -627,8 +616,6 @@ def get_file_logs(
 
 @router.get("/logs/{run_id}")
 async def get_realtime_logs(run_id: str):
-    from fastapi.responses import StreamingResponse
-
     async def log_generator():
         exec_service = ExecutionService()
         last_id = 0
@@ -658,11 +645,6 @@ async def get_realtime_logs(run_id: str):
 
 @router.delete("/claims")
 async def delete_all_claims():
-    """Delete all claims from the database."""
-    from sqlmodel import Session
-
-    from app.repositories.execution import ExecutionRepository
-
     with Session() as session:
         repo = ExecutionRepository(session)
         result = repo.delete_all_claims()

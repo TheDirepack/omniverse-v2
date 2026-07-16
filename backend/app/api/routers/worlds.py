@@ -1,14 +1,24 @@
 import json
 from pathlib import Path
 
-from fastapi import APIRouter, BackgroundTasks, Form, HTTPException, Query, Request, Depends
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    Form,
+    HTTPException,
+    Query,
+    Request,
+)
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from sqlmodel import Session, select
+from sqlmodel import Session, func, select
 
 from app.core.dependencies import get_main_session
 from app.db.extrapolation_schema import Theory
 from app.db.extrapolation_session import engine as extrapolation_engine
+from app.db.notebook_schema import NotebookEntry, NotebookUniverse
+from app.db.notebook_session import notebook_engine
 from app.db.schema import (
     Anomaly,
     Artifact,
@@ -20,8 +30,6 @@ from app.db.schema import (
     WorldTier,
 )
 from app.db.session import engine
-from app.db.notebook_schema import NotebookEntry, NotebookUniverse
-from app.db.notebook_session import notebook_engine
 from app.services.universe_service import UniverseService
 
 router = APIRouter(prefix="/worlds", tags=["worlds"])
@@ -108,10 +116,10 @@ def search_worlds(
 ):
     service = UniverseService(session)
     return service.filter_universes(
-        q=q or "", 
-        explored=explored or "", 
-        franchise=franchise or "", 
-        limit=limit, 
+        q=q or "",
+        explored=explored or "",
+        franchise=franchise or "",
+        limit=limit,
         offset=offset
     )
 
@@ -251,24 +259,27 @@ def add_world(payload: AddWorldPayload, background_tasks: BackgroundTasks, sessi
 
 @router.get("/")
 def get_worlds(
-    limit: int = 100, 
-    offset: int = 0, 
+    limit: int = 100,
+    offset: int = 0,
     fields: list[str] | None = None,
     session: Session = Depends(get_main_session)
 ):
     service = UniverseService()
+
+    total_count = session.exec(
+        select(func.count(Universe.id))
+    ).one()
+
     worlds = service.get_all_universes(limit=limit, offset=offset)
-    
+
     results = []
     for w in worlds:
-        # Get metadata from artifacts
         artifacts = session.exec(
             select(Artifact).where(Artifact.universe_id == w.id)
         ).all()
         meta = {a.type: a.name for a in artifacts}
-        
+
         if fields:
-            # Construct a dict with requested fields
             res = {}
             for f in fields:
                 if hasattr(w, f):
@@ -289,7 +300,12 @@ def get_worlds(
                     is_explored=w.is_explored,
                 )
             )
-    return results
+    return {
+        "items": results,
+        "total": total_count,
+        "limit": limit,
+        "offset": offset,
+    }
 
 
 @router.post("/{world_id}/reset-explored")
@@ -310,7 +326,7 @@ def reset_all_explored():
 @router.post("/research-unexplored")
 def research_unexplored(background_tasks: BackgroundTasks):
     service = UniverseService()
-    unexplored = [u.uuid for u in service.repo.get_all() if not u.is_explored]
+    unexplored = [u.uuid for u in service.get_all_universes(limit=5000) if not u.is_explored]
     if not unexplored:
         return {"status": "noop", "run_id": None, "worlds": []}
     import uuid
@@ -429,17 +445,10 @@ def search_duplicates(name: str = Query(...)):
     return {"candidates": service.find_duplicates(name)}
 
 
-from pydantic import BaseModel
-
-
-class MergeWorldsPayload(BaseModel):
-    keep_id: int
-    merge_id: int
-
 @router.post("/merge")
-def merge_worlds(payload: MergeWorldsPayload):
+def merge_worlds(keep_id: int = Form(...), merge_id: int = Form(...)):
     service = UniverseService()
-    return service.merge_worlds(payload.keep_id, payload.merge_id)
+    return service.merge_worlds(keep_id, merge_id)
 
 
 @router.get("/by-uuid/{uuid}", response_model=UniverseResponse)

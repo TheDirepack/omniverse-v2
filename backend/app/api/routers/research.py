@@ -1,7 +1,10 @@
 
 from fastapi import APIRouter
 from pydantic import BaseModel
+from sqlmodel import Session, select
 
+from app.db.notebook_schema import NotebookClaim, NotebookUniverse
+from app.db.notebook_session import notebook_engine
 from app.services.theory_service import TheoryService
 from app.services.tiering_service import TieringService
 from app.services.universe_service import UniverseService
@@ -65,11 +68,6 @@ def get_claims(
 
 @router.get("/claims/notebook", response_model=list[NotebookClaimResponse])
 def get_notebook_claims(universe_ids: str | None = None):
-    from sqlmodel import Session, select
-
-    from app.db.notebook_schema import NotebookClaim, NotebookUniverse
-    from app.db.notebook_session import notebook_engine
-
     with Session(notebook_engine) as session:
         query = select(NotebookClaim, NotebookUniverse.name).join(
             NotebookUniverse

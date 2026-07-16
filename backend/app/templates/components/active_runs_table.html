@@ -20,11 +20,10 @@
             </td>
             <td class="px-4 py-2 text-right text-gray-500 dark:text-gray-400">{{ run.progress }}%</td>
             <td class="px-4 py-2 text-center space-x-2">
-                <button hx-get="/api/runs/{{ run.run_id }}" 
-                        hx-target="body"
-                        class="px-2 py-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition text-[10px] font-bold uppercase tracking-tighter">
+                <a href="/api/runs/{{ run.run_id }}" 
+                   class="inline-block px-2 py-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition text-[10px] font-bold uppercase tracking-tighter">
                     Logs
-                </button>
+                </a>
                 <button hx-post="/api/runs/abort" 
                         hx-vals='{"runId": "{{ run.run_id }}"}'
                         hx-target="#execution-table"

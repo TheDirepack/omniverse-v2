@@ -44,12 +44,10 @@
         {% for claim in claims %}
         <div class="py-2 px-3 text-sm flex justify-between items-center">
             <div>
-                <span class="font-bold">{{ claim.subject_id }}</span>
-                <span class="text-blue-600 mx-1">{{ claim.predicate }}</span>
-                <span>{{ claim.object_literal or claim.object_entity_id }}</span>
-                {% if claim.source_wiki %}
-                <a href="{{ claim.source_wiki }}" target="_blank" class="text-xs text-blue-500 ml-2 hover:underline">source</a>
-                {% endif %}
+                <span class="font-bold">{{ artifact_names.get(claim.from_artifact_id, {}).get('name', claim.from_artifact_id) }}</span>
+                <span class="text-blue-600 mx-1">{{ claim.relation_type }}</span>
+                <span>{{ artifact_names.get(claim.to_artifact_id, {}).get('name', claim.to_artifact_id) if claim.to_artifact_id else '—' }}</span>
+                <a href="/provenance/claim/{{ claim.id }}" class="text-xs text-blue-500 ml-2 hover:underline">trace</a>
             </div>
             <a href="/provenance/claim/{{ claim.id }}" 
                class="text-[10px] bg-gray-100 dark:bg-gray-700 px-1.5 py-0.5 rounded hover:bg-gray-200 dark:hover:bg-gray-600 transition text-gray-500">

@@ -46,7 +46,7 @@
             </div>
             <div class="phase-node z-10 flex flex-col items-center gap-2" data-node="extrapolation_node">
                 <div class="w-8 h-8 rounded-full bg-gray-200 dark:bg-gray-700 border-4 border-white dark:border-gray-900 flex items-center justify-center text-xs font-bold transition-colors duration-300">5</div>
-                <span class a="text-xs font-medium text-gray-500 dark:text-gray-400">Extrapolation</span>
+                <span class="text-xs font-medium text-gray-500 dark:text-gray-400">Extrapolation</span>
             </div>
         </div>
     </div>
@@ -140,8 +140,13 @@
         const data = JSON.parse(event.data);
         
         if (data.finished) {
-            statusBadge.textContent = data.aborted ? 'ABORTED' : (data.failed ? 'FAILED' : 'COMPLETED');
-            statusBadge.classList.add('bg-blue-100', 'text-blue-800');
+            const finalStatus = data.aborted ? 'ABORTED' : (data.failed ? 'FAILED' : 'COMPLETED');
+            statusBadge.textContent = finalStatus;
+            if (finalStatus === 'FAILED' || finalStatus === 'ABORTED') {
+                statusBadge.classList.add('bg-red-100', 'text-red-800');
+            } else {
+                statusBadge.classList.add('bg-green-100', 'text-green-800');
+            }
             eventSource.close();
             return;
         }

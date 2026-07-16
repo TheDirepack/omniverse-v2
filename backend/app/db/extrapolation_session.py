@@ -25,3 +25,12 @@ def _enable_foreign_keys(dbapi_connection, _connection_record):
 
 def init_extrapolation_db():
     extrapolation_metadata.create_all(engine)
+
+
+def reset_extrapolation_db():
+    with engine.connect() as conn:
+        conn.exec_driver_sql("PRAGMA foreign_keys = OFF")
+        extrapolation_metadata.drop_all(conn, checkfirst=True)
+        conn.exec_driver_sql("PRAGMA foreign_keys = ON")
+        conn.commit()
+    init_extrapolation_db()

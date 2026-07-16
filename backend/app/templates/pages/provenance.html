@@ -19,7 +19,7 @@
                     <span class="text-xs font-bold uppercase {% if is_notebook %}text-amber-600{% else %}text-blue-600{% endif %}">
                         {% if is_notebook %}Notebook Claim{% else %}Verified Claim{% endif %}
                     </span>
-                    <span class="text-xs text-gray-400">{{ claim.created_at }}</span>
+                    <span class="text-xs text-gray-400">{{ claim.created_at.strftime('%Y-%m-%d %H:%M') if claim.created_at else 'N/A' }}</span>
                 </div>
                 <div class="text-lg font-medium">
                      {% if is_notebook %}
@@ -46,7 +46,7 @@
             <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow border-l-4 border-green-600">
                 <div class="flex justify-between items-start mb-2">
                     <span class="text-xs font-bold uppercase text-green-600">Supporting Evidence</span>
-                    <span class="text-xs text-gray-400">{{ evidence.created_at if evidence else 'N/A' }}</span>
+                    <span class="text-xs text-gray-400">{{ evidence.created_at.strftime('%Y-%m-%d %H:%M') if evidence else 'N/A' }}</span>
                 </div>
                 <div class="text-sm font-mono bg-gray-50 dark:bg-gray-900 p-3 rounded border border-gray-100 dark:border-gray-800 mb-3">
                     {{ evidence_chunk.content }}
@@ -68,7 +68,7 @@
             <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow border-l-4 border-purple-600">
                 <div class="flex justify-between items-start mb-2">
                     <span class="text-xs font-bold uppercase text-purple-600">Acquisition Artifact</span>
-                    <span class="text-xs text-gray-400">{{ artifact.created_at }}</span>
+                    <span class="text-xs text-gray-400">{{ artifact.created_at.strftime('%Y-%m-%d %H:%M') if artifact.created_at else 'N/A' }}</span>
                 </div>
                 <div class="grid grid-cols-2 gap-4 text-sm">
                     <div class="space-y-1">

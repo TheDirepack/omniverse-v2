@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}Research Results - Omniverse{% endblock %}
+{% block content %}
+<div class="p-6 space-y-6">
+    <div class="flex items-center justify-between">
+        <div>
+            <h1 class="text-lg font-bold">Research Results</h1>
+            <p class="text-xs text-gray-500 font-mono mt-1">Run ID: {{ run_id }}</p>
+        </div>
+        <a href="/logs" class="text-xs text-blue-600 hover:underline">← Back to Logs</a>
+    </div>
+
+    <div class="space-y-4">
+        <h2 class="text-sm font-semibold uppercase tracking-wider text-gray-500">Execution Timeline</h2>
+        <div class="space-y-2">
+            {% for state in states %}
+            <div class="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-800 rounded-sm border border-gray-200 dark:border-gray-700">
+                <div class="text-xs font-mono text-gray-500 shrink-0">{{ state.created_at.strftime('%H:%M:%S') if state.created_at else '--' }}</div>
+                <div class="text-xs font-semibold {% if state.status == 'FAILED' %}text-red-600{% elif state.status == 'COMPLETED' %}text-green-600{% else %}text-blue-600{% endif %}">
+                    {{ state.node_name }}
+                </div>
+                <div class="text-xs text-gray-500 truncate">{{ state.thought[:100] }}{% if state.thought and state.thought|length > 100 %}...{% endif %}</div>
+                <div class="ml-auto">
+                    <span class="text-[10px] font-bold uppercase px-2 py-0.5 rounded-sm
+                        {% if state.status == 'FAILED' %}bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300
+                        {% elif state.status == 'COMPLETED' %}bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300
+                        {% else %}bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300{% endif %}">
+                        {{ state.status }}
+                    </span>
+                </div>
+            </div>
+            {% else %}
+            <p class="text-xs text-gray-400 italic">No execution states recorded.</p>
+            {% endfor %}
+        </div>
+    </div>
+
+    <div class="space-y-4">
+        <h2 class="text-sm font-semibold uppercase tracking-wider text-gray-500">Artifacts Created</h2>
+        {% if artifacts %}
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead>
+                    <tr class="border-b border-gray-200 dark:border-gray-700">
+                        <th class="text-left py-2 text-xs font-medium text-gray-500">Name</th>
+                        <th class="text-left py-2 text-xs font-medium text-gray-500">Type</th>
+                        <th class="text-left py-2 text-xs font-medium text-gray-500">Confidence</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for artifact in artifacts %}
+                    <tr class="border-b border-gray-100 dark:border-gray-800">
+                        <td class="py-2 text-xs font-mono">{{ artifact.name }}</td>
+                        <td class="py-2 text-xs">{{ artifact.type }}</td>
+                        <td class="py-2 text-xs">{{ artifact.confidence.value if artifact.confidence else '—' }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="text-xs text-gray-400 italic">No artifacts were created in this run.</p>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

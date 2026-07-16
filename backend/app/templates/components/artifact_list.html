@@ -1,4 +1,5 @@
-<div class="divide-y divide-gray-100 dark:divide-gray-800">
+<div class="divide-y divide-gray-100 dark:divide-gray-800" hx-indicator="#artifact-list-indicator">
+    <div id="artifact-list-indicator" class="htmx-indicator text-center py-4 text-xs animate-spin">⌛</div>
     {% for art in artifacts %}
     <div class="p-3 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors border-l-4 border-l-transparent hover:border-l-blue-600"
          hx-get="/api/artifacts/{{ art.id }}" 

@@ -21,6 +21,7 @@ async def theory_page(request: Request):
         request=request,
         theories=theories,
         universes=universes,
+        current_path=str(request.url.path),
     ))
 
 

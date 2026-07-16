@@ -66,9 +66,11 @@ graph TD
 | `agents/nodes.py` | LangGraph node implementations |
 | `agents/prompts.py` | Agent system prompts |
 | `agents/prompt_templates.py` | Prompt template variables |
+| `agents/workflow.py` | State machine definition |
+| `agents/workflow_state.py` | Shared state schema |
+| `agents/agent_names.py` | Agent name constants |
 | `workflow/tiering_workflow.py` | Tiering state machine |
 | `workflow/extrapolation_workflow.py` | Extrapolation state machine |
-| `workflow_state.py` | Shared state schema |
 
 ### 5. Core Engine (`backend/app/core/`)
 **Purpose**: Low-level utilities and runtime
@@ -80,9 +82,15 @@ graph TD
 | `browser.py` | Cloakbrowser manager (Semaphore:5) |
 | `tools.py` | Agent tool definitions |
 | `runtime_state.py` | ContextVar for `run_id` |
+| `context_manager.py` | Token counting, context compression, pruning |
+| `context.py` | Universe context management |
+| `domain.py` | ResearchTarget, ResearchWorkspace domain objects |
 | `web_search.py` | Search engine abstraction |
 | `web_fetch.py` | Page fetching |
 | `acquisition_cache.py` | Web result deduplication |
+| `agent_logger.py` | Structured logging |
+| `provider_models.py` | Provider/model schemas |
+| `importers/*.py` | OCR, Web page extraction |
 
 ### 6. Research Layer (`backend/app/research/`)
 **Purpose**: High-level research workflow
@@ -129,11 +137,13 @@ The core workflow processes universes from untiered to tiered:
 | **Researcher** | Fact collection | `webSearch`, `fetchPage`, `saveNotebookEntry` |
 | **DB Architect** | DB integration | `queryArtifacts`, `upsertArtifacts` |
 | **Universe Chronicler** | Summarization | `queryArtifacts` |
+| **Consolidator** | Data consolidation | `queryArtifacts`, `upsertArtifacts` |
 | **Tier Architect** | Tiering logic | `queryArtifacts`, `upsertArtifacts` |
 | **Logic Auditor** | Consistency check | `queryArtifacts` |
 | **Stability Unit** | Rubric enforcement | `queryArtifacts`, `upsertArtifacts` |
 | **Ontological Theorist** | Speculation | `queryArtifacts`, `upsertArtifacts` |
 | **Theoretical Auditor** | Theory validation | `queryArtifacts` |
+| **Rubric Steward** | Rubric management | `queryArtifacts`, `upsertArtifacts` |
 
 ## Database Topology
 
@@ -186,11 +196,15 @@ The core workflow processes universes from untiered to tiered:
 
 ## Key Conventions
 
-- **API Prefix**: All routes under `/api` or `/research`
+- **API Prefix**: All routes under `/api`
 - **CORS**: Wide open (`*`)
 - **CSRF**: Removed for local dev
 - **DB Location**: `backend/data/` (overridable via env vars)
 - **Log Format**: `[Timestamp] [Agent] [Model] [KeyID] [WorldName] [Type] Content`
+- **Context Management**: `ContextManager` handles token counting, context compression, and pruning of raw observations
+- **Domain Objects**: `ResearchTarget` and `ResearchWorkspace` provide structured domain modeling
+- **Artifact Versioning**: `ArtifactVersion` tracks history of knowledge evolution
+- **Parallel Execution**: Batch processing controlled via `MAX_PARALLEL_AGENTS` setting
 
 ## Related Areas
 

@@ -150,4 +150,59 @@
         </form>
         <div id="snapshot-indicator" class="htmx-indicator animate-spin inline-block ml-2">⌛</div>
     </div>
+
+    <div class="pt-6 border-t border-gray-200 dark:border-gray-700 space-y-4">
+        <h2 class="text-xl font-semibold text-red-600 dark:text-red-400">Database Reset</h2>
+        <p class="text-sm text-gray-500 dark:text-gray-400">Drop and recreate all tables in the selected database. Irreversible.</p>
+        <div class="flex flex-wrap gap-2">
+            <button class="bg-red-600 text-white px-4 py-2 rounded text-sm hover:bg-red-700 transition"
+                    hx-post="/settings/reset-db"
+                    hx-target="#settings-content"
+                    hx-swap="innerHTML"
+                    hx-vals='{"db_name": "main"}'
+                    hx-confirm="Reset the MAIN database? All worlds, artifacts, and tier data will be lost.">
+                Reset Main DB
+            </button>
+            <button class="bg-red-600 text-white px-4 py-2 rounded text-sm hover:bg-red-700 transition"
+                    hx-post="/settings/reset-db"
+                    hx-target="#settings-content"
+                    hx-swap="innerHTML"
+                    hx-vals='{"db_name": "settings"}'
+                    hx-confirm="Reset the SETTINGS database? All providers, routes, and API keys will be lost.">
+                Reset Settings DB
+            </button>
+            <button class="bg-red-600 text-white px-4 py-2 rounded text-sm hover:bg-red-700 transition"
+                    hx-post="/settings/reset-db"
+                    hx-target="#settings-content"
+                    hx-swap="innerHTML"
+                    hx-vals='{"db_name": "operational"}'
+                    hx-confirm="Reset the OPERATIONAL database? All execution state and circuit breakers will be lost.">
+                Reset Operational DB
+            </button>
+            <button class="bg-red-600 text-white px-4 py-2 rounded text-sm hover:bg-red-700 transition"
+                    hx-post="/settings/reset-db"
+                    hx-target="#settings-content"
+                    hx-swap="innerHTML"
+                    hx-vals='{"db_name": "notebook"}'
+                    hx-confirm="Reset the NOTEBOOK database? All research workspace data will be lost.">
+                Reset Notebook DB
+            </button>
+            <button class="bg-red-600 text-white px-4 py-2 rounded text-sm hover:bg-red-700 transition"
+                    hx-post="/settings/reset-db"
+                    hx-target="#settings-content"
+                    hx-swap="innerHTML"
+                    hx-vals='{"db_name": "extrapolation"}'
+                    hx-confirm="Reset the EXTRAPOLATION database? All theories and speculative data will be lost.">
+                Reset Extrapolation DB
+            </button>
+            <button class="bg-red-700 text-white px-4 py-2 rounded text-sm hover:bg-red-800 transition font-bold"
+                    hx-post="/settings/reset-db"
+                    hx-target="#settings-content"
+                    hx-swap="innerHTML"
+                    hx-vals='{"db_name": "all"}'
+                    hx-confirm="Reset ALL databases? Every table in every database will be dropped and recreated. This is equivalent to a factory reset.">
+                Reset All Databases
+            </button>
+        </div>
+    </div>
 </div>

@@ -335,7 +335,7 @@ async def run_agent(
             active_tools = litellm_tools
 
             # Log prompts before calling model
-            prompt_content = json.dumps(messages, indent=2)
+            prompt_content = json.dumps(messages)
 
             response, model, key_id = await router.run_model(
                 task=agent_name,

@@ -1,7 +1,8 @@
 import json
-
 from pathlib import Path
 
+from fastapi import Request
+from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
 
@@ -49,4 +50,34 @@ def init_jinja(env):
 
 
 templates = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templates"))
+templates.env.auto_reload = True
 init_jinja(templates.env)
+
+
+def render_worlds_table(
+    request: Request, worlds, q=None, explored=None, franchise=None,
+    batch_started=False,
+) -> HTMLResponse:
+    from fastapi.responses import HTMLResponse
+
+    template = templates.env.get_template("components/database_worlds.html")
+    return HTMLResponse(
+        content=template.render(
+            request=request,
+            worlds=worlds,
+            q=q,
+            explored=explored,
+            franchise=franchise,
+            batch_started=batch_started,
+        )
+    )
+
+
+def render_error(request: Request, status: int, message: str) -> HTMLResponse:
+    from fastapi.responses import HTMLResponse
+    template = templates.env.get_template("pages/error.html")
+    current_path = str(request.url.path) if hasattr(request, 'url') else '/'
+    return HTMLResponse(
+        content=template.render(request=request, status=status, message=message, current_path=current_path),
+        status_code=status,
+    )

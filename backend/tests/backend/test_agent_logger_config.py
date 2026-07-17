@@ -6,7 +6,6 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from unittest.mock import patch
 
-
 from app.core import agent_logger as al
 
 
@@ -27,7 +26,7 @@ class TestConfigure:
     def test_configure_default_path(self):
         al.configure()
         expected = Path(__file__).parent.parent.parent / "logs" / "agents.log"
-        assert al.LOG_FILE == expected
+        assert expected == al.LOG_FILE
 
     def test_configure_respects_log_level(self, tmp_path):
         log_file = tmp_path / "test_log_level.log"

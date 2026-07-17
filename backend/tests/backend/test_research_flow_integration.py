@@ -56,7 +56,7 @@ async def test_research_workspace_integration_flow():
 
         try:
             await research_single_world(target, run_id)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             print(f"Research loop ended with: {e}")
 
     # Verify that the prompt contained the pre-existing note

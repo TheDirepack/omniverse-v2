@@ -16,12 +16,12 @@ def test_db_pollution_fixed():
     with Session(settings_engine) as session:
         try:
             session.exec(select(Setting)).all()
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             assert "no such table" in str(e).lower()
 
     # Operational DB: should have its own tables
     with Session(operational_engine) as session:
         try:
             session.exec(select(Setting)).all()
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             assert "no such table" in str(e).lower()

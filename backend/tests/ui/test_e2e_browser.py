@@ -51,7 +51,7 @@ class ServerThread(threading.Thread):
             )
             server = uvicorn.Server(config)
             server.run()
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             self._exception = exc
 
 
@@ -66,7 +66,7 @@ def server_url(seed_providers):  # noqa: ARG001 - fixture dependency for DB seed
             r = requests.get(f"{BASE_URL}/api/health", timeout=2)
             if r.status_code == 200:
                 break
-        except Exception:  # noqa: BLE001
+        except Exception:
             pass
         time.sleep(POLL_INTERVAL)
     else:

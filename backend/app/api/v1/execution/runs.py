@@ -30,7 +30,7 @@ from app.repositories.execution import ExecutionRepository
 from app.services.execution_service import ExecutionService
 from app.services.universe_service import UniverseService
 
-router = APIRouter(prefix="/runs", tags=["runs"])
+router = APIRouter(tags=["runs"])
 
 
 class OrchestratePayload(BaseModel):

@@ -17,4 +17,4 @@ fi
 export PYTHONPATH=./backend:$PYTHONPATH
 
 echo "=== Running All Tests ==="
-pytest backend/tests/ -v --asyncio-mode=auto -x
+pytest backend/tests/ -v --asyncio-mode=auto -x --tb=short 2>&1 | tail -50

@@ -11,14 +11,15 @@ def client():
 
 @pytest.mark.asyncio
 async def test_runs_start(client):
-    """Test starting a new run"""
+    """Test starting a new run via /workflow endpoint"""
     response = client.post(
-        "/api/v1/execution/runs/start",
+        "/api/v1/execution/runs/workflow",
         json={
             "run_type": "research",
             "world_name": "test-world",
             "min_turns": 3,
-            "max_turns": 10
+            "max_turns": 10,
+            "universe_uuids": ["test-uuid"]
         }
     )
     
@@ -30,19 +31,18 @@ async def test_runs_start(client):
 @pytest.mark.asyncio
 async def test_runs_active_list(client):
     """Test listing active runs"""
-    response = client.get("/api/v1/execution/runs/active")
+    response = client.get("/api/v1/execution/runs/active-detailed")
     
     assert response.status_code == 200
     data = response.json()
-    # May return HTML template
-    if "html" not in str(type(data)).lower():
-        assert "runs" in data or "active" in data.lower()
+    # Returns list of active runs
+    assert isinstance(data, list)
 
 
 @pytest.mark.asyncio
 async def test_runs_get_by_id(client):
     """Test getting run by ID"""
-    response = client.get("/api/v1/execution/runs/get/1")
+    response = client.get("/api/v1/execution/runs/1")
     
     assert response.status_code in [200, 404]
 
@@ -50,7 +50,7 @@ async def test_runs_get_by_id(client):
 @pytest.mark.asyncio
 async def test_runs_abort_single(client):
     """Test aborting a single run"""
-    response = client.delete("/api/v1/execution/runs/abort/1")
+    response = client.post("/api/v1/execution/runs/abort?run_id=1")
     
     assert response.status_code in [200, 404]
 
@@ -58,7 +58,7 @@ async def test_runs_abort_single(client):
 @pytest.mark.asyncio
 async def test_runs_abort_all(client):
     """Test aborting all active runs"""
-    response = client.delete("/api/v1/execution/runs/abort-all")
+    response = client.post("/api/v1/execution/runs/abort-all")
     
     assert response.status_code == 200
     data = response.json()
@@ -76,7 +76,7 @@ async def test_runs_tiering(client):
 @pytest.mark.asyncio
 async def test_runs_extrapolation(client):
     """Test extrapolation workflow"""
-    response = client.post("/api/v1/execution/runs/extrapolation")
+    response = client.post("/api/v1/execution/runs/extrapolate")
     
     assert response.status_code == 200
 

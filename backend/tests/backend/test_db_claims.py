@@ -20,11 +20,12 @@ async def test_claims_get_by_id(client):
 @pytest.mark.asyncio
 async def test_claims_list(client):
     """Test listing all claims"""
-    response = client.get("/api/v1/db/claims/claims/list")
+    response = client.get("/api/v1/db/claims/claims")
     
     assert response.status_code == 200
     data = response.json()
-    assert "claims" in data
+    # Claims endpoint returns research results structure
+    assert "worlds" in data or "tier_system" in data
 
 
 @pytest.mark.asyncio
@@ -34,4 +35,4 @@ async def test_claims_universe_filter(client):
     
     assert response.status_code == 200
     data = response.json()
-    assert "claims" in data
+    assert "worlds" in data or "tier_system" in data

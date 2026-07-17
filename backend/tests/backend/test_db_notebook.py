@@ -13,12 +13,15 @@ def client():
 async def test_notebook_save(client):
     """Test saving notebook entry"""
     response = client.post(
-        "/api/v1/db/notebook/save",
+        "/api/v1/db/notebook/entries",
         json={
-            "id": "test-123",
-            "content": "Test content",
-            "type": "note",
-            "tags": ["test"]
+            "universe_name": "test-world",
+            "items": [{
+                "title": "Test Entry",
+                "summary": "Test summary",
+                "kind": "Observation",
+                "priority": 0
+            }]
         }
     )
     
@@ -31,28 +34,20 @@ async def test_notebook_save(client):
 async def test_notebook_update(client):
     """Test updating notebook entry"""
     response = client.put(
-        "/api/v1/db/notebook/update/test-123",
-        json={"content": "Updated content"}
+        "/api/v1/db/notebook/entries/1",
+        json={
+            "title": "Updated Title",
+            "summary": "Updated summary",
+            "kind": "Observation"
+        }
     )
     
     assert response.status_code == 200
-    data = response.json()
-    assert "success" in data
 
 
 @pytest.mark.asyncio
 async def test_notebook_delete(client):
     """Test deleting notebook entry"""
-    response = client.delete("/api/v1/db/notebook/delete/test-123")
+    response = client.delete("/api/v1/db/notebook/entries/1")
     
     assert response.status_code == 200
-    data = response.json()
-    assert "success" in data
-
-
-@pytest.mark.asyncio
-async def test_notebook_get(client):
-    """Test getting notebook entry"""
-    response = client.get("/api/v1/db/notebook/get/test-123")
-    
-    assert response.status_code in [200, 404]

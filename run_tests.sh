@@ -1,14 +1,20 @@
 #!/bin/bash
 
-# Run all tests - backend and UI
 set -e
 
-echo "=== Running API Tests ==="
-pytest backend/tests/backend/ -v --asyncio-mode=auto
+cd "$(dirname "$0")"
 
-echo ""
-echo "=== Running UI Tests ==="
-pytest backend/tests/ui/ -v --asyncio-mode=auto
+# Activate virtual environment and run tests
+if [ -d "backend/.venv" ]; then
+    source backend/.venv/bin/activate
+elif [ -d "backend/venv" ]; then
+    source backend/venv/bin/activate
+else
+    echo "Error: Virtual environment not found. Run ./setup.sh first."
+    exit 1
+fi
 
-echo ""
-echo "=== All Tests Passed ==="
+export PYTHONPATH=./backend:$PYTHONPATH
+
+echo "=== Running All Tests ==="
+pytest backend/tests/ -v --asyncio-mode=auto -x

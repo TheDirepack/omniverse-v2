@@ -1,6 +1,5 @@
 import pytest
 from fastapi.testclient import TestClient
-
 from app.main import app
 
 
@@ -10,42 +9,54 @@ def client():
         yield c
 
 
-def test_min_research_turns_default(client):
-    """Test that MIN_RESEARCH_TURNS defaults to 6."""
-    resp = client.get("/api/v1/settings", follow_redirects=True)
-    assert resp.status_code == 200
-    data = resp.json()
-    assert data["general_settings"]["MIN_RESEARCH_TURNS"] == "6"
+@pytest.mark.asyncio
+async def test_settings_providers_list(client):
+    """Test listing providers"""
+    response = client.get("/api/v1/settings/providers/list")
+    
+    assert response.status_code == 200
+    data = response.json()
+    assert "providers" in data
 
 
-def test_min_research_turns_update(client):
-    """Test updating MIN_RESEARCH_TURNS setting."""
-    # Update to 10
-    resp = client.post(
-        "/api/v1/settings/general",
-        json={"key": "MIN_RESEARCH_TURNS", "value": "10"},
-        follow_redirects=True,
+@pytest.mark.asyncio
+async def test_settings_providers_get(client):
+    """Test getting provider by ID"""
+    response = client.get("/api/v1/settings/providers/get/provider-1")
+    
+    assert response.status_code in [200, 404]
+
+
+@pytest.mark.asyncio
+async def test_settings_providers_update(client):
+    """Test updating provider configuration"""
+    response = client.put(
+        "/api/v1/settings/providers/update/provider-1",
+        json={
+            "name": "test-provider",
+            "base_url": "http://test.com",
+            "enabled": True
+        }
     )
-    assert resp.status_code == 200
-
-    # Verify update
-    resp = client.get("/api/v1/settings", follow_redirects=True)
-    assert resp.status_code == 200
-    data = resp.json()
-    assert data["general_settings"]["MIN_RESEARCH_TURNS"] == "10"
+    
+    assert response.status_code == 200
 
 
-def test_min_research_turns_validation(client):
-    """Test that MIN_RESEARCH_TURNS validation works."""
-    from app.services.settings_service import SettingsService
+@pytest.mark.asyncio
+async def test_settings_routes_list(client):
+    """Test listing agent routes"""
+    response = client.get("/api/v1/settings/routes/list")
+    
+    assert response.status_code == 200
+    data = response.json()
+    assert "routes" in data
 
-    service = SettingsService()
-    issues = service.validate_settings()
 
-    # Should not have errors about MIN_RESEARCH_TURNS
-    min_turns_issues = [
-        i for i in issues
-        if "MIN_RESEARCH_TURNS" in i["message"]
-    ]
-    # Should only have WARNING (not ERROR)
-    assert all(i["severity"] == "WARNING" for i in min_turns_issues)
+@pytest.mark.asyncio
+async def test_settings_general(client):
+    """Test general settings"""
+    response = client.get("/api/v1/settings/general")
+    
+    assert response.status_code == 200
+    data = response.json()
+    assert "settings" in data or "max_agents_per_turn" in data

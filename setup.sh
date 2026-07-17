@@ -1,53 +1,41 @@
 #!/bin/bash
 set -e
 
-BASE_DIR="$(cd "$(dirname "$0")" && pwd)"
+echo "🚀 Omniverse V2 Setup"
+echo "====================="
+echo ""
 
-echo "🚀 Starting Omniverse V2 Environment Setup..."
+# Colors
+GREEN='\033[0;32m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+NC='\033[0m'
 
-# 1. Backend Setup
-echo "📦 Setting up Backend..."
-cd "$BASE_DIR/backend"
-
-if [ ! -d "venv" ]; then
-    echo "Creating virtual environment..."
-    python3 -m venv venv
+# Create virtual environment if not exists
+if [ ! -d "backend/.venv" ] && [ ! -d "backend/venv" ]; then
+    echo "${CYAN}Creating Python virtual environment...${NC}"
+    python3 -m venv backend/.venv
 fi
 
-echo "Installing backend dependencies..."
-source venv/bin/activate
-pip install --upgrade pip
-pip install -r requirements.txt
-pip install -r requirements-dev.txt
-echo "Optional OCR dependencies not installed (paddlepaddle requires GPU)."
-echo "Install manually: pip install paddlepaddle paddleocr"
-deactivate
+echo "${CYAN}Activating virtual environment...${NC}"
+source backend/.venv/bin/activate || source backend/venv/bin/activate
 
-# 2. Frontend Setup - skipped (removed)
-echo "⊘ Frontend setup skipped (React frontend removed)."
+echo "${BLUE}Installing dependencies...${NC}"
+pip install --upgrade pip -q
+pip install -q -r requirements.txt
+pip install -q -r requirements-dev.txt
 
-# 3. Environment Configuration
-echo "⚙️ Configuring environment..."
-cd "$BASE_DIR/backend"
+echo "${GREEN}✅ Dependencies installed${NC}"
+echo ""
+
+# Check .env.local
 if [ ! -f ".env.local" ]; then
-    echo "Creating .env.local template..."
-    cat <<EOF > .env.local
-GEMINI_API_KEY=your_key_here
-DATABASE_URL=omniverse.db
-PORT=8000
-EOF
-    echo "⚠️  PLEASE EDIT backend/.env.local and add your GEMINI_API_KEY"
+    echo "Creating .env.local from example..."
+    cp .env.example .env.local
 else
     echo ".env.local already exists."
 fi
+echo ""
 
-if [ ! -f "$BASE_DIR/backend/tests/provider_config.py" ]; then
-    echo "Creating test provider configuration..."
-    cp "$BASE_DIR/backend/tests/provider_config.py.example" "$BASE_DIR/backend/tests/provider_config.py"
-    echo "⚠️  PLEASE EDIT backend/tests/provider_config.py and add your API keys for live provider tests"
-else
-    echo "backend/tests/provider_config.py already exists."
-fi
-
-echo "✅ Setup complete!"
+echo "${GREEN}✅ Setup complete!${NC}"
 echo "Run './run.sh' to start the application."

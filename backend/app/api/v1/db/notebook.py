@@ -57,3 +57,28 @@ async def delete_notebook_entry(entry_id: int, session: Session = Depends(get_no
         raise HTTPException(status_code=404, detail=result)
 
     return {"status": "success", "message": result}
+
+
+@router.put("/entries/{entry_id}")
+async def update_notebook_entry(
+    entry_id: int,
+    data: NotebookEntryPayload,
+    session: Session = Depends(get_notebook_session),
+):
+    set_current_universe(data.universe_name if hasattr(data, "universe_name") else "")
+
+    from app.core.tools import tool_save_notebook_entry
+
+    res = await tool_save_notebook_entry({
+        "entry_id": entry_id,
+        "title": data.title,
+        "summary": data.summary,
+        "details": data.details,
+        "kind": data.kind,
+        "priority": data.priority,
+    })
+
+    if "Error" in res:
+        raise HTTPException(status_code=400, detail=res)
+
+    return {"status": "success", "message": res}

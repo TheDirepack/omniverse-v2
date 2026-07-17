@@ -41,12 +41,12 @@ def test_universe_model_fields(session):
 
     # Metadata is now stored as Artifacts
     from app.db.schema import Artifact
-    
+
     # We need to create them since we're using Universe() directly here
     # In a real scenario, we'd use UniverseService.create_universe
     from app.services.universe_service import UniverseService
     svc = UniverseService(session=session)
-    
+
     # Re-create using service to ensure artifacts are created
     session.delete(u)
     session.commit()
@@ -63,11 +63,11 @@ def test_universe_model_fields(session):
     session.commit()
 
     assert u.name == "Test World"
-    
+
     # Check for artifacts
     artifacts = session.exec(select(Artifact).where(Artifact.universe_id == u.id)).all()
     artifact_map = {a.type: a.name for a in artifacts}
-    
+
     assert artifact_map.get("franchise") == "Test Franchise"
     assert artifact_map.get("category") == "Test Category"
     assert artifact_map.get("continuity") == "Test Continuity"

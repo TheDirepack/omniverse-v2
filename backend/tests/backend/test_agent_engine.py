@@ -1127,7 +1127,7 @@ class TestRunAgentPerformance:
                 },
             ),
         ):
-            success, result, _ = await run_agent(
+            success, _result, _ = await run_agent(
                 agent_name="TEST",
                 system_prompt="sys",
                 user_prompt="user",
@@ -1137,7 +1137,7 @@ class TestRunAgentPerformance:
                 submit_tool_name="submitFindings",
                 max_turns=5,
             )
-        
+
         assert success is True
         assert "res_res_0" in tool_results
         assert "res_res_1" in tool_results
@@ -1185,7 +1185,7 @@ class TestRunAgentPerformance:
                 tools_names=["fetchPage", "upsertArtifacts"],
                 submit_tool_name="submitFindings",
             )
-        
+
         final_messages = captured_messages[-1]
         for m in final_messages:
             if m.get("role") == "tool":
@@ -1197,11 +1197,11 @@ class TestRunAgentPerformance:
         original_limit = context_manager.max_tokens
         context_manager.max_tokens = 10
         context_manager.summary_threshold = 0.1
-        
+
         try:
             think_tc = _make_tool_call("someTool", {})
             submit_tc = _make_tool_call("submitFindings", {})
-            
+
             call_count = 0
             async def spy_run_model(*args, **kwargs):
                 nonlocal call_count
@@ -1228,7 +1228,7 @@ class TestRunAgentPerformance:
                     tools_names=["someTool"],
                     submit_tool_name="submitFindings",
                 )
-            
+
             found_summary = False
             for msgs in captured_messages:
                 for m in msgs:

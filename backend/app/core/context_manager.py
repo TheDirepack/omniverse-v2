@@ -21,7 +21,7 @@ class ContextManager:
         """
         try:
             return litellm.token_counter(messages=messages, model=model)
-        except Exception:
+        except (ValueError, TypeError, KeyError, AttributeError):
             # Fallback approximation: 4 chars per token
             text = "".join([
                 m.get("content", "") if isinstance(m.get("content"), str) else ""
@@ -38,7 +38,7 @@ class ContextManager:
         user_goal: str
     ) -> tuple[list[dict[str, Any]], str]:
         """
-        Summarizes the middle of the history to free up space while preserving 
+        Summarizes the middle of the history to free up space while preserving
         the system prompt, the original goal, and the most recent turns.
         Returns: (compressed_messages, summary_text)
         """
@@ -88,7 +88,7 @@ class ContextManager:
                 run_id=None,
             )
             summary_text = response.choices[0].message.content
-        except Exception as e:
+        except (ValueError, TypeError, KeyError, AttributeError) as e:
             print(f"Context compression failed: {e}")
             return messages, "" # Fallback to original on failure
 

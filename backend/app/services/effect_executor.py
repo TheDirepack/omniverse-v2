@@ -199,7 +199,7 @@ class EffectExecutor:
                     tasks = [summarize_universe(uid, run_id) for uid in universe_ids]
                     await asyncio.gather(*tasks)
 
-            except Exception as e:
+            except (ValueError, TypeError, KeyError, AttributeError) as e:
                 # In a real system, we might want to handle this differently
                 # For now, just add to errors
                 if "errors" not in new_state:

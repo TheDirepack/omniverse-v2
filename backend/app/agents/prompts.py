@@ -56,10 +56,10 @@ Current semantic mapping of the universe:
 The following data exists for related universes in the multiverse:
 LEADS:
 {leads}
-  
+
 KNOWLEDGE GRAPH:
 {kg}
-  
+
 IMPORTANT: This data is NOT necessarily true for the current universe/timeline. Use it to identify what to check and where gaps might be, but you MUST independently verify every lead and explicitly document any deviations."""
 
     workspace_block = ""
@@ -67,7 +67,7 @@ IMPORTANT: This data is NOT necessarily true for the current universe/timeline. 
         if workspace_index:
             workspace_block = f"""RESEARCH WORKSPACE (Working Memory)
 {workspace_index}
-  
+
 The workspace is your living workspace. You are expected to discover entirely new entities, relationships, and research directions that are absent from the notebook. Use it as prior work, not as a task list."""
         else:
             n_idx = notebook_index or "No active notes."
@@ -75,16 +75,16 @@ The workspace is your living workspace. You are expected to discover entirely ne
             t_idx = timeline_index or "No timeline events recorded."
             workspace_block = f"""RESEARCH WORKSPACE (Working Memory)
 The following indices represent your persistent research state. Use `load_notebook_entry`, `manage_source`, and `record_timeline_event` to interact with them.
-  
+
 NOTEBOOK INDEX (Active Leads & Hypotheses):
 {n_idx}
-  
+
 SOURCE LIBRARY INDEX (Evidence Base):
 {s_idx}
-  
+
 TIMELINE INDEX (Chronology):
 {t_idx}
-  
+
 The workspace is your living workspace. You are expected to discover entirely new entities, relationships, and research directions that are absent from the notebook. Use it as prior work, not as a task list."""
 
 
@@ -94,10 +94,10 @@ The workspace is your living workspace. You are expected to discover entirely ne
         You are updating an existing dataset.
         PREVIOUS DATASET:
         {previous_dataset}
-        
+
         OUTSTANDING CORRECTIONS:
         {outstanding_corrections or "None"}
-        
+
         INSTRUCTIONS:
         1. ABSOLUTE PRIORITY: Outstanding Corrections take precedence over all other leads. Resolve them first before proceeding to new research.
         2. TARGETED FIXES: Identify exactly which entries are affected by the Outstanding Corrections and fix them.
@@ -142,7 +142,7 @@ The workspace is your living workspace. You are expected to discover entirely ne
             "system": "\n\n".join([p for p in system_parts if p.strip()]),
             "user": f"Perform the research operation for {entity}. Focus on the phased workflow: Discover $\rightarrow$ Extract $\rightarrow$ Document $\rightarrow$ Synthesize $\rightarrow$ Format.",
         }
-    
+
     # Initial research mode (no previous dataset)
     system_parts = [
         f"### ROLE\nProfessional Lore Archivist & Technical Documentation Specialist for {entity}. Your mission is to produce the most complete, accurate, and well-supported record of the assigned world that can be constructed from available evidence.",
@@ -197,7 +197,7 @@ def get_critic_prompt(
         history_block = f"""
 PREVIOUS AUDIT HISTORY:
 {previous_corrections}
-  
+
 INSTRUCTIONS for INCREMENTAL AUDIT:
 1. Verify that the "Resolved" items from the previous turn are actually fixed.
 2. Identify if any new flaws were introduced during the patching process.
@@ -221,7 +221,7 @@ You MUST NOT rely on the Researcher's synthesized output as the source of truth.
 1. Cross-Reference: Use `loadNotebookEntry` and `queryArtifacts` to verify claims against the working memory and database.
 2. Raw Evidence Priority: Prioritize raw source evidence (via `fetchPage`) over the Researcher's summary.
 3. Summary Bias: Identify "Summary Bias" (general narratives instead of technical specs). If a claim is supported only by the Researcher's summary and not by raw evidence in the notebook or DB, it MUST be flagged as Revision_Required.
-  
+
 OBJECTIVE
 1. Depth Audit: Identify "Summary Bias". If the Researcher provides general narrative descriptions instead of technical specifications, mechanisms, and quantitative data, mark as Revision_Required.
 2. Gap Analysis: Check the `Knowledge_Graph`. If high-priority leads exist that were not pursued, or if obvious technical gaps remain, flag it.
@@ -237,7 +237,7 @@ OBJECTIVE
 
 {history_block}
 {final_attempt_block}
-  
+
 OUTPUT FORMAT
 Strict JSON only, no markdown fences, no commentary:
 {{
@@ -247,7 +247,7 @@ Strict JSON only, no markdown fences, no commentary:
   ],
   "Sifted_Dataset": {{ ...optional, only on final attempt if Revision_Required... }}
 }}
-  
+
 CRITERIA
 {criteria}
 - PROHIBITED: No power-scaling, feat analysis, or relative strength comparisons. Focus exclusively on factual accuracy and source grounding.

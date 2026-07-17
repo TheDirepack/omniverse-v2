@@ -11,7 +11,7 @@ from app.research.researcher import research_single_world
 from app.services.universe_service import UniverseService
 
 try:
-    import tests.provider_config
+    import tests.provider_config  # noqa: F401
 except ImportError:
     pytest.importorskip("tests.provider_config")
 
@@ -138,7 +138,7 @@ async def test_db_architect_contradiction_handling():
     # We mock the actual DB part but use a real LLM to see if it plans a contradiction
     # Actually, just testing the tool logic is enough for the DB part,
     # but the prompt's "Intelligent Merging" is what we want to test.
-    
+
     # For a behavioral test, we'd run the agent and check its reasoning.
     _success, res, _ = await run_agent(
         agent_name="DB Architect",

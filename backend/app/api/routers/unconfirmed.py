@@ -1,4 +1,3 @@
-from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -21,7 +20,7 @@ class NotebookEntryPayload(BaseModel):
 
 class NotebookEntryBatchPayload(BaseModel):
     universe_name: str
-    items: List[NotebookEntryPayload]
+    items: list[NotebookEntryPayload]
 
 
 @router.post("/entries")

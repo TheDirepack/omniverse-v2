@@ -1,9 +1,9 @@
-import pytest
 from fastapi.testclient import TestClient
-from sqlmodel import Session, select
-from app.main import app
-from app.db.notebook_session import notebook_engine
+from sqlmodel import Session
+
 from app.db.notebook_schema import NotebookEntry
+from app.db.notebook_session import notebook_engine
+from app.main import app
 
 client = TestClient(app)
 

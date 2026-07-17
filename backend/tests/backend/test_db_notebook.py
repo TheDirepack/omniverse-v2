@@ -1,5 +1,6 @@
 import pytest
 from fastapi.testclient import TestClient
+
 from app.main import app
 
 
@@ -27,5 +28,5 @@ async def test_notebook_update(client):
 async def test_notebook_delete(client):
     """Test deleting notebook entry"""
     response = client.delete("/api/v1/db/notebook/entries/1")
-    
+
     assert response.status_code == 200

@@ -16,6 +16,8 @@ from app.core.tools import (
     tool_save_notebook_entry,
     tool_upsert_artifacts,
 )
+from app.db.notebook_schema import NotebookEntry
+from app.db.notebook_session import notebook_engine
 from app.db.schema import Artifact, Universe
 
 
@@ -186,7 +188,7 @@ class TestToolSaveNotebookEntry:
             "details": "P",
         })
         assert "saved successfully" in result
-        with Session(unconfirmed_engine) as s:
+        with Session(notebook_engine) as s:
             ne = s.exec(
                 select(NotebookEntry).where(NotebookEntry.title == "S")
             ).first()

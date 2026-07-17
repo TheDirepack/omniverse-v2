@@ -27,7 +27,7 @@ class RetryHandler:
         try:
             parsed_critique = json.loads(critique)
             current_corrections = parsed_critique.get("Correction_Queue", [])
-            
+
             # Mark previous corrections as resolved if they are no longer in the current queue
             current_issues = {c.get("Issue") for c in current_corrections if isinstance(c, dict)}
             for entry in self.feedback_history:
@@ -85,7 +85,7 @@ class RetryHandler:
             parts.append("RESOLVED:\n" + "\n".join(resolved))
         if outstanding:
             parts.append("OUTSTANDING:\n" + "\n".join(outstanding))
-        
+
         return "\n\n".join(parts)
 
     def get_research_queue(self) -> str:

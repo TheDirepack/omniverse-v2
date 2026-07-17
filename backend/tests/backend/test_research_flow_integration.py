@@ -4,10 +4,10 @@ import pytest
 from sqlmodel import Session
 
 from app.core.domain import ResearchTarget
-from app.db.schema import Universe
-from app.db.session import engine
 from app.db.notebook_schema import NotebookEntry
 from app.db.notebook_session import notebook_engine
+from app.db.schema import Universe
+from app.db.session import engine
 from app.research.researcher import research_single_world
 
 
@@ -56,7 +56,7 @@ async def test_research_workspace_integration_flow():
 
         try:
             await research_single_world(target, run_id)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             print(f"Research loop ended with: {e}")
 
     # Verify that the prompt contained the pre-existing note

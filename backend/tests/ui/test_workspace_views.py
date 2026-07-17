@@ -1,10 +1,10 @@
 from fastapi.testclient import TestClient
 from sqlmodel import Session
 
-from app.db.schema import Universe
-from app.db.session import engine
 from app.db.notebook_schema import NotebookEntry, ResearchSource, TimelineEntry
 from app.db.notebook_session import notebook_engine
+from app.db.schema import Universe
+from app.db.session import engine
 from app.main import app
 
 client = TestClient(app)

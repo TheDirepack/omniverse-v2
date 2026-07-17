@@ -68,7 +68,7 @@ class UniverseRepository:
                 Artifact.name.contains(franchise)
             ).exists()
             stmt = stmt.where(franchise_subquery)
-        
+
         stmt = stmt.order_by(Universe.name)
         return self.session.exec(stmt.offset(offset).limit(limit)).all()
 

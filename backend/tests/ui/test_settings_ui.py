@@ -1,5 +1,6 @@
 import pytest
 from fastapi.testclient import TestClient
+
 from app.main import app
 
 
@@ -13,7 +14,7 @@ def client():
 async def test_settings_page_loads(client):
     """Test that settings page loads correctly"""
     response = client.get("/settings")
-    
+
     assert response.status_code == 200
     assert "Settings" in response.text
 
@@ -22,7 +23,7 @@ async def test_settings_page_loads(client):
 async def test_providers_list_view(client):
     """Test viewing providers list in settings"""
     response = client.get("/settings/providers")
-    
+
     assert response.status_code == 200
 
 
@@ -45,7 +46,7 @@ async def test_provider_edit_form(client):
 async def test_routes_configuration(client):
     """Test route configuration"""
     response = client.get("/settings/routes")
-    
+
     assert response.status_code == 200
 
 
@@ -53,7 +54,7 @@ async def test_routes_configuration(client):
 async def test_general_settings(client):
     """Test general settings"""
     response = client.get("/settings/general")
-    
+
     assert response.status_code == 200
 
 
@@ -61,7 +62,7 @@ async def test_general_settings(client):
 async def test_settings_save_button(client):
     """Test saving settings changes"""
     response = client.post("/api/v1/settings/general/save")
-    
+
     assert response.status_code == 200
     data = response.json()
     assert "success" in data

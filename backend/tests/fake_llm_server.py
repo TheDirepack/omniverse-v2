@@ -46,7 +46,7 @@ async def chat_completions(_path: str, request: Request):
     try:
         body = await request.json()
         model_hint = body.get("model", "")
-    except Exception:
+    except Exception:  # noqa: BLE001
         pass
 
     if key in _bad_keys:

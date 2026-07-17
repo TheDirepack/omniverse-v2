@@ -77,7 +77,7 @@ async def _read_page_cached(url: str) -> tuple[str, str]:
             doc.extracted_text or str(doc.metadata.get("error", "No content")),
             "fetched",
         )
-    except Exception as e:
+    except (ValueError, TypeError, KeyError, AttributeError) as e:
         return str(e), "error"
 
 
@@ -164,7 +164,7 @@ async def _execute_tool(
                     parts.append(f"Structured data: {doc.structured_data}")
                 return "\n\n".join(parts)
             return f"OCR returned no text. Status: {doc.content_type}. Engine: {doc.engine_name or 'none'}."
-        except Exception as e:
+        except (ValueError, TypeError, AttributeError) as e:
             return f"OCR failed: {e!s}"
 
     if name in AGENT_TOOLS:
@@ -442,7 +442,7 @@ async def run_agent(
                                     "content": "Submission rejected: The dataset provided is not valid JSON. Please ensure you return a properly formatted JSON object.",
                                 })
                                 return True, "Submission rejected: The dataset provided is not valid JSON. Please ensure you return a properly formatted JSON object.", messages
-                            except Exception as e:
+                            except (ValueError, TypeError, KeyError) as e:
                                 messages.append({
                                     "role": "tool",
                                     "tool_call_id": tool_call.id,
@@ -535,7 +535,7 @@ async def run_agent(
                                 try:
                                     observation = await _execute_tool(name, args, run_id, agent_name=agent_name, model=model, key_id=key_id)
                                     tool_failures[name] = 0
-                                except Exception as e:
+                                except (ValueError, TypeError, KeyError, RuntimeError, AttributeError, OSError) as e:
                                     count = tool_failures.get(name, 0) + 1
                                     tool_failures[name] = count
                                     failure_type = _classify_failure(e)

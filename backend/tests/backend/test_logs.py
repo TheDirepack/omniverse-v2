@@ -26,8 +26,8 @@ def write_logs(lines):
 def test_logs_page_renders():
     resp = client.get("/logs/")
     assert resp.status_code == 200
-    assert "System Agent Logs" in resp.text
-    assert "log-filters" in resp.text
+    assert "Execution - Omniverse" in resp.text
+    assert "execution-table" in resp.text
 
 def test_logs_list_empty():
     resp = client.get("/logs/list")

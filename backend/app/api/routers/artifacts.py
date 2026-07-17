@@ -1,20 +1,20 @@
+from typing import Any
+
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
-from typing import Sequence, Any
-from sqlmodel import Session, select
+from sqlmodel import Session
 
 from app.core.dependencies import get_main_session
-from app.db.schema import Artifact
-from app.services.artifact_service import ArtifactService
-from app.repositories.artifact import ArtifactRepository
 from app.core.templates import templates
+from app.repositories.artifact import ArtifactRepository
+from app.services.artifact_service import ArtifactService
 
 router = APIRouter(tags=["artifacts"])
 
 @router.get("/", response_model=list[dict[str, Any]])
 def list_artifacts_json(
-    limit: int = 100, 
-    offset: int = 0, 
+    limit: int = 100,
+    offset: int = 0,
     session: Session = Depends(get_main_session)
 ):
     repo = ArtifactRepository(session)

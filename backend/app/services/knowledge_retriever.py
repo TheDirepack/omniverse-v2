@@ -71,7 +71,7 @@ class KnowledgeRetrieverService:
                                         {
                                             "predicate": payload.get("predicate", "related_to"),
                                             "object": obj_val,
-                                            "support": art.support_count,
+                                            "support": c.support_count,
                                             "status": c.verification_status,
                                             "reference": c.source_reference,
                                         }

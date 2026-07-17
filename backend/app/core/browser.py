@@ -108,7 +108,7 @@ class BrowserManager:
         try:
             try:
                 context = await slot.browser.new_context()
-            except Exception:
+            except (TimeoutError, ConnectionError, OSError):
                 # One retry: assume the process died, relaunch this slot only.
                 logger.warning(
                     "Browser slot %d appears dead, relaunching", slot.index

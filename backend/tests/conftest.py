@@ -1,6 +1,6 @@
 import logging
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -296,7 +296,7 @@ LOG_DIR = Path(__file__).parent / "logs"
 
 def pytest_configure(config):
     LOG_DIR.mkdir(exist_ok=True)
-    run_ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    run_ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     config._test_run_dir = LOG_DIR / f"run_{run_ts}"
     config._test_run_dir.mkdir(exist_ok=True)
 

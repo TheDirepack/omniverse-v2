@@ -1,9 +1,9 @@
 import asyncio
 import hashlib
+import ipaddress
 import logging
 import re
 import socket
-import ipaddress
 from typing import Any
 from urllib.parse import urljoin, urlparse
 
@@ -205,7 +205,7 @@ class WebFetcher:
             # Fallback: try Escape key
             await page.keyboard.press("Escape")
             await asyncio.sleep(0.5)
-        except Exception as e:
+        except (TimeoutError, ConnectionError, OSError, ValueError) as e:
             logger.debug("Error dismissing cookie banners: %s", e)
         return False
 
@@ -629,7 +629,7 @@ class WebFetcher:
         try:
             try:
                 response = await page.goto(url, wait_until="networkidle", timeout=20000)
-            except Exception as e:
+            except (TimeoutError, ConnectionError, OSError) as e:
                 logger.debug(
                     "networkidle timeout for %s, falling back to domcontentloaded: %s",
                     url, e
@@ -649,7 +649,7 @@ class WebFetcher:
             if response is not None:
                 try:
                     last_modified_header = response.headers.get("last-modified")
-                except Exception as e:
+                except (ValueError, TypeError, AttributeError, KeyError) as e:
                     logger.debug(
                         "Failed to get last-modified header for %s: %s", url, e
                     )

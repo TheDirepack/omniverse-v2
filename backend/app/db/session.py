@@ -39,26 +39,26 @@ def init_db(engine_override=None):
     try:
         from app.db.operational_session import init_operational_db
         init_operational_db()
-    except Exception as e:
+    except (ImportError, RuntimeError, OSError, ValueError, TypeError) as e:
         print(f"Error initializing operational database: {e}")
 
     # Initialize the separate notebook staging database
     try:
         init_notebook_db()
-    except Exception as e:
+    except (ImportError, RuntimeError, OSError, ValueError, TypeError) as e:
         print(f"Error initializing notebook database: {e}")
 
     # Initialize the extrapolation database
     try:
         init_extrapolation_db()
-    except Exception as e:
+    except (ImportError, RuntimeError, OSError, ValueError, TypeError) as e:
         print(f"Error initializing extrapolation database: {e}")
 
     # Initialize the separate settings database
     try:
         from app.db.settings_session import init_settings_db
         init_settings_db()
-    except Exception as e:
+    except (ImportError, RuntimeError, OSError, ValueError, TypeError) as e:
         print(f"Error initializing settings database: {e}")
 
 

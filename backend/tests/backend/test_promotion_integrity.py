@@ -1,3 +1,4 @@
+import json
 from unittest.mock import patch
 
 import pytest
@@ -5,10 +6,10 @@ from sqlmodel import Session, SQLModel, create_engine, select
 
 from app.core.context import set_current_universe
 from app.core.tools import tool_save_notebook_entry, tool_upsert_artifacts
-from app.db.schema import Artifact, Universe
 from app.db.notebook_schema import (
     notebook_metadata,
 )
+from app.db.schema import Artifact, Universe
 
 
 @pytest.fixture

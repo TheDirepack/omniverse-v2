@@ -1,7 +1,6 @@
-import pytest
-from sqlmodel import Session
 from app.db.schema import Artifact, ArtifactRelation, Universe
 from app.repositories.artifact import ArtifactRepository
+
 
 class TestArtifactRepository:
     def test_get_by_universe(self, clean_db):
@@ -75,13 +74,13 @@ class TestArtifactRepository:
         detailed_a1 = repo.get_artifact_with_details(clean_db, a1.id)
         assert detailed_a1 is not None
         assert detailed_a1.name == "A1"
-        
+
         # Check relations
         # Note: relations_from and relations_to are defined in schema.py
         assert len(detailed_a1.relations_from) == 1
         assert detailed_a1.relations_from[0].to_artifact_id == a2.id
         assert len(detailed_a1.relations_to) == 0 # a1 is the 'from' artifact
-        
+
         # Check a2
         detailed_a2 = repo.get_artifact_with_details(clean_db, a2.id)
         assert detailed_a2 is not None

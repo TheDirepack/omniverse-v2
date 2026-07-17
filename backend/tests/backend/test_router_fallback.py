@@ -3,7 +3,7 @@ import socket
 import subprocess
 import sys
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import httpx
@@ -480,7 +480,7 @@ class TestCandidateHealth:
                 key_id=key.id,
                 model="gpt-4",
                 failure_count=5,
-                disabled_until=datetime.utcnow() + timedelta(hours=1),
+                disabled_until=datetime.now(timezone.utc) + timedelta(hours=1),
             )
             o_session.add(health)
             o_session.commit()

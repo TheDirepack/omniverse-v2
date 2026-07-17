@@ -324,7 +324,7 @@ class WorldResearcher:
             )
             if not feedback:
                 feedback = "General improvements needed."
-        except:
+        except (json.JSONDecodeError, ValueError, TypeError, KeyError):
             feedback = critique
         return feedback
 

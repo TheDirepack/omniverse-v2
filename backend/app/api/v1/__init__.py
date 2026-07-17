@@ -1,10 +1,9 @@
-import sys
 from fastapi import APIRouter
 
 # Import individual routers
 from app.api.v1.db.artifacts import router as artifacts_router
-from app.api.v1.db.notebook import router as notebook_router
 from app.api.v1.db.claims import router as claims_router
+from app.api.v1.db.notebook import router as notebook_router
 from app.api.v1.db.worlds import router as worlds_router
 from app.api.v1.execution.runs import router as runs_router
 from app.api.v1.settings import router as settings_router

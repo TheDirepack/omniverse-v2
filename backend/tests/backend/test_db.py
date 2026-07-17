@@ -3,7 +3,14 @@ from pathlib import Path
 import pytest
 from sqlmodel import Session, SQLModel, create_engine, select
 
-from app.db.schema import AgentRouteFallback, ProviderConfig, ProviderKey, Universe, Artifact, ArtifactRelation
+from app.db.schema import (
+    AgentRouteFallback,
+    Artifact,
+    ArtifactRelation,
+    ProviderConfig,
+    ProviderKey,
+    Universe,
+)
 
 try:
     from tests.provider_config import PROVIDER_CREDENTIALS
@@ -11,6 +18,7 @@ except ImportError:
     pytest.importorskip("tests.provider_config")
 
 from scripts.migrate_universe_metadata_to_artifacts import migrate
+
 
 def create_test_db(db_dir: str | Path, db_filename: str = "omniverse_v2.db"):
     db_dir = Path(db_dir)
@@ -123,7 +131,7 @@ def test_migration_moves_metadata_to_artifacts(tmp_path):
     db_dir.mkdir()
     db_filename = "test_migration.db"
     create_test_db(db_dir, db_filename)
-    
+
     db_path = db_dir / db_filename
     db_url = f"sqlite:///{db_path}"
     test_engine = create_engine(db_url, connect_args={"check_same_thread": False})
@@ -150,7 +158,7 @@ def test_migration_moves_metadata_to_artifacts(tmp_path):
         artifacts = session.exec(
             select(Artifact).where(Artifact.universe_id == universe_id)
         ).all()
-        
+
         artifact_types = {a.type: a.name for a in artifacts}
         assert artifact_types["franchise"] == "Test Franchise"
         assert artifact_types["category"] == "Test Category"
@@ -162,9 +170,9 @@ def test_migration_moves_metadata_to_artifacts(tmp_path):
         relations = session.exec(
             select(ArtifactRelation).where(ArtifactRelation.universe_id == universe_id)
         ).all()
-        
+
         # We expect 4 relations: world -> franchise, world -> category, world -> continuity, world -> era
         assert len(relations) == 4
-        
+
         relation_types = [r.relation_type for r in relations]
         assert all(rt == "PART_OF" for rt in relation_types)

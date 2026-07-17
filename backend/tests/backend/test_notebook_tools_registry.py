@@ -1,5 +1,5 @@
-import pytest
 from app.core.tools import AGENT_TOOLS
+
 
 def test_unconfirmed_tools_removed():
     removed_tools = [

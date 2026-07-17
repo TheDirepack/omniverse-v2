@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from sqlmodel import Session, select
@@ -44,13 +44,13 @@ class WorkspaceService:
         entries = self.get_notebook_index(universe_uuid)
         if not entries:
             return "No active research notes."
-        
+
         display_entries = entries[:limit]
         lines = [
             f"[{e.id}] {e.title} (Status: {e.status}, Priority: {e.priority})"
             for e in display_entries
         ]
-        
+
         result = "RESEARCH NOTES:\n" + "\n".join(lines)
         if len(entries) > limit:
             result += f"\n(... and {len(entries) - limit} more. Use loadNotebookEntry with entry_id to see details ...)"
@@ -65,7 +65,7 @@ class WorkspaceService:
         )
         if run_id:
             statement = statement.where(NotebookEntry.run_id == run_id)
-        
+
         statement = statement.order_by(NotebookEntry.priority)
         summaries = self.session.exec(statement).all()
         return "\n".join(filter(None, summaries))
@@ -106,7 +106,7 @@ class WorkspaceService:
                 entry.status = status
                 entry.priority = priority
                 entry.run_id = run_id
-                entry.updated_at = datetime.utcnow()
+                entry.updated_at = datetime.now(timezone.utc)
                 self.session.add(entry)
                 self.session.commit()
                 self.session.refresh(entry)
@@ -143,13 +143,13 @@ class WorkspaceService:
         sources = self.get_sources(universe_uuid)
         if not sources:
             return "No curated sources saved."
-        
+
         display_sources = sources[:limit]
         lines = [
             f"[{s.id}] {s.title or s.url} (Reliability: {s.reliability or 'Unknown'})"
             for s in display_sources
         ]
-        
+
         result = "USEFUL SOURCES:\n" + "\n".join(lines)
         if len(sources) > limit:
             result += f"\n(... and {len(sources) - limit} more. Use manageSource to interact with sources ...)"
@@ -211,10 +211,10 @@ class WorkspaceService:
         events = self.get_timeline(universe_uuid)
         if not events:
             return "No timeline events recorded."
-        
+
         display_events = events[:limit]
         lines = [f"[{e.id}] {e.title} (Era: {e.era or 'Unknown'})" for e in display_events]
-        
+
         result = "TIMELINE EVENTS:\n" + "\n".join(lines)
         if len(events) > limit:
             result += f"\n(... and {len(events) - limit} more. Use addTimelineDetail to add more ...)"
@@ -232,7 +232,7 @@ class WorkspaceService:
             f"{sources_str}\n\n"
             f"{timeline_str}"
         )
-        
+
         if self.universe_service:
             universe = self.universe_service.get_universe_by_uuid(universe_uuid)
             if universe:
@@ -241,7 +241,7 @@ class WorkspaceService:
                     limit = 30
                     display_artifacts = artifacts[:limit]
                     artifact_lines = [f"- {name} ({atype})" for name, atype in display_artifacts]
-                    index += f"\n\nCANONICAL ARTIFACTS:\n" + "\n".join(artifact_lines)
+                    index += "\n\nCANONICAL ARTIFACTS:\n" + "\n".join(artifact_lines)
                     if len(artifacts) > limit:
                         index += f"\n(... and {len(artifacts) - limit} more. Use queryArtifacts to search for specific artifacts ...)"
                 else:

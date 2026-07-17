@@ -1,41 +1,88 @@
 #!/bin/bash
 set -e
 
-echo "🚀 Omniverse V2 Setup"
-echo "====================="
+echo "Omniverse V2 Setup"
+echo "=================="
 echo ""
 
-# Colors
 GREEN='\033[0;32m'
 BLUE='\033[0;34m'
 CYAN='\033[0;36m'
+YELLOW='\033[1;33m'
+RED='\033[0;31m'
 NC='\033[0m'
 
-# Create virtual environment if not exists
-if [ ! -d "backend/.venv" ] && [ ! -d "backend/venv" ]; then
-    echo "${CYAN}Creating Python virtual environment...${NC}"
-    python3 -m venv backend/.venv
+err() { echo -e "${RED}[ERROR]${NC} $*" >&2; }
+info() { echo -e "${CYAN}[INFO]${NC} $*"; }
+ok()   { echo -e "${GREEN}[OK]${NC} $*"; }
+warn() { echo -e "${YELLOW}[WARN]${NC} $*"; }
+
+BASE_DIR="$(cd "$(dirname "$0")" && pwd)"
+VENV_DIR=""
+if [ -d "$BASE_DIR/backend/.venv" ]; then
+    VENV_DIR="$BASE_DIR/backend/.venv"
+elif [ -d "$BASE_DIR/backend/venv" ]; then
+    VENV_DIR="$BASE_DIR/backend/venv"
 fi
 
-echo "${CYAN}Activating virtual environment...${NC}"
-source backend/.venv/bin/activate || source backend/venv/bin/activate
+check_python() {
+    if ! command -v python3 &>/dev/null; then
+        err "python3 not found. Install Python 3.10 or later."
+        exit 1
+    fi
+    version=$(python3 --version 2>&1 | grep -oP '\d+\.\d+')
+    if awk "BEGIN {exit !($version < 3.10)}"; then
+        err "Python 3.10+ required, found $version"
+        exit 1
+    fi
+    ok "Python $(python3 --version | cut -d' ' -f2)"
+}
 
-echo "${BLUE}Installing dependencies...${NC}"
-pip install --upgrade pip -q
-pip install -q -r requirements.txt
-pip install -q -r requirements-dev.txt
+create_venv() {
+    if [ -n "$VENV_DIR" ]; then
+        info "Virtual environment already exists: $VENV_DIR"
+        return
+    fi
+    info "Creating Python virtual environment..."
+    python3 -m venv "$BASE_DIR/backend/.venv"
+    VENV_DIR="$BASE_DIR/backend/.venv"
+    ok "Virtual environment created at backend/.venv"
+}
 
-echo "${GREEN}✅ Dependencies installed${NC}"
+install_deps() {
+    info "Installing dependencies..."
+    "$VENV_DIR/bin/pip" install --upgrade pip -q
+    "$VENV_DIR/bin/pip" install -q -r "$BASE_DIR/backend/requirements.txt"
+    if [ -f "$BASE_DIR/backend/requirements-dev.txt" ]; then
+        "$VENV_DIR/bin/pip" install -q -r "$BASE_DIR/backend/requirements-dev.txt"
+        ok "Development dependencies installed"
+    fi
+    ok "Dependencies installed"
+}
+
+setup_env() {
+    if [ ! -f "$BASE_DIR/backend/.env.local" ]; then
+        warn "No .env.local found. Creating minimal configuration..."
+        cat > "$BASE_DIR/backend/.env.local" << 'EOF'
+# Omniverse V2 - Local Development Settings
+DATABASE_URL=sqlite:///./data/omniverse_v2.db
+SETTINGS_DB_URL=sqlite:///./data/settings.db
+OPERATIONAL_DB_URL=sqlite:///./data/operational.db
+NOTEBOOK_DB_URL=sqlite:///./data/notebook.db
+EXTRAPOLATION_DB_URL=sqlite:///./data/extrapolation.db
+LOG_DIR=./logs
+EOF
+        ok "Created backend/.env.local with defaults"
+    else
+        ok ".env.local exists"
+    fi
+}
+
+check_python
+create_venv
+install_deps
+setup_env
+
 echo ""
-
-# Check .env.local
-if [ ! -f ".env.local" ]; then
-    echo "Creating .env.local from example..."
-    cp .env.example .env.local
-else
-    echo ".env.local already exists."
-fi
-echo ""
-
-echo "${GREEN}✅ Setup complete!${NC}"
+ok "Setup complete!"
 echo "Run './run.sh' to start the application."

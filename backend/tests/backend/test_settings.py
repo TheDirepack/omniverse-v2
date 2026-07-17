@@ -1,5 +1,6 @@
 import pytest
 from fastapi.testclient import TestClient
+
 from app.main import app
 
 
@@ -13,7 +14,7 @@ def client():
 async def test_settings_providers_list(client):
     """Test listing providers"""
     response = client.get("/api/v1/settings/providers/")
-    
+
     assert response.status_code == 200
     data = response.json()
     # Returns list of providers
@@ -26,7 +27,7 @@ async def test_settings_providers_list(client):
 async def test_settings_providers_get(client):
     """Test getting provider by ID"""
     response = client.get("/api/v1/settings/providers/1/models")
-    
+
     assert response.status_code in [200, 404]
 
 
@@ -42,7 +43,7 @@ async def test_settings_providers_update(client):
             "enabled": True
         }
     )
-    
+
     assert response.status_code == 200
 
 
@@ -50,7 +51,7 @@ async def test_settings_providers_update(client):
 async def test_settings_routes_list(client):
     """Test listing agent routes"""
     response = client.get("/api/v1/settings/routes/")
-    
+
     assert response.status_code == 200
     data = response.json()
     # Returns list of routes directly
@@ -63,7 +64,7 @@ async def test_settings_routes_list(client):
 async def test_settings_general(client):
     """Test general settings"""
     response = client.get("/api/v1/settings/general/")
-    
+
     assert response.status_code == 200
     data = response.json()
     # Returns dict with general_settings, providers, agent_routes keys

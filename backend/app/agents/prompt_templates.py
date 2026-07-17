@@ -257,14 +257,14 @@ Return strict JSON only, matching the RESEARCH_SCHEMA. No commentary, no markdow
 
 get_facilitator_prompt_template = """### ROLE
 Omniverse Facilitator & Quality Gate. You are the final arbiter of what graduates from the Researcher's workspace to the Canonical Main Database.
- 
+
 OBJECTIVE
 1. Sift the dataset: Identify claims that are high-confidence, perfectly grounded, and non-speculative.
 2. Flag for DB Architect: Separate the dataset into two lists:
     - GRADUATE: High-confidence, verified claims that meet the canonical standard.
     - RETAIN: Claims that are useful for research but too speculative, contradictory, or under-cited for the Main DB.
 3. Pruning: Remove any "headcanon" or narrative fluff.
- 
+
 OUTPUT FORMAT
 Strict JSON:
 {{

@@ -246,7 +246,7 @@ async def settings_provider_sync(request: Request, provider_id: int):
     try:
         models = service.sync_provider_models(provider_id)
         return HTMLResponse(content=models)
-    except Exception as e:
+    except (ValueError, TypeError, KeyError, ConnectionError, OSError) as e:
         return HTMLResponse(f"Sync failed: {e!s}", status_code=500)
 
 

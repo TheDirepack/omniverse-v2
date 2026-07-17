@@ -1,6 +1,7 @@
-from fastapi import APIRouter, Depends, Query
 from typing import Any
-from sqlmodel import Session, select
+
+from fastapi import APIRouter, Depends
+from sqlmodel import Session
 
 from app.core.dependencies import get_main_session
 from app.db.schema import Universe
@@ -73,8 +74,7 @@ def update_universe(
     session: Session = Depends(get_main_session)
 ):
     service = UniverseService(session)
-    universe = service.update_universe(id, data)
-    return universe
+    return service.update_universe(id, data)
 
 @router.delete("/{id}")
 def delete_universe(

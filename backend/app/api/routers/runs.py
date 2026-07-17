@@ -111,7 +111,7 @@ async def run_pipeline_in_background(run_id: str, universe_uuids: list[str]):
     }
     try:
         await app_graph.ainvoke(inputs)
-    except Exception as e:
+    except (ValueError, TypeError, KeyError, RuntimeError, AttributeError, OSError) as e:
         exec_service.log_transition(
             run_id,
             "Manager",
@@ -169,7 +169,7 @@ async def run_focused_search_in_background(
     }
     try:
         await app_graph.ainvoke(inputs)
-    except Exception as e:
+    except (ValueError, TypeError, KeyError, RuntimeError, AttributeError, OSError) as e:
         exec_service.log_transition(
             run_id,
             "Focused Search",
@@ -213,7 +213,7 @@ async def run_tiering_in_background(run_id: str):
     }
     try:
         await architecture_node(state)
-    except Exception as e:
+    except (ValueError, TypeError, KeyError, RuntimeError, AttributeError, OSError) as e:
         print(f"[API] Error executing tiering: {e}")
         exec_service = ExecutionService()
         exec_service.log_transition(
@@ -238,7 +238,7 @@ async def run_extrapolation_in_background(run_id: str, target_worlds: list[str])
     }
     try:
         await app_graph.ainvoke(inputs)
-    except Exception as e:
+    except (ValueError, TypeError, KeyError, RuntimeError, AttributeError, OSError) as e:
         exec_service = ExecutionService()
         exec_service.log_transition(
             run_id,
@@ -346,11 +346,11 @@ async def abort_run_endpoint(request: Request):
     try:
         body = await request.json()
         run_id = body.get("runId") or body.get("run_id") or body.get("runid")
-    except Exception:
+    except (ValueError, TypeError, KeyError):
         try:
             form = await request.form()
             run_id = form.get("runId") or form.get("run_id") or form.get("runid")
-        except Exception:
+        except (ValueError, TypeError, KeyError):
             pass
 
     if not run_id:
@@ -403,7 +403,7 @@ async def get_active_runs_detailed(request: Request, filter: str | None = None):
                 world_name = ", ".join(target_worlds) if target_worlds else "Unknown"
                 focus = state.get("focused_features", ["General Research"])
                 focus_str = ", ".join(focus) if isinstance(focus, list) else str(focus)
-            except:
+            except (json.JSONDecodeError, TypeError, KeyError, AttributeError):
                 world_name = "Unknown"
                 focus_str = "Unknown"
 
@@ -610,8 +610,8 @@ def get_file_logs(
             if not has_filters
             else ((offset or 0) + (limit or 100) < total),
         }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error reading logs: {e!s}")
+    except (ValueError, TypeError, KeyError, IndexError) as e:
+        raise HTTPException(status_code=500, detail=f"Error reading logs: {e!s}") from e
 
 
 @router.get("/logs/{run_id}")

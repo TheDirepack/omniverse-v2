@@ -1,20 +1,20 @@
+from typing import Any
+
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
-from typing import Sequence, Any
-from sqlmodel import Session, select
+from sqlmodel import Session
 
 from app.core.dependencies import get_main_session
-from app.db.schema import Artifact
-from app.services.artifact_service import ArtifactService
-from app.repositories.artifact import ArtifactRepository
 from app.core.templates import templates
+from app.repositories.artifact import ArtifactRepository
+from app.services.artifact_service import ArtifactService
 
 router = APIRouter(tags=["artifacts"])
 
 @router.get("/", response_model=list[dict[str, Any]])
 def list_artifacts_json(
-    limit: int = 100, 
-    offset: int = 0, 
+    limit: int = 100,
+    offset: int = 0,
     session: Session = Depends(get_main_session)
 ):
     repo = ArtifactRepository(session)
@@ -75,3 +75,29 @@ def get_artifact(
     return HTMLResponse(content=template.render(
         request=request, art=art
     ))
+
+@router.post("/save")
+async def save_artifact(
+    data: dict[str, Any],
+    session: Session = Depends(get_main_session)
+):
+    """Save a single artifact by type."""
+    from app.services.artifact_service import ArtifactService
+
+    service = ArtifactService(session)
+
+    # Get existing artifact or create new
+    existing = service.get_artifact_by_type_and_name(data.get("type"), data.get("name"))
+    if existing:
+        return {"status": "updated", "artifact_id": existing.id}
+
+    # Create new artifact
+    new_artifact = await service.create_artifact(
+        content_type=data.get("type"),
+        title=data.get("name"),
+        description=data.get("description"),
+        details=data.get("details"),
+        raw_content=data.get("content"),
+    )
+
+    return {"status": "created", "artifact_id": new_artifact.id}

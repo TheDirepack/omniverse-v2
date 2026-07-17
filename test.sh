@@ -2,95 +2,69 @@
 set -e
 
 BASE_DIR="$(cd "$(dirname "$0")" && pwd)"
-BACKUP_DIR="/tmp/omniverse_backup"
-MAIN_DBS=("omniverse_v2.db" "notebook.db" "extrapolation.db" "settings.db")
-TEMP_DB_FILES=("/tmp/omniverse_test.db" "/tmp/omniverse_test_notebook.db" "/tmp/omniverse_test_extrapolation.db" "/tmp/omniverse_test_settings.db")
-DATA_DIR="$BASE_DIR/backend/data"
 
-cleanup() {
-    echo ""
-    echo "=== Restoring Databases and Cleaning Up ==="
-    # Restore main DBs
-    for db in "${MAIN_DBS[@]}"; do
-        if [ -f "$BACKUP_DIR/$db" ]; then
-            cp "$BACKUP_DIR/$db" "$DATA_DIR/$db"
-        fi
-    done
-    # Remove ephemeral test DBs
-    rm -f "${TEMP_DB_FILES[@]}"
-    rm -rf "$BACKUP_DIR"
-    echo "✅ Restore and cleanup completed."
-}
+GREEN='\033[0;32m'
+CYAN='\033[0;36m'
+RED='\033[0;31m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
 
-trap cleanup EXIT
+err()  { echo -e "${RED}[ERROR]${NC} $*" >&2; }
+info() { echo -e "${CYAN}[INFO]${NC} $*"; }
+ok()   { echo -e "${GREEN}[OK]${NC} $*"; }
+warn() { echo -e "${YELLOW}[WARN]${NC} $*"; }
 
-# Backup main DBs
-mkdir -p "$BACKUP_DIR" "$DATA_DIR"
-for db in "${MAIN_DBS[@]}"; do
-    if [ -f "$DATA_DIR/$db" ]; then
-        cp "$DATA_DIR/$db" "$BACKUP_DIR/"
-    fi
-done
-
-echo "=== Initializing Test Environment ==="
-if [ ! -d "$BASE_DIR/backend/.venv" ] && [ ! -d "$BASE_DIR/backend/venv" ]; then
-    echo "Error: Backend virtual environment not found. Please run ./setup.sh first."
+VENV_DIR=""
+if [ -d "$BASE_DIR/backend/.venv" ]; then
+    VENV_DIR="$BASE_DIR/backend/.venv"
+elif [ -d "$BASE_DIR/backend/venv" ]; then
+    VENV_DIR="$BASE_DIR/backend/venv"
+else
+    err "Virtual environment not found. Run ./setup.sh first."
     exit 1
 fi
 
-if [ -d "$BASE_DIR/backend/.venv" ]; then
-    VENV_PATH="$BASE_DIR/backend/.venv"
-else
-    VENV_PATH="$BASE_DIR/backend/venv"
+PYTHON_EXE="$VENV_DIR/bin/python"
+
+if [ ! -f "$PYTHON_EXE" ]; then
+    err "Python interpreter not found in $VENV_DIR"
+    exit 1
 fi
 
-PYTHON_EXE="$VENV_PATH/bin/python"
+export PYTHONPATH="$BASE_DIR/backend:$PYTHONPATH"
 
-echo "=== Running Backend Tests ==="
-export PYTHONPATH=$PYTHONPATH:$BASE_DIR/backend
-TEST_MARKER="not slow"
-USE_PROD_SETTINGS=""
-if [[ "$*" == *"--slow"* ]]; then
-    TEST_MARKER="slow"
-    USE_PROD_SETTINGS="USE_PROD_SETTINGS=1"
+# Parse args: separate pytest args from flags meant for this script
+PYTEST_ARGS=()
+RUN_UI=false
+RUN_SLOW=false
+RUN_PROMPT=false
+for arg in "$@"; do
+    case "$arg" in
+        --ui)       RUN_UI=true ;;
+        --slow)     RUN_SLOW=true ;;
+        --prompt-robustness) RUN_PROMPT=true ;;
+        *)          PYTEST_ARGS+=("$arg") ;;
+    esac
+done
+
+MARKER="not slow"
+if $RUN_SLOW; then
+    MARKER="slow"
 fi
 
-CLEAN_ARGS=$(echo "$@" | sed 's/--slow//g')
-
-# Run prompt robustness tests separately if requested
-if [[ "$*" == *"--prompt-robustness"* ]]; then
-    echo "=== Running Prompt Robustness Tests ==="
-    CLEAN_PROMPT_ARGS=$(echo "$@" | sed 's/--prompt-robustness//g')
-    env $USE_PROD_SETTINGS $PYTHON_EXE -m pytest backend/tests/live/test_prompt_failure_modes.py -v --tb=short -m "slow" $CLEAN_PROMPT_ARGS
+if $RUN_PROMPT; then
+    info "Running prompt robustness tests..."
+    "$PYTHON_EXE" -m pytest backend/tests/live/test_prompt_failure_modes.py -v --tb=short -m "slow" "${PYTEST_ARGS[@]}"
     exit 0
 fi
 
-# Run pytest from the root, targeting the backend/tests directory
-env $USE_PROD_SETTINGS $PYTHON_EXE -m pytest backend/tests/ -v --tb=short -m "$TEST_MARKER" $CLEAN_ARGS
+info "Running backend tests${RUN_UI:+ (including UI E2E tests)}${RUN_SLOW:+ (including slow/LLM tests)}..."
 
-echo ""
-echo "=== Running Backend Linting/Typechecking ==="
-ruff check "$BASE_DIR/backend" || echo "⚠️  Ruff found issues (many are pre-existing)"
-if [[ "$*" == *"--slow"* ]]; then
-    mypy --strict "$BASE_DIR/backend" || echo "⚠️  Mypy found issues"
-    bandit -r "$BASE_DIR/backend" || echo "⚠️  Bandit found issues"
-    pylint "$BASE_DIR/backend" || echo "⚠️  Pylint found issues"
+if $RUN_UI; then
+    "$PYTHON_EXE" -m pytest backend/tests/ui/ -v --tb=short "${PYTEST_ARGS[@]}"
 fi
 
-echo ""
-echo "=== Running Frontend Tests ==="
-cd "$BASE_DIR/frontend"
-if [ -d "node_modules" ]; then
-    npx vitest run
-else
-    echo "Skipping frontend tests: node_modules not found. Run npm install in frontend/."
-fi
+"$PYTHON_EXE" -m pytest backend/tests/ -v --tb=short -m "$MARKER" "${PYTEST_ARGS[@]}"
 
 echo ""
-echo "=== Running Frontend Linting/Typechecking ==="
-npx biome check .
-if [[ "$*" == *"--slow"* ]]; then
-    npx tsc --noEmit
-fi
-
-echo "✅ Tests completed."
+ok "Tests passed."

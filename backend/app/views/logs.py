@@ -53,7 +53,7 @@ def _get_filter_options():
         uni_service = UniverseService()
         worlds = uni_service.get_all_universes(limit=500)
         world_names = sorted({w.name for w in worlds})
-    except Exception:
+    except (ValueError, TypeError, KeyError, ImportError):
         world_names = []
 
     try:
@@ -73,7 +73,7 @@ def _get_filter_options():
                     if m:
                         models.add(m)
         model_names = sorted(models)
-    except Exception:
+    except (ValueError, TypeError, KeyError, IndexError, ImportError):
         model_names = []
 
     return {

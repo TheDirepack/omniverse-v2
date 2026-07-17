@@ -72,7 +72,7 @@ class WebSearcher:
         try:
             try:
                 await page.goto(search_url, wait_until="networkidle", timeout=20000)
-            except Exception as e:
+            except (TimeoutError, ConnectionError, OSError) as e:
                 self.logger.warning("Search page load failed, retrying: %s", e)
                 await page.goto(
                     search_url, wait_until="domcontentloaded", timeout=15000

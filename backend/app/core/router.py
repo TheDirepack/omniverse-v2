@@ -1,6 +1,6 @@
 import hashlib
 import re
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import litellm
@@ -58,7 +58,7 @@ class ModelRouter:
     def _report_failure(
         self, session: Session, provider_id: int, key_id: int | None, model: str
     ):
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
 
         # 1. Get health
         health = self._get_health(session, provider_id, key_id, model)
@@ -246,7 +246,7 @@ class ModelRouter:
                     )
                     if (
                         health.disabled_until
-                        and health.disabled_until > datetime.utcnow()
+                        and health.disabled_until > datetime.now(timezone.utc)
                     ):
                         continue
 
@@ -321,7 +321,7 @@ class ModelRouter:
                             model=candidate["full_model"],
                             key_id=str(candidate["key"].id),
                         )
-                        raise e
+                        raise
 
                     # Report failure
                     with Session(operational_engine) as health_session:

@@ -43,7 +43,7 @@ async def knowledge_page(
                 select(NotebookEntry).where(NotebookEntry.universe_uuid == selected_world.uuid)
             ).all())
             nsession.close()
-        except Exception:
+        except (ImportError, ValueError, TypeError, KeyError):
             pass
 
         # Fetch theory entry
@@ -52,7 +52,7 @@ async def knowledge_page(
             theory_service = TheoryService()
             theories = theory_service.get_theories_by_universe_ids([selected_world.id], limit=1)
             theory_entry = theories[0] if theories else None
-        except Exception:
+        except (ValueError, TypeError, KeyError, IndexError):
             pass
 
         template = templates.env.get_template("pages/knowledge.html")
@@ -141,14 +141,14 @@ async def world_tab_content(
                 select(NotebookEntry).where(NotebookEntry.universe_uuid == world.uuid)
             ).all())
             nsession.close()
-        except Exception:
+        except (ImportError, ValueError, TypeError, KeyError):
             pass
         theory_entry = None
         try:
             theory_service = TheoryService()
             theories = theory_service.get_theories_by_universe_ids([world_id], limit=1)
             theory_entry = theories[0] if theories else None
-        except Exception:
+        except (ValueError, TypeError, KeyError, IndexError):
             pass
 
         # Relations/claims count
@@ -200,7 +200,7 @@ async def world_tab_content(
             return HTMLResponse(content=template.render(
                 request=request, world=world, entries=entries, claims=claims
             ))
-        except Exception as e:
+        except (ValueError, TypeError, KeyError, AttributeError, IndexError) as e:
             return HTMLResponse(f'<div class="p-6 text-red-500 text-sm">Error loading notebook: {e}</div>')
 
     elif tab_name == "theory":
@@ -212,7 +212,7 @@ async def world_tab_content(
                 request=request, world=world,
                 theory=theory[0] if theory else None
             ))
-        except Exception as e:
+        except (ValueError, TypeError, KeyError, AttributeError, IndexError) as e:
             return HTMLResponse(f'<div class="p-6 text-red-500 text-sm">Error loading theory: {e}</div>')
 
     return HTMLResponse("Unknown tab", status_code=400)
@@ -255,7 +255,7 @@ async def notebook_entry_detail(
     <div class="text-[10px] text-gray-400">Created: {entry.created_at}</div>
 </div>
 ''')
-    except Exception as e:
+    except (ValueError, TypeError, KeyError, AttributeError) as e:
         return HTMLResponse(f'<div class="p-6 text-red-500 text-sm">Error: {e}</div>')
 
 

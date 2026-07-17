@@ -1,7 +1,9 @@
+import uuid
+
 import pytest
 from fastapi.testclient import TestClient
+
 from app.main import app
-import uuid
 
 
 @pytest.fixture
@@ -32,10 +34,10 @@ async def test_knowledge_page_loads(client, setup_artifact):
         json=setup_artifact
     )
     assert response.status_code == 200
-    
+
     # Now load the knowledge page
     response = client.get("/knowledge")
-    
+
     assert response.status_code == 200
     html = response.text
     assert "Knowledge" in html
@@ -54,10 +56,10 @@ async def test_knowledge_search_by_universe(client):
         **setup_artifact,
         "universe": "world-2"
     })
-    
+
     # Load knowledge page and verify it can filter
     response = client.get("/knowledge?universe=world-1")
-    
+
     assert response.status_code == 200
     assert "world-1" in response.text.lower()
 
@@ -72,10 +74,10 @@ async def test_knowledge_notebook_tab(client):
         "type": "note",
         "tags": ["test"]
     })
-    
+
     # Load knowledge page with notebook tab
     response = client.get("/knowledge")
-    
+
     assert response.status_code == 200
     assert "Notebook" in response.text
 
@@ -88,16 +90,16 @@ async def test_artifact_details_page(client):
         **setup_artifact,
         "id": f"artifact-{uuid.uuid4()}"
     }
-    
+
     response = client.post("/api/v1/db/artifacts/save", json=artifact_data)
     assert response.status_code == 200
-    
+
     # Get the artifact ID from response
     data = response.json()
     artifact_id = data.get("id", artifact_data["id"])
-    
+
     # Load artifact details page
     response = client.get(f"/knowledge/artifact/{artifact_id}")
-    
+
     assert response.status_code == 200
     assert "Details" in response.text or "Artifact" in response.text

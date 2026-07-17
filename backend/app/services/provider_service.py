@@ -207,7 +207,7 @@ class ProviderService:
                     )
                     if models:
                         return ", ".join(sorted(models))
-                except Exception:
+                except (ValueError, TypeError, KeyError, ConnectionError, OSError):
                     pass
 
             return "No models synced"

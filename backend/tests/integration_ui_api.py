@@ -1,9 +1,13 @@
-import pytest
 from fastapi.testclient import TestClient
 from sqlmodel import Session, select
+
+from app.db.schema import (
+    AgentRouteFallback,
+    Artifact,
+    ProviderConfig,
+    Universe,
+)
 from app.main import app
-from app.db.session import engine
-from app.db.schema import Universe, Artifact, ProviderConfig, ProviderKey, AgentRouteFallback
 
 client = TestClient(app)
 
@@ -13,7 +17,7 @@ def test_artifacts_api(ephemeral_db):
         u = Universe(name="Test Universe", slug="test-u")
         session.add(u)
         session.commit()
-        
+
         a1 = Artifact(universe_id=u.id, type="entity", name="Hero A", description="A strong hero")
         a2 = Artifact(universe_id=u.id, type="entity", name="Hero B", description="A fast hero")
         a3 = Artifact(universe_id=u.id, type="world", name="World A", description="A big world")
@@ -79,7 +83,7 @@ def test_worlds_api_expanded(ephemeral_db):
     with Session(ephemeral_db) as session:
         u = session.get(Universe, world_id)
         u_uuid = u.uuid
-    
+
     resp = client.post("/api/v1/db/universes/research", json=[u_uuid])
     assert resp.status_code == 200
     assert "run_id" in resp.json()
@@ -110,7 +114,7 @@ def test_settings_api_crud(ephemeral_db):
     }
     resp = client.post("/api/v1/settings/providers/keys", json=key_payload)
     assert resp.status_code == 200
-    
+
     # 3. Route Upsert
     route_payload = {
         "task_type": "Researcher",
@@ -125,7 +129,7 @@ def test_settings_api_crud(ephemeral_db):
     with Session(ephemeral_db) as session:
         route = session.exec(select(AgentRouteFallback).where(AgentRouteFallback.task_type == "Researcher")).first()
         r_id = route.id
-    
+
     resp = client.delete(f"/api/v1/settings/agent-routes/{r_id}")
     assert resp.status_code == 200
 

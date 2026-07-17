@@ -11,7 +11,7 @@
             <input type="text" id="run-filter" name="filter"
                    placeholder="Filter runs..."
                    class="h-7 px-3 text-xs bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-sm focus:outline-none focus:ring-1 focus:ring-blue-500 w-64"
-                    hx-get="/api/v1/execution/runs/active"
+                    hx-get="/api/v1/execution/runs/active-detailed"
                    hx-trigger="keyup changed delay:300ms"
                    hx-target="#execution-table"
                    hx-include="#run-filter">
@@ -20,7 +20,7 @@
                         data-filter-popup="execution"
                         aria-haspopup="true"
                         aria-expanded="false"
-                        onclick="toggleFilterPopup(this, 'execution', '/api/v1/execution/runs/active', [{value:'status',label:'Status'},{value:'world',label:'World'},{value:'progress',label:'Progress'}])">
+                        onclick="toggleFilterPopup(this, 'execution', '/api/v1/execution/runs/active-detailed', [{value:'status',label:'Status'},{value:'world',label:'World'},{value:'progress',label:'Progress'}])">
                     ⚙️ Filter
                 </button>
             </div>
@@ -53,7 +53,7 @@
     <!-- CONTENT: Run Table -->
     <div class="flex-1 overflow-y-auto bg-white dark:bg-gray-950">
         <div id="execution-table"
-             hx-get="/api/v1/execution/runs/active"
+             hx-get="/api/v1/execution/runs/active-detailed"
              hx-trigger="load, every 5s"
              class="w-full">
             <div class="flex items-center justify-center h-32 text-gray-400 dark:text-gray-500 text-xs italic">

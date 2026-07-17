@@ -86,11 +86,11 @@ class TestGetUniverse:
         svc = UniverseService(session=ephemeral_db)
         for i in range(15):
             svc.create_universe(name=f"U{i:02d}")
-        
+
         # Test limit
         res = svc.get_all_universes(limit=5, offset=0)
         assert len(res) == 5
-        
+
         # Test offset
         res_offset = svc.get_all_universes(limit=5, offset=5)
         assert len(res_offset) == 5
@@ -99,7 +99,7 @@ class TestGetUniverse:
     def test_get_all_projection(self, ephemeral_db):
         svc = UniverseService(session=ephemeral_db)
         svc.create_universe(name="Test")
-        
+
         # Test field projection
         res = svc.get_all_universes(fields=["name"])
         assert len(res) == 1
@@ -520,23 +520,23 @@ class TestMergeWorldsPerformance:
             name = f"Entity_{i}" if i < 10 else f"MergeEntity_{i}"
             a = Artifact(name=name, type="entity", universe_id=merge.id, payload_json="{}")
             ephemeral_db.add(a)
-        
+
         for i in range(50):
             name = f"Entity_{i}" if i < 10 else f"KeepEntity_{i}"
             a = Artifact(name=name, type="entity", universe_id=keep.id, payload_json="{}")
             ephemeral_db.add(a)
-        
+
         ephemeral_db.commit()
 
         # 2. Create version history for some entities
         # For the shared entities, add versions to both
         all_artifacts = ephemeral_db.exec(__import__("sqlmodel").select(Artifact)).all()
         entities = [a for a in all_artifacts if a.type == "entity"]
-        
+
         for a in entities:
             v = ArtifactVersion(artifact_id=a.id, version=1, payload_json="v1", evidence_refs="[]")
             ephemeral_db.add(v)
-        
+
         ephemeral_db.commit()
 
         # 3. Create relations

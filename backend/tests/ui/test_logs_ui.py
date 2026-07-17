@@ -1,5 +1,8 @@
+import uuid
+
 import pytest
 from fastapi.testclient import TestClient
+
 from app.main import app
 
 
@@ -13,7 +16,7 @@ def client():
 async def test_logs_page_loads(client):
     """Test that logs page loads correctly"""
     response = client.get("/logs")
-    
+
     assert response.status_code == 200
     assert "Logs" in response.text
     assert "Agent" in response.text or "Run" in response.text
@@ -23,7 +26,7 @@ async def test_logs_page_loads(client):
 async def test_active_runs_table(client):
     """Test active runs table displays correctly"""
     response = client.get("/active-runs")
-    
+
     assert response.status_code == 200
     assert "Runs" in response.text
 
@@ -34,7 +37,7 @@ async def test_logs_filtering(client):
     # Test different filter combinations
     for filter_type in ["run_type", "status"]:
         response = client.get(f"/logs?{filter_type}=research")
-        
+
         assert response.status_code == 200
 
 
@@ -43,7 +46,7 @@ async def test_clear_logs_button(client):
     """Test clearing logs functionality"""
     # Clear logs
     response = client.post("/api/v1/tools/clear-logs")
-    
+
     assert response.status_code == 200
     assert "success" in response.json()
 
@@ -62,11 +65,11 @@ async def test_abort_run_via_ui(client):
         }
     )
     assert start_response.status_code == 200
-    
+
     data = start_response.json()
     run_id = data.get("run_id") or f"run-{uuid.uuid4()}"
-    
+
     # Test abort endpoint
     response = client.delete(f"/api/v1/execution/runs/abort/{run_id}")
-    
+
     assert response.status_code in [200, 404]

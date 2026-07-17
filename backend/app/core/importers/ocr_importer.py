@@ -14,9 +14,7 @@ class OcrImporter(DocumentImporter):
         image_exts = (".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".tiff", ".tif")
         if uri_lower.startswith("data:image/"):
             return True
-        if any(uri_lower.endswith(ext) for ext in image_exts):
-            return True
-        return False
+        return bool(any(uri_lower.endswith(ext) for ext in image_exts))
 
     async def fetch(
         self, uri: str, **kwargs

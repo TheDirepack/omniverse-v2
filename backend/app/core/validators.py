@@ -35,31 +35,31 @@ def validate_research_json(data: Any) -> tuple[bool, list[str]]:
             if not isinstance(cat, dict):
                 errors.append(f"Category {i} must be an object")
                 continue
-            
+
             cat_name = cat.get("Category")
             if not cat_name or cat_name not in valid_categories:
                 errors.append(f"Category {i} must have a valid category name")
-            
+
             items = cat.get("Items")
             if not isinstance(items, list):
                 errors.append(f"Items in category {i} must be a list")
                 continue
-            
+
             for j, item in enumerate(items):
                 if not isinstance(item, dict):
                     errors.append(f"Item {j} in category {i} must be an object")
                     continue
-                
+
                 item_required = ["Name", "Detail", "Canon_Status", "Reference", "Wiki_Source"]
                 errors.extend(
                     f"Item {j} in category {i} missing key: {rk}"
                     for rk in item_required if rk not in item
                 )
-                
+
                 canon = item.get("Canon_Status")
                 if canon is not None and canon not in valid_canon_statuses:
                     errors.append(f"Item {j} in category {i} has invalid Canon_Status: {canon}")
-                
+
                 ref = item.get("Reference")
                 if not isinstance(ref, str) or not ref or ":" not in ref:
                     errors.append(f"Item {j} in category {i} has invalid Reference format")
@@ -94,7 +94,7 @@ def validate_research_json(data: Any) -> tuple[bool, list[str]]:
                     f"Conclusion {i} in Provisional_Conclusions must be an object"
                 )
                 continue
-            
+
             errors.extend(
                 f"Conclusion {i} in Provisional_Conclusions missing key: {r_key}"
                 for r_key in [

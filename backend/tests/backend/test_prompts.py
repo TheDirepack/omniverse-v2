@@ -49,7 +49,7 @@ class TestExtractionPrompt:
 
     def test_without_previous_dataset_initial_mode(self):
         """Test the original bug: calling get_researcher_prompt without previous_dataset should work (initial research mode)."""
-        # This used to raise UnboundLocalError: cannot access local variable 'system_parts' 
+        # This used to raise UnboundLocalError: cannot access local variable 'system_parts'
         # because it was only defined inside the if block
         result = get_researcher_prompt("Test World", "Test Requirement")
         assert "system" in result
@@ -57,7 +57,7 @@ class TestExtractionPrompt:
         assert "INITIAL RESEARCH" in result["system"]
         assert "PATCH & REFINE MODE" not in result["system"]
         assert "PREVIOUS DATASET" not in result["system"]
-        
+
         # Verify system_parts list was constructed properly
         assert "### ROLE" in result["system"]
         assert "CORE DIRECTIVES" in result["system"]
@@ -136,7 +136,7 @@ class TestExtractionPrompt:
         # Initial research mode
         result = get_researcher_prompt("World", "req")
         assert "INITIAL RESEARCH" in result["system"]
-        
+
         # Patch mode with previous dataset
         result = get_researcher_prompt("World", "req", previous_dataset="old")
         assert "PATCH & REFINE MODE" in result["system"]

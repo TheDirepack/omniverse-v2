@@ -1,5 +1,6 @@
 import pytest
 from fastapi.testclient import TestClient
+
 from app.main import app
 
 
@@ -13,7 +14,7 @@ def client():
 async def test_claims_get_by_id(client):
     """Test getting claim by ID"""
     response = client.get("/api/v1/db/claims/claims/1")
-    
+
     assert response.status_code in [200, 404]
 
 
@@ -21,7 +22,7 @@ async def test_claims_get_by_id(client):
 async def test_claims_list(client):
     """Test listing all claims"""
     response = client.get("/api/v1/db/claims/claims")
-    
+
     assert response.status_code == 200
     data = response.json()
     # Claims endpoint returns research results structure
@@ -32,7 +33,7 @@ async def test_claims_list(client):
 async def test_claims_universe_filter(client):
     """Test filtering claims by universe"""
     response = client.get("/api/v1/db/claims/claims?universe=test")
-    
+
     assert response.status_code == 200
     data = response.json()
     assert "worlds" in data or "tier_system" in data

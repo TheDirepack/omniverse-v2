@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import time
-from typing import Any, ClassVar, Optional
+from typing import Any, ClassVar
 
 from app.core.acquisition_cache import acquisition_cache
 from app.core.document import Document
@@ -30,7 +30,7 @@ async def _gpu_setting() -> bool | None:
             return None
         finally:
             session.close()
-    except Exception:
+    except (ImportError, RuntimeError, OSError, ValueError, TypeError, KeyError):
         return None
 
 
@@ -49,7 +49,7 @@ async def _cache_gpu_setting():
 
 
 class OcrService:
-    _docling_pipeline: ClassVar[Optional[Any]] = None
+    _docling_pipeline: ClassVar[Any | None] = None
     _easyocr_reader: ClassVar[dict[str, Any]] = {}
     _paddleocr_reader: ClassVar[dict[str, Any]] = {}
 
@@ -110,7 +110,7 @@ class OcrService:
                 gpu = _resolve_gpu(use_gpu, name)
                 engine = loader(gpu=gpu)
                 return await self._ocr_with(name, engine, image_bytes)
-            except (ImportError, Exception) as e:
+            except (ImportError, OSError, ValueError, TypeError, RuntimeError) as e:
                 last_error = e
                 continue
         return Document(

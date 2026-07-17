@@ -112,14 +112,14 @@ async def worlds_import_action_form(request: Request):
     try:
         form_data = await request.form()
         world_id = form_data.get("world_id")
-    except Exception:
+    except (ValueError, TypeError, KeyError):
         pass
 
     if not world_id:
         try:
             body = await request.json()
             world_id = body.get("world_id")
-        except Exception:
+        except (ValueError, TypeError, KeyError):
             pass
 
     if not world_id:
@@ -127,7 +127,7 @@ async def worlds_import_action_form(request: Request):
         return render_error(request, 400, "Missing world ID")
 
     service = UniverseService()
-    world = service.import_from_registry(world_id)
+    service.import_from_registry(world_id)
     worlds = service.get_all_universes(limit=5000)
     response = render_worlds_table(request, worlds)
     response.headers["HX-Trigger"] = (
@@ -301,7 +301,7 @@ async def world_details_page(request: Request, uuid: str, session: Session = Dep
         from app.services.research_workspace import WorkspaceService
         ws = WorkspaceService()
         notebook_entries = ws.get_notebook_index(uuid)
-    except Exception:
+    except (ValueError, TypeError, KeyError, ImportError, AttributeError):
         pass
 
     template = templates.env.get_template("pages/world_details.html")

@@ -82,11 +82,11 @@ async def research_worlds(
             worlds = body
         elif isinstance(body, dict):
             worlds = body.get("payload") or body.get("worlds") or []
-    except Exception:
+    except (ValueError, TypeError, KeyError):
         try:
             form = await request.form()
             worlds = form.getlist("payload") or form.getlist("worlds") or []
-        except Exception:
+        except (ValueError, TypeError, KeyError):
             pass
 
     if not worlds:

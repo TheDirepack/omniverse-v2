@@ -1,8 +1,8 @@
-from typing import Any
-from sqlmodel import Session, select
 from sqlalchemy.orm import joinedload
+from sqlmodel import Session, select
 
-from app.db.schema import Artifact, ArtifactRelation
+from app.db.schema import Artifact
+
 
 class ArtifactRepository:
     def __init__(self, session: Session):
@@ -39,3 +39,18 @@ class ArtifactRepository:
             (Artifact.name.contains(query)) | (Artifact.description.contains(query))
         ).offset(offset).limit(limit)
         return list(self.session.exec(stmt).all())
+
+
+# Additional method for API
+    def get_by_type_and_name(self, content_type: str, name: str) -> Artifact | None:
+        """Get artifact by type and name."""
+        if not self.session:
+            return None
+
+        from app.db.schema import Artifact
+
+        query = select(Artifact).where(
+            (Artifact.content_type == content_type) &
+            (Artifact.name == name)
+        )
+        return self.session.exec(query).first()

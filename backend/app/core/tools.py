@@ -1,6 +1,6 @@
 import asyncio
 import json
-from typing import Any
+from typing import Any, Optional
 
 from sqlalchemy import text
 from sqlmodel import Session, select
@@ -10,6 +10,13 @@ from app.core.context import get_current_universe
 from app.core.importers.ocr_importer import ocr_importer
 from app.core.web_fetch import web_fetcher
 from app.core.web_search import web_searcher
+from app.db.notebook_schema import (
+    AcquisitionArtifact,
+    NotebookClaim,
+    NotebookEntry,
+    NotebookUniverse,
+)
+from app.db.notebook_session import notebook_engine
 from app.db.schema import (
     Artifact,
     ArtifactVersion,
@@ -17,17 +24,12 @@ from app.db.schema import (
     EvidenceChunk,
     Universe,
 )
-from app.services.predicate_service import PredicateService
 from app.db.session import engine
-from app.db.notebook_schema import (
-    AcquisitionArtifact,
-    NotebookEntry,
-    NotebookUniverse,
-)
-from app.db.notebook_session import notebook_engine
 from app.services.knowledge_retriever import KnowledgeRetrieverService
+from app.services.predicate_service import PredicateService
 from app.services.research_workspace import WorkspaceService
 from app.services.settings_service import SettingsService
+from app.services.universe_service import UniverseService
 
 
 async def tool_load_notebook_entry(args: dict[str, Any]) -> str:
@@ -196,12 +198,12 @@ async def tool_query_notebook_claims(args: dict[str, Any]) -> str:
         if predicate_filter:
             # Simple keyword search in title or summary for notebook claims
             statement = statement.where(
-                (NotebookEntry.title.contains(predicate_filter)) | 
+                (NotebookEntry.title.contains(predicate_filter)) |
                 (NotebookEntry.summary.contains(predicate_filter))
             )
-        
+
         entries = session.exec(statement).all()
-        
+
         if not entries:
             return f"No notebook claims found for {universe_name} matching filter '{predicate_filter or 'any'}'."
 
@@ -299,9 +301,8 @@ async def tool_web_search(args: dict[str, Any]) -> str:
         q_block.append("\n\n".join(engine_outputs))
         output_blocks.append("\n".join(q_block))
 
-    output = "\n\n---\n\n".join(output_blocks)
+    return "\n\n---\n\n".join(output_blocks)
 
-    return output
 
 
 def _get_run_id() -> str | None:
@@ -352,7 +353,7 @@ def _store_artifact(
                     )
                 except Exception as e:
                     import logging
-                    logging.getLogger("tools").error(f"Failed to record artifact usage: {e!s}")
+                    logging.getLogger("tools").exception(f"Failed to record artifact usage: {e!s}")
 
     return stored.id
 
@@ -433,7 +434,7 @@ async def tool_fetch_page(args: dict[str, Any]) -> str:
                 output.append("[RESEARCH SIGNALS]\n" + res["research_signals"])
 
             return ("\n\n".join(output), res, status, artifact)
-        except Exception as e:
+        except (ValueError, TypeError, KeyError, AttributeError) as e:
             return (f"Error fetching {url}: {e!s}", None, "fetch_failed", None)
 
     fetch_results = await asyncio.gather(*[run_fetch(url) for url in urls])
@@ -459,7 +460,7 @@ async def tool_fetch_page(args: dict[str, Any]) -> str:
                     )
                 except Exception as e:
                     import logging
-                    logging.getLogger("tools").error(f"Failed to record fetch usage: {e!s}")
+                    logging.getLogger("tools").exception(f"Failed to record fetch usage: {e!s}")
 
     return output
 
@@ -489,10 +490,10 @@ def build_freshness_comparison_report(url_content_map: dict[str, str | None]) ->
         else:
             try:
                 signal_block = content[:500]
-            except Exception as e:
+            except (TypeError, ValueError) as e:
                 raise TypeError(
                     f"Failed to slice content for {url}. Content type: {type(content)}. Error: {e}"
-                )
+                ) from e
         reports.append(f"CANDIDATE: {url}\n{signal_block}")
 
     return (
@@ -522,7 +523,7 @@ async def tool_compare_source_freshness(args: dict[str, Any]) -> str:
             url_content_map[url] = await web_fetcher.fetch_page(
                 url, include_freshness=True
             )
-        except Exception:
+        except (TimeoutError, ConnectionError, OSError, ValueError):
             url_content_map[url] = None
 
     return build_freshness_comparison_report(url_content_map)
@@ -544,7 +545,7 @@ async def tool_query_claims(args: dict[str, Any]) -> str:
 
         retriever = KnowledgeRetrieverService(session)
         claims = retriever.get_semantic_claims(universe.id, predicate_filter=predicate_filter)
-        
+
         if not claims:
             return f"No verified claims found for {universe_name} matching filter '{predicate_filter or 'any'}'."
 
@@ -567,11 +568,11 @@ async def tool_delete_artifact(args: dict[str, Any]) -> str:
         universe = session.exec(select(Universe).where(Universe.name == universe_name)).first()
         if not universe:
             return f"Universe {universe_name} not found."
-        
+
         art = session.get(Artifact, artifact_id)
         if not art or art.universe_id != universe.id:
             return f"Artifact {artifact_id} not found in {universe_name}."
-        
+
         session.delete(art)
         session.commit()
         return f"Artifact {artifact_id} deleted successfully."
@@ -599,7 +600,7 @@ async def tool_upsert_artifacts(args: dict[str, Any]) -> str:
         if not universe:
             return f"Universe {universe_name} not found."
 
-        def get_or_create_artifact(name: str, art_type: str, payload: dict = None) -> tuple[Artifact, bool]:
+        def get_or_create_artifact(name: str, art_type: str, payload: Optional[dict] = None) -> tuple[Artifact, bool]:
             # 1. Try to find by name and type
             art = session.exec(
                 select(Artifact).where(
@@ -610,7 +611,7 @@ async def tool_upsert_artifacts(args: dict[str, Any]) -> str:
             ).first()
             if art:
                 return art, False
-            
+
             # 2. Try to find by payload (Merge duplicate factual content)
             if payload:
                 payload_str = json.dumps(payload, sort_keys=True)
@@ -627,7 +628,7 @@ async def tool_upsert_artifacts(args: dict[str, Any]) -> str:
                     session.add(art)
                     session.flush()
                     return art, False
-            
+
             # 3. Create new
             art = Artifact(
                 name=name,
@@ -662,7 +663,7 @@ async def tool_upsert_artifacts(args: dict[str, Any]) -> str:
             if ref or wiki:
                 url = wiki or ref
                 section = item.get("section", "General")
-                
+
                 existing_ev = session.exec(
                     select(Evidence).where(
                         Evidence.universe_id == universe.id,
@@ -670,7 +671,7 @@ async def tool_upsert_artifacts(args: dict[str, Any]) -> str:
                         Evidence.section == section
                     )
                 ).first()
-                
+
                 if existing_ev:
                     evidence_ids.append(existing_ev.id)
                 else:
@@ -683,7 +684,7 @@ async def tool_upsert_artifacts(args: dict[str, Any]) -> str:
                     session.add(evidence)
                     session.flush()
                     evidence_ids.append(evidence.id)
-                    
+
                     chunk = EvidenceChunk(
                         evidence_id=evidence.id,
                         content=ref or "",
@@ -698,7 +699,7 @@ async def tool_upsert_artifacts(args: dict[str, Any]) -> str:
             art.source_wiki = wiki
             art.evidence_refs = json.dumps(evidence_ids)
             art.support_count = len(evidence_ids)
-            
+
             if art_type == "claim":
                 raw_pred = payload.get("predicate", "related_to")
                 norm_pred = pred_service.normalize(raw_pred)
@@ -742,9 +743,9 @@ async def tool_upsert_artifacts(args: dict[str, Any]) -> str:
                     .where(ArtifactVersion.artifact_id == art.id)
                     .order_by(ArtifactVersion.version.desc())
                 ).first()
-                
+
                 new_ver_num = (old_version.version + 1) if old_version else 1
-                
+
                 # Create version record
                 version_record = ArtifactVersion(
                     artifact_id=art.id,
@@ -753,7 +754,7 @@ async def tool_upsert_artifacts(args: dict[str, Any]) -> str:
                     evidence_refs=art.evidence_refs
                 )
                 session.add(version_record)
-                
+
                 # Prune old versions
                 if new_ver_num > max_versions:
                     from sqlalchemy import delete
@@ -876,7 +877,7 @@ async def tool_ocr_image(args: dict[str, Any]) -> str:
                 parts.append(f"Structured data: {doc.structured_data}")
             return "\n\n".join(parts)
         return f"OCR returned no text. Status: {doc.content_type}. Engine: {doc.engine_name or 'none'}."
-    except Exception as e:
+    except (ValueError, TypeError, AttributeError) as e:
         return f"OCR failed: {e!s}"
 
 
@@ -925,7 +926,7 @@ async def tool_link_entity_to_canonical(args: dict[str, Any]) -> str:
     with Session(engine) as session:
         session.execute(text("BEGIN IMMEDIATE"))
         universe = session.exec(
-            select(Universe).where(Universe.name == universe_name)
+            select(Universe).where(Universe.name == current_name)
         ).first()
         if not universe:
             return f"Universe {current_name} not found."
@@ -1347,5 +1348,62 @@ AGENT_TOOLS: dict[str, dict[str, Any]] = {
             },
             "required": [],
         },
+    },
+}
+
+
+
+
+async def tool_submit_findings(args: dict[str, Any]) -> str:
+    """Submit research findings to the database."""
+    findings = args.get("findings", {})
+
+    # Handle case where findings is a JSON string
+    if isinstance(findings, str):
+        try:
+            findings = json.loads(findings)
+        except json.JSONDecodeError:
+            return "Error: Invalid findings format. Please provide a valid dictionary."
+
+    if not findings or not isinstance(findings, dict):
+        return "Error: Invalid findings format. Please provide a valid dictionary."
+
+    # Process each finding and store it
+    processed_count = 0
+    for title, content in findings.items():
+        try:
+            await _store_artifact(
+                content_type="finding",
+                title=title,
+                content=content,
+            )
+            processed_count += 1
+        except (ValueError, TypeError, KeyError, AttributeError):
+            continue
+
+    return "Findings submitted."
+
+
+AGENT_TOOLS["submitFindings"] = {
+    "func": tool_submit_findings,
+    "description": "Submit research findings to the database.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "findings": {
+                "anyOf": [
+                    {
+                        "type": "object",
+                        "description": "Dictionary of findings with titles and content.",
+                        "additionalProperties": True,
+                    },
+                    {
+                        "type": "string",
+                        "description": "JSON string representation of findings dictionary.",
+                    },
+                ],
+            },
+        },
+        "required": ["findings"],
     },
 }

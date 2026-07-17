@@ -15,14 +15,14 @@ def test_research_page(client):
 
 
 def test_knowledge_world_list(client, seeded_db):
-    session, u1, _e1, _ = seeded_db
+    _session, u1, _e1, _ = seeded_db
     response = client.get("/knowledge/worlds")
     assert response.status_code == 200
     assert u1.name in response.text
 
 
 def test_knowledge_world_list_has_artifacts(client, seeded_db):
-    session, u1, _e1, _ = seeded_db
+    _session, u1, _e1, _ = seeded_db
     # U1 has an artifact (E1), so should appear with has_artifacts=true
     response = client.get("/knowledge/worlds", params={"has_artifacts": "true"})
     assert response.status_code == 200
@@ -96,7 +96,7 @@ def test_knowledge_entity_detail_not_found(client):
 
 def test_artifact_list_by_universe(client, seeded_db):
     _, u1, _e1, _ = seeded_db
-    response = client.get(f"/api/v1/db/artifacts/list", params={"universe_id": u1.id})
+    response = client.get("/api/v1/db/artifacts/list", params={"universe_id": u1.id})
     assert response.status_code == 200
     assert "E1" in response.text
 
@@ -109,14 +109,14 @@ def test_artifact_list_all(client, seeded_db):
 
 
 def test_artifact_search_by_universe(client, seeded_db):
-    _, u1, e1, _ = seeded_db
+    _, u1, _e1, _ = seeded_db
     response = client.get("/api/v1/db/artifacts/search", params={"universe_id": u1.id, "q": "E1"})
     assert response.status_code == 200
     assert "E1" in response.text
 
 
 def test_artifact_search_global(client, seeded_db):
-    _, _u1, e1, _ = seeded_db
+    _, _u1, _e1, _ = seeded_db
     response = client.get("/api/v1/db/artifacts/search", params={"q": "E1"})
     assert response.status_code == 200
     assert "E1" in response.text

@@ -1,10 +1,21 @@
+import logging
+import os
+import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-import logging
-import sys
+
+# Configure root logger from environment
+_log_level_str = os.environ.get("APP_LOG_LEVEL", "INFO").upper()
+_log_level = getattr(logging, _log_level_str, logging.INFO)
+logging.basicConfig(
+    level=_log_level,
+    format="[%(asctime)s] [%(name)s] [%(levelname)s] %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+    force=True,
+)
 
 # DEPRECATED: Old API routers - disabled
 # from app.api.routers.providers import router as providers_router
@@ -110,6 +121,7 @@ app.include_router(logs_views_router, prefix="/logs")
 
 # New v1 API structure
 from app.api.v1 import api_router
+
 app.include_router(api_router, prefix="/api/v1")
 
 

@@ -1,7 +1,7 @@
 import uuid
 
 from fastapi import APIRouter, BackgroundTasks, Form, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse
 
 from app.core.runtime_state import get_active_runs
 from app.core.templates import templates
@@ -13,22 +13,9 @@ router = APIRouter(tags=["research_views"])
 
 @router.get("/", response_class=HTMLResponse)
 async def research_page(request: Request):
-    # Redirect to choose-world if no active world is set (via cookie)
-    active_world = request.cookies.get("active_world_id")
-    if not active_world:
-        return RedirectResponse(url="/research/choose-world", status_code=302)
-
-    uni_service = UniverseService()
-    world = uni_service.get_universe_by_uuid(active_world)
-    if not world:
-        return RedirectResponse(url="/research/choose-world", status_code=302)
-
-    worlds = uni_service.get_all_universes(limit=5000)
-
     template = templates.env.get_template("pages/research.html")
     return HTMLResponse(content=template.render(
-        request=request, world=world, worlds=worlds,
-        world_name=world.name if world else None,
+        request=request,
         current_path=str(request.url.path),
     ))
 

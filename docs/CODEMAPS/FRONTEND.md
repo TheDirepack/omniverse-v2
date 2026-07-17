@@ -90,6 +90,17 @@ backend/app/templates/
   - `/research/workspace/sources` - Research sources
   - `/research/workspace/timeline` - Research timeline
 
+### API Integration
+
+The frontend uses HTMX for dynamic updates and calls the new `/api/v1/` endpoints:
+
+- **`/api/v1/tools/worlds`** - Add/search worlds via `/research/queue`
+- **`/api/v1/execution/runs/workflow`** - Trigger research runs
+- **`/api/v1/execution/runs/logs/{run_id}`** - Real-time log streaming
+- **`/api/v1/db/claims/results`** - Display research results
+- **`/api/v1/db/artifacts`** - Search and list artifacts
+- **`/api/v1/settings/providers`** - Provider management in settings page
+
 ### Worlds (`worlds.py`)
 - **Purpose**: Universe management, CRUD, import, hierarchy
 - **Page Routes**:

@@ -6,8 +6,8 @@ def _unique(prefix: str = "t") -> str:
 
 
 class TestGeneralSettings:
-    ENDPOINT = "/api/settings/general"
-    GET_ENDPOINT = "/api/settings"
+    ENDPOINT = "/api/v1/settings/general"
+    GET_ENDPOINT = "/api/v1/settings"
 
     def test_save_and_get(self, api_client):
         key = _unique("key")
@@ -61,7 +61,7 @@ class TestGeneralSettings:
 
 
 class TestProviderCRUD:
-    ENDPOINT = "/api/providers"
+    ENDPOINT = "/api/v1/settings/providers"
 
     def test_create_minimal(self, api_client):
         name = _unique("p")
@@ -189,8 +189,8 @@ class TestProviderCRUD:
 
 
 class TestProviderKeys:
-    PROVIDER_ENDPOINT = "/api/providers"
-    KEY_ENDPOINT = "/api/providers/keys"
+    PROVIDER_ENDPOINT = "/api/v1/settings/providers"
+    KEY_ENDPOINT = "/api/v1/settings/providers/keys"
 
     def _create_provider(self, api_client) -> int:
         name = _unique("pk")
@@ -302,8 +302,8 @@ class TestProviderKeys:
 
 
 class TestAgentRouting:
-    ENDPOINT = "/api/settings/agent-routes"
-    PROVIDER_ENDPOINT = "/api/providers"
+    ENDPOINT = "/api/v1/settings/agent-routes"
+    PROVIDER_ENDPOINT = "/api/v1/settings/providers"
 
     def _create_provider(self, api_client) -> int:
         name = _unique("rt")
@@ -313,7 +313,7 @@ class TestAgentRouting:
     def test_default_route_exists(self, api_client):
         # Seed a default route
         pid = api_client.post(
-            "/api/providers", json={"name": "def"}
+            "/api/v1/settings/providers", json={"name": "def"}
         ).json()["provider"]["id"]
         api_client.post(
             self.ENDPOINT,
@@ -473,7 +473,7 @@ class TestAgentRouting:
         assert any(rt["task_type"] == task for rt in data)
 
     def test_agent_names(self, api_client):
-        r = api_client.get("/api/settings/agent-names")
+        r = api_client.get("/api/v1/settings/agent-names")
         assert r.status_code == 200
         names = r.json()
         assert isinstance(names, list)
@@ -483,11 +483,11 @@ class TestAgentRouting:
 
 
 class TestFullSettingsRoundtrip:
-    SETTINGS_ENDPOINT = "/api/settings"
-    PROVIDER_ENDPOINT = "/api/providers"
-    KEY_ENDPOINT = "/api/providers/keys"
-    ROUTE_ENDPOINT = "/api/settings/agent-routes"
-    SETTING_ENDPOINT = "/api/settings/general"
+    SETTINGS_ENDPOINT = "/api/v1/settings"
+    PROVIDER_ENDPOINT = "/api/v1/settings/providers"
+    KEY_ENDPOINT = "/api/v1/settings/providers/keys"
+    ROUTE_ENDPOINT = "/api/v1/settings/agent-routes"
+    SETTING_ENDPOINT = "/api/v1/settings/general"
 
     def test_endpoint_structure(self, api_client):
         r = api_client.get(self.SETTINGS_ENDPOINT)

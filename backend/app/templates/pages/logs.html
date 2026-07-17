@@ -1,69 +1,127 @@
-{% extends "layout/3_panel.html" %}
+{% extends "base.html" %}
 
-{% block title %}Active Research Runs - Omniverse{% endblock %}
+{% block title %}Execution - Omniverse{% endblock %}
 
-{% block control_bar %}
-    <!-- Top Bar -->
-    <div class="flex justify-between items-center px-4 py-2 border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950 shrink-0">
-        <div class="flex items-center gap-4 flex-1">
-            <h1 class="text-sm font-bold uppercase tracking-wider text-gray-900 dark:text-gray-100 mr-4">Active Research Runs</h1>
-            <span id="last-updated" class="text-xs text-gray-400"></span>
-            <div class="relative w-64">
-                <input type="text" 
-                       id="run-filter"
-                       name="filter"
-                       placeholder="Filter active runs..." 
-                       class="w-full px-3 py-1 text-xs border border-gray-300 dark:border-gray-700 focus:outline-none focus:border-blue-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
-                        hx-get="/api/runs/active-detailed"
-                       hx-trigger="keyup changed delay:300ms"
-                       hx-target="#execution-table"
-                       hx-include="#run-filter" />
+{% block content %}
+<div class="flex flex-col h-full overflow-hidden">
+    <!-- TOOLBAR -->
+    <div class="toolbar h-12 border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950 flex items-center px-4 gap-3 shrink-0">
+        <!-- Left Zone: Search + Filter -->
+        <div class="flex items-center gap-2 flex-1 min-w-0">
+            <input type="text" id="run-filter" name="filter"
+                   placeholder="Filter runs..."
+                   class="h-7 px-3 text-xs bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-sm focus:outline-none focus:ring-1 focus:ring-blue-500 w-64"
+                    hx-get="/api/v1/execution/runs/active"
+                   hx-trigger="keyup changed delay:300ms"
+                   hx-target="#execution-table"
+                   hx-include="#run-filter">
+            <div class="relative">
+                <button class="h-7 px-2 text-xs font-medium bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-sm text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                        data-filter-popup="execution"
+                        aria-haspopup="true"
+                        aria-expanded="false"
+                        onclick="toggleFilterPopup(this, 'execution', '/api/v1/execution/runs/active', [{value:'status',label:'Status'},{value:'world',label:'World'},{value:'progress',label:'Progress'}])">
+                    ⚙️ Filter
+                </button>
             </div>
+            <div id="execution-indicator" class="htmx-indicator text-xs animate-spin">⌛</div>
         </div>
-        
-        <div class="flex items-center gap-2">
-            <button 
-                hx-get="/logs/list" 
-                hx-target="#execution-table"
-                class="px-3 py-1 text-xs font-bold uppercase tracking-tighter bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition">
-                View All Logs
-            </button>
-            <button 
-                hx-post="/api/runs/abort-all" 
-                hx-target="#execution-table"
-                hx-confirm="Are you sure you want to abort all active research runs?"
-                class="px-3 py-1 text-xs font-bold uppercase tracking-tighter bg-red-600 text-white hover:bg-red-700 transition">
-                Abort All
-            </button>
+
+        <!-- Center: empty -->
+        <div class="flex-1"></div>
+
+        <div class="w-px h-6 bg-gray-200 dark:bg-gray-700"></div>
+
+        <!-- Right Zone: Actions -->
+        <div class="flex items-center gap-2 shrink-0">
+<button class="px-3 py-1 text-xs font-semibold bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-300 rounded-sm hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                    hx-post="/api/v1/tools/clear-logs"
+                    hx-target="#execution-table"
+                    hx-swap="innerHTML"
+                    onclick="return confirm('Clear all logs?')">
+    Clear Logs
+</button>
+<button class="px-3 py-1 text-xs font-semibold bg-red-600 text-white rounded-sm hover:bg-red-700 transition-colors"
+                    hx-post="/api/v1/execution/runs/abort-all"
+                    hx-target="#execution-table"
+                    hx-confirm="Are you sure you want to abort all active research runs?">
+    Abort All
+</button>
         </div>
     </div>
-{% endblock %}
 
-{% block left_panel %}
-    <div class="p-4 text-xs text-gray-400 italic">Execution navigation pending...</div>
-{% endblock %}
-
-{% block center_workspace %}
-    <!-- Execution Table Container -->
-    <div class="flex-1 overflow-auto bg-white dark:bg-gray-950">
-            <div id="execution-table" 
-             hx-get="/api/runs/active-detailed" 
-             hx-trigger="load, every 5s" 
+    <!-- CONTENT: Run Table -->
+    <div class="flex-1 overflow-y-auto bg-white dark:bg-gray-950">
+        <div id="execution-table"
+             hx-get="/api/v1/execution/runs/active"
+             hx-trigger="load, every 5s"
              class="w-full">
-            <!-- Table fragment loaded here -->
             <div class="flex items-center justify-center h-32 text-gray-400 dark:text-gray-500 text-xs italic">
                 Initializing execution monitor...
             </div>
         </div>
     </div>
-{% endblock %}
+</div>
 
-{% block right_inspector %}
-    <div class="p-4 text-xs text-gray-400 italic">Run details inspector pending...</div>
-{% endblock %}
-
-{% block extra_content %}
 <script>
+function toggleFilterPopup(btn, popupId, target, fields) {
+    var expanded = btn.getAttribute('aria-expanded') === 'true';
+    if (expanded) { closeFilterPopup(popupId); return; }
+    var existing = document.getElementById('filter-popup-' + popupId);
+    if (existing) { existing.remove(); closeFilterPopup(popupId); return; }
+
+    var popup = document.createElement('div');
+    popup.id = 'filter-popup-' + popupId;
+    popup.className = 'filter-popup';
+    popup.setAttribute('role', 'dialog');
+    popup.setAttribute('aria-modal', 'true');
+    popup.setAttribute('aria-label', 'Filter query builder');
+
+    var fieldsHtml = fields.map(function(f) {
+        return '<option value="' + f.value + '">' + f.label + '</option>';
+    }).join('');
+
+    popup.innerHTML =
+        '<div class="filter-popup-header">Query Builder</div>' +
+        '<div id="filter-rules-' + popupId + '">' +
+        '<div class="filter-rule-row">' +
+        '<select class="filter-field h-7 px-2 text-xs border border-gray-300 dark:border-gray-700 rounded-sm bg-white dark:bg-gray-800 focus:outline-none focus:ring-1 focus:ring-blue-500">' + fieldsHtml + '</select>' +
+        '<select class="filter-operator h-7 px-2 text-xs border border-gray-300 dark:border-gray-700 rounded-sm bg-white dark:bg-gray-800 focus:outline-none focus:ring-1 focus:ring-blue-500">' +
+        '<option value="is">is</option><option value="is_not">is not</option><option value="contains">contains</option></select>' +
+        '<input type="text" class="filter-value h-7 px-2 text-xs border border-gray-300 dark:border-gray-700 rounded-sm bg-white dark:bg-gray-800 flex-1 min-w-0" placeholder="Value">' +
+        '</div></div>' +
+        '<button type="button" class="text-xs text-blue-600 hover:text-blue-800 mt-1 mb-3" onclick="var c=document.getElementById(\'filter-rules-' + popupId + '\');var r=c.querySelector(\'.filter-rule-row\');if(r){var cl=r.cloneNode(true);cl.querySelectorAll(\'select,input\').forEach(function(e){if(e.tagName===\'SELECT\')e.selectedIndex=0;else e.value=\'\'});c.appendChild(cl)}">+ Add Rule</button>' +
+        '<div class="flex justify-between pt-2 border-t border-gray-200 dark:border-gray-700">' +
+        '<button type="button" class="text-xs text-gray-500 hover:text-gray-700" onclick="document.getElementById(\'filter-rules-' + popupId + '\').innerHTML=\'\';closeFilterPopup(\'' + popupId + '\')">Clear</button>' +
+        '<button type="button" class="px-3 py-1 bg-blue-600 text-white text-xs font-semibold rounded-sm hover:bg-blue-700" onclick="var rules=[];document.querySelectorAll(\'#filter-rules-' + popupId + ' .filter-rule-row\').forEach(function(r){var f=r.querySelector(\'.filter-field\')?.value;var o=r.querySelector(\'.filter-operator\')?.value;var v=r.querySelector(\'.filter-value\')?.value;if(f&&v)rules.push(encodeURIComponent(f)+\'=\'+encodeURIComponent(o)+\'=\'+encodeURIComponent(v))});if(rules.length)htmx.ajax(\'GET\',\'' + target + '?\'+rules.join(\'&\'),{swap:\'innerHTML\',target:\'#execution-table\'});closeFilterPopup(\'' + popupId + '\')">Apply</button>' +
+        '</div>';
+
+    btn.parentElement.appendChild(popup);
+    btn.setAttribute('aria-expanded', 'true');
+}
+
+function closeFilterPopup(popupId) {
+    var popup = document.getElementById('filter-popup-' + popupId);
+    if (popup) popup.remove();
+    var btn = document.querySelector('[data-filter-popup="' + popupId + '"]');
+    if (btn) btn.setAttribute('aria-expanded', 'false');
+}
+
+document.addEventListener('click', function(e) {
+    if (e.target.closest('.filter-popup') || e.target.closest('[data-filter-popup]')) return;
+    document.querySelectorAll('[id^="filter-popup-"]').forEach(function(p) {
+        closeFilterPopup(p.id.replace('filter-popup-', ''));
+    });
+});
+
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+        document.querySelectorAll('[id^="filter-popup-"]').forEach(function(p) {
+            closeFilterPopup(p.id.replace('filter-popup-', ''));
+        });
+    }
+});
+
 function updateTimestamp() {
     var el = document.getElementById('last-updated');
     if (el) el.textContent = 'Updated ' + new Date().toLocaleTimeString();
@@ -74,9 +132,33 @@ document.addEventListener('htmx:afterSwap', function(evt) {
 </script>
 
 <style>
-    /* Precision Tooling Style Overrides */
-    .rounded-none {
-        border-radius: 0 !important;
-    }
+.toolbar { flex-shrink: 0; }
+.filter-popup {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    width: 320px;
+    background: #ffffff;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    padding: 12px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.10);
+    z-index: 100;
+    font-size: 0.8rem;
+}
+.dark .filter-popup {
+    background: #1e293b;
+    border-color: #334155;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+}
+.filter-popup-header {
+    font-weight: 700;
+    border-bottom: 1px solid #f1f5f9;
+    padding-bottom: 4px;
+    margin-bottom: 8px;
+    color: #1e293b;
+}
+.dark .filter-popup-header { color: #f1f5f9; border-bottom-color: #334155; }
+.filter-rule-row { display: flex; gap: 4px; margin-bottom: 8px; }
 </style>
 {% endblock %}

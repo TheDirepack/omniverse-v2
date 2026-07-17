@@ -1,0 +1,29 @@
+<div class="divide-y divide-gray-100 dark:divide-gray-800">
+    {% for world in worlds %}
+    <div class="flex items-center justify-between px-6 py-3 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors cursor-pointer border-l-4 border-l-transparent hover:border-l-blue-500"
+         onclick="loadWorldDetail({{ world.id }})">
+        <div class="min-w-0 flex-1">
+            <div class="text-sm font-semibold text-gray-900 dark:text-gray-100 truncate">{{ world.name }}</div>
+            {% if world.franchise %}
+            <div class="text-xs text-gray-400 dark:text-gray-500 truncate">{{ world.franchise }}</div>
+            {% endif %}
+        </div>
+        <div class="flex items-center gap-3 shrink-0 ml-4">
+            {% if world.last_researched %}
+            <span class="text-[10px] text-gray-400 dark:text-gray-500">{{ world.last_researched }}</span>
+            {% endif %}
+            <span class="text-[10px] px-1.5 py-0.5 bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 rounded-sm font-mono">{{ world.artifact_count }}</span>
+            {% if world.is_explored %}
+            <span class="text-[9px] px-1.5 py-0.5 rounded-sm bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 font-bold uppercase">Explored</span>
+            {% else %}
+            <span class="text-[9px] px-1.5 py-0.5 rounded-sm bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400 font-bold uppercase">Pending</span>
+            {% endif %}
+        </div>
+    </div>
+    {% endfor %}
+    {% if not worlds %}
+    <div class="p-12 text-center text-xs text-gray-400 italic">
+        No worlds found.
+    </div>
+    {% endif %}
+</div>

@@ -9,7 +9,7 @@ class TestHealth:
 
 
 class TestSettingsGeneral:
-    ENDPOINT = "/api/settings/general"
+    ENDPOINT = "/api/v1/settings/general"
 
     def test_missing_key(self, api_client):
         r = api_client.post(self.ENDPOINT, json={})
@@ -57,7 +57,7 @@ class TestSettingsGeneral:
 
 
 class TestWorlds:
-    ENDPOINT = "/api/worlds/"
+    ENDPOINT = "/api/v1/db/universes/"
     SEED_COUNT = 1
 
     def test_get_empty(self, api_client):
@@ -141,7 +141,7 @@ class TestWorlds:
         r_list = api_client.get(self.ENDPOINT)
         uuid_val = r_list.json()[0]["uuid"]
 
-        r = api_client.get(f"/api/worlds/by-uuid/{uuid_val}")
+        r = api_client.get(f"/api/v1/db/universes/by-uuid/{uuid_val}")
         assert r.status_code == 200
         data = r.json()
         assert data["uuid"] == uuid_val
@@ -185,7 +185,7 @@ class TestWorlds:
 
 
 class TestProviders:
-    ENDPOINT = "/api/providers/"
+    ENDPOINT = "/api/v1/settings/providers/"
 
     def test_missing_name(self, api_client):
         r = api_client.post(self.ENDPOINT, json={"provider_type": "openai"})
@@ -293,7 +293,7 @@ class TestProviders:
 
 
 class TestAgentRoutes:
-    ENDPOINT = "/api/settings/agent-routes"
+    ENDPOINT = "/api/v1/settings/agent-routes"
 
     def test_missing_task_type(self, api_client):
         r = api_client.post(self.ENDPOINT, json={"provider_id": 1})
@@ -375,7 +375,7 @@ class TestAgentRoutes:
 
 
 class TestFocusedSearch:
-    ENDPOINT = "/api/runs/focused-search"
+    ENDPOINT = "/api/v1/execution/runs/focused-search"
 
     def test_success(self, api_client):
         payload = {
@@ -419,7 +419,7 @@ class TestFocusedSearch:
 
 
 class TestOrchestrate:
-    ENDPOINT = "/api/runs/workflow"
+    ENDPOINT = "/api/v1/execution/runs/workflow"
 
     def test_missing_worlds(self, api_client):
         r = api_client.post(self.ENDPOINT, json={})
@@ -453,7 +453,7 @@ class TestOrchestrate:
 
 
 class TestAbort:
-    ENDPOINT = "/api/runs/abort"
+    ENDPOINT = "/api/v1/execution/runs/abort"
 
     def test_missing_both_keys(self, api_client):
         r = api_client.post(self.ENDPOINT, json={})
@@ -474,7 +474,7 @@ class TestAbort:
 
 
 class TestResults:
-    ENDPOINT = "/api/research/results"
+    ENDPOINT = "/api/v1/research/results"
 
     def test_empty(self, api_client):
         r = api_client.get(self.ENDPOINT)
@@ -485,7 +485,7 @@ class TestResults:
 
     def test_with_worlds(self, api_client):
         api_client.post(
-            "/api/worlds/", json={"world_name": "ResultWorld", "auto_research": False}
+            "/api/v1/db/universes/", json={"world_name": "ResultWorld", "auto_research": False}
         )
         r = api_client.get(self.ENDPOINT)
         data = r.json()
@@ -494,7 +494,7 @@ class TestResults:
 
 
 class TestSettingsGet:
-    ENDPOINT = "/api/settings/"
+    ENDPOINT = "/api/v1/settings/"
 
     def test_empty(self, api_client):
         r = api_client.get(self.ENDPOINT)
@@ -506,9 +506,9 @@ class TestSettingsGet:
         assert any(route["task_type"] == "DEFAULT" for route in data["agent_routes"])
 
     def test_with_data(self, api_client):
-        api_client.post("/api/settings/general", json={"key": "test", "value": "val"})
-        api_client.post("/api/providers", json={"name": "test-provider"})
-        api_client.post("/api/settings/agent-routes", json={"task_type": "TEST"})
+        api_client.post("/api/v1/settings/general", json={"key": "test", "value": "val"})
+        api_client.post("/api/v1/settings/providers", json={"name": "test-provider"})
+        api_client.post("/api/v1/settings/agent-routes", json={"task_type": "TEST"})
         r = api_client.get(self.ENDPOINT)
         data = r.json()
         assert data["general_settings"].get("test") == "val"
@@ -518,7 +518,7 @@ class TestSettingsGet:
 
 class TestModelStatus:
     def test_no_routes(self, api_client):
-        r = api_client.get("/api/settings/model-status")
+        r = api_client.get("/api/v1/settings/model-status")
         assert r.status_code == 200
         data = r.json()
         assert "initialized" in data
@@ -534,7 +534,7 @@ class TestModelStatus:
 
 class TestAgentActivity:
     def test_empty(self, api_client):
-        r = api_client.get("/api/runs/agent-activity")
+        r = api_client.get("/api/v1/execution/runs/agent-activity")
         assert r.status_code == 200
         data = r.json()
         assert "active_runs" in data
@@ -551,24 +551,24 @@ class TestAgentActivity:
 
 class TestResetAndClear:
     def test_clear_logs(self, api_client):
-        r = api_client.post("/api/worlds/clear-logs")
+        r = api_client.post("/api/v1/db/universes/clear-logs")
         assert r.status_code == 200
 
     def test_reset_database(self, api_client):
         api_client.post(
-            "/api/worlds", json={"world_name": "ResetWorld", "auto_research": False}
+            "/api/v1/db/universes", json={"world_name": "ResetWorld", "auto_research": False}
         )
-        r = api_client.post("/api/worlds/reset-database")
+        r = api_client.post("/api/v1/db/universes/reset-database")
         assert r.status_code == 200
 
     def test_reset_activity(self, api_client):
-        r = api_client.post("/api/runs/reset-activity")
+        r = api_client.post("/api/v1/execution/runs/reset-activity")
         assert r.status_code == 200
 
 
 class TestResearch:
     def test_notebook_claims(self, api_client):
-        r = api_client.get("/api/research/claims/notebook")
+        r = api_client.get("/api/v1/db/claims/notebook")
         assert r.status_code == 200
         data = r.json()
         assert isinstance(data, list)
@@ -580,7 +580,7 @@ class TestResearch:
             assert "universe_name" in claim
 
     def test_results(self, api_client):
-        r = api_client.get("/api/research/results")
+        r = api_client.get("/api/v1/db/artifacts/results")
         assert r.status_code == 200
         data = r.json()
         assert "tier_system" in data
@@ -594,7 +594,7 @@ class TestResearch:
             assert "tier" in w
 
     def test_theories(self, api_client):
-        r = api_client.get("/api/research/theories")
+        r = api_client.get("/api/v1/db/artifacts/theories")
         assert r.status_code == 200
         data = r.json()
         assert isinstance(data, list)

@@ -1,5 +1,5 @@
 class TestWorldsResetExplored:
-    ENDPOINT = "/api/worlds"
+    ENDPOINT = "/api/v1/db/universes"
 
     def test_reset_explored_single_world(self, api_client):
         """

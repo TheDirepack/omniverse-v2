@@ -12,7 +12,7 @@ def client():
 
 def test_min_research_turns_default(client):
     """Test that MIN_RESEARCH_TURNS defaults to 6."""
-    resp = client.get("/api/settings", follow_redirects=True)
+    resp = client.get("/api/v1/settings", follow_redirects=True)
     assert resp.status_code == 200
     data = resp.json()
     assert data["general_settings"]["MIN_RESEARCH_TURNS"] == "6"
@@ -22,14 +22,14 @@ def test_min_research_turns_update(client):
     """Test updating MIN_RESEARCH_TURNS setting."""
     # Update to 10
     resp = client.post(
-        "/api/settings/general",
+        "/api/v1/settings/general",
         json={"key": "MIN_RESEARCH_TURNS", "value": "10"},
         follow_redirects=True,
     )
     assert resp.status_code == 200
 
     # Verify update
-    resp = client.get("/api/settings", follow_redirects=True)
+    resp = client.get("/api/v1/settings", follow_redirects=True)
     assert resp.status_code == 200
     data = resp.json()
     assert data["general_settings"]["MIN_RESEARCH_TURNS"] == "10"

@@ -15,7 +15,7 @@ def test_extrapolate_all_scope(client, _clean_db):
         session.refresh(u1)
         session.refresh(u2)
 
-    response = client.post("/api/runs/extrapolate", json={"scope": "all"})
+    response = client.post("/api/v1/execution/runs/extrapolate", json={"scope": "all"})
     assert response.status_code == 200
     data = response.json()
     assert "run_id" in data
@@ -32,7 +32,7 @@ def test_extrapolate_worlds_scope(client, _clean_db):
         session.commit()
 
     response = client.post(
-        "/api/runs/extrapolate",
+        "/api/v1/execution/runs/extrapolate",
         json={"scope": "worlds", "worlds": ["U1", "U2", "NonExistent"]},
     )
     assert response.status_code == 200
@@ -43,7 +43,7 @@ def test_extrapolate_worlds_scope(client, _clean_db):
     assert "NonExistent" not in data["worlds"]
 
 def test_extrapolate_worlds_missing_list(client):
-    response = client.post("/api/runs/extrapolate", json={"scope": "worlds"})
+    response = client.post("/api/v1/execution/runs/extrapolate", json={"scope": "worlds"})
     assert response.status_code == 400
     assert "worlds list required" in response.json()["detail"]
 
@@ -78,7 +78,7 @@ def test_extrapolate_tier_scope(client, _clean_db):
         session.add_all([wt1, wt2, wt3])
         session.commit()
 
-    response = client.post("/api/runs/extrapolate", json={"scope": "tier", "tier": 1})
+    response = client.post("/api/v1/execution/runs/extrapolate", json={"scope": "tier", "tier": 1})
     assert response.status_code == 200
     data = response.json()
     assert "T1_U1" in data["worlds"]
@@ -86,10 +86,10 @@ def test_extrapolate_tier_scope(client, _clean_db):
     assert "T2_U1" not in data["worlds"]
 
 def test_extrapolate_tier_missing_value(client):
-    response = client.post("/api/runs/extrapolate", json={"scope": "tier"})
+    response = client.post("/api/v1/execution/runs/extrapolate", json={"scope": "tier"})
     assert response.status_code == 400
     assert "tier value required" in response.json()["detail"]
 
 def test_extrapolate_invalid_scope(client):
-    response = client.post("/api/runs/extrapolate", json={"scope": "invalid"})
+    response = client.post("/api/v1/execution/runs/extrapolate", json={"scope": "invalid"})
     assert response.status_code == 422

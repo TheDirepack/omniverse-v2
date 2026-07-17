@@ -8,7 +8,7 @@ def test_get_file_logs_basic(client):
         f.write("Line 1: Error\nLine 2: Success\nLine 3: Warning\n")
 
     # Test fetching all logs
-    response = client.get("/api/runs/logs/file")
+    response = client.get("/api/v1/execution/runs/logs/file")
     assert response.status_code == 200
     data = response.json()
     logs = data["logs"]
@@ -24,14 +24,14 @@ def test_get_file_logs_filter(client):
         f.write("Line 1: Error in auth\nLine 2: Success in db\nLine 3: Error in api\n")
 
     # Test filtering for "Error"
-    response = client.get("/api/runs/logs/file?filter=Error")
+    response = client.get("/api/v1/execution/runs/logs/file?filter=Error")
     assert response.status_code == 200
     logs = response.json()["logs"]
     assert len(logs) == 2
     assert all("Error" in line for line in logs)
 
     # Test filtering for "Success"
-    response = client.get("/api/runs/logs/file?filter=Success")
+    response = client.get("/api/v1/execution/runs/logs/file?filter=Success")
     assert response.status_code == 200
     logs = response.json()["logs"]
     assert len(logs) == 1
@@ -45,14 +45,14 @@ def test_get_file_logs_limit(client):
         f.writelines(f"Log line {i}\n" for i in range(150))
 
     # Test limit of 100 (default)
-    response = client.get("/api/runs/logs/file")
+    response = client.get("/api/v1/execution/runs/logs/file")
     assert response.status_code == 200
     logs = response.json()["logs"]
     assert len(logs) == 100
     assert "Log line 149" in logs[-1]
 
     # Test custom limit of 10
-    response = client.get("/api/runs/logs/file?limit=10")
+    response = client.get("/api/v1/execution/runs/logs/file?limit=10")
     assert response.status_code == 200
     logs = response.json()["logs"]
     assert len(logs) == 10
@@ -64,6 +64,6 @@ def test_get_file_logs_no_file(client):
     if LOG_FILE.exists():
         LOG_FILE.unlink()
 
-    response = client.get("/api/runs/logs/file")
+    response = client.get("/api/v1/execution/runs/logs/file")
     assert response.status_code == 200
     assert response.json() == {"logs": [], "total": 0, "has_more": False}

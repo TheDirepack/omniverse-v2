@@ -49,6 +49,19 @@ For detailed architectural information, refer to `AGENTS.md`.
 - **Browser**: `cloakbrowser` via `BrowserManager` singleton.
 - **State Management**: Global `ACTIVE_RUNS` / `ABORTED_RUNS` in `core/state.py`. Session state (`run_id`) is isolated via `ContextVar`.
 
+## API Documentation
+
+The API has been restructured to use a versioned `/api/v1/` prefix with clear domain separation:
+
+- **`/api/v1/db/`** - Database operations (artifacts, notebook, claims)
+- **`/api/v1/execution/`** - Execution & workflow (runs, logs, tiering, extrapolation)
+- **`/api/v1/settings/`** - Configuration (providers, models, keys)
+- **`/api/v1/tools/`** - Utility operations (worlds, research, registry)
+
+See [`docs/CODEMAPS/API_DOCS.md`](docs/CODEMAPS/API_DOCS.md) for complete API documentation with examples.
+
+Old `/api/` endpoints are deprecated and will be removed in a future release.
+
 ## Key Conventions
 
 - **API Prefix**: All routes under `/api`.

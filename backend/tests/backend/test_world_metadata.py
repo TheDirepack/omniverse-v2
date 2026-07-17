@@ -112,7 +112,7 @@ def test_get_worlds_api_fields(client, session):
     session.add(u)
     session.commit()
 
-    response = client.get("/api/worlds/")
+    response = client.get("/api/v1/db/universes/")
     assert response.status_code == 200
     worlds = response.json()
     print(f"DEBUG: Worlds returned by API: {worlds}")

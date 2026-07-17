@@ -1,0 +1,52 @@
+<div class="p-6 space-y-6">
+    <!-- Notebook Entries -->
+    <div>
+        <h3 class="text-sm font-bold text-gray-900 dark:text-gray-100 mb-3">Notebook Entries ({{ entries|length }})</h3>
+        <div class="space-y-2">
+            {% for entry in entries %}
+            <div class="p-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-sm hover:border-blue-400 dark:hover:border-blue-600 transition-colors cursor-pointer"
+                 onclick="loadNotebookDetail({{ entry.id }})">
+                <div class="flex items-center justify-between mb-1">
+                    <span class="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">{{ entry.title }}</span>
+                    <span class="px-1.5 py-0.5 text-[9px] font-bold uppercase rounded-sm bg-blue-50 text-blue-600 dark:bg-blue-900/20 dark:text-blue-400 shrink-0 ml-2">{{ entry.kind }}</span>
+                </div>
+                <p class="text-xs text-gray-500 dark:text-gray-400 line-clamp-2">{{ entry.summary }}</p>
+                <div class="flex items-center gap-3 mt-2">
+                    <span class="text-[10px] text-gray-400">{{ entry.status }}</span>
+                    <span class="text-[10px] text-gray-400">{{ entry.created_at }}</span>
+                </div>
+            </div>
+            {% else %}
+            <div class="p-6 text-center text-xs text-gray-400 italic border border-dashed border-gray-300 dark:border-gray-700 rounded-sm">
+                No notebook entries for this world.
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <!-- Notebook Claims -->
+    <div>
+        <h3 class="text-sm font-bold text-gray-900 dark:text-gray-100 mb-3">Notebook Claims ({{ claims|length }})</h3>
+        <div class="space-y-2">
+            {% for claim in claims %}
+            <div class="p-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-sm">
+                <div class="text-sm text-gray-900 dark:text-gray-100">
+                    <span class="font-semibold">{{ claim.subject }}</span>
+                    <span class="text-blue-600 dark:text-blue-400 mx-1">{{ claim.predicate }}</span>
+                    <span>{{ claim.object_val }}</span>
+                </div>
+                {% if claim.context %}
+                <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">{{ claim.context }}</p>
+                {% endif %}
+                {% if claim.reference %}
+                <div class="text-[10px] text-gray-400 mt-1 font-mono truncate">{{ claim.reference }}</div>
+                {% endif %}
+            </div>
+            {% else %}
+            <div class="p-6 text-center text-xs text-gray-400 italic border border-dashed border-gray-300 dark:border-gray-700 rounded-sm">
+                No notebook claims for this world.
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>

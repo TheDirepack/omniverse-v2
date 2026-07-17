@@ -1,6 +1,6 @@
 # Omniverse V2 Backend Module Map
 
-**Last Updated:** 2026-07-11
+**Last Updated:** 2026-07-16
 **Entry Point:** `backend/app/main.py`
 
 ## Module Breakdown
@@ -13,7 +13,18 @@ This module provides a detailed breakdown of the FastAPI backend application, se
 
 **Purpose**: HTTP request handling, input validation, response formatting.
 
-### Routers
+### New API Structure (`/api/v1/`)
+
+| Router | File | Purpose | Key Endpoints |
+| :--- | :--- | :--- | :--- |
+| `db/artifacts` | `api/v1/db/artifacts.py` | Artifact CRUD | `/api/v1/db/artifacts`, `/api/v1/db/artifacts/{id}`, `/api/v1/db/artifacts/search` |
+| `db/notebook` | `api/v1/db/notebook.py` | Notebook operations | `/api/v1/db/notebook/entries`, `/api/v1/db/notebook/entries/{id}` |
+| `db/claims` | `api/v1/db/claims.py` | Knowledge claims | `/api/v1/db/claims/claims`, `/api/v1/db/claims/results`, `/api/v1/db/claims/theories` |
+| `execution/runs` | `api/v1/execution/runs.py` | Execution tracking | `/api/v1/execution/runs/workflow`, `/api/v1/execution/runs/{id}`, `/api/v1/execution/runs/logs` |
+| `settings/providers` | `api/v1/settings/__init__.py` | LLM providers | `/api/v1/settings/providers`, `/api/v1/settings/providers/{id}/models`, `/api/v1/settings/providers/{id}/keys` |
+| `tools/worlds` | `api/v1/tools/__init__.py` | World management | `/api/v1/tools/worlds`, `/api/v1/tools/worlds/search`, `/api/v1/tools/worlds/registry` |
+
+### Legacy Routers (Deprecated)
 
 | Router | File | Purpose | Key Endpoints |
 | :--- | :--- | :--- | :--- |

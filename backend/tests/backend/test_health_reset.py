@@ -23,7 +23,7 @@ def test_reset_candidate_health(client):
         session.commit()
 
     # Action: Reset health
-    response = client.post("/api/settings/reset-health")
+    response = client.post("/api/v1/settings/reset-health")
     assert response.status_code == 200
     assert "success" in response.json()["status"]
 

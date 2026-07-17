@@ -6,11 +6,11 @@ from app.agents.workflow_state import OmniverseState
 from app.core.agent_engine import Capability, run_agent
 from app.core.context import set_current_universe
 from app.core.enums import RunPhase, RunStatus
-from app.core.runtime_state import is_aborted
 from app.research.researcher import research_single_world
 from app.research.summarizer import summarize_universe
 from app.services.execution_service import ExecutionService
 from app.services.settings_service import SettingsService
+from app.core.runtime_state import is_aborted
 from app.workflow.extrapolation_workflow import extrapolation_node as extrapolation_impl
 from app.workflow.tiering_workflow import architecture_node as architecture_impl
 
@@ -118,7 +118,7 @@ async def db_integrator_node(state: OmniverseState) -> dict[str, Any]:
 
         set_current_universe(world_name)
 
-        success, final_ans, _history = await run_agent(
+        success, final_ans, history = await run_agent(
             agent_name="DB Architect",
             system_prompt=prompt["system"],
             user_prompt=user_prompt_data,

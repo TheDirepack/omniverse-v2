@@ -20,7 +20,10 @@ def test_save_notebook_entry(client):
             }
         ]
     }
-    response = client.post("/api/notebook/entries", json=payload)
+    response = client.post("/api/v1/db/notebook/entries", json={
+        "universe_name": "Test Universe",
+        "items": [payload["items"][0]]
+    })
     assert response.status_code == 200
     assert response.json()["status"] == "success"
 
@@ -37,7 +40,7 @@ def test_delete_notebook_entry(client):
         session.commit()
         entry_id = entry.id
 
-    response = client.delete(f"/api/notebook/entries/{entry_id}")
+    response = client.delete(f"/api/v1/db/notebook/entries/{entry_id}")
     assert response.status_code == 200
     assert "deleted successfully" in response.json()["message"]
 

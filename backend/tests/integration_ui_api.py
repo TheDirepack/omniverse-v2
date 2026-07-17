@@ -23,18 +23,18 @@ def test_artifacts_api(ephemeral_db):
         a1_id = a1.id
 
     # 1. Test List
-    resp = client.get(f"/api/artifacts/list?universe_id={u_id}")
+    resp = client.get(f"/api/v1/db/artifacts/list?universe_id={u_id}")
     assert resp.status_code == 200
     assert len(resp.json()) == 3
 
     # 2. Test Search
-    resp = client.get(f"/api/artifacts/search?universe_id={u_id}&q=strong")
+    resp = client.get(f"/api/v1/db/artifacts/search?universe_id={u_id}&q=strong")
     assert resp.status_code == 200
     assert len(resp.json()) == 1
     assert resp.json()[0]["name"] == "Hero A"
 
     # 3. Test Details
-    resp = client.get(f"/api/artifacts/{a1_id}")
+    resp = client.get(f"/api/v1/db/artifacts/{a1_id}")
     assert resp.status_code == 200
     assert resp.json()["name"] == "Hero A"
 
@@ -48,7 +48,7 @@ def test_worlds_api_expanded(ephemeral_db):
         "era": "Future",
         "auto_research": False
     }
-    resp = client.post("/api/worlds/create", json=payload)
+    resp = client.post("/api/v1/db/universes/create", json=payload)
     assert resp.status_code == 200
     world_id = resp.json()["id"]
 
@@ -70,7 +70,7 @@ def test_worlds_api_expanded(ephemeral_db):
         session.add(u2)
         session.commit()
 
-    resp = client.get("/api/worlds/search?franchise=Test%20Franchise")
+    resp = client.get("/api/v1/db/universes/search?franchise=Test%20Franchise")
     assert resp.status_code == 200
     # Only Metadata World should match
     assert any(w["name"] == "Metadata World" for w in resp.json())
@@ -80,7 +80,7 @@ def test_worlds_api_expanded(ephemeral_db):
         u = session.get(Universe, world_id)
         u_uuid = u.uuid
     
-    resp = client.post("/api/worlds/research", json=[u_uuid])
+    resp = client.post("/api/v1/db/universes/research", json=[u_uuid])
     assert resp.status_code == 200
     assert "run_id" in resp.json()
 
@@ -92,7 +92,7 @@ def test_settings_api_crud(ephemeral_db):
         "base_url": "http://api.test",
         "models": "gpt-4,gpt-3.5"
     }
-    resp = client.post("/api/providers/", json=provider_payload)
+    resp = client.post("/api/v1/settings/providers/", json=provider_payload)
     assert resp.status_code == 200
     p_id = resp.json()["id"] if "id" in resp.json() else None # Depending on service impl
 
@@ -108,7 +108,7 @@ def test_settings_api_crud(ephemeral_db):
         "api_key": "sk-test-123",
         "priority": 10
     }
-    resp = client.post("/api/providers/keys", json=key_payload)
+    resp = client.post("/api/v1/settings/providers/keys", json=key_payload)
     assert resp.status_code == 200
     
     # 3. Route Upsert
@@ -118,7 +118,7 @@ def test_settings_api_crud(ephemeral_db):
         "models": "gpt-4",
         "priority": 1
     }
-    resp = client.post("/api/settings/agent-routes", json=route_payload)
+    resp = client.post("/api/v1/settings/agent-routes", json=route_payload)
     assert resp.status_code == 200
 
     # 4. Delete Route
@@ -126,7 +126,7 @@ def test_settings_api_crud(ephemeral_db):
         route = session.exec(select(AgentRouteFallback).where(AgentRouteFallback.task_type == "Researcher")).first()
         r_id = route.id
     
-    resp = client.delete(f"/api/settings/agent-routes/{r_id}")
+    resp = client.delete(f"/api/v1/settings/agent-routes/{r_id}")
     assert resp.status_code == 200
 
     with Session(ephemeral_db) as session:

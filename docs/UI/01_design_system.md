@@ -24,7 +24,7 @@ Precision Tooling means: compact but polished, structured but not rigid, functio
 
 **Structure is created by alignment, typography, spacing, and subtle separation — not decorative containers.** A border should exist because something needs to be bounded. A background change should exist because something needs to be grouped. Neither should be decorative.
 
-**Color communicates state.** The accent color (`--accent`) is used for one purpose: "this is selected, active, or requires your attention." Status colors exist for one purpose each. Using accent color decoratively — on section headers, on icons — dilutes its signal.
+**Color communicates state.** The accent color is used for one purpose: "this is selected, active, or requires your attention." Status colors exist for one purpose each. Using accent color decoratively — on section headers, on icons — dilutes its signal.
 
 **Progressive disclosure.** The interface shows what you need when you need it. Primary actions are immediately visible. Secondary actions appear in context (hover, selection). Advanced or destructive actions require intent.
 
@@ -40,10 +40,10 @@ Hierarchy is created by exactly four tools, used in this order of preference:
 
 1. **Typography weight and size.** Primary content is heavier. Labels are smaller and lighter. Titles are larger. The eye follows weight before it follows color.
 2. **Spacing.** Related items are close. Separate categories are far. Sections are separated by consistent rhythm.
-3. **Surface change.** A shift in background value (e.g., `#f8fafc` → `#ffffff`) groups elements without drawing a box around them.
+3. **Surface change.** A shift in background value groups elements without drawing a box around them.
 4. **Borders.** Used only when surface change is insufficient to create the needed boundary.
 
-Elevation (box-shadow, drop shadow) is **not used** for hierarchy. It carries spatial metaphor (floating above) that conflicts with the flat, data-first language of this tool.
+Elevation (box-shadow, drop-shadow) is **not used** for hierarchy. It carries spatial metaphor (floating above) that conflicts with the flat, data-first language of this tool.
 
 ---
 
@@ -51,19 +51,19 @@ Elevation (box-shadow, drop shadow) is **not used** for hierarchy. It carries sp
 
 A surface is any region of the interface with a distinct background. These are the surfaces used in Omniverse and their rules:
 
-| Surface | Background | When to Use |
+| Surface | Tailwind Class | When to Use |
 |---|---|---|
-| App background | `#f8fafc` | Default. The base layer. |
-| Panel / Card | `#ffffff` | When content needs to be distinguished from the background. |
-| Sidebar | `#f1f5f9` | Navigation region. Always cooler/more muted than the app background. |
-| Header bar | `#e2e8f0` | Wordmark, section labels. One step darker than sidebar. |
-| Input | `#ffffff` | Always white. Inputs are editable regions, not structural. |
-| Active tab / nav | `#eff6ff` | Selected state only. Never decorative. |
+| App background | `bg-white dark:bg-gray-950` | Default. The base layer. |
+| Panel / Card | `bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700` | When content needs to be distinguished from the background. |
+| Sidebar | `bg-gray-50 dark:bg-gray-900` | Navigation region. Always cooler/muted. |
+| Wordmark bar | `border-b border-gray-200 dark:border-gray-800` | One step darker than sidebar. |
+| Input | `bg-white dark:bg-gray-800` | Always white. Inputs are editable regions, not structural. |
+| Active tab / nav | `bg-blue-100 dark:bg-blue-900/30 text-blue-600` | Selected state only. Never decorative. |
 
 **When is a border appropriate?**
 - Between a sidebar and a main content area: always
 - Between a list column and an inspector column: always
-- Around an input: always (1px, `--border`)
+- Around an input: always (1px, `border-gray-300 dark:border-gray-700`)
 - Around a card: only if it sits directly on the app background with no other separation mechanism
 - Around a section within a panel: rarely — use spacing instead
 
@@ -77,23 +77,28 @@ The shell is always flush against the browser window. There are no outer margins
 Color communicates meaning. These are the only meanings colors carry in Omniverse:
 
 **Accent (Blue)**
-Used for: active navigation, selected items, focus rings, primary CTA buttons, hyperlinks, and interactive element highlights.
-Never used for: decoration, non-interactive labels, section headers.
+- Tailwind: `text-blue-600`, `bg-blue-600`, `ring-blue-500`
+- Used for: active navigation, selected items, focus rings, primary CTA buttons, hyperlinks
+- Never used for: decoration, non-interactive labels, section headers
 
 **Danger (Red)**
-Used for: destructive actions only — delete, abort, remove.
-Never used for: warnings, errors that are recoverable, or anything the user didn't initiate.
+- Tailwind: `text-red-600`, `bg-red-600`
+- Used for: destructive actions only — delete, abort, remove
+- Never used for: warnings, errors that are recoverable, or anything the user didn't initiate
 
 **Warning (Amber)**
-Used for: states requiring attention but not failure — stalled progress, unconfirmed items, notebook entries.
-Never used for: errors or destructive outcomes.
+- Tailwind: `text-amber-600`, `bg-amber-100`
+- Used for: states requiring attention but not failure — stalled progress, unconfirmed items
+- Never used for: errors or destructive outcomes
 
 **Success (Green)**
-Used for: verified states, active/healthy status, completed items.
-Never used for: anything that isn't confirming a positive state.
+- Tailwind: `text-green-700`, `bg-green-100`
+- Used for: verified states, active/healthy status, completed items
+- Never used for: anything that isn't confirming a positive state
 
 **Neutral (Gray scale)**
-Used for: everything that isn't communicating a semantic state. Labels, borders, background values, body text, muted text.
+- Tailwind: `text-gray-400/500/600/900`, `bg-gray-50/100/200`, `border-gray-200/300`
+- Used for: everything that isn't communicating a semantic state
 
 The color system is deliberately narrow. The more colors in a UI, the less any individual color means.
 
@@ -103,18 +108,18 @@ The color system is deliberately narrow. The more colors in a UI, the less any i
 
 Typography is the primary tool of information hierarchy.
 
-**Font family:** System UI stack — `-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif`. This is a deliberate choice: Omniverse is a tool that should feel native to the operating system, not branded with a web font.
+**Font family:** `'Inter', system-ui, -apple-system, sans-serif` — defined in `base.html` `<style>`. Inter is loaded via CDN by Tailwind. This is a deliberate choice: Omniverse is a tool that should feel native to the operating system, not branded with a web font.
 
 **Type scale — from most to least prominent:**
 
 | Role | Size | Weight | Transform | Use |
 |---|---|---|---|---|
-| Wordmark | 0.85rem | 800 | Uppercase | App name only |
-| Inspector title | 1.1rem | 800 | None | Selected item name in inspector |
-| Section header | 0.9rem | 700 | None | Named sections within panels |
-| Body / table content | 0.8rem | 400–600 | None | Primary readable content |
-| Field label | 0.7rem | 700 | Uppercase | Form labels, column headers |
-| Micro / timestamp | 0.75rem | 400 | None | Metadata, timestamps, muted info |
+| Wordmark | `text-xs` | `font-black` | `tracking-tighter uppercase` | App name only |
+| Inspector title | `text-lg` | `font-bold` | None | Selected item name in inspector |
+| Section header | `text-sm` | `font-bold` | None | Named sections within panels |
+| Body / table content | `text-xs` or `text-sm` | `font-medium` to `font-semibold` | None | Primary readable content |
+| Field label | `text-[10px]` | `font-bold` | `uppercase tracking-widest` | Form labels, column headers |
+| Micro / timestamp | `text-[10px]` | `text-gray-400` | None | Metadata, timestamps, muted info |
 
 **Weight carries meaning.** Bold text is a primary value. Regular text is supporting content. This must be applied consistently — if a world name is bold, all world names are bold, and nothing else in that row is.
 
@@ -124,7 +129,7 @@ Typography is the primary tool of information hierarchy.
 
 **Rhythm** is the regularity of spacing throughout the interface. It creates the sense that the UI is designed rather than assembled.
 
-The spacing scale: 4px, 8px, 12px, 16px, 20px. These are the only inter-element gaps used. Mixing ad-hoc values (e.g., 10px, 14px, 22px) breaks rhythm.
+Tailwind spacing scale used: `p-1` (4px), `p-2` (8px), `p-3` (12px), `p-4` (16px), `p-6` (24px), `gap-1` (4px), `gap-2` (8px), `gap-3` (12px), `gap-4` (16px). These are the only inter-element gaps used. Mixing ad-hoc values breaks rhythm.
 
 **Alignment** is the axis along which the eye travels. In Omniverse:
 
@@ -141,7 +146,7 @@ The grid should feel inevitable. When a designer has done their job, the user ne
 
 Components are tools, not decorations. Each component class has one job:
 
-**Buttons** initiate actions. Their visual weight communicates the consequence of the action. Primary buttons are visually heavy (filled) and used for the most important action on a surface. Secondary buttons are light (outlined). Danger buttons are reserved for destructive actions.
+**Buttons** initiate actions. Their visual weight communicates the consequence of the action. Primary buttons are visually heavy (filled, `bg-blue-600 text-white`) and used for the most important action on a surface. Secondary buttons are light (outlined, `bg-white border border-gray-300`). Danger buttons are reserved for destructive actions (`bg-red-600`).
 
 **Tables** display lists of comparable items where the user needs to scan, compare, and act on individual rows. Tables are not used for configuration or prose.
 
@@ -149,7 +154,7 @@ Components are tools, not decorations. Each component class has one job:
 
 **Forms** collect structured input. Every input has a label. Forms are laid out in grids to allow visual comparison of related fields.
 
-**Filters** are composable query builders. They are not simple search boxes. A filter is a structured expression: Field → Operator → Value. Filters appear in a consistent popup pattern triggered from the toolbar.
+**Filters** are composable query builders. They are not simple search boxes. A filter is a structured expression: Field → Operator → Value. Filters appear in a consistent popup pattern triggered from the toolbar, generated by `toggleFilterPopup()` JS.
 
 **Badges** display state at a glance. They appear in list rows and are always right-aligned. They never replace text — they augment it.
 

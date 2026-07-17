@@ -96,46 +96,46 @@ def test_knowledge_entity_detail_not_found(client):
 
 def test_artifact_list_by_universe(client, seeded_db):
     _, u1, _e1, _ = seeded_db
-    response = client.get(f"/api/artifacts/list", params={"universe_id": u1.id})
+    response = client.get(f"/api/v1/db/artifacts/list", params={"universe_id": u1.id})
     assert response.status_code == 200
     assert "E1" in response.text
 
 
 def test_artifact_list_all(client, seeded_db):
     _, _u1, _e1, _ = seeded_db
-    response = client.get("/api/artifacts/list")
+    response = client.get("/api/v1/db/artifacts/list")
     assert response.status_code == 200
     assert "E1" in response.text
 
 
 def test_artifact_search_by_universe(client, seeded_db):
     _, u1, e1, _ = seeded_db
-    response = client.get("/api/artifacts/search", params={"universe_id": u1.id, "q": "E1"})
+    response = client.get("/api/v1/db/artifacts/search", params={"universe_id": u1.id, "q": "E1"})
     assert response.status_code == 200
     assert "E1" in response.text
 
 
 def test_artifact_search_global(client, seeded_db):
     _, _u1, e1, _ = seeded_db
-    response = client.get("/api/artifacts/search", params={"q": "E1"})
+    response = client.get("/api/v1/db/artifacts/search", params={"q": "E1"})
     assert response.status_code == 200
     assert "E1" in response.text
 
 
 def test_artifact_search_global_no_results(client, seeded_db):
-    response = client.get("/api/artifacts/search", params={"q": "NONEXISTENT_ARTIFACT_XYZ"})
+    response = client.get("/api/v1/db/artifacts/search", params={"q": "NONEXISTENT_ARTIFACT_XYZ"})
     assert response.status_code == 200
     assert "No artifacts found" in response.text
 
 
 def test_artifact_detail(client, seeded_db):
     _, _u1, e1, _ = seeded_db
-    response = client.get(f"/api/artifacts/{e1.id}")
+    response = client.get(f"/api/v1/db/artifacts/{e1.id}")
     assert response.status_code == 200
     assert "E1" in response.text
     assert e1.type in response.text
 
 
 def test_artifact_detail_not_found(client):
-    response = client.get("/api/artifacts/99999")
+    response = client.get("/api/v1/db/artifacts/99999")
     assert response.status_code == 404

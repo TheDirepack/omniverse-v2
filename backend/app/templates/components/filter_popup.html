@@ -1,0 +1,148 @@
+<div class="filter-popup" role="dialog" aria-modal="true" aria-label="Filter query builder" id="filter-popup-{{ popup_id }}">
+    <div class="filter-popup-header">Query Builder</div>
+    <div id="filter-rules-{{ popup_id }}">
+        {% for rule in filter_rules or [] %}
+        <div class="filter-rule-row">
+            <select class="filter-field h-7 px-2 text-xs border border-gray-300 dark:border-gray-700 rounded-sm bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500">
+                {% for f in filter_fields %}
+                <option value="{{ f.value }}" {% if rule.field == f.value %}selected{% endif %}>{{ f.label }}</option>
+                {% endfor %}
+            </select>
+            <select class="filter-operator h-7 px-2 text-xs border border-gray-300 dark:border-gray-700 rounded-sm bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500">
+                <option value="is" {% if rule.operator == 'is' %}selected{% endif %}>is</option>
+                <option value="is_not" {% if rule.operator == 'is_not' %}selected{% endif %}>is not</option>
+                <option value="contains" {% if rule.operator == 'contains' %}selected{% endif %}>contains</option>
+            </select>
+            <input type="text" class="filter-value h-7 px-2 text-xs border border-gray-300 dark:border-gray-700 rounded-sm bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500 flex-1 min-w-0" value="{{ rule.value or '' }}" placeholder="Value">
+            <button type="button" class="remove-rule text-gray-400 hover:text-red-500 px-1 text-sm" onclick="this.parentElement.remove()">✕</button>
+        </div>
+        {% else %}
+        <div class="filter-rule-row">
+            <select class="filter-field h-7 px-2 text-xs border border-gray-300 dark:border-gray-700 rounded-sm bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500">
+                {% for f in filter_fields %}
+                <option value="{{ f.value }}">{{ f.label }}</option>
+                {% endfor %}
+            </select>
+            <select class="filter-operator h-7 px-2 text-xs border border-gray-300 dark:border-gray-700 rounded-sm bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500">
+                <option value="is">is</option>
+                <option value="is_not">is not</option>
+                <option value="contains">contains</option>
+            </select>
+            <input type="text" class="filter-value h-7 px-2 text-xs border border-gray-300 dark:border-gray-700 rounded-sm bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500 flex-1 min-w-0" placeholder="Value">
+        </div>
+        {% endfor %}
+    </div>
+    <button type="button" class="text-xs text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 mt-1 mb-3"
+            onclick="addFilterRule('{{ popup_id }}')">+ Add Rule</button>
+    <div class="flex justify-between pt-2 border-t border-gray-200 dark:border-gray-700">
+        <button type="button" class="text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+                onclick="clearFilters('{{ popup_id }}')">Clear</button>
+        <button type="button" class="px-3 py-1 bg-blue-600 text-white text-xs font-semibold rounded-sm hover:bg-blue-700 transition-colors"
+                onclick="applyFilters('{{ popup_id }}', '{{ filter_target }}')">Apply</button>
+    </div>
+</div>
+
+<style>
+.filter-popup {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    width: 320px;
+    background: var(--bg-surface, #ffffff);
+    border: 1px solid var(--border, #cbd5e1);
+    border-radius: 8px;
+    padding: 12px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.10);
+    z-index: 100;
+    font-size: 0.8rem;
+}
+.filter-popup-header {
+    font-weight: 700;
+    border-bottom: 1px solid var(--border-subtle, #f1f5f9);
+    padding-bottom: 4px;
+    margin-bottom: 8px;
+    color: var(--text-primary, #1e293b);
+}
+.filter-rule-row {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 8px;
+}
+.dark .filter-popup {
+    background: #1e293b;
+    border-color: #334155;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+}
+</style>
+
+<script>
+function addFilterRule(popupId) {
+    var container = document.getElementById('filter-rules-' + popupId);
+    var firstRow = container.querySelector('.filter-rule-row');
+    if (!firstRow) return;
+    var clone = firstRow.cloneNode(true);
+    clone.querySelectorAll('select, input').forEach(function(el) {
+        if (el.tagName === 'SELECT') el.selectedIndex = 0;
+        else el.value = '';
+    });
+    container.appendChild(clone);
+}
+
+function clearFilters(popupId) {
+    var container = document.getElementById('filter-rules-' + popupId);
+    container.innerHTML = '';
+    var firstRow = document.createElement('div');
+    firstRow.className = 'filter-rule-row';
+    firstRow.innerHTML = container.querySelector('.filter-rule-row') ? '' : 
+        '<select class="filter-field h-7 px-2 text-xs border border-gray-300 dark:border-gray-700 rounded-sm bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500">' +
+        Array.from(document.querySelector('#filter-rules-' + popupId + ' .filter-field')?.options || []).map(function(o) { return '<option value="' + o.value + '">' + o.label + '</option>'; }).join('') +
+        '</select>' +
+        '<select class="filter-operator h-7 px-2 text-xs border border-gray-300 dark:border-gray-700 rounded-sm bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500">' +
+        '<option value="is">is</option><option value="is_not">is not</option><option value="contains">contains</option>' +
+        '</select>' +
+        '<input type="text" class="filter-value h-7 px-2 text-xs border border-gray-300 dark:border-gray-700 rounded-sm bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500 flex-1 min-w-0" placeholder="Value">';
+    container.appendChild(firstRow);
+    closeFilterPopup(popupId);
+}
+
+function applyFilters(popupId, target) {
+    var rules = [];
+    document.querySelectorAll('#filter-rules-' + popupId + ' .filter-rule-row').forEach(function(row) {
+        var field = row.querySelector('.filter-field')?.value;
+        var operator = row.querySelector('.filter-operator')?.value;
+        var value = row.querySelector('.filter-value')?.value;
+        if (field && value) {
+            rules.push(encodeURIComponent(field) + '=' + encodeURIComponent(operator) + '=' + encodeURIComponent(value));
+        }
+    });
+    if (rules.length > 0) {
+        var params = rules.join('&');
+        htmx.ajax('GET', target + '?' + params, { swap: 'innerHTML' });
+    }
+    closeFilterPopup(popupId);
+}
+
+function closeFilterPopup(popupId) {
+    var popup = document.getElementById('filter-popup-' + popupId);
+    if (popup) popup.remove();
+    var btn = document.querySelector('[data-filter-popup="' + popupId + '"]');
+    if (btn) btn.setAttribute('aria-expanded', 'false');
+}
+
+document.addEventListener('click', function(e) {
+    if (e.target.closest('.filter-popup') || e.target.closest('[data-filter-popup]')) return;
+    document.querySelectorAll('[id^="filter-popup-"]').forEach(function(p) {
+        var id = p.id.replace('filter-popup-', '');
+        closeFilterPopup(id);
+    });
+});
+
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+        document.querySelectorAll('[id^="filter-popup-"]').forEach(function(p) {
+            var id = p.id.replace('filter-popup-', '');
+            closeFilterPopup(id);
+        });
+    }
+});
+</script>

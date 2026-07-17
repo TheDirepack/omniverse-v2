@@ -6,6 +6,7 @@ This directory contains the architectural and structural maps of the Omniverse V
 
 ## Available Maps
 
+- [[API_DOCS.md](API_DOCS.md)] - **API Documentation**: Complete REST API documentation with `/api/v1/` endpoints, examples, and deprecation notices.
 - [[ARCHITECTURE.md](ARCHITECTURE.md)] - **System Architecture**: High-level overview of system components, layered architecture, data flow diagrams, and database topology.
 - [[BACKEND.md](BACKEND.md)] - **Backend Module Map**: Detailed breakdown of FastAPI application, services, repositories, agents, workflows, and core engine modules.
 - [[DATABASE.md](DATABASE.md)] - **Database Schema**: Complete schema documentation for all SQLite databases (Main, Settings, Operational, Staging, Extrapolation).
@@ -68,11 +69,20 @@ Extrapolation DB (Speculation)
 
 ## Key Conventions
 
-- **API Prefix**: All routes under `/api` or `/research`
+- **API Prefix**: All routes under `/api/v1/` (versioned API)
 - **CORS**: Wide open (`*`)
 - **DB Location**: `backend/data/` (overridable)
 - **CSRF**: Removed (local dev tool)
 - **HTMX**: Server-side rendered views
+
+## API Structure
+
+- **`/api/v1/db/`** - Database operations (artifacts, notebook, claims)
+- **`/api/v1/execution/`** - Execution & workflow (runs, logs, tiering, extrapolation)
+- **`/api/v1/settings/`** - Configuration (providers, models, keys)
+- **`/api/v1/tools/`** - Utility operations (worlds, research, registry)
+
+Old `/api/` endpoints are deprecated.
 
 ---
 

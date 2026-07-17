@@ -21,7 +21,7 @@ def test_runs_history_invalid_json_state(_seeded_db):
         session.add(run)
         session.commit()
 
-    response = client.get("/api/runs/history")
+    response = client.get("/api/v1/execution/runs/history")
     assert response.status_code == 200
     assert "Unknown Goal" in response.text
     assert "invalid-json-run" in response.text
@@ -40,7 +40,7 @@ def test_runs_history_none_state_snapshot(_seeded_db):
         session.add(run)
         session.commit()
 
-    response = client.get("/api/runs/history")
+    response = client.get("/api/v1/execution/runs/history")
     assert response.status_code == 200
     assert "Unknown Goal" in response.text
     assert "none-state-run" in response.text
@@ -59,7 +59,7 @@ def test_runs_history_valid_json_state(_seeded_db):
         session.add(run)
         session.commit()
 
-    response = client.get("/api/runs/history")
+    response = client.get("/api/v1/execution/runs/history")
     assert response.status_code == 200
     assert "World A, World B" in response.text
     assert "valid-json-run" in response.text

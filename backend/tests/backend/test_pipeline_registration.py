@@ -20,7 +20,7 @@ async def test_pipeline_auto_registers_worlds(client, clean_db):
     test_uuids = [str(u1.id), str(u2.id)]
 
     # Action: Start orchestration with valid UUIDs
-    response = client.post("/api/runs/workflow", json={"universe_uuids": test_uuids})
+    response = client.post("/api/v1/execution/runs/workflow", json={"universe_uuids": test_uuids})
     assert response.status_code == 200
 
     # Verification: check if run was started

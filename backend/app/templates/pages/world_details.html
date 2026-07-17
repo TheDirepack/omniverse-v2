@@ -40,13 +40,13 @@
                     </div>
                 </div>
                 <div class="flex flex-col items-end gap-2">
-                    <button class="px-3 py-1.5 bg-blue-600 text-white text-xs font-semibold rounded-sm hover:bg-blue-700 transition-colors"
-                            hx-post="/api/worlds/research" 
-                            hx-vals="js:{payload: ['{{ world.uuid }}']}"
-                            hx-target="#research-status">
-                        🚀 Re-Research
-                    </button>
-                    <div id="research-status" class="text-xs text-gray-500"></div>
+<button class="px-3 py-1.5 bg-blue-600 text-white text-xs font-semibold rounded-sm hover:bg-blue-700 transition-colors"
+                    hx-post="/api/v1/execution/runs/start" 
+                    hx-vals="js:{payload: ['{{ world.uuid }}']}"
+                    hx-target="#research-status">
+    🚀 Re-Research
+</button>
+<div id="research-status" class="text-xs text-gray-500"></div>
                 </div>
             </div>
 

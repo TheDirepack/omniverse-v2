@@ -103,7 +103,7 @@
     document.addEventListener('DOMContentLoaded', activateTabFromHash);
 
     function selectProvider(providerId) {
-        htmx.ajax('GET', `/settings/providers/${providerId}`, {
+        htmx.ajax('GET', `/api/v1/settings/providers/${providerId}`, {
             target: '#provider-inspector',
             swap: 'innerHTML'
         });
@@ -121,7 +121,7 @@
         if (!modelsInput) return;
         modelsInput.value = 'Syncing...';
         renderModelList();
-        fetch('/settings/providers/' + providerId + '/sync', { method: 'POST' })
+        fetch('/api/v1/settings/providers/' + providerId + '/sync', { method: 'POST' })
             .then(r => r.text())
             .then(text => { modelsInput.value = text; renderModelList(); })
             .catch(() => { modelsInput.value = 'Sync failed'; renderModelList(); });
@@ -165,7 +165,7 @@
         const apiKey = prompt('Enter API key:');
         if (!apiKey) return;
         const priority = prompt('Enter priority (0-10):', '0') || '0';
-        htmx.ajax('POST', `/settings/providers/${providerId}/keys`, {
+        htmx.ajax('POST', `/api/v1/settings/providers/keys`, {
             target: '#settings-content',
             swap: 'innerHTML',
             values: { api_key: apiKey, priority: priority }

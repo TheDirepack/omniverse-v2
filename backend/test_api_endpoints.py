@@ -44,34 +44,34 @@ if __name__ == "__main__":
         print("Server failed to start.")
         exit(1)
 
-    print("\n--- Testing Worlds API ---")
-    # Test GET worlds
-    test_endpoint("GET", "/api/worlds")
+    print("\n--- Testing New V1 API ---")
+    # Test GET worlds (v1)
+    test_endpoint("GET", "/api/v1/db/worlds/list")
 
-    # Test POST world
+    # Test POST world (v1)
     new_world = {
         "world_name": "Test Universe",
         "franchise": "Test Franchise",
         "category": "Test Category"
     }
-    test_endpoint("POST", "/api/worlds", json=new_world)
+    test_endpoint("POST", "/api/v1/db/worlds/create", json=new_world)
 
-    # Test GET worlds again
-    test_endpoint("GET", "/api/worlds")
+    # Test GET worlds again (v1)
+    test_endpoint("GET", "/api/v1/db/worlds/list")
 
-    print("\n--- Testing Artifacts API ---")
-    # Test GET artifacts
-    test_endpoint("GET", "/api/artifacts")
+    print("\n--- Testing Artifacts API (v1) ---")
+    # Test GET artifacts (v1)
+    test_endpoint("GET", "/api/v1/db/artifacts/search?limit=10")
 
-    print("\n--- Testing Settings API ---")
-    # Test GET settings
-    test_endpoint("GET", "/api/settings")
+    print("\n--- Testing Settings API (v1) ---")
+    # Test GET settings (v1)
+    test_endpoint("GET", "/api/v1/settings/general")
 
-    print("\n--- Testing Settings Providers API ---")
-    # Test GET settings providers
-    test_endpoint("GET", "/api/settings/providers")
+    print("\n--- Testing Settings Providers API (v1) ---")
+    # Test GET settings providers (v1)
+    test_endpoint("GET", "/api/v1/settings/providers/list")
 
-    print("\n--- Testing Settings Routes API ---")
-    # Test GET settings routes
-    test_endpoint("GET", "/api/settings/routes")
+    print("\n--- Testing Settings Routes API (v1) ---")
+    # Test GET settings routes (v1)
+    test_endpoint("GET", "/api/v1/settings/routes/list")
 

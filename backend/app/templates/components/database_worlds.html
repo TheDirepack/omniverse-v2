@@ -1,65 +1,57 @@
 {% if batch_started %}
-<div class="text-xs text-green-700 dark:text-green-400 mb-2 px-1 font-semibold">Started research for {{ batch_started }} world(s)</div>
+<div class="text-xs text-green-700 dark:text-green-400 mb-2 px-4 pt-3 font-semibold">Started research for {{ batch_started }} world(s)</div>
 {% endif %}
-<div class="text-xs text-gray-500 dark:text-gray-400 mb-2 px-1">{{ worlds|length }} world(s)</div>
+<div class="text-xs text-gray-500 dark:text-gray-400 mb-1 px-4 pt-2">{{ worlds|length }} world(s)</div>
 
 <table class="w-full text-left border-collapse text-xs">
     <thead class="bg-gray-50 dark:bg-gray-800 text-gray-500 dark:text-gray-400 uppercase tracking-wider font-bold border-b border-gray-200 dark:border-gray-700">
         <tr>
-            <th class="p-2 w-10 text-center">
-                <input type="checkbox" id="select-all-worlds" class="rounded-sm border-gray-300 dark:border-gray-700 text-blue-600 focus:ring-blue-500" onclick="toggleSelectAll(this)">
+            <th class="px-4 py-2 w-10 text-center">
+                <input type="checkbox" id="select-all-worlds" class="rounded-sm border-gray-300 dark:border-gray-700 text-blue-600 focus:ring-blue-500"
+                       onchange="toggleSelectAll(this)">
             </th>
-            <th class="p-2">World Name</th>
-            <th class="p-2">Status</th>
-            <th class="p-2">Last Researched</th>
-            <th class="p-2 text-right">Actions</th>
+            <th class="px-4 py-2">World Name</th>
+            <th class="px-4 py-2 w-32">Status</th>
+            <th class="px-4 py-2 w-28 text-right">Actions</th>
         </tr>
     </thead>
     <tbody class="divide-y divide-gray-100 dark:divide-gray-800">
         {% for world in worlds %}
         <tr class="hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors group">
-            <td class="p-2 text-center">
-                <input type="checkbox" class="world-checkbox rounded-sm border-gray-300 dark:border-gray-700 text-blue-600 focus:ring-blue-500" value="{{ world.uuid }}">
+            <td class="px-4 py-2.5 text-center">
+                <input type="checkbox" class="world-checkbox rounded-sm border-gray-300 dark:border-gray-700 text-blue-600 focus:ring-blue-500"
+                       value="{{ world.uuid }}" onchange="updateBulkBar()">
             </td>
-            <td class="p-2">
-                <div class="font-semibold text-gray-900 dark:text-gray-100 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+            <td class="px-4 py-2.5">
+                <div class="font-semibold text-gray-900 dark:text-gray-100 truncate max-w-xs">
                     {{ world.name }}
                 </div>
+                {% if world.uuid %}
                 <div class="text-[10px] text-gray-400 dark:text-gray-500 font-mono">{{ world.uuid[:8] }}...</div>
+                {% endif %}
             </td>
-            <td class="p-2">
+            <td class="px-4 py-2.5">
                 {% if world.is_explored %}
                 <span class="px-1.5 py-0.5 rounded-sm bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 text-[9px] font-bold uppercase">Explored</span>
                 {% else %}
                 <span class="px-1.5 py-0.5 rounded-sm bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400 text-[9px] font-bold uppercase">Pending</span>
                 {% endif %}
             </td>
-            <td class="p-2 text-gray-500 dark:text-gray-400 italic">
-                {{ world.last_researched or 'Never' }}
-            </td>
-            <td class="p-2 text-right">
+            <td class="px-4 py-2.5 text-right">
                 <div class="flex justify-end gap-2">
-                    <button hx-post="/api/worlds/research"
-                            hx-vals='{"payload": ["{{ world.uuid }}"]}'
-                            hx-trigger="click"
-                            hx-swap="none"
-                            class="px-2 py-1 bg-blue-600 text-white rounded-sm hover:bg-blue-700 transition-colors text-[10px] font-medium">
-                        Research
-                    </button>
-                    <a href="/worlds/details/{{ world.uuid }}" 
+                    <a href="/knowledge?world_id={{ world.uuid }}"
                        class="px-2 py-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-300 rounded-sm hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-[10px] font-medium">
-                        Open
+                        Explore
                     </a>
-                    {% if world.is_explored %}
-                    <button hx-post="/worlds/{{ world.id }}/toggle-explored" 
-                            hx-target="#worlds-list"
-                            class="px-2 py-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 text-gray-500 dark:text-gray-400 rounded-sm hover:bg-yellow-50 dark:hover:bg-yellow-900/10 transition-colors text-[10px] font-medium"
-                            title="Reset explored status">
-                        ↺
-                    </button>
-                    {% endif %}
-                    <button hx-post="/worlds/{{ world.id }}/delete" 
-                            hx-target="#worlds-list" 
+<button hx-post="/api/v1/execution/runs/start"
+                hx-vals='{"payload": ["{{ world.uuid }}"]}'
+                hx-trigger="click"
+                hx-swap="none"
+                class="px-2 py-1 bg-blue-600 text-white rounded-sm hover:bg-blue-700 transition-colors text-[10px] font-medium">
+    Research
+</button>
+                    <button hx-post="/worlds/{{ world.id }}/delete"
+                            hx-target="#research-world-table"
                             hx-confirm="Delete this world?"
                             class="p-1 text-gray-400 hover:text-red-500 dark:hover:text-red-400 transition-colors">
                         ✕
@@ -70,25 +62,30 @@
         {% endfor %}
         {% if not worlds %}
         <tr>
-            <td colspan="5" class="p-8 text-center text-gray-400 dark:text-gray-500 italic text-xs">
-                {% if q %}No worlds matching "{{ q }}"{% else %}No worlds in database.{% endif %}
+            <td colspan="4" class="p-12 text-center text-gray-400 dark:text-gray-500 italic text-xs">
+                No worlds in database.
             </td>
         </tr>
         {% endif %}
     </tbody>
 </table>
 
-
 <script>
 function toggleSelectAll(source) {
-    checkboxes = document.querySelectorAll('.world-checkbox');
-    for(var i=0; i<checkboxes.length; i++) {
-        checkboxes[i].checked = source.checked;
+    var checkboxes = document.querySelectorAll('.world-checkbox');
+    checkboxes.forEach(function(cb) { cb.checked = source.checked; });
+    updateBulkBar();
+}
+
+function updateBulkBar() {
+    var checked = document.querySelectorAll('.world-checkbox:checked').length;
+    var btn = document.getElementById('start-research-btn');
+    if (btn) {
+        btn.textContent = checked > 1 ? 'Start Research (' + checked + ')' : 'Start Research';
     }
-    document.getElementById('bulk-action-bar').classList.toggle('hidden', !source.checked);
-    document.getElementById('selected-count').textContent = source.checked ? checkboxes.length + ' worlds selected' : '0 worlds selected';
 }
 </script>
+
 {% if has_more %}
 <div class="text-center py-4" id="load-more-container">
     <button class="text-xs text-blue-600 hover:text-blue-800 dark:text-blue-400 font-medium"

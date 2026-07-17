@@ -12,7 +12,7 @@ async def test_trigger_tiering_endpoint(client):
     with patch(
         "app.api.routers.runs.run_tiering_in_background", new=AsyncMock()
     ) as mock_task:
-        response = client.post("/api/runs/tiering")
+        response = client.post("/api/v1/execution/runs/tiering")
         assert response.status_code == 200
         data = response.json()
         assert "run_id" in data

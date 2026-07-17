@@ -1,0 +1,82 @@
+<div class="max-w-4xl mx-auto space-y-8">
+    <!-- World Header -->
+    <div class="flex items-start justify-between">
+        <div>
+            <h1 class="text-2xl font-bold text-gray-900 dark:text-gray-100">{{ world.name }}</h1>
+            {% if world.summary %}
+            <p class="text-sm text-gray-600 dark:text-gray-400 mt-1 max-w-2xl">{{ world.summary }}</p>
+            {% endif %}
+        </div>
+        <span class="px-2 py-1 text-[10px] font-bold uppercase rounded-sm {% if world.is_explored %}bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400{% else %}bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400{% endif %}">
+            {{ 'Explored' if world.is_explored else 'Unexplored' }}
+        </span>
+    </div>
+
+    <!-- Stats Grid -->
+    <div class="grid grid-cols-4 gap-4">
+        <div class="p-4 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-sm">
+            <div class="text-[10px] font-bold text-gray-400 uppercase mb-1">Artifacts</div>
+            <div class="text-2xl font-bold text-gray-900 dark:text-gray-100">{{ artifacts|length }}</div>
+        </div>
+        <div class="p-4 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-sm">
+            <div class="text-[10px] font-bold text-gray-400 uppercase mb-1">Claims</div>
+            <div class="text-2xl font-bold text-gray-900 dark:text-gray-100">{{ claims_count }}</div>
+        </div>
+        <div class="p-4 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-sm">
+            <div class="text-[10px] font-bold text-gray-400 uppercase mb-1">Notebook</div>
+            <div class="text-2xl font-bold text-gray-900 dark:text-gray-100">{{ notebook_count }}</div>
+        </div>
+        <div class="p-4 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-sm">
+            <div class="text-[10px] font-bold text-gray-400 uppercase mb-1">Theories</div>
+            <div class="text-2xl font-bold text-gray-900 dark:text-gray-100">{{ 1 if theory_entry else 0 }}</div>
+        </div>
+    </div>
+
+    <!-- Recent Artifacts -->
+    <div>
+        <h2 class="text-sm font-bold text-gray-900 dark:text-gray-100 mb-3">Recent Artifacts</h2>
+        <div class="space-y-2">
+            {% for art in artifacts[:10] %}
+            <div class="flex items-center justify-between p-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-sm hover:border-blue-400 dark:hover:border-blue-600 transition-colors cursor-pointer"
+                 onclick="showInspector('/api/artifacts/{{ art.id }}')">
+                <div class="flex items-center gap-3 min-w-0">
+                    <span class="px-1.5 py-0.5 text-[9px] font-bold uppercase rounded-sm bg-blue-50 text-blue-600 dark:bg-blue-900/20 dark:text-blue-400 shrink-0">{{ art.type }}</span>
+                    <span class="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">{{ art.name or 'Unnamed' }}</span>
+                </div>
+                <span class="text-[10px] text-gray-400 shrink-0 ml-2">{{ art.confidence or '—' }}</span>
+            </div>
+            {% endfor %}
+            {% if not artifacts %}
+            <div class="p-6 text-center text-xs text-gray-400 italic border border-dashed border-gray-300 dark:border-gray-700 rounded-sm">
+                No artifacts yet. Run a research session to populate.
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Summary / Raw Data -->
+    {% if world.raw_data %}
+    <div>
+        <h2 class="text-sm font-bold text-gray-900 dark:text-gray-100 mb-3">Raw Data</h2>
+        <div class="p-4 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-sm">
+            <pre class="text-xs text-gray-600 dark:text-gray-400 whitespace-pre-wrap font-mono max-h-64 overflow-y-auto">{{ world.raw_data }}</pre>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Theory Entry -->
+    {% if theory_entry %}
+    <div>
+        <h2 class="text-sm font-bold text-gray-900 dark:text-gray-100 mb-3">Theory</h2>
+        <div class="p-4 bg-yellow-50 dark:bg-yellow-900/10 border border-yellow-200 dark:border-yellow-800 rounded-sm">
+            <p class="text-sm text-gray-700 dark:text-gray-300">{{ theory_entry.theory_text }}</p>
+            {% if theory_entry.auditor_feedback %}
+            <div class="mt-3 pt-3 border-t border-yellow-200 dark:border-yellow-800">
+                <span class="text-[10px] font-bold text-gray-400 uppercase">Auditor Feedback</span>
+                <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">{{ theory_entry.auditor_feedback }}</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+</div>

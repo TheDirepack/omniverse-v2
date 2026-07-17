@@ -2,7 +2,7 @@
     <div id="artifact-list-indicator" class="htmx-indicator text-center py-4 text-xs animate-spin">⌛</div>
     {% for art in artifacts %}
     <div class="p-3 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors border-l-4 border-l-transparent hover:border-l-blue-600"
-         hx-get="/api/artifacts/{{ art.id }}" 
+         hx-get="/api/v1/db/artifacts/artifacts/{{ art.id }}" 
          hx-target="#artifact-detail">
         <div class="flex justify-between items-start mb-1">
             <span class="px-1 py-0.5 rounded-sm bg-blue-50 text-blue-600 dark:bg-blue-900/20 dark:text-blue-400 text-[9px] font-bold uppercase">

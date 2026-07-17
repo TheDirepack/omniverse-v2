@@ -1,6 +1,6 @@
 # Omniverse V2 Architecture Codemap
 
-**Last Updated:** 2026-07-11
+**Last Updated:** 2026-07-16
 **Entry Point:** `backend/app/main.py`
 
 ## System Overview
@@ -196,7 +196,7 @@ The core workflow processes universes from untiered to tiered:
 
 ## Key Conventions
 
-- **API Prefix**: All routes under `/api`
+- **API Prefix**: All routes under `/api/v1/` (versioned API)
 - **CORS**: Wide open (`*`)
 - **CSRF**: Removed for local dev
 - **DB Location**: `backend/data/` (overridable via env vars)
@@ -205,6 +205,15 @@ The core workflow processes universes from untiered to tiered:
 - **Domain Objects**: `ResearchTarget` and `ResearchWorkspace` provide structured domain modeling
 - **Artifact Versioning**: `ArtifactVersion` tracks history of knowledge evolution
 - **Parallel Execution**: Batch processing controlled via `MAX_PARALLEL_AGENTS` setting
+
+## API Structure
+
+- **`/api/v1/db/`** - Database operations (artifacts, notebook, claims)
+- **`/api/v1/execution/`** - Execution & workflow (runs, logs, tiering, extrapolation)
+- **`/api/v1/settings/`** - Configuration (providers, models, keys)
+- **`/api/v1/tools/`** - Utility operations (worlds, research, registry)
+
+Old `/api/` endpoints are deprecated.
 
 ## Related Areas
 

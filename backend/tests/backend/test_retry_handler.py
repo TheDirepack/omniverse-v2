@@ -26,8 +26,8 @@ class TestRetryHandlerUpdateState:
         assert rh.last_result == "result1"
         assert rh.agent_history == "history"
         assert len(rh.feedback_history) == 1
-        assert rh.feedback_history[0]["corrections"] == [{"Issue": "Fix this"}]
-        assert rh.feedback_history[0]["status"] == "OUTSTANDING"
+        assert rh.feedback_history[0]["corrections"] == [{"Issue": "Fix this", "status": "OUTSTANDING"}]
+        assert "status" not in rh.feedback_history[0]
 
     def test_update_with_no_corrections(self):
         rh = RetryHandler()
@@ -69,22 +69,19 @@ class TestRetryHandlerGetFeedbackSummary:
         rh.feedback_history = [
             {
                 "attempt": 1,
-                "corrections": [{"Issue": "Bad data", "Required_Fix": "fix it"}],
-                "status": "OUTSTANDING",
+                "corrections": [{"Issue": "Bad data", "Required_Fix": "fix it", "status": "OUTSTANDING"}],
             }
         ]
         summary = rh.get_feedback_summary()
         assert "OUTSTANDING:" in summary
         assert "Bad data" in summary
-        assert "RESOLVED:" in summary
 
     def test_resolved_only(self):
         rh = RetryHandler()
         rh.feedback_history = [
             {
                 "attempt": 1,
-                "corrections": [{"Issue": "Fixed issue"}],
-                "status": "RESOLVED",
+                "corrections": [{"Issue": "Fixed issue", "status": "RESOLVED"}],
             }
         ]
         summary = rh.get_feedback_summary()
@@ -96,13 +93,11 @@ class TestRetryHandlerGetFeedbackSummary:
         rh.feedback_history = [
             {
                 "attempt": 1,
-                "corrections": [{"Issue": "Done", "Required_Fix": "already"}],
-                "status": "RESOLVED",
+                "corrections": [{"Issue": "Done", "Required_Fix": "already", "status": "RESOLVED"}],
             },
             {
                 "attempt": 1,
-                "corrections": [{"Issue": "Pending", "Required_Fix": "needs work"}],
-                "status": "OUTSTANDING",
+                "corrections": [{"Issue": "Pending", "Required_Fix": "needs work", "status": "OUTSTANDING"}],
             },
         ]
         summary = rh.get_feedback_summary()
@@ -115,8 +110,7 @@ class TestRetryHandlerGetFeedbackSummary:
         rh.feedback_history = [
             {
                 "attempt": 1,
-                "corrections": [{"Issue": "Wrong value", "Required_Fix": fix_dict}],
-                "status": "OUTSTANDING",
+                "corrections": [{"Issue": "Wrong value", "Required_Fix": fix_dict, "status": "OUTSTANDING"}],
             }
         ]
         summary = rh.get_feedback_summary()
@@ -127,8 +121,7 @@ class TestRetryHandlerGetFeedbackSummary:
         rh.feedback_history = [
             {
                 "attempt": 1,
-                "corrections": [{"Issue": "Error", "Required_Fix": "just fix it"}],
-                "status": "OUTSTANDING",
+                "corrections": [{"Issue": "Error", "Required_Fix": "just fix it", "status": "OUTSTANDING"}],
             }
         ]
         summary = rh.get_feedback_summary()
@@ -140,10 +133,9 @@ class TestRetryHandlerGetFeedbackSummary:
             {
                 "attempt": 1,
                 "corrections": [
-                    {"Issue": "A", "Required_Fix": "fix A"},
-                    {"Issue": "B", "Required_Fix": "fix B"},
+                    {"Issue": "A", "Required_Fix": "fix A", "status": "OUTSTANDING"},
+                    {"Issue": "B", "Required_Fix": "fix B", "status": "OUTSTANDING"},
                 ],
-                "status": "OUTSTANDING",
             }
         ]
         summary = rh.get_feedback_summary()

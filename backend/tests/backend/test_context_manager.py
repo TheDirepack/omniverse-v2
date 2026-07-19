@@ -79,7 +79,7 @@ async def test_compress_context(cm):
         {"role": "assistant", "content": "Recent 5"},
     ]
 
-    compressed = await cm.compress_context(
+    compressed, summary_text = await cm.compress_context(
         messages=messages,
         model="gpt-4o",
         router_instance=mock_router,

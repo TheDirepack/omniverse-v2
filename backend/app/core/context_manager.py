@@ -21,7 +21,7 @@ class ContextManager:
         """
         try:
             return litellm.token_counter(messages=messages, model=model)
-        except (ValueError, TypeError, KeyError, AttributeError):
+        except Exception:
             # Fallback approximation: 4 chars per token
             text = "".join([
                 m.get("content", "") if isinstance(m.get("content"), str) else ""

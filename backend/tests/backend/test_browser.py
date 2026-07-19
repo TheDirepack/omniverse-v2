@@ -146,7 +146,7 @@ async def test_relaunch_on_dead_browser():
         manager.pool = manager.pool[:1]
 
         dead_browser = AsyncMock()
-        dead_browser.new_context.side_effect = Exception("crashed")
+        dead_browser.new_context.side_effect = ConnectionError("crashed")
 
         fresh_browser = AsyncMock()
         fresh_ctx = AsyncMock()
@@ -181,21 +181,26 @@ async def test_pool_status_reports_slots():
 @pytest.mark.asyncio
 async def test_browser_config_env_vars():
     """Verify that BROWSER_POOL_SIZE and BROWSER_MAX_CONCURRENCY_PER_INSTANCE
-    are respected."""
+    are respected, then restore the global singleton."""
+    import app.core.browser as browser_mod
+    original_manager = browser_mod.browser_manager
+
     custom_pool_size = "4"
     custom_concurrency = "10"
 
-    with patch.dict(os.environ, {
-        "BROWSER_POOL_SIZE": custom_pool_size,
-        "BROWSER_MAX_CONCURRENCY_PER_INSTANCE": custom_concurrency
-    }):
-        # Reload the module to pick up new env vars
-        import app.core.browser
-        importlib.reload(app.core.browser)
+    try:
+        with patch.dict(os.environ, {
+            "BROWSER_POOL_SIZE": custom_pool_size,
+            "BROWSER_MAX_CONCURRENCY_PER_INSTANCE": custom_concurrency
+        }):
+            importlib.reload(browser_mod)
 
-        manager = app.core.browser.BrowserManager()
-        assert len(manager.pool) == int(custom_pool_size)
-        assert manager.pool[0].semaphore._value == int(custom_concurrency)
+            manager = browser_mod.BrowserManager()
+            assert len(manager.pool) == int(custom_pool_size)
+            assert manager.pool[0].semaphore._value == int(custom_concurrency)
+    finally:
+        importlib.reload(browser_mod)
+        browser_mod.browser_manager = original_manager
 
 @pytest.mark.asyncio
 async def test_browser_update_config():

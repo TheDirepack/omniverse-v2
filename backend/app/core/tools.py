@@ -523,7 +523,7 @@ async def tool_compare_source_freshness(args: dict[str, Any]) -> str:
             url_content_map[url] = await web_fetcher.fetch_page(
                 url, include_freshness=True
             )
-        except (TimeoutError, ConnectionError, OSError, ValueError):
+        except (TimeoutError, ConnectionError, OSError, ValueError, RuntimeError):
             url_content_map[url] = None
 
     return build_freshness_comparison_report(url_content_map)

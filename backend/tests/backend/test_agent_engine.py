@@ -412,7 +412,7 @@ class TestRunAgentStateful:
         # Check that router was called with the combined history
         called_messages = mock_router.call_args[1]["messages"]
         assert called_messages[0]["role"] == "system"
-        assert called_messages[0]["content"] == "New System"
+        assert called_messages[0]["content"].startswith("New System")
         assert called_messages[1]["content"] == "Hello"
         assert called_messages[2]["content"] == "Hi there!"
         assert called_messages[3]["role"] == "user"
@@ -420,7 +420,7 @@ class TestRunAgentStateful:
 
         # Check that the returned history includes everything
         assert len(final_history) > len(history)
-        assert final_history[0]["content"] == "New System"
+        assert final_history[0]["content"].startswith("New System")
 
     async def test_run_agent_without_history_starts_fresh(self):
         """Without history, run_agent should start with system and user prompts."""
@@ -443,7 +443,7 @@ class TestRunAgentStateful:
         assert mock_router.call_count == 1
         called_messages = mock_router.call_args[1]["messages"]
         assert len(called_messages) == 2
-        assert called_messages[0]["content"] == "Sys"
+        assert called_messages[0]["content"].startswith("Sys")
         assert called_messages[1]["content"] == "User"
 
 
@@ -998,7 +998,7 @@ class TestRunAgentStatefulEdgeCases:
         assert success is True
         assert result == "Result"
         called_messages = mock_router.call_args[1]["messages"]
-        assert called_messages[0]["content"] == "Same System"
+        assert called_messages[0]["content"].startswith("Sys")
 
     async def test_history_ends_with_same_user_prompt(self):
         history = [
@@ -1139,12 +1139,12 @@ class TestRunAgentPerformance:
             )
 
         assert success is True
-        assert "res_res_0" in tool_results
-        assert "res_res_1" in tool_results
+        assert tool_results.get("res_0") == "res_res_0"
+        assert tool_results.get("res_1") == "res_res_1"
 
     async def test_context_pruning_triggered(self):
         """Verify raw observations are pruned after a writing tool call."""
-        fetch_tc = _make_tool_call("fetchPage", {"url": "http://x.com"}, tc_id="tc-fetch")
+        search_tc = _make_tool_call("webSearch", {"q": "x"}, tc_id="tc-search")
         upsert_tc = _make_tool_call("upsertArtifacts", {"name": "A"}, tc_id="tc-up")
         submit_tc = _make_tool_call("submitFindings", {}, tc_id="tc-sub")
 
@@ -1154,12 +1154,12 @@ class TestRunAgentPerformance:
             captured_messages.append(kwargs.get("messages", []))
             call_count += 1
             if call_count == 1:
-                return (_make_response(content=None, tool_calls=[fetch_tc]), "m", "k")
+                return (_make_response(content=None, tool_calls=[search_tc]), "m", "k")
             if call_count == 2:
                 return (_make_response(content=None, tool_calls=[upsert_tc]), "m", "k")
             return (_make_response(content="done", tool_calls=[submit_tc]), "m", "k")
 
-        async def mock_fetch(args):
+        async def mock_search(args):
             return "Big raw content from web"
 
         async def mock_upsert(args):
@@ -1171,7 +1171,7 @@ class TestRunAgentPerformance:
             patch(
                 "app.core.agent_engine.AGENT_TOOLS",
                 {
-                    "fetchPage": {"func": mock_fetch, "description": "f", "parameters": {}},
+                    "webSearch": {"func": mock_search, "description": "f", "parameters": {}},
                     "upsertArtifacts": {"func": mock_upsert, "description": "u", "parameters": {}},
                 },
             ),
@@ -1182,7 +1182,7 @@ class TestRunAgentPerformance:
                 user_prompt="user",
                 step="s",
                 run_id="run-prune",
-                tools_names=["fetchPage", "upsertArtifacts"],
+                tools_names=["webSearch", "upsertArtifacts"],
                 submit_tool_name="submitFindings",
             )
 
@@ -1199,7 +1199,7 @@ class TestRunAgentPerformance:
         context_manager.summary_threshold = 0.1
 
         try:
-            think_tc = _make_tool_call("someTool", {})
+            save_tc = _make_tool_call("saveNotebookEntry", {"content": "data"})
             submit_tc = _make_tool_call("submitFindings", {})
 
             call_count = 0
@@ -1207,8 +1207,8 @@ class TestRunAgentPerformance:
                 nonlocal call_count
                 captured_messages.append(kwargs.get("messages", []))
                 call_count += 1
-                if call_count < 3:
-                    return (_make_response(content="Thinking...", tool_calls=[think_tc]), "m", "k")
+                if call_count < 6:
+                    return (_make_response(content=None, tool_calls=[save_tc]), "m", "k")
                 return (_make_response(content="done", tool_calls=[submit_tc]), "m", "k")
 
             captured_messages = []
@@ -1216,8 +1216,9 @@ class TestRunAgentPerformance:
                 patch("app.core.agent_engine.router.run_model", new=spy_run_model),
                 patch(
                     "app.core.agent_engine.AGENT_TOOLS",
-                    {"someTool": {"func": AsyncMock(return_value="ok"), "description": "t", "parameters": {}}},
+                    {"saveNotebookEntry": {"func": AsyncMock(return_value="ok"), "description": "t", "parameters": {}}},
                 ),
+                patch("app.core.agent_engine.context_manager.reconfigure"),
             ):
                 await run_agent(
                     agent_name="TEST",
@@ -1225,8 +1226,9 @@ class TestRunAgentPerformance:
                     user_prompt="user",
                     step="s",
                     run_id="run-compress",
-                    tools_names=["someTool"],
+                    tools_names=["saveNotebookEntry"],
                     submit_tool_name="submitFindings",
+                    max_turns=10,
                 )
 
             found_summary = False

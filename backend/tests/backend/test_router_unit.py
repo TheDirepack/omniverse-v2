@@ -139,7 +139,9 @@ class TestModelRouterRouting:
 
     @pytest.fixture
     def mock_session(self):
-        return MagicMock(spec=Session)
+        mock = MagicMock(spec=Session)
+        mock.__enter__.return_value = mock
+        return mock
 
     @pytest.mark.asyncio
     async def test_routing_specific_task(self, router_inst, mock_session):

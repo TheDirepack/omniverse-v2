@@ -77,7 +77,7 @@ async def _read_page_cached(url: str) -> tuple[str, str]:
             doc.extracted_text or str(doc.metadata.get("error", "No content")),
             "fetched",
         )
-    except (ValueError, TypeError, KeyError, AttributeError) as e:
+    except (ValueError, TypeError, KeyError, AttributeError, RuntimeError) as e:
         return str(e), "error"
 
 
@@ -164,7 +164,7 @@ async def _execute_tool(
                     parts.append(f"Structured data: {doc.structured_data}")
                 return "\n\n".join(parts)
             return f"OCR returned no text. Status: {doc.content_type}. Engine: {doc.engine_name or 'none'}."
-        except (ValueError, TypeError, AttributeError) as e:
+        except (ValueError, TypeError, AttributeError, RuntimeError) as e:
             return f"OCR failed: {e!s}"
 
     if name in AGENT_TOOLS:
@@ -412,28 +412,30 @@ async def run_agent(
                             continue
 
                         args_dataset = args.get("dataset")
+                        dataset = None
                         if args_dataset:
                             try:
                                 dataset = json.loads(args_dataset) if isinstance(args_dataset, str) else args_dataset
-                                claims = dataset.get("Verified_Claims", [])
-                                graph = dataset.get("Knowledge_Graph", [])
-                                pending_leads = [lead for lead in graph if lead.get("Status") == "Pending" and int(lead.get("Priority", 0)) >= 7]
-                                if len(claims) < 5 and pending_leads:
-                                    messages.append({
-                                        "role": "tool",
-                                        "tool_call_id": tool_call.id,
-                                        "name": name,
-                                        "content": f"Coverage Gap Detected: You have only {len(claims)} verified claims and {len(pending_leads)} high-priority pending leads. Why are you concluding now? Please address the priority leads before submitting.",
-                                    })
-                                    continue
-                                if len(claims) < 3:
-                                    messages.append({
-                                        "role": "tool",
-                                        "tool_call_id": tool_call.id,
-                                        "name": name,
-                                        "content": "Coverage too low: Less than 3 verified claims found. Please continue researching to ensure a minimal knowledge base.",
-                                    })
-                                    continue
+                                if isinstance(dataset, dict):
+                                    claims = dataset.get("Verified_Claims", [])
+                                    graph = dataset.get("Knowledge_Graph", [])
+                                    pending_leads = [lead for lead in graph if lead.get("Status") == "Pending" and int(lead.get("Priority", 0)) >= 7]
+                                    if len(claims) < 5 and pending_leads:
+                                        messages.append({
+                                            "role": "tool",
+                                            "tool_call_id": tool_call.id,
+                                            "name": name,
+                                            "content": f"Coverage Gap Detected: You have only {len(claims)} verified claims and {len(pending_leads)} high-priority pending leads. Why are you concluding now? Please address the priority leads before submitting.",
+                                        })
+                                        continue
+                                    if len(claims) < 3:
+                                        messages.append({
+                                            "role": "tool",
+                                            "tool_call_id": tool_call.id,
+                                            "name": name,
+                                            "content": "Coverage too low: Less than 3 verified claims found. Please continue researching to ensure a minimal knowledge base.",
+                                        })
+                                        continue
                             except json.JSONDecodeError:
                                 messages.append({
                                     "role": "tool",
@@ -451,7 +453,7 @@ async def run_agent(
                                 })
                                 continue
 
-                        return True, args_dataset or content or "Findings submitted.", messages
+                        return True, dataset or content or "Findings submitted.", messages
 
                     if name in available_tools:
                         agent_logger.log(
@@ -511,7 +513,7 @@ async def run_agent(
                                             model=model or "unknown",
                                             key_id=key_id or "unknown",
                                         )
-                                    tasks.append(_execute_tool(tool_name, tool_args, run_id, agent_name=agent_name, model=model, key_id=key_id))
+                                    tasks.append(_execute_tool(tool_name, tool_args, run_id, _agent_name=agent_name, _model=model, _key_id=key_id))
 
                                 results = await asyncio.gather(*tasks, return_exceptions=True)
                                 for i, res in zip(ready_steps, results):
@@ -523,6 +525,7 @@ async def run_agent(
                                     plan_observations[i] = f"Step {i} ({plan[i].get('tool')}): {obs}"
                                     completed_steps.add(i)
 
+                            if plan_observations and any(o is not None for o in plan_observations):
                                 observation = "\\n\\n".join([o for o in plan_observations if o is not None])
                                 agent_logger.log(
                                     agent=agent_name,
@@ -532,41 +535,43 @@ async def run_agent(
                                     key_id=key_id,
                                 )
                             else:
-                                try:
-                                    observation = await _execute_tool(name, args, run_id, agent_name=agent_name, model=model, key_id=key_id)
-                                    tool_failures[name] = 0
-                                except (ValueError, TypeError, KeyError, RuntimeError, AttributeError, OSError) as e:
-                                    count = tool_failures.get(name, 0) + 1
-                                    tool_failures[name] = count
-                                    failure_type = _classify_failure(e)
-                                    if failure_type == "INFRASTRUCTURE_FAILURE":
-                                        if count == 1:
-                                            observation = f"SYSTEM ERROR in tool {name}: {e!s}. This is an infrastructure failure. If it fails again, the tool will be disabled for this run."
-                                        else:
-                                            disabled_tools.add(name)
-                                            observation = f"CRITICAL FAILURE in tool {name}: {e!s}. Tool has been disabled for the remainder of this run due to repeated infrastructure errors."
+                                observation = "executePlan completed with no steps."
+                        else:
+                            try:
+                                observation = await _execute_tool(name, args, run_id, _agent_name=agent_name, _model=model, _key_id=key_id)
+                                tool_failures[name] = 0
+                            except (ValueError, TypeError, KeyError, RuntimeError, AttributeError, OSError) as e:
+                                count = tool_failures.get(name, 0) + 1
+                                tool_failures[name] = count
+                                failure_type = _classify_failure(e)
+                                if failure_type == "INFRASTRUCTURE_FAILURE":
+                                    if count == 1:
+                                        observation = f"SYSTEM ERROR in tool {name}: {e!s}. This is an infrastructure failure. If it fails again, the tool will be disabled for this run."
                                     else:
-                                        if count < 3:
-                                            observation = f"Error executing tool {name}: {e!s}. Please analyze the error, correct your parameters, and try again. (Attempt {count}/3)"
-                                        else:
-                                            observation = f"Tool {name} has failed {count} times consecutively. It may be fundamentally broken or the requested operation is impossible. Please attempt a different approach or use an alternative tool."
+                                        disabled_tools.add(name)
+                                        observation = f"CRITICAL FAILURE in tool {name}: {e!s}. Tool has been disabled for the remainder of this run due to repeated infrastructure errors."
+                                else:
+                                    if count < 3:
+                                        observation = f"Error executing tool {name}: {e!s}. Please analyze the error, correct your parameters, and try again. (Attempt {count}/3)"
+                                    else:
+                                        observation = f"Tool {name} has failed {count} times consecutively. It may be fundamentally broken or the requested operation is impossible. Please attempt a different approach or use an alternative tool."
 
-                            messages.append(
-                                {
-                                    "role": "tool",
-                                    "tool_call_id": tool_call.id,
-                                    "name": name,
-                                    "content": observation,
-                                }
-                            )
+                        messages.append(
+                            {
+                                "role": "tool",
+                                "tool_call_id": tool_call.id,
+                                "name": name,
+                                "content": observation,
+                            }
+                        )
 
-                            agent_logger.log(
-                                agent=agent_name,
-                                event_type=AgentEventType.TOOL_RES,
-                                content=f"Observation from {name}: {observation}",
-                                model=model,
-                                key_id=key_id,
-                            )
+                        agent_logger.log(
+                            agent=agent_name,
+                            event_type=AgentEventType.TOOL_RES,
+                            content=f"Observation from {name}: {observation}",
+                            model=model,
+                            key_id=key_id,
+                        )
                     else:
                         messages.append(
                             {
@@ -602,9 +607,19 @@ async def run_agent(
                             "content": "Please use the available tools to research and eventually call the submit tool.",
                         }
                     )
-                    continue
 
-                return (True, content, messages)
+                continue
+
+            if not content:
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": "Please use the available tools to research and eventually call the submit tool.",
+                    }
+                )
+                continue
+
+            return (True, content, messages)
 
         if attempt < max_retries:
             continue

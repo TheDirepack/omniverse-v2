@@ -7,7 +7,12 @@
             <p class="text-sm text-gray-600 dark:text-gray-400 mt-1 max-w-2xl">{{ world.summary }}</p>
             {% endif %}
         </div>
-        <span class="px-2 py-1 text-[10px] font-bold uppercase rounded-sm {% if world.is_explored %}bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400{% else %}bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400{% endif %}">
+        <span class="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-bold uppercase rounded-sm {% if world.is_explored %}bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400{% else %}bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400{% endif %} border border-transparent">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-2.5 w-2.5 text-current opacity-70" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <span>{{ 'Explored' if world.is_explored else 'Unexplored' }}</span>
+        </span>
             {{ 'Explored' if world.is_explored else 'Unexplored' }}
         </span>
     </div>

@@ -3,7 +3,7 @@
         <h3 class="text-xl font-bold">Universe: {{ theory.universe_name }}</h3>
         <div class="flex gap-2">
             <button hx-post="/theory/reevaluate" 
-                    hx-vals='{"universe_id": {{ theory.universe_id }}}'
+                    data-hx-vals='{"universe_id": {{ theory.universe_id }}}'
                     hx-target="#theory-{{ theory.universe_id }}-status" 
                     hx-swap="innerHTML"
                     hx-indicator="closest button"

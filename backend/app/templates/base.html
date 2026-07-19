@@ -57,49 +57,194 @@
         .htmx-request.htmx-indicator { display: flex; }
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        /* Mobile Sidebar Drawer Styles */
+        .mobile-drawer {
+            transition: transform 0.3s ease-in-out;
+            transform: translateX(-100%);
+        }
+        .mobile-drawer.open {
+            transform: translateX(0);
+        }
+        .overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 40;
+        }
+        .overlay.active {
+            display: block;
+        }
     </style>
 </head>
 <body class="h-full overflow-hidden text-gray-900 dark:text-gray-100">
+    <!-- Mobile Overlay for sidebar -->
+    <div id="mobile-overlay" class="overlay" onclick="closeMobileDrawer()"></div>
+
     <div class="flex h-full w-full">
-        <!-- SIDEBAR -->
-        <aside class="w-64 h-full bg-gray-50 border-r border-gray-200 dark:bg-gray-900 dark:border-gray-800 flex flex-col shrink-0">
-            <div class="p-4 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between">
+        <!-- SIDEBAR - Desktop: Fixed, Mobile: Drawer -->
+        <aside id="sidebar" 
+               class="w-64 h-full bg-gray-50 border-r border-gray-200 dark:bg-gray-900 dark:border-gray-800 flex flex-col shrink-0 z-50"
+               aria-label="Main navigation"
+               aria-expanded="true"
+               role="navigation">
+            
+            <!-- Mobile Header with Hamburger Toggle -->
+            <div class="p-4 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between md:hidden">
+                <button onclick="toggleMobileSidebar()" 
+                        class="p-2 rounded-sm hover:bg-gray-200 dark:hover:bg-gray-800 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        aria-label="Toggle navigation menu"
+                        aria-expanded="false"
+                        aria-controls="sidebar">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16m-7 6h7" />
+                    </svg>
+                </button>
+                <span class="text-xs font-black tracking-tighter uppercase text-gray-400 dark:text-gray-500 truncate">Omniverse V2</span>
+            </div>
+            
+            <div class="px-4 py-2 flex items-center justify-between">
                 <span class="text-xs font-black tracking-tighter uppercase text-gray-400 dark:text-gray-500">Omniverse V2</span>
-                <button onclick="toggleDarkMode()" aria-label="Toggle dark mode" class="p-1 rounded-sm bg-gray-200 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-300 dark:hover:bg-gray-700 transition-colors">
-                    <span class="dark:hidden">🌙</span><span class="hidden dark:inline">☀️</span>
+                <button onclick="toggleDarkMode()" 
+                        class="p-1 rounded-sm bg-gray-200 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-300 dark:hover:bg-gray-700 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        aria-label="Toggle dark mode"
+                        title="Toggle dark/light mode">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" id="dark-mode-icon">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+                    </svg>
                 </button>
             </div>
-            <nav class="flex-1 p-4 space-y-1 overflow-y-auto no-scrollbar">
-                <a href="/" class="flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-sm transition-colors {% if current_path == '/' %}bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-semibold{% else %}text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-800{% endif %}" {% if current_path == '/' %}aria-current="page"{% endif %}>
-                    <span aria-hidden="true">🏠</span> Home
-                </a>
-                <a href="/research" class="flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-sm transition-colors {% if current_path.startswith('/research') %}bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-semibold{% else %}text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-800{% endif %}" {% if current_path.startswith('/research') %}aria-current="page"{% endif %}>
-                    <span aria-hidden="true">🔍</span> Research
-                </a>
-                <a href="/validation" class="flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-sm transition-colors {% if current_path.startswith('/validation') %}bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-semibold{% else %}text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-800{% endif %}" {% if current_path.startswith('/validation') %}aria-current="page"{% endif %}>
-                    <span aria-hidden="true">✅</span> Validation
-                </a>
-                <a href="/knowledge" class="flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-sm transition-colors {% if current_path.startswith('/knowledge') %}bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-semibold{% else %}text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-800{% endif %}" {% if current_path.startswith('/knowledge') %}aria-current="page"{% endif %}>
-                    <span aria-hidden="true">🕸️</span> Knowledge
-                </a>
-                <a href="/theory" class="flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-sm transition-colors {% if current_path.startswith('/theory') %}bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-semibold{% else %}text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-800{% endif %}" {% if current_path.startswith('/theory') %}aria-current="page"{% endif %}>
-                    <span aria-hidden="true">⚖️</span> Theory
-                </a>
-                <a href="/flow" class="flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-sm transition-colors {% if current_path.startswith('/flow') %}bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-semibold{% else %}text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-800{% endif %}" {% if current_path.startswith('/flow') %}aria-current="page"{% endif %}>
-                    <span aria-hidden="true">🔄</span> Flow
-                </a>
-                <a href="/logs" class="flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-sm transition-colors {% if current_path.startswith('/logs') %}bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-semibold{% else %}text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-800{% endif %}" {% if current_path.startswith('/logs') %}aria-current="page"{% endif %}>
-                    <span aria-hidden="true">📜</span> Logs
-                </a>
-                <div class="pt-4 pb-2">
-                    <h2 class="px-3 text-[10px] font-bold uppercase tracking-widest text-gray-400 dark:text-gray-600">System</h2>
-                </div>
-                <a href="/settings" class="flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-sm transition-colors {% if current_path.startswith('/settings') %}bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-semibold{% else %}text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-800{% endif %}" {% if current_path.startswith('/settings') %}aria-current="page"{% endif %}>
-                    <span aria-hidden="true">⚙️</span> Settings
-                </a>
-            </nav>
-            <div class="p-4 border-t border-gray-200 dark:border-gray-800">
-                <div class="text-[10px] text-gray-400 dark:text-gray-600 text-center">v2.0.0-stable</div>
+            
+            <!-- Navigation Menu -->
+            <ul class="space-y-1" role="menu">
+                <!-- Home -->
+                <li>
+                    <a href="/" 
+                       class="flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-sm transition-colors group"
+                       id="nav-home"
+                       {% if current_path == '/' %}aria-current="page" class="bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-semibold"{% endif %}
+                       title="Home dashboard">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 flex-shrink-0 text-gray-400 group-hover:text-blue-600 transition-colors" viewBox="0 0 20 20" fill="currentColor">
+                            <path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z"/>
+                        </svg>
+                        <span class="flex-1 text-left">Home</span>
+                        <span aria-hidden="true" class="ml-auto opacity-0 group-hover:opacity-100 transition-opacity">&rarr;</span>
+                    </a>
+                </li>
+                
+                <!-- Research -->
+                <li>
+                    <a href="/research" 
+                       class="flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-sm transition-colors group"
+                       id="nav-research"
+                       {% if current_path.startswith('/research') %}aria-current="page" class="bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-semibold"{% endif %}
+                       title="Research and discovery">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 flex-shrink-0 text-gray-400 group-hover:text-blue-600 transition-colors" viewBox="0 0 20 20" fill="currentColor">
+                            <path fill-rule="evenodd" d="M12.316 3.051a1 1 0 01.633 1.265l-4 10a1 1 0 11-1.898-.689l4-10a1 1 0 011.265-.633zM7 10a3 3 0 11-6 0 3 3 0 016 0z" />
+                        </svg>
+                        <span class="flex-1 text-left">Research</span>
+                        <span aria-hidden="true" class="ml-auto opacity-0 group-hover:opacity-100 transition-opacity">&rarr;</span>
+                    </a>
+                </li>
+                
+                <!-- Validation -->
+                <li>
+                    <a href="/validation" 
+                       class="flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-sm transition-colors group"
+                       id="nav-validation"
+                       {% if current_path.startswith('/validation') %}aria-current="page" class="bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-semibold"{% endif %}
+                       title="Validate universes">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 flex-shrink-0 text-gray-400 group-hover:text-blue-600 transition-colors" viewBox="0 0 20 20" fill="currentColor">
+                            <path fill-rule="evenodd" d="M6.267 3.455a3.066 3.066 0 001.745-.723 3.066 3.066 0 013.976 0 3.066 3.066 0 001.745.723 3.066 3.066 0 012.812 2.812c.051.643.304 1.254.723 1.745a3.066 3.066 0 010 3.976 3.066 3.066 0 00-.723 1.745 3.066 3.066 0 01-2.812 2.812 3.066 3.066 0 00-1.745.723 3.066 3.066 0 01-2.812 0 3.066 3.066 0 00-1.745-.723 3.066 3.066 0 01-2.812-2.812 3.066 3.066 0 00-.723-1.745 3.066 3.066 0 010-3.976 3.066 3.066 0 00.723-1.745 3.066 3.066 0 012.812-2.812zm7.44 5.252a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" />
+                        </svg>
+                        <span class="flex-1 text-left">Validation</span>
+                        <span aria-hidden="true" class="ml-auto opacity-0 group-hover:opacity-100 transition-opacity">&rarr;</span>
+                    </a>
+                </li>
+                
+                <!-- Knowledge -->
+                <li>
+                    <a href="/knowledge" 
+                       class="flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-sm transition-colors group"
+                       id="nav-knowledge"
+                       {% if current_path.startswith('/knowledge') %}aria-current="page" class="bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-semibold"{% endif %}
+                       title="Knowledge graph">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 flex-shrink-0 text-gray-400 group-hover:text-blue-600 transition-colors" viewBox="0 0 20 20" fill="currentColor">
+                            <path fill-rule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586V4h4a2 2 0 012 2v1H14a2 2 0 00-2 2v1H8a2 2 0 00-2 2v1H4a2 2 0 01-2-2V4z" />
+                        </svg>
+                        <span class="flex-1 text-left">Knowledge</span>
+                        <span aria-hidden="true" class="ml-auto opacity-0 group-hover:opacity-100 transition-opacity">&rarr;</span>
+                    </a>
+                </li>
+                
+                <!-- Theory -->
+                <li>
+                    <a href="/theory" 
+                       class="flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-sm transition-colors group"
+                       id="nav-theory"
+                       {% if current_path.startswith('/theory') %}aria-current="page" class="bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-semibold"{% endif %}
+                       title="Theoretical extrapolation">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 flex-shrink-0 text-gray-400 group-hover:text-blue-600 transition-colors" viewBox="0 0 20 20" fill="currentColor">
+                            <path fill-rule="evenodd" d="M2 10a8 8 0 1116 0 8 8 0 01-16 0zm12 3a1 1 0 10-2 0v4a1 1 0 102 0v-4zM9 7a1 1 0 011-1h1a1 1 0 110 2H10v1a1 1 0 11-2 0V7z" />
+                        </svg>
+                        <span class="flex-1 text-left">Theory</span>
+                        <span aria-hidden="true" class="ml-auto opacity-0 opacity-0 group-hover:opacity-100 transition-opacity">&rarr;</span>
+                    </a>
+                </li>
+                
+                <!-- Flow -->
+                <li>
+                    <a href="/flow" 
+                       class="flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-sm transition-colors group"
+                       id="nav-flow"
+                       {% if current_path.startswith('/flow') %}aria-current="page" class="bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-semibold"{% endif %}
+                       title="Workflow management">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 flex-shrink-0 text-gray-400 group-hover:text-blue-600 transition-colors" viewBox="0 0 20 20" fill="currentColor">
+                            <path fill-rule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 111.805.979 9.002 9.002 0 01-4.168 2.363A4.002 4.002 0 018.354 18H4a1 1 0 01-1-1V3a1 1 0 011-1z" />
+                        </svg>
+                        <span class="flex-1 text-left">Flow</span>
+                        <span aria-hidden="true" class="ml-auto opacity-0 group-hover:opacity-100 transition-opacity">&rarr;</span>
+                    </a>
+                </li>
+                
+                <!-- Logs -->
+                <li>
+                    <a href="/logs" 
+                       class="flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-sm transition-colors group"
+                       id="nav-logs"
+                       {% if current_path.startswith('/logs') %}aria-current="page" class="bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-semibold"{% endif %}
+                       title="System logs and events">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 flex-shrink-0 text-gray-400 group-hover:text-blue-600 transition-colors" viewBox="0 0 20 20" fill="currentColor">
+                            <path fill-rule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586V4h4a2 2 0 012 2v10a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 6a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h6a1 1 0 100-2H7z" />
+                        </svg>
+                        <span class="flex-1 text-left">Logs</span>
+                        <span aria-hidden="true" class="ml-auto opacity-0 group-hover:opacity-100 transition-opacity">&rarr;</span>
+                    </a>
+                </li>
+            </ul>
+
+            <div class="pt-4 pb-2 border-t border-gray-200 dark:border-gray-800 mt-auto">
+                <h2 class="px-3 text-xs font-bold uppercase tracking-widest text-gray-400 dark:text-gray-600 mb-2">System</h2>
+                <ul class="space-y-1">
+                    <!-- Settings -->
+                    <li>
+                        <a href="/settings" 
+                           class="flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-sm transition-colors group"
+                           id="nav-settings"
+                           {% if current_path.startswith('/settings') %}aria-current="page" class="bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-semibold"{% endif %}
+                           title="Configuration settings">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 flex-shrink-0 text-gray-400 group-hover:text-blue-600 transition-colors" viewBox="0 0 20 20" fill="currentColor">
+                                <path fill-rule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.936-3.099-.54-3.466.853A1.532 1.532 0 013.17 5.71C2.11 7.192 4.267 8.36 5.725 7.1a1.532 1.532 0 002.272.942C8.36 7.76 4.072 5.9 5.695 5.17c.455.19.77.499.774 1.66.003 1.694.09 3.064.091 3.219.107.156.298.257.546.284.702.066.995.274 1.151.372.155.098.31.18.555.18.245 0 .405-.082.555-.18.156-.098.449-.306 1.151-.372.247-.027.438-.128.546-.284.001-.155.09-2.527.091-3.219.004-1.161.319-1.47.774-1.66.157-.075.45-.282 1.151-.372z" clip-rule="evenodd" />
+                            </svg>
+                            <span class="flex-1 text-left">Settings</span>
+                            <span aria-hidden="true" class="ml-auto opacity-0 group-hover:opacity-100 transition-opacity">&rarr;</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+
+            <div class="p-4 border-t border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-900/50">
+                <div class="text-xs text-gray-500 dark:text-gray-400 text-center font-medium">v2.0.0-stable</div>
             </div>
         </aside>
 
@@ -109,26 +254,540 @@
         </main>
     </div>
 
+    <!-- Loading Spinner Component -->
+    <template id="loading-spinner-template">
+        <div class="fixed inset-0 flex items-center justify-center bg-white/50 dark:bg-gray-950/50 z-[60] backdrop-blur-sm"
+             role="alert"
+             aria-live="polite"
+             aria-busy="true">
+            <div class="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+        </div>
+    </template>
+
+    <!-- Aria Live Region for Status Messages -->
+    <div id="aria-live-status" 
+         aria-live="polite" 
+         aria-atomic="true" 
+         class="sr-only focus:not-sr-only absolute top-2 left-1/2 -translate-x-1/2 bg-green-100 text-green-800 px-4 py-2 rounded-full font-medium z-[70]"
+         style="display: none;">
+        <!-- Status messages injected here -->
+    </div>
+
     <script>
+    // Mobile Sidebar Toggle Functionality
+    function toggleMobileSidebar() {
+        const sidebar = document.getElementById('sidebar');
+        const overlay = document.getElementById('mobile-overlay');
+        const hamburger = document.querySelector('#sidebar [aria-label="Toggle navigation menu"]');
+        
+        // Toggle drawer with responsive classes
+        sidebar.classList.toggle('translate-x-0');
+        sidebar.classList.toggle('-translate-x-full');
+        
+        // Update aria-expanded states
+        const isExpanded = sidebar.classList.contains('-translate-x-full');
+        hamburger.setAttribute('aria-expanded', String(!isExpanded));
+        sidebar.setAttribute('aria-expanded', String(!isExpanded));
+        
+        // Toggle overlay
+        overlay.classList.toggle('active');
+        
+        // Prevent body scroll when drawer is open
+        if (!isExpanded) {
+            document.body.style.overflow = 'hidden';
+        } else {
+            document.body.style.overflow = '';
+        }
+        
+        // Focus management for accessibility
+        if (!isExpanded) {
+            // Focus first navigation item
+            const firstNav = sidebar.querySelector('a[href]');
+            if (firstNav) {
+                firstNav.focus();
+            }
+        }
+    }
+
+    function closeMobileDrawer() {
+        const sidebar = document.getElementById('sidebar');
+        const overlay = document.getElementById('mobile-overlay');
+        
+        // Close drawer
+        sidebar.classList.add('translate-x-full');
+        sidebar.classList.remove('-translate-x-0');
+        sidebar.removeAttribute('aria-expanded');
+        
+        // Remove overlay
+        overlay.classList.remove('active');
+        document.body.style.overflow = '';
+    }
+    function toggleMobileSidebar() {
+        const sidebar = document.getElementById('sidebar');
+        const overlay = document.getElementById('mobile-overlay');
+        const hamburger = document.querySelector('#sidebar [aria-label="Toggle navigation menu"]');
+        
+        // Toggle drawer
+        sidebar.classList.toggle('mobile-drawer');
+        sidebar.classList.toggle('open');
+        
+        // Update aria-expanded states
+        const isExpanded = !sidebar.classList.contains('open');
+        hamburger.setAttribute('aria-expanded', String(isExpanded));
+        sidebar.setAttribute('aria-expanded', String(isExpanded));
+        
+        // Toggle overlay
+        overlay.classList.toggle('active');
+        
+        // Prevent body scroll when drawer is open
+        if (isExpanded) {
+            document.body.style.overflow = 'hidden';
+        } else {
+            document.body.style.overflow = '';
+        }
+        
+        // Focus management for accessibility
+        if (isExpanded) {
+            // Focus first navigation item
+            const firstNav = sidebar.querySelector('a[href]');
+            if (firstNav) {
+                firstNav.focus();
+            }
+        }
+    }
+
+    function closeMobileDrawer() {
+        const sidebar = document.getElementById('sidebar');
+        const overlay = document.getElementById('mobile-overlay');
+        const hamburger = document.querySelector('#sidebar [aria-label="Toggle navigation menu"]');
+        
+        // Close drawer
+        sidebar.classList.remove('open');
+        sidebar.removeAttribute('aria-expanded');
+        hamburger.setAttribute('aria-expanded', 'false');
+        
+        // Remove overlay
+        overlay.classList.remove('active');
+        document.body.style.overflow = '';
+    }
+
+    // Show live region status message
+    function showStatusMessage(message, type = 'info') {
+        const liveRegion = document.getElementById('aria-live-status');
+        if (!liveRegion) return;
+        
+        let colorClass = '';
+        switch(type) {
+            case 'success': colorClass = 'bg-green-50 text-green-800 border border-green-200'; break;
+            case 'error': colorClass = 'bg-red-50 text-red-800 border border-red-200'; break;
+            case 'warning': colorClass = 'bg-yellow-50 text-yellow-800 border border-yellow-200'; break;
+            default: colorClass = 'bg-blue-50 text-blue-800 border border-blue-200';
+        }
+        
+        liveRegion.className = `fixed top-2 left-1/2 -translate-x-1/2 px-4 py-2 rounded-full font-medium z-[70] ${colorClass} transition-all duration-300`;
+        liveRegion.textContent = message;
+        liveRegion.style.display = 'block';
+        
+        setTimeout(() => {
+            liveRegion.style.opacity = '0';
+            setTimeout(() => {
+                liveRegion.style.display = 'none';
+            }, 300);
+        }, 3000);
+    }
+
+    // Toast replacement with accessible implementation
     function showToast(message, type) {
         var toast = document.createElement('div');
-        toast.className = 'fixed top-4 right-4 px-4 py-3 rounded-sm shadow-lg text-white text-sm z-50 transition-opacity duration-300';
-        toast.style.backgroundColor = type === 'success' ? '#16a34a' : type === 'error' ? '#dc2626' : '#2563eb';
-        toast.textContent = message;
+        toast.className = 'fixed top-2 right-2 z-50 animate-fade-in-up';
+        const colors = {
+            success: 'bg-green-600',
+            error: 'bg-red-600',
+            info: 'bg-blue-600',
+            warning: 'bg-yellow-600'
+        };
+        const bgColor = colors[type] || colors.info;
+        
+        toast.innerHTML = `
+            <div class="${bgColor} text-white px-4 py-3 rounded-md shadow-lg flex items-center gap-3">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                </svg>
+                <span class="flex-1">${escapeHtml(message)}</span>
+                <button onclick="this.parentElement.parentElement.remove()" 
+                        class="opacity-70 hover:opacity-100 focus:outline-none focus:opacity-100">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                </button>
+            </div>
+        `;
+        
         document.body.appendChild(toast);
-        setTimeout(function() { toast.style.opacity = '0'; setTimeout(function() { toast.remove(); }, 300); }, 3000);
+        
+        // Animate out
+        setTimeout(() => {
+            toast.style.opacity = '0';
+            toast.style.transform = 'translateY(-10px)';
+            setTimeout(() => toast.remove(), 300);
+        }, 3000);
     }
+
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    // HTMX status message handling
     document.addEventListener('htmx:beforeSwap', function(evt) {
-        var trigger = evt.detail.xhr.getResponseHeader('HX-Trigger');
+        var xhr = evt.detail.xhr;
+        var trigger = xhr.getResponseHeader('HX-Trigger');
         if (trigger) {
             try {
                 var data = JSON.parse(trigger);
+                
+                // Handle toast notifications
                 if (data.showToast) {
                     showToast(data.showToast.value, data.showToast.type || 'info');
+                }
+                
+                // Handle aria-live status messages
+                if (data.statusMessage) {
+                    showStatusMessage(data.statusMessage, data.statusType || 'info');
+                }
+                
+                // Handle error states
+                if (data.error) {
+                    showStatusMessage(`Error: ${escapeHtml(data.error)}`, 'error');
+                    showToast(`Error: ${escapeHtml(data.error)}`, 'error');
                 }
             } catch(e) {}
         }
     });
+
+    // Global error recovery with hx-on:abort
+    document.addEventListener('htmx:abort', function(evt) {
+        console.log('HTMX request aborted:', evt.detail.reason);
+        
+        // Show abort notification
+        showStatusMessage('Operation cancelled by user', 'warning');
+        
+        // Remove any loading indicators
+        const loadingIndicators = document.querySelectorAll('.htmx-indicator[style*="flex"], .htmx-indicator');
+        loadingIndicators.forEach(ind => {
+            ind.setAttribute('style', '');
+            ind.removeAttribute('class');
+            ind.className = '';
+        });
+    });
+
+    // Handle network errors
+    document.addEventListener('htmx:networkError', function(evt) {
+        const xhr = evt.detail.xhr;
+        const method = xhr.method || 'GET';
+        const path = xhr.url || 'unknown';
+        
+        showStatusMessage(`Network error: Failed to complete ${method} request to ${path}`, 'error');
+        showToast(`Network error. Please check your connection and try again.`, 'error');
+    });
+
+    // Handle server errors
+    document.addEventListener('htmx:responseError', function(evt) {
+        const xhr = evt.detail.xhr;
+        const status = xhr.status;
+        const path = xhr.responseURL || 'unknown';
+        
+        let message = `Server error ${status}: Failed to load ${path}`;
+        
+        // Add retry functionality for 5xx errors
+        if (status >= 500 && status < 600) {
+            message += '. Click the page to retry.';
+            
+            // Add retry button to body
+            const retryBtn = document.createElement('div');
+            retryBtn.id = 'htmx-error-retry';
+            retryBtn.className = 'fixed bottom-4 right-4 bg-red-600 text-white px-4 py-2 rounded-md shadow-lg flex items-center gap-2 z-50 animate-fade-in-up';
+            retryBtn.innerHTML = `
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+                </svg>
+                <span>Retry (${status})</span>
+            `;
+            document.body.appendChild(retryBtn);
+            
+            // Remove on click after animation
+            setTimeout(() => {
+                retryBtn.onclick = () => {
+                    document.getElementById('htmx-error-retry').remove();
+                    // Reload current page or specific target
+                    window.location.reload();
+                };
+            }, 100);
+        }
+        
+        showToast(message, 'error');
+    });
+
+    // Click to reload page (for 5xx errors)
+    document.addEventListener('click', function(evt) {
+        const retryBtn = document.getElementById('htmx-error-retry');
+        if (retryBtn) {
+            // Prevent this from triggering the reload immediately
+            retryBtn.style.pointerEvents = 'none';
+        }
+    });
+
+    // Update dark mode icon based on current theme
+    function updateDarkModeIcon() {
+        const icon = document.getElementById('dark-mode-icon');
+        if (!icon) return;
+        
+        if (document.documentElement.classList.contains('dark')) {
+            // Switch to sun icon
+            icon.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/>';
+        } else {
+            // Switch to moon icon
+            icon.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/>';
+        }
+    }
+
+    // Initialize dark mode icon
+    updateDarkModeIcon();
+
+    // Keyboard shortcut for mobile menu (Esc to close)
+    document.addEventListener('keydown', function(evt) {
+        if (evt.key === 'Escape') {
+            closeMobileDrawer();
+        }
+    });
+
+    // Global HTMX error handling and recovery
+    let pendingAbort = null;
+
+    // Handle request abort
+    document.addEventListener('htmx:abort', function(evt) {
+        console.log('[HTMX] Request aborted:', evt.detail.reason);
+        
+        // Show non-blocking notification
+        showStatusMessage('Operation cancelled', 'warning');
+        
+        // Clear any pending aborts
+        pendingAbort = null;
+        
+        // Remove loading indicators
+        removeLoadingIndicators();
+    });
+
+    // Network error handler
+    document.addEventListener('htmx:networkError', function(evt) {
+        const xhr = evt.detail.xhr;
+        const method = xhr.method || 'GET';
+        const path = xhr.url || 'unknown';
+        
+        console.error(`[HTMX] Network Error: ${method} ${path}`);
+        
+        // Show error toast
+        showToast(`Network error: Unable to complete ${method.toUpperCase()} request. Please check your connection.`, 'error');
+        
+        // Highlight affected elements
+        highlightAffectedElements(xhr);
+    });
+
+    // Response error handler (4xx/5xx)
+    document.addEventListener('htmx:responseError', function(evt) {
+        const xhr = evt.detail.xhr;
+        const status = xhr.status;
+        const path = xhr.responseURL || 'unknown';
+        
+        console.error(`[HTMX] Response Error (${status}): ${path}`);
+        
+        let message = `Server error ${status}: Failed to load ${path}`;
+        
+        // Special handling for 5xx server errors
+        if (status >= 500 && status < 600) {
+            message += '. Click anywhere on the page to retry.';
+            
+            // Add global error UI
+            addGlobalErrorUI(status, 'Server Error', message);
+        } 
+        // 404 - Page not found
+        else if (status === 404) {
+            message += '. The requested resource was not found.';
+            addGlobalErrorUI(status, 'Not Found', message);
+        }
+        // 403 - Forbidden
+        else if (status === 403) {
+            message += '. You do not have permission to access this resource.';
+            addGlobalErrorUI(status, 'Access Denied', message);
+        }
+        // Other errors
+        else {
+            showToast(message, 'error');
+        }
+        
+        // Prevent HTMX from swapping content for these errors
+        evt.preventDefault();
+    });
+
+    // Prevent requests that are being aborted
+    document.addEventListener('htmx:beforeRequest', function(evt) {
+        if (pendingAbort) {
+            evt.preventDefault();
+            console.log('[HTMX] Aborting duplicate request');
+        }
+    });
+
+    // Abort any pending requests when aborting current
+    document.addEventListener('htmx:beforeCancel', function(evt) {
+        const xhr = evt.detail.xhr;
+        xhr.omniverseRequestId = Date.now().toString();
+    });
+
+    // Add global error UI element
+    function addGlobalErrorUI(status, title, message) {
+        const existing = document.getElementById('htmx-global-error');
+        if (existing) return;
+        
+        const errorUI = document.createElement('div');
+        errorUI.id = 'htmx-global-error';
+        errorUI.className = 'fixed inset-0 z-[10000] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4';
+        errorUI.setAttribute('role', 'alert');
+        errorUI.setAttribute('aria-live', 'assertive');
+        
+        errorUI.innerHTML = `
+            <div class="bg-white dark:bg-gray-900 rounded-lg shadow-2xl max-w-md w-full transform transition-all scale-95 opacity-0">
+                <div class="p-6">
+                    <div class="flex gap-4">
+                        <div class="flex-shrink-0">
+                            <div class="w-12 h-12 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-red-600 dark:text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                            </div>
+                        </div>
+                        <div class="flex-1">
+                            <h3 class="text-lg font-bold text-gray-900 dark:text-white mb-2">${title}</h3>
+                            <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">${message}</p>
+                            <div class="flex gap-3">
+                                <button onclick="retryPage()" 
+                                        class="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors">
+                                    🔄 Retry Request
+                                </button>
+                                <button onclick="closeGlobalErrorUI()" 
+                                        class="px-4 py-2 bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 text-sm font-medium rounded hover:bg-gray-200 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 transition-colors">
+                                    Close
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        document.body.appendChild(errorUI);
+        
+        // Animate in
+        setTimeout(() => {
+            errorUI.querySelector('div').classList.remove('scale-95', 'opacity-0');
+            errorUI.querySelector('div').classList.add('scale-100', 'opacity-100');
+        }, 10);
+    }
+
+    function retryPage() {
+        closeGlobalErrorUI();
+        location.reload();
+    }
+
+    function closeGlobalErrorUI() {
+        const ui = document.getElementById('htmx-global-error');
+        if (!ui) return;
+        
+        const content = ui.querySelector('div');
+        content.classList.remove('scale-100', 'opacity-100');
+        content.classList.add('scale-95', 'opacity-0');
+        
+        setTimeout(() => {
+            ui.remove();
+        }, 300);
+    }
+
+    function removeLoadingIndicators() {
+        const indicators = document.querySelectorAll('.htmx-indicator[style*="flex"]');
+        indicators.forEach(ind => {
+            ind.setAttribute('style', '');
+            ind.removeAttribute('class');
+            ind.className = '';
+        });
+        
+        // Also remove from htmx-request classes
+        const requests = document.querySelectorAll('.htmx-request');
+        requests.forEach(req => {
+            req.classList.remove('htmx-request');
+        });
+    }
+
+    function highlightAffectedElements(xhr) {
+        // Highlight the trigger element or target
+        const trigger = xhr.triggerElement || document.activeElement;
+        const target = xhr.target;
+        
+        if (trigger && typeof trigger === 'string') {
+            const el = document.querySelector(trigger);
+            if (el) {
+                el.classList.add('animate-pulse', 'ring-2', 'ring-red-500');
+                setTimeout(() => {
+                    el.classList.remove('animate-pulse', 'ring-2', 'ring-red-500');
+                }, 2000);
+            }
+        }
+        
+        if (target && typeof target === 'string') {
+            const el = document.querySelector(target);
+            if (el) {
+                el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+        }
+    }
+
+    // Add focus trap for mobile drawer
+    document.addEventListener('DOMContentLoaded', function() {
+        const sidebar = document.getElementById('sidebar');
+        const overlay = document.getElementById('mobile-overlay');
+        
+        // Trap focus when drawer is open
+        const focusableElements = sidebar.querySelectorAll('a[href], button, input, textarea, select, [tabindex]:not([tabindex="-1"])');
+        const firstFocusable = focusableElements[0];
+        const lastFocusable = focusableElements[focusableElements.length - 1];
+        
+        sidebar.addEventListener('keydown', function(evt) {
+            if (evt.key === 'Tab') {
+                if (evt.shiftKey && document.activeElement === firstFocusable) {
+                    evt.preventDefault();
+                    lastFocusable.focus();
+                } else if (!evt.shiftKey && document.activeElement === lastFocusable) {
+                    evt.preventDefault();
+                    firstFocusable.focus();
+                }
+            }
+        });
+        
+        overlay.addEventListener('click', closeMobileDrawer);
+    });
+
+    // Animation keyframes
+    const style = document.createElement('style');
+    style.textContent = `
+        @keyframes fade-in-up {
+            from { opacity: 0; transform: translateX(20px); }
+            to { opacity: 1; transform: translateX(0); }
+        }
+        .animate-fade-in-up {
+            animation: fade-in-up 0.3s ease-out forwards;
+        }
+    `;
+    document.head.appendChild(style);
     </script>
 </body>
 </html>

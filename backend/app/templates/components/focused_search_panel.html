@@ -4,6 +4,9 @@
         Prove or disprove specific features about worlds.
     </p>
     <form hx-post="/research/focused-search"
+          aria-labelledby="focused-search-label"
+          class="space-y-3">
+        <label id="focused-search-label" class="sr-only">Focused Search Input</label>
           hx-target="#focused-search-results"
           hx-swap="innerHTML"
           hx-indicator="#focus-indicator">

@@ -12,7 +12,7 @@
             <h1 class="text-3xl font-bold">Run: <span class="font-mono text-gray-600 dark:text-gray-400">{{ run_id }}</span></h1>
         </div>
          <button hx-post="{{ url_for('abort_run_endpoint') }}"
-                hx-vals='{"run_id": "{{ run_id }}"}'
+                data-hx-vals='{"run_id": "{{ run_id }}"}'
                 hx-confirm="Abort this run?"
                 class="bg-red-600 text-white px-4 py-2 rounded text-sm hover:bg-red-700 transition">
             Abort Run

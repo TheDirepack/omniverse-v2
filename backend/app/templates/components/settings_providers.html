@@ -4,9 +4,10 @@
         <div class="w-72 border-r border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 flex flex-col shrink-0">
             <div class="p-2 border-b border-gray-200 dark:border-gray-800 flex justify-between items-center bg-white dark:bg-gray-800">
                 <span class="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Providers</span>
-                <button class="px-2 py-0.5 bg-blue-600 text-white text-[10px] font-bold rounded-sm hover:bg-blue-700 transition-colors" 
+                <button class="px-2 py-0.5 bg-blue-600 text-white text-[10px] font-bold rounded-sm hover:bg-blue-700 active:bg-blue-800 focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-blue-500 transition-colors" 
                         hx-get="/settings/providers/new" 
-                        hx-target="#provider-inspector">
+                        hx-target="#provider-inspector"
+                        aria-label="Add new provider">
                     + New
                 </button>
             </div>
@@ -40,7 +41,8 @@
                                 hx-confirm="Delete this provider?">
                             Delete
                         </button>
-                        <button type="submit" class="px-3 py-1.5 bg-blue-600 text-white text-xs font-semibold rounded-sm hover:bg-blue-700 transition-colors shadow-sm">
+                        <button type="submit" class="px-3 py-1.5 bg-blue-600 text-white text-xs font-semibold rounded-sm hover:bg-blue-700 active:bg-blue-800 focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-blue-500 transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                                hx-indicator="#settings-indicator">
                             Save Changes
                         </button>
                     </div>

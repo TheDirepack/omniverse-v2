@@ -16,7 +16,7 @@ def list_universes_json(
     session: Session = Depends(get_main_session)
 ):
     service = UniverseService(session)
-    universes = service.list_universes(limit=limit, offset=offset)
+    universes = service.get_all_universes(limit=limit, offset=offset)
     return [
         {
             "id": u.id,

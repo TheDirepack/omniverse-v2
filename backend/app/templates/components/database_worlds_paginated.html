@@ -1,7 +1,33 @@
 {% if batch_started %}
 <div class="text-xs text-green-700 dark:text-green-400 mb-2 px-4 pt-3 font-semibold">Started research for {{ batch_started }} world(s)</div>
 {% endif %}
-<div class="text-xs text-gray-500 dark:text-gray-400 mb-1 px-4 pt-2">{{ worlds|length }} world(s)</div>
+<div class="text-xs text-gray-500 dark:text-gray-400 mb-1 px-4 pt-2">{{ worlds|length }} world(s) / {{ total_pages }}</div>
+
+<div class="mb-4 flex justify-between items-center px-4 pt-2">
+    <div class="flex gap-2">
+        {% if current_page > 1 %}
+        <a href="{{ url_prefix }}?page={{ current_page - 1 }}&q={{ q }}&explored={{ explored }}&franchise={{ franchise }}"
+           class="px-3 py-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-300 rounded-sm hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-xs font-medium">
+            &larr; Previous
+        </a>
+        {% endif %}
+        
+        <span class="px-3 py-1 bg-blue-600 text-white rounded-sm text-xs font-bold">
+            Page {{ current_page }} of {{ total_pages }}
+        </span>
+        
+        {% if current_page < total_pages %}
+        <a href="{{ url_prefix }}?page={{ current_page + 1 }}&q={{ q }}&explored={{ explored }}&franchise={{ franchise }}"
+           class="px-3 py-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-300 rounded-sm hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-xs font-medium">
+            Next &rarr;
+        </a>
+        {% endif %}
+    </div>
+    
+    <div class="text-xs text-gray-400 dark:text-gray-500">
+        Showing {{ ((current_page - 1) * items_per_page) + 1 }}-{{ (current_page * items_per_page) if current_page * items_per_page < total_items else total_items }} of {{ total_items }}
+    </div>
+</div>
 
 <table class="w-full text-left border-collapse text-xs">
     <thead class="bg-gray-50 dark:bg-gray-800 text-gray-500 dark:text-gray-400 uppercase tracking-wider font-bold border-b border-gray-200 dark:border-gray-700">
@@ -43,13 +69,13 @@
                        class="px-2 py-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-300 rounded-sm hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-[10px] font-medium">
                         Explore
                     </a>
-<button hx-post="/api/v1/execution/runs/start"
+    <button hx-post="/api/v1/execution/runs/start"
                 data-hx-vals='{"payload": ["{{ world.uuid }}"]}'
                 hx-trigger="click"
                 hx-swap="none"
                 class="px-2 py-1 bg-blue-600 text-white rounded-sm hover:bg-blue-700 transition-colors text-[10px] font-medium">
-    Research
-</button>
+        Research
+    </button>
                     <button hx-post="/worlds/{{ world.id }}/delete"
                             hx-target="#research-world-table"
                             hx-confirm="Delete this world?"
@@ -84,16 +110,16 @@ function updateBulkBar() {
         btn.textContent = checked > 1 ? 'Start Research (' + checked + ')' : 'Start Research';
     }
 }
-</script>
 
-{% if has_more %}
-<div class="text-center py-4" id="load-more-container">
-    <button class="text-xs text-blue-600 hover:text-blue-800 dark:text-blue-400 font-medium"
-            hx-get="/worlds/database-worlds?offset={{ next_offset }}&limit={{ limit }}{% if q %}&q={{ q }}{% endif %}"
-            hx-target="#load-more-container"
+{% if total_pages > 1 %}
+<div class="text-center py-4 mt-2" id="load-more-container">
+    <button class="text-xs text-blue-600 hover:text-blue-800 dark:text-blue-400 font-medium transition-colors"
+            hx-get="{{ url_prefix }}?page={{ current_page + 1 }}&q={{ q }}&explored={{ explored }}&franchise={{ franchise }}"
+            hx-target="#load-more-container, #research-world-table"
             hx-swap="outerHTML"
             hx-trigger="revealed">
         Load more worlds...
     </button>
 </div>
 {% endif %}
+</script>

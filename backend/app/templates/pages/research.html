@@ -8,7 +8,7 @@
     <div class="toolbar h-12 border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950 flex items-center px-4 gap-3 shrink-0">
         <!-- Left Zone: Focus input -->
         <div class="flex items-center gap-2 flex-1 min-w-0">
-            <span class="text-[10px] font-bold text-gray-400 uppercase tracking-widest shrink-0">Focus:</span>
+            <label for="global-focus" class="text-[10px] font-bold text-gray-400 uppercase tracking-widest shrink-0">Focus:</label>
             <input type="text" id="global-focus" name="focus"
                    placeholder="Overall research objective..."
                    class="h-7 px-3 text-xs bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-sm focus:outline-none focus:ring-1 focus:ring-blue-500 flex-1 max-w-md">
@@ -18,7 +18,8 @@
 
         <!-- Center Zone: Search + Filter -->
         <div class="flex items-center gap-2 flex-1 min-w-0">
-            <input type="text" name="q"
+            <label for="world-search" class="sr-only">Search worlds</label>
+            <input type="text" id="world-search" name="q"
                    placeholder="Search worlds..."
                    class="h-7 px-3 text-xs bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-sm focus:outline-none focus:ring-1 focus:ring-blue-500 w-48"
                    hx-get="/worlds/database-worlds"
@@ -26,7 +27,8 @@
                    hx-target="#research-world-table"
                    hx-indicator="#research-indicator">
             <div class="relative">
-                <button class="h-7 px-2 text-xs font-medium bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-sm text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                <label for="filter-button" class="sr-only">Filter worlds</label>
+                <button id="filter-button" class="h-7 px-2 text-xs font-medium bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-sm text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
                         data-filter-popup="research"
                         aria-haspopup="true"
                         aria-expanded="false"
@@ -34,7 +36,7 @@
                     ⚙️ Filter
                 </button>
             </div>
-            <div id="research-indicator" class="htmx-indicator text-xs animate-spin">⌛</div>
+            <div id="research-indicator" class="htmx-indicator text-xs animate-spin" aria-hidden="true">⌛</div>
         </div>
 
         <div class="w-px h-6 bg-gray-200 dark:bg-gray-700"></div>
@@ -45,6 +47,7 @@
                     hx-get="/worlds/import"
                     hx-target="#modal-content"
                     hx-swap="innerHTML"
+                    aria-label="Add a new world to the database"
                     onclick="document.getElementById('modal-root').classList.remove('hidden')">
                 + Add World
             </button>
@@ -52,7 +55,8 @@
                     hx-post="/api/v1/execution/runs/start"
                     hx-target="#research-world-table"
                     hx-include="[name='focus']"
-                    hx-vals="js:{payload: Array.from(document.querySelectorAll('.world-checkbox:checked')).map(cb => cb.value)}">
+                    aria-label="Start research on selected worlds"
+                    data-hx-vals='{"payload": []}'>
     Start Research
 </button>
         </div>
@@ -196,4 +200,15 @@ document.body.addEventListener('htmx:responseError', function(evt) {
 .dark .filter-popup-header { color: #f1f5f9; border-bottom-color: #334155; }
 .filter-rule-row { display: flex; gap: 4px; margin-bottom: 8px; }
 </style>
+<script>
+// Populate hx-vals from checked checkboxes
+document.addEventListener('DOMContentLoaded', () => {
+  const checkboxes = document.querySelectorAll('.world-checkbox:checked');
+  const payload = Array.from(checkboxes).map(cb => cb.value);
+  const dataHxVals = document.querySelector('[data-hx-vals]');
+  if (dataHxVals && payload.length > 0) {
+    dataHxVals.dataset.hxVals = JSON.stringify({ payload });
+  }
+});
+</script>
 {% endblock %}

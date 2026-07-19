@@ -57,7 +57,7 @@ class TestSettingsGeneral:
 
 
 class TestWorlds:
-    ENDPOINT = "/api/v1/db/universes/"
+    ENDPOINT = "/api/v1/db/worlds/"
     SEED_COUNT = 1
 
     def test_get_empty(self, api_client):

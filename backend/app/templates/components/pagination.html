@@ -1,0 +1,21 @@
+<div class="pagination">
+    <span class="page-info">{{ total_pages }} pages</span>
+    
+    {% if page > 1 %}
+    <a href="{{ url_for('worlds.database_worlds', page=page-1, page_size=page_size) }}" class="btn btn-sm">&laquo; Previous</a>
+    {% endif %}
+    
+    {% for i in range(max(1, page-2), min(total_pages, page+3)) %}
+        {% if i == page %}
+        <span class="current-page">{{ i }}</span>
+        {% elif i == 1 or i == total_pages %}
+        <a href="{{ url_for('worlds.database_worlds', page=i, page_size=page_size) }}">{{ i }}</a>
+        {% else %}
+        <a href="{{ url_for('worlds.database_worlds', page=i, page_size=page_size) }}">{{ i }}</a>
+        {% endif %}
+    {% endfor %}
+    
+    {% if page < total_pages %}
+    <a href="{{ url_for('worlds.database_worlds', page=page+1, page_size=page_size) }}" class="btn btn-sm">Next &raquo;</a>
+    {% endif %}
+</div>

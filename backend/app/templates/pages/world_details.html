@@ -42,7 +42,7 @@
                 <div class="flex flex-col items-end gap-2">
 <button class="px-3 py-1.5 bg-blue-600 text-white text-xs font-semibold rounded-sm hover:bg-blue-700 transition-colors"
                     hx-post="/api/v1/execution/runs/start" 
-                    hx-vals="js:{payload: ['{{ world.uuid }}']}"
+                    data-hx-vals='{"payload": ["{{ world.uuid }}"]}'
                     hx-target="#research-status">
     🚀 Re-Research
 </button>
@@ -142,4 +142,14 @@
         </div>
     </div>
 </div>
+<script>
+// Populate hx-vals with world UUID
+document.addEventListener('DOMContentLoaded', () => {
+  const worldUuid = '{{ world.uuid|safe }}';
+  const dataHxVals = document.querySelector('[data-hx-vals]');
+  if (dataHxVals) {
+    dataHxVals.dataset.hxVals = JSON.stringify({ payload: [worldUuid] });
+  }
+});
+</script>
 {% endblock %}

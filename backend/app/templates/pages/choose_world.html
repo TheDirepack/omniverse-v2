@@ -30,7 +30,7 @@
                     </div>
                     <button hx-post="/worlds/delete-selected"
                             hx-target="#database-worlds"
-                            hx-vals="js:{uuids: getSelectedWorlds()}"
+                            data-hx-vals='{"uuids": []}'
                             hx-confirm="Delete selected worlds?"
                             class="px-3 py-1 bg-red-600 text-white rounded-sm hover:bg-red-700 transition text-xs font-medium">
                         Delete Selected
@@ -101,5 +101,14 @@ function getSelectedWorlds() {
         });
     }
 })();
+// Populate hx-vals from selected worlds
+document.addEventListener('DOMContentLoaded', () => {
+  const uuids = Array.from(document.querySelectorAll('.world-checkbox:checked'))
+    .map(cb => cb.value);
+  const dataHxVals = document.querySelector('[data-hx-vals]');
+  if (dataHxVals && uuids.length > 0) {
+    dataHxVals.dataset.hxVals = JSON.stringify({ uuids });
+  }
+});
 </script>
 {% endblock %}

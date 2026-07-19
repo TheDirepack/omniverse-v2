@@ -7,7 +7,10 @@
     </div>
     {% endif %}
 
-     <form hx-post="{{ url_for('worlds_create_action') }}"
+      <form hx-post="{{ url_for('worlds_create_action') }}"
+            aria-labelledby="world-form-title"
+            class="space-y-4">
+        <div class="sr-only" id="world-form-title">World Creation Form</div>
           hx-target="#world-modal-content"
           hx-swap="innerHTML"
           class="grid grid-cols-2 gap-4">

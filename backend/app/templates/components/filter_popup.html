@@ -43,16 +43,36 @@
 </div>
 
 <style>
+:root {
+    /* Light mode default */
+    --bg-surface: #ffffff;
+    --border: #cbd5e1;
+    --border-subtle: #f1f5f9;
+    --text-primary: #1e293b;
+    --shadow: 0 4px 12px rgba(0,0,0,0.10);
+}
+
+/* Dark mode values - set via JS or system preference */
+@media (prefers-color-scheme: dark) {
+    :root {
+        --bg-surface: #0f172a;
+        --border: #1e293b;
+        --border-subtle: #334155;
+        --text-primary: #f1f5f9;
+        --shadow: 0 4px 12px rgba(0,0,0,0.6);
+    }
+}
+
 .filter-popup {
     position: absolute;
     top: calc(100% + 4px);
     left: 0;
     width: 320px;
-    background: var(--bg-surface, #ffffff);
-    border: 1px solid var(--border, #cbd5e1);
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
     border-radius: 8px;
     padding: 12px;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.10);
+    box-shadow: var(--shadow);
     z-index: 100;
     font-size: 0.8rem;
 }
@@ -69,9 +89,9 @@
     margin-bottom: 8px;
 }
 .dark .filter-popup {
-    background: #1e293b;
-    border-color: #334155;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+    background: var(--bg-surface-dark, #0f172a);
+    border-color: var(--border-dark, #1e293b);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.6);
 }
 </style>
 

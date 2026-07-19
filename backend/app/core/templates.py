@@ -73,6 +73,38 @@ def render_worlds_table(
     )
 
 
+def render_worlds_table_paginated(
+    request: Request,
+    worlds: list,
+    q: str = "",
+    explored: str = "",
+    franchise: str = "",
+    url_prefix: str = "",
+    total_pages: int = 1,
+    total_items: int = 0,
+    current_page: int = 1,
+    items_per_page: int = 100,
+    page_size: int = 100,
+) -> HTMLResponse:
+    from fastapi.responses import HTMLResponse
+
+    template = templates.env.get_template("components/database_worlds_paginated.html")
+    return HTMLResponse(
+        content=template.render(
+            request=request,
+            worlds=worlds,
+            q=q or "",
+            explored=explored or "",
+            franchise=franchise or "",
+            total_pages=int(total_pages),
+            total_items=int(total_items),
+            current_page=int(current_page),
+            items_per_page=int(items_per_page),
+            page_size=int(page_size),
+            url_prefix=url_prefix or "",
+        )
+    )
+
 def render_error(request: Request, status: int, message: str) -> HTMLResponse:
     from fastapi.responses import HTMLResponse
     template = templates.env.get_template("pages/error.html")

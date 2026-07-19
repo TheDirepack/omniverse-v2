@@ -24,7 +24,7 @@
         <div class="flex-1"></div>
 <button class="px-3 py-1 text-xs font-semibold bg-blue-600 text-white rounded-sm hover:bg-blue-700 transition-colors"
                 hx-post="/api/v1/execution/runs/start"
-                hx-vals='{"payload": ["{{ world.uuid }}"]}'
+                data-hx-vals='{"payload": ["{{ world.uuid }}"]}'
                 hx-swap="none">
     Start Focused Research
 </button>

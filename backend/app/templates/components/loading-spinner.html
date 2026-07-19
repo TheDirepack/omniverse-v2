@@ -1,0 +1,172 @@
+{% macro loading_indicator(indicator_id=None, size='md', color='blue') %}
+  {% set sizes = {'sm': 'w-6 h-6', 'md': 'w-10 h-10', 'lg': 'w-16 h-16'} %}
+  {% set colors = {'red': 'border-red-600 border-t-transparent', 
+                  'yellow': 'border-yellow-500 border-t-transparent', 
+                  'green': 'border-green-500 border-t-transparent',
+                  'purple': 'border-purple-600 border-t-transparent' %}
+  {% set default_colors = colors[color] or colors['blue'] %}
+  
+  <span class="htmx-indicator flex items-center justify-center {{ sizes[size] }} {{ default_colors }}" 
+        aria-hidden="true">
+    {% if indicator_id %}
+      <div id="{{ indicator_id }}" class="{{ default_colors.replace('border-t-transparent', '') }}"></div>
+    {% else %}
+      <div class="animate-spin rounded-full {{ default_colors.split(' ')[0].replace('border-', '') }} {{ default_colors.replace('border-', '').split(' ')[0] }}"></div>
+    {% endif %}
+  </span>
+{% endmacro %}
+
+{% macro loading_spinner(full_page=false) %}
+  <div class="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm"
+       role="alert"
+       aria-live="assertive"
+       aria-busy="true">
+    <div class="text-center">
+      <div class="w-16 h-16 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+      <p class="text-white text-lg font-medium">Loading...</p>
+      <p class="text-gray-300 mt-2 text-sm">Please wait while we process your request.</p>
+    </div>
+  </div>
+{% endmacro %}
+
+{% macro loading_overlay(message="Processing...", dismissable=false) %}
+  <div id="loading-overlay" 
+       class="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-gray-900/80 backdrop-blur-sm transition-opacity duration-300 opacity-0 pointer-events-none"
+       role="dialog"
+       aria-labelledby="loading-message"
+       aria-modal="true">
+    <div class="flex flex-col items-center gap-4">
+      <div class="w-12 h-12 border-3 border-white/30 border-t-white rounded-full animate-spin"></div>
+      <div class="text-center">
+        <h2 id="loading-message" class="text-white text-xl font-semibold">{{ message }}</h2>
+        <p class="text-gray-300 text-sm mt-2">Please do not close this window.</p>
+      </div>
+    </div>
+    {% if dismissable %}
+      <button onclick="document.getElementById('loading-overlay').classList.remove('opacity-0'); document.getElementById('loading-overlay').classList.add('pointer-events-none');"
+              class="absolute top-4 right-4 text-white/70 hover:text-white transition-colors"
+              aria-label="Close loading dialog">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+        </svg>
+      </button>
+    {% endif %}
+  </div>
+{% endmacro %}
+
+{% macro success_indicator(icon='check', color='green') %}
+  <span class="htmx-indicator flex items-center justify-center w-8 h-8 bg-green-500 text-white rounded-full" 
+        aria-hidden="true">
+    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+      <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" />
+    </svg>
+  </span>
+{% endmacro %}
+
+{% macro error_indicator(message="An error occurred", icon='error', color='red') %}
+  <div class="htmx-indicator fixed bottom-4 left-1/2 -translate-x-1/2 z-[100] flex items-center gap-3 px-4 py-3 bg-red-600 text-white rounded-lg shadow-lg max-w-md transform translate-y-4 opacity-0 transition-all duration-300"
+       role="alert"
+       aria-live="assertive">
+    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 flex-shrink-0" viewBox="0 0 20 20" fill="currentColor">
+      <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clip-rule="evenodd" />
+    </svg>
+    <span class="flex-1">{{ message }}</span>
+    <button onclick="this.parentElement.remove()" 
+            class="opacity-70 hover:opacity-100 focus:outline-none"
+            aria-label="Dismiss error">
+      <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+      </svg>
+    </button>
+  </div>
+{% endmacro %}
+
+{% macro pagination_controls(pagination_page, pagination_pages, pagination_items_per_page, pagination_total, url_prefix) %}
+  {% if pagination_pages is not defined %}
+    {% set pagination_pages = [] %}
+  {% endif %}
+  
+  {% if pagination_pages == [] %}
+    {% set pagination_pages = range(1, pagination_total + 1) %}
+  {% endif %}
+  
+  <nav class="flex items-center justify-between p-4 border-t border-gray-200 dark:border-gray-800" aria-label="Pagination">
+    <div class="text-sm text-gray-500 dark:text-gray-400">
+      Showing {{ (pagination_page - 1) * pagination_items_per_page + 1 }} to 
+      {{ min(pagination_page * pagination_items_per_page, pagination_total) }} of 
+      {{ pagination_total }} results
+    </div>
+    
+    <ul class="flex items-center gap-1" role="list">
+      <!-- Previous -->
+      {% if pagination_page > 1 %}
+      <li>
+        <a href="{{ url_prefix }}?page={{ pagination_page - 1 }}" 
+           class="px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700 dark:hover:bg-gray-700 transition-colors"
+           aria-label="Previous page">
+          ← Prev
+        </a>
+      </li>
+      {% else %}
+      <li class="px-3 py-2 text-sm font-medium text-gray-400 border border-gray-300 bg-gray-50 rounded-md dark:bg-gray-900 dark:text-gray-600 dark:border-gray-700">
+        ←
+      </li>
+      {% endif %}
+      
+      <!-- Page Numbers -->
+      {% for page in pagination_pages %}
+        {% if page == 1 or page == pagination_page or (pagination_page <= 3 or page >= pagination_page - 2 and page <= pagination_page + 2) %}
+          {% if page == pagination_page %}
+            <li class="px-4 py-2 text-sm font-bold text-blue-600 bg-blue-50 border border-transparent rounded-md dark:bg-blue-900/30 dark:text-blue-400">
+              {{ page }}
+            </li>
+          {% else %}
+            <li>
+              <a href="{{ url_prefix }}?page={{ page }}" 
+                 class="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700 dark:hover:bg-gray-700 transition-colors"
+                 aria-label="Go to page {{ page }}">
+                {{ page }}
+              </a>
+            </li>
+          {% endif %}
+        {% endif %}
+      {% endfor %}
+      
+      {% if pagination_pages|last > 5 %}
+        <li class="px-2">...</li>
+      {% endif %}
+      
+      {% if pagination_pages|last < pagination_total %}
+        <li>
+          <a href="{{ url_prefix }}?page={{ pagination_pages|last + 1 }}" 
+             class="px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700 dark:hover:bg-gray-700 transition-colors"
+             aria-label="Next page">
+            Next →
+          </a>
+        </li>
+      {% else %}
+        <li class="px-3 py-2 text-sm font-medium text-gray-400 border border-gray-300 bg-gray-50 rounded-md dark:bg-gray-900 dark:text-gray-600 dark:border-gray-700">
+          →
+        </li>
+      {% endif %}
+    </ul>
+  </nav>
+{% endmacro %}
+
+{% macro filter_chip(label, active=false, color='blue') %}
+  <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border {{ 
+    'bg-' + color + '-100 text-' + color + '-800 border-' + color + '-200' if active 
+    else 'bg-gray-100 text-gray-800 border-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700'
+  }}">
+    {{ label }}
+    {% if active %}
+      <button onclick="this.parentElement.remove()" 
+              class="ml-1.5 inline-flex items-center justify-center w-4 h-4 rounded-full text-gray-400 hover:text-gray-900 focus:outline-none focus:bg-gray-50"
+              aria-label="Remove filter: {{ label }}">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-2 w-2" viewBox="0 0 20 20" fill="currentColor">
+          <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" />
+        </svg>
+      </button>
+    {% endif %}
+  </span>
+{% endmacro %}

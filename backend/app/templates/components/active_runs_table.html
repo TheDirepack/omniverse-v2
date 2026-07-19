@@ -25,7 +25,7 @@
                     Logs
                 </a>
 <button hx-post="/api/v1/execution/runs/abort" 
-                hx-vals='{"runId": "{{ run.run_id }}"}'
+                data-hx-vals='{"runId": "{{ run.run_id }}"}'
                 hx-target="#execution-table"
                 hx-trigger="click"
                 class="px-2 py-1 bg-white dark:bg-gray-800 border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 transition text-[10px] font-bold uppercase tracking-tighter">

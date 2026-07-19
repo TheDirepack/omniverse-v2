@@ -107,7 +107,6 @@ class SettingsRepository:
         self.session.commit()
 
     def bootstrap_default_settings(self):
-        """Initialize default settings if not present."""
         existing = self.get_all_settings()
         existing_keys = {s.key for s in existing}
 
@@ -121,6 +120,7 @@ class SettingsRepository:
             "BROWSER_MAX_CONCURRENCY_PER_INSTANCE": "5",
             "MAX_TOKENS": "32000",
             "COMPRESSION_THRESHOLD": "0.8",
+            "PAGINATION_STYLE": "CLASSIC",
         }
 
         for key, value in defaults.items():

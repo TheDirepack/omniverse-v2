@@ -128,6 +128,9 @@ class SettingsService:
     def get_agent_route_by_id(self, route_id: int) -> dict[str, Any] | None:
         return self._route_service.get_agent_route_by_id(route_id)
 
+    def get_agent_route_by_task_type(self, task_type: str) -> dict[str, Any] | None:
+        return self._route_service.get_agent_route_by_task_type(task_type)
+
     def upsert_agent_route(
         self,
         task_type: str,

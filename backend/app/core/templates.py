@@ -85,6 +85,7 @@ def render_worlds_table_paginated(
     current_page: int = 1,
     items_per_page: int = 100,
     page_size: int = 100,
+    pagination_style: str = "CLASSIC",
 ) -> HTMLResponse:
     from fastapi.responses import HTMLResponse
 
@@ -102,6 +103,7 @@ def render_worlds_table_paginated(
             items_per_page=int(items_per_page),
             page_size=int(page_size),
             url_prefix=url_prefix or "",
+            pagination_style=pagination_style,
         )
     )
 

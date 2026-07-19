@@ -594,7 +594,6 @@ async def run_agent(
                             )
                             if summary:
                                 set_current_summary(summary)
-                    continue
 
                 if not content:
                     messages.append(

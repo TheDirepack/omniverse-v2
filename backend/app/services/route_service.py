@@ -57,6 +57,30 @@ class RouteService:
             if not self.session:
                 session.close()
 
+    def get_agent_route_by_task_type(self, task_type: str) -> dict[str, Any] | None:
+        session = self.session or Session(settings_engine)
+        try:
+            repo = SettingsRepository(session)
+            routes = repo.get_agent_routes_by_task_type(task_type)
+            if not routes:
+                return None
+            route = routes[0]
+            provider = repo.get_providers()
+            provider_map = {p.id: p.name for p in provider if p.id}
+            return {
+                "id": route.id,
+                "task_type": route.task_type,
+                "provider_id": route.provider_id,
+                "models": route.models,
+                "priority": route.priority,
+                "provider_name": (
+                    provider_map.get(route.provider_id) if route.provider_id else None
+                ),
+            }
+        finally:
+            if not self.session:
+                session.close()
+
     def upsert_agent_route(
         self,
         task_type: str,

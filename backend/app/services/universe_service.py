@@ -51,6 +51,14 @@ class UniverseService:
             if not self.session:
                 session.close()
 
+    def get_universe_by_slug(self, slug: str) -> Universe | None:
+        session = self.session or Session(engine)
+        try:
+            return UniverseRepository(session).get_by_slug(slug)
+        finally:
+            if not self.session:
+                session.close()
+
     def get_children(self, universe_id: int) -> Sequence[Universe]:
         session = self.session or Session(engine)
         try:

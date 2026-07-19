@@ -9,9 +9,16 @@ from sqlmodel import Session, select
 from app.core.dependencies import get_main_session
 from app.core.templates import render_worlds_table, render_worlds_table_paginated, templates
 from app.db.schema import Artifact
+from app.services.settings_service import SettingsService
 from app.services.universe_service import UniverseService
 
 router = APIRouter(tags=["worlds_views"])
+
+
+def _get_pagination_style() -> str:
+    val = SettingsService().get_setting("PAGINATION_STYLE")
+    return val.value if val else "CLASSIC"
+
 
 @router.get("/", response_class=HTMLResponse)
 async def worlds_page(request: Request):
@@ -44,6 +51,8 @@ async def database_worlds(
     current_page = page
     items_per_page = page_size
     
+    pagination_style = _get_pagination_style()
+    
     return render_worlds_table_paginated(
         request, 
         worlds, 
@@ -54,7 +63,8 @@ async def database_worlds(
         total_items=total_count,
         current_page=current_page,
         items_per_page=items_per_page,
-        url_prefix="/api/v1/worlds/database-worlds"
+        url_prefix="/api/v1/worlds/database-worlds",
+        pagination_style=pagination_style,
     )
 
 @router.post("/batch-research", response_class=HTMLResponse)
@@ -81,6 +91,8 @@ async def batch_research(
     )
     total_pages = (total_count + page_size - 1) // page_size if total_count > 0 else 1
     
+    pagination_style = _get_pagination_style()
+    
     return render_worlds_table_paginated(
         request, 
         worlds, 
@@ -89,7 +101,8 @@ async def batch_research(
         total_items=total_count,
         current_page=page,
         items_per_page=page_size,
-        url_prefix="/api/v1/worlds/batch-research"
+        url_prefix="/api/v1/worlds/batch-research",
+        pagination_style=pagination_style,
     )
 
 
@@ -102,6 +115,8 @@ async def toggle_explored(request: Request, world_id: int, page: int = Query(def
     worlds = uni_service.get_all_universes(offset=(page - 1) * page_size, limit=page_size)
     total_pages = (total_count + page_size - 1) // page_size if total_count > 0 else 1
     
+    pagination_style = _get_pagination_style()
+    
     return render_worlds_table_paginated(
         request, 
         worlds, 
@@ -109,7 +124,8 @@ async def toggle_explored(request: Request, world_id: int, page: int = Query(def
         total_items=total_count,
         current_page=page,
         items_per_page=page_size,
-        url_prefix="/api/v1/worlds/toggle-explored"
+        url_prefix="/api/v1/worlds/toggle-explored",
+        pagination_style=pagination_style,
     )
 
 @router.post("/{world_id}/delete", response_class=HTMLResponse)
@@ -122,6 +138,7 @@ async def delete_world(request: Request, world_id: int, page: int = Query(defaul
         limit=page_size
     )
     total_pages = (total_count + page_size - 1) // page_size if total_count > 0 else 1
+    pagination_style = _get_pagination_style()
     return render_worlds_table_paginated(
         request, 
         worlds, 
@@ -129,7 +146,8 @@ async def delete_world(request: Request, world_id: int, page: int = Query(defaul
         total_items=total_count,
         current_page=page,
         items_per_page=page_size,
-        url_prefix="/api/v1/worlds/delete"
+        url_prefix="/api/v1/worlds/delete",
+        pagination_style=pagination_style,
     )
 
 @router.post("/delete-selected", response_class=HTMLResponse)
@@ -156,6 +174,7 @@ async def delete_selected(request: Request, uuids: str = Form(default="[]"), ses
     )
     total_pages = (total_count + page_size - 1) // page_size if total_count > 0 else 1
     
+    pagination_style = _get_pagination_style()
     return render_worlds_table_paginated(
         request, 
         worlds, 
@@ -163,7 +182,8 @@ async def delete_selected(request: Request, uuids: str = Form(default="[]"), ses
         total_items=total_count,
         current_page=page,
         items_per_page=page_size,
-        url_prefix="/api/v1/worlds/delete-selected"
+        url_prefix="/api/v1/worlds/delete-selected",
+        pagination_style=pagination_style,
     )
 
 
@@ -192,6 +212,7 @@ async def reset_selected_explored(request: Request, ids: str = Form(default="[]"
     )
     total_pages = (total_count + page_size - 1) // page_size if total_count > 0 else 1
     
+    pagination_style = _get_pagination_style()
     return render_worlds_table_paginated(
         request, 
         worlds, 
@@ -199,7 +220,8 @@ async def reset_selected_explored(request: Request, ids: str = Form(default="[]"
         total_items=total_count,
         current_page=page,
         items_per_page=page_size,
-        url_prefix="/api/v1/worlds/reset-selected-explored"
+        url_prefix="/api/v1/worlds/reset-selected-explored",
+        pagination_style=pagination_style,
     )
 
 @router.post("/reset-all-explored", response_class=HTMLResponse)
@@ -213,6 +235,7 @@ async def reset_all_explored(request: Request, page: int = Query(default=1, ge=1
     )
     total_pages = (total_count + page_size - 1) // page_size if total_count > 0 else 1
     
+    pagination_style = _get_pagination_style()
     return render_worlds_table_paginated(
         request, 
         worlds, 
@@ -220,7 +243,8 @@ async def reset_all_explored(request: Request, page: int = Query(default=1, ge=1
         total_items=total_count,
         current_page=page,
         items_per_page=page_size,
-        url_prefix="/api/v1/worlds/reset-all-explored"
+        url_prefix="/api/v1/worlds/reset-all-explored",
+        pagination_style=pagination_style,
     )
 
 @router.post("/set-active-world", response_class=HTMLResponse)
@@ -262,6 +286,7 @@ async def worlds_import_action_form(request: Request):
     worlds = service.get_all_universes(offset=offset, limit=page_size)
     total_pages = (total_count + page_size - 1) // page_size if total_count > 0 else 1
     
+    pagination_style = _get_pagination_style()
     return render_worlds_table_paginated(
         request,
         worlds,
@@ -269,7 +294,8 @@ async def worlds_import_action_form(request: Request):
         total_items=total_count,
         current_page=page,
         items_per_page=page_size,
-        url_prefix="/api/v1/worlds/import"
+        url_prefix="/api/v1/worlds/import",
+        pagination_style=pagination_style,
     )
 
 

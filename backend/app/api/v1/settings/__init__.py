@@ -106,9 +106,45 @@ class ModelStatusResponse(BaseModel):
     initialized: bool
     routes: list[RouteStatusResponse]
 
+class RoutePayload(BaseModel):
+    task_type: str
+    provider_id: int | None = None
+    models: str | None = None
+    priority: int = 0
+
 @routes_router.get("/")
 def get_agent_routes(service: SettingsService = Depends(get_settings_service)):
     return service.get_agent_routes()
+
+@routes_router.post("/")
+def create_route(payload: RoutePayload, service: SettingsService = Depends(get_settings_service)):
+    try:
+        service.upsert_agent_route(
+            task_type=payload.task_type,
+            provider_id=payload.provider_id,
+            models=payload.models,
+            priority=payload.priority,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    return {
+        "status": "success",
+        "message": f"Route '{payload.task_type}' created successfully.",
+    }
+
+@routes_router.get("/model-status")
+def get_model_status(service: SettingsService = Depends(get_settings_service)):
+    routes = service.get_agent_routes()
+    route_statuses = [
+        RouteStatusResponse(
+            task_type=r["task_type"],
+            configured=r["provider_id"] is not None,
+            provider=r.get("provider_name"),
+            models=r.get("models"),
+        )
+        for r in routes
+    ]
+    return ModelStatusResponse(initialized=True, routes=route_statuses)
 
 @routes_router.get("/{task_type}")
 def get_route_by_task_type(task_type: str, service: SettingsService = Depends(get_settings_service)):

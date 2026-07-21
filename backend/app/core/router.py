@@ -94,7 +94,7 @@ class ModelRouter:
                 session.execute(
                     select(CandidateHealth)
                     .where(
-                        CandidateHealth.id == health.id,
+                        CandidateHealth.candidate_hash == health.candidate_hash,
                         CandidateHealth.disabled_until.is_(None) |
                         (CandidateHealth.disabled_until <= now)
                     )

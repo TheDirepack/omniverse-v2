@@ -71,12 +71,30 @@ class ModelRouter:
             health.failure_count = max(0, health.failure_count - 1)
 
         # 3. Update
+        # If the disability window expired, reset the failure counter
+        if health.disabled_until and now > health.disabled_until:
+            health.failure_count = 0
+            health.disabled_until = None
+
         health.failure_count += 1
         health.last_failure_at = now
 
         # 4. Threshold check
         if health.failure_count >= 5:
-            health.disabled_until = now + timedelta(hours=4)
+            if not health.disabled_until or now > health.disabled_until:
+                # Use atomic update to avoid race conditions when checking vs. setting
+                session.execute(
+                    select(CandidateHealth)
+                    .where(
+                        CandidateHealth.id == health.id,
+                        CandidateHealth.disabled_until.is_(None) |
+                        (CandidateHealth.disabled_until <= now)
+                    )
+                    .update({"disabled_until": now + timedelta(hours=4)})
+                )
+                session.flush()
+                # Refresh health object to get updated timestamp
+                session.refresh(health)
 
         session.add(health)
         session.commit()

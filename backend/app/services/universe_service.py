@@ -26,6 +26,7 @@ logger = logging.getLogger(__name__)
 class UniverseService:
     def __init__(self, session: Session | None = None):
         self.session = session
+        self._repo = None
 
     def get_universe(self, name: str) -> Universe | None:
         session = self.session or Session(engine)
@@ -80,9 +81,7 @@ class UniverseService:
             if fields:
                 valid_fields = [f for f in fields if hasattr(Universe, f)]
                 return [
-                    dict(zip(valid_fields, r))
-                    if isinstance(r, tuple)
-                    else {f: getattr(r, f, None) for f in valid_fields}
+                    {f: getattr(r, f, None) for f in valid_fields}
                     for r in results
                 ]
             return results
@@ -125,7 +124,8 @@ class UniverseService:
                 session.close()
 
     def _generate_slug(self, repo: UniverseRepository, name: str) -> str:
-        base_slug = name.lower().replace(" ", "_")
+        import re
+        base_slug = re.sub(r'[^a-z0-9_]', '', name.lower().replace(" ", "_"))
         slug = base_slug
         counter = 1
         while repo.get_by_slug(slug):
@@ -152,6 +152,10 @@ class UniverseService:
                 parent_id=parent_id,
                 summary=None,
                 is_explored=False,
+                franchise=franchise,
+                category=category,
+                continuity=continuity,
+                era=era,
             )
             session.add(universe)
             session.flush()
@@ -267,9 +271,14 @@ class UniverseService:
                         if parent_ref in parent_map:
                             parent_id = parent_map[parent_ref]
                         elif parent_ref in existing_slugs:
-                            parent_id = session.exec(
+                            result = session.exec(
                                 select(Universe.id).where(Universe.slug == parent_ref)
                             ).first()
+                            # Ensure we get a valid int, not a tuple (SingleResult returns tuples)
+                            if isinstance(result, tuple):
+                                parent_id = result[0] if result else None
+                            else:
+                                parent_id = result
 
                     universe = Universe(
                         slug=slug,
@@ -279,7 +288,8 @@ class UniverseService:
                         is_explored=False,
                     )
                     session.add(universe)
-
+                    session.flush()
+                    parent_map[slug] = universe.id
 
                     existing_slugs.add(slug)
                     existing_names.add(name)
@@ -339,6 +349,8 @@ class UniverseService:
             repo = UniverseRepository(session)
             keep = repo.get_by_id(keep_id)
             merge = repo.get_by_id(merge_id)
+            if keep_id == merge_id:
+                return {"status": "error", "message": "Cannot merge a world with itself"}
             if not keep or not merge:
                 return {"status": "error", "message": "One or both worlds not found"}
 

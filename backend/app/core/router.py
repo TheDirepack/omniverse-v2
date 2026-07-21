@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import litellm
+from sqlalchemy import update as sa_update
 from sqlmodel import Session, select
 
 from app.core.agent_event_types import AgentEventType
@@ -92,13 +93,13 @@ class ModelRouter:
             if not health.disabled_until or now > _ensure_aware(health.disabled_until):
                 # Use atomic update to avoid race conditions when checking vs. setting
                 session.execute(
-                    select(CandidateHealth)
+                    sa_update(CandidateHealth)
                     .where(
                         CandidateHealth.candidate_hash == health.candidate_hash,
                         CandidateHealth.disabled_until.is_(None) |
                         (CandidateHealth.disabled_until <= now)
                     )
-                    .update({"disabled_until": now + timedelta(hours=4)})
+                    .values(disabled_until=now + timedelta(hours=4))
                 )
                 session.flush()
                 # Refresh health object to get updated timestamp

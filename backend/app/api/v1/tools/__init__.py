@@ -10,7 +10,7 @@ from fastapi import (
     Query,
     Request,
 )
-from fastapi.responses import JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
 from sqlmodel import Session, func, select
 
@@ -473,4 +473,21 @@ def clear_logs():
 
     exec_service = ExecutionService()
     exec_service.clear_logs()
-    return {"status": "success"}
+
+    from app.core.agent_logger import LOG_FILE
+
+    if LOG_FILE and LOG_FILE.exists():
+        LOG_FILE.write_text("", encoding="utf-8")
+
+    from app.core.templates import templates
+
+    from fastapi.responses import HTMLResponse
+
+    template = templates.env.get_template("components/log_list.html")
+    return HTMLResponse(
+        content=template.render(
+            request=None,
+            parsed_logs=[],
+            has_more=False,
+        )
+    )

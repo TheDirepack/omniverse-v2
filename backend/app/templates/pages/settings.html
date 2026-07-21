@@ -110,14 +110,14 @@
     document.addEventListener('DOMContentLoaded', activateTabFromHash);
 
     function selectProvider(providerId) {
-        htmx.ajax('GET', `/api/v1/settings/providers/${providerId}`, {
+        htmx.ajax('GET', `/settings/providers/${providerId}`, {
             target: '#provider-inspector',
             swap: 'innerHTML'
         });
     }
 
     function selectRoute(routeId) {
-        htmx.ajax('GET', `/api/v1/settings/routes/${routeId}`, {
+        htmx.ajax('GET', `/settings/routes/${routeId}`, {
             target: '#route-editor',
             swap: 'innerHTML'
         });
@@ -126,47 +126,34 @@
     function syncModels(providerId) {
         const modelsInput = document.querySelector('input[name="models"]');
         if (!modelsInput) return;
-        
-        // Optimistic UI update - show spinner immediately
         const originalValue = modelsInput.value;
         modelsInput.classList.add('htmx-indicator');
         modelsInput.disabled = true;
-        
-        // HTMX POST with abort handling
-        const formData = new FormData();
-        formData.append('provider_id', providerId);
-        
-        htmx.ajax('POST', '/api/v1/settings/providers/' + providerId + '/sync', {
-            target: '#model-list',
-            swap: 'innerHTML',
-            values: formData
-        });
-        
-        // Add event listeners for completion/error
-        document.body.addEventListener('htmx:afterOnLoad', function(evt) {
-            if (evt.detail.target.id === 'model-list') {
+
+        fetch(`/settings/providers/${providerId}/sync`, { method: 'POST' })
+            .then(r => {
+                if (!r.ok) throw new Error('Sync failed');
+                return r.text();
+            })
+            .then(models => {
+                modelsInput.value = models;
                 modelsInput.classList.remove('htmx-indicator');
                 modelsInput.disabled = false;
                 renderModelList();
-            }
-        }, {once: true});
-        
-        document.body.addEventListener('htmx:sendError', function(evt) {
-            if (evt.detail.target.id === 'model-list') {
+            })
+            .catch(() => {
                 modelsInput.value = originalValue;
                 modelsInput.classList.remove('htmx-indicator');
                 modelsInput.disabled = false;
-                showToast('Failed to sync models. Please try again.', 'error');
-            }
-        }, {once: true});
-        
-        // Timeout fallback after 30 seconds
+                showToast('Failed to sync models.', 'error');
+            });
+
         setTimeout(() => {
             if (modelsInput.classList.contains('htmx-indicator')) {
                 modelsInput.value = originalValue;
                 modelsInput.classList.remove('htmx-indicator');
                 modelsInput.disabled = false;
-                showToast('Sync request timed out. Please try again.', 'warning');
+                showToast('Sync timed out.', 'warning');
             }
         }, 30000);
     }
@@ -210,170 +197,42 @@
         if (!apiKey) return;
         const priority = prompt('Enter priority (0-10):', '0') || '0';
         const form = new FormData();
-        form.set('provider_id', providerId);
         form.set('api_key', apiKey);
         form.set('priority', priority);
-        
-        // HTMX POST with optimistic UI
+
         const btn = document.querySelector(`button[type="button"][onclick*="addProviderKey('${providerId}')"]`);
         if (btn) {
             btn.disabled = true;
             btn.innerHTML = '<span class="animate-spin">⏳</span>';
         }
-        
-        htmx.ajax('POST', '/api/v1/settings/providers/keys', {
+
+        htmx.ajax('POST', `/settings/providers/${providerId}/keys`, {
             target: '#settings-content',
             swap: 'innerHTML',
             values: form,
             indicator: '#settings-indicator',
-            onError: (event) => {
-                // Error recovery
+            onError: () => {
                 if (btn) {
                     btn.disabled = false;
                     btn.innerHTML = '';
                 }
-                showToast('Failed to add provider key. Please try again.', 'error');
+                showToast('Failed to add provider key.', 'error');
             }
         });
     }
-    
-    // Global error handling
-    window.addEventListener('htmx:configRequest', (e) => {
-        // Add loading state to buttons before HTMX request
-        e.detail.axiosRequest = (xhr) => {
-            // Mark this request for our global error handler
-            xhr.omniverseRequestId = Date.now().toString();
-        };
-    });
-    
-    // Global 4xx/5xx error template
-    const ErrorTemplate = (statusText, message) => `
-    <div class="fixed inset-0 z-[10000] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
-         role="alert"
-         aria-live="assertive"
-         id="global-error-modal">
-        <div class="bg-white dark:bg-gray-900 rounded-lg shadow-2xl max-w-md w-full transform transition-all scale-95 opacity-0"
-             id="global-error-content">
-            <div class="p-6">
-                <div class="flex items-start gap-4">
-                    <div class="flex-shrink-0">
-                        <div class="w-12 h-12 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
-                            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-red-600 dark:text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-                            </svg>
-                        </div>
-                    </div>
-                    <div class="flex-1">
-                        <h3 class="text-lg font-bold text-gray-900 dark:text-white mb-2">
-                            ${statusText}
-                        </h3>
-                        <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
-                            ${message}
-                        </p>
-                        <div class="flex gap-3">
-                            <button onclick="retryRequest()" 
-                                    class="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors">
-                                🔄 Retry
-                            </button>
-                            <button onclick="closeGlobalError()" 
-                                    class="px-4 py-2 bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 text-sm font-medium rounded hover:bg-gray-200 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 transition-colors">
-                                Close
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>`;
-    
-    function retryRequest() {
-        // Remove error and reload the page or re-trigger the HTMX request
-        closeGlobalError();
-        location.reload();
-    }
-    
-    function closeGlobalError() {
-        const modal = document.getElementById('global-error-modal');
-        const content = document.getElementById('global-error-content');
-        
-        // Animate out
-        modal.classList.remove('flex');
-        setTimeout(() => {
-            modal.remove();
-        }, 300);
-    }
-    
-    function showGlobalError(status, message, retryCallback) {
-        const modal = document.getElementById('global-error-modal');
-        const content = document.getElementById('global-error-content');
-        
-        let statusText = 'Error';
-        if (status === '404') statusText = 'Not Found';
-        else if (status === '500') statusText = 'Server Error';
-        else if (status === '403') statusText = 'Forbidden';
-        
-        const errorMsg = message || `Request failed with status ${status}.`;
-        
-        content.innerHTML = ErrorTemplate(statusText, errorMsg);
-        
-        // Animate in
-        modal.classList.add('flex');
-        setTimeout(() => {
-            content.classList.remove('scale-95', 'opacity-0');
-            content.classList.add('scale-100', 'opacity-100');
-        }, 10);
-        
-        // Store for retry
-        window.lastErrorMessage = { status, message, callback: retryCallback };
-    }
-    
-    // Toast notification system
-    function showToast(message, type = 'info') {
-        let toast = document.getElementById('toast-container');
-        if (!toast) {
-            // Create toast container if it doesn't exist
-            const container = document.createElement('div');
-            container.id = 'toast-container';
-            container.className = 'fixed bottom-4 right-4 z-[10000] flex flex-col gap-2';
-            document.body.appendChild(container);
-            toast = container;
+
+    function updateBaseUrl(select) {
+        var selectedOption = select.options[select.selectedIndex];
+        var baseUrl = selectedOption.getAttribute('data-base-url');
+        var baseUrlInput = select.form.querySelector('input[name="base_url"]');
+        var baseUrlGroup = baseUrlInput ? baseUrlInput.closest('.flex-col') : null;
+        if (baseUrl && baseUrlInput) {
+            baseUrlInput.value = baseUrl;
+            if (baseUrlGroup) baseUrlGroup.style.display = 'none';
+        } else if (baseUrlInput) {
+            baseUrlInput.value = '';
+            if (baseUrlGroup) baseUrlGroup.style.display = '';
         }
-        
-        const colors = {
-            'success': 'bg-green-600 border-green-700',
-            'error': 'bg-red-600 border-red-700',
-            'warning': 'bg-yellow-600 border-yellow-700',
-            'info': 'bg-blue-600 border-blue-700'
-        };
-        
-        const toastEl = document.createElement('div');
-        toastEl.className = `${colors[type]} border text-white rounded-lg shadow-lg px-4 py-3 flex items-center gap-3 min-w-[300px] max-w-sm transform transition-all translate-y-4 opacity-0`;
-        toastEl.innerHTML = `
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-                ${type === 'success' ? '<path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/>' :
-                  type === 'error' ? '<path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/>' :
-                  '<path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 001-1v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"/>'}
-            </svg>
-            <p class="text-sm font-medium">${message}</p>
-            <button onclick="this.parentElement.remove()" class="flex-shrink-0 text-white/70 hover:text-white transition-colors">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-                </svg>
-            </button>
-        `;
-        
-        toast.appendChild(toastEl);
-        
-        // Animate in
-        setTimeout(() => {
-            toastEl.classList.remove('translate-y-4', 'opacity-0');
-        }, 10);
-        
-        // Remove after 5 seconds
-        setTimeout(() => {
-            toastEl.classList.add('translate-y-4', 'opacity-0');
-            setTimeout(() => toastEl.remove(), 300);
-        }, 5000);
     }
 </script>
 {% endblock %}

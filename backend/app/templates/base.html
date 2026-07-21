@@ -274,54 +274,6 @@
     </div>
 
     <script>
-    // Mobile Sidebar Toggle Functionality
-    function toggleMobileSidebar() {
-        const sidebar = document.getElementById('sidebar');
-        const overlay = document.getElementById('mobile-overlay');
-        const hamburger = document.querySelector('#sidebar [aria-label="Toggle navigation menu"]');
-        
-        // Toggle drawer with responsive classes
-        sidebar.classList.toggle('translate-x-0');
-        sidebar.classList.toggle('-translate-x-full');
-        
-        // Update aria-expanded states
-        const isExpanded = sidebar.classList.contains('-translate-x-full');
-        hamburger.setAttribute('aria-expanded', String(!isExpanded));
-        sidebar.setAttribute('aria-expanded', String(!isExpanded));
-        
-        // Toggle overlay
-        overlay.classList.toggle('active');
-        
-        // Prevent body scroll when drawer is open
-        if (!isExpanded) {
-            document.body.style.overflow = 'hidden';
-        } else {
-            document.body.style.overflow = '';
-        }
-        
-        // Focus management for accessibility
-        if (!isExpanded) {
-            // Focus first navigation item
-            const firstNav = sidebar.querySelector('a[href]');
-            if (firstNav) {
-                firstNav.focus();
-            }
-        }
-    }
-
-    function closeMobileDrawer() {
-        const sidebar = document.getElementById('sidebar');
-        const overlay = document.getElementById('mobile-overlay');
-        
-        // Close drawer
-        sidebar.classList.add('translate-x-full');
-        sidebar.classList.remove('-translate-x-0');
-        sidebar.removeAttribute('aria-expanded');
-        
-        // Remove overlay
-        overlay.classList.remove('active');
-        document.body.style.overflow = '';
-    }
     function toggleMobileSidebar() {
         const sidebar = document.getElementById('sidebar');
         const overlay = document.getElementById('mobile-overlay');
@@ -464,78 +416,6 @@
                     showToast(`Error: ${escapeHtml(data.error)}`, 'error');
                 }
             } catch(e) {}
-        }
-    });
-
-    // Global error recovery with hx-on:abort
-    document.addEventListener('htmx:abort', function(evt) {
-        console.log('HTMX request aborted:', evt.detail.reason);
-        
-        // Show abort notification
-        showStatusMessage('Operation cancelled by user', 'warning');
-        
-        // Remove any loading indicators
-        const loadingIndicators = document.querySelectorAll('.htmx-indicator[style*="flex"], .htmx-indicator');
-        loadingIndicators.forEach(ind => {
-            ind.setAttribute('style', '');
-            ind.removeAttribute('class');
-            ind.className = '';
-        });
-    });
-
-    // Handle network errors
-    document.addEventListener('htmx:networkError', function(evt) {
-        const xhr = evt.detail.xhr;
-        const method = xhr.method || 'GET';
-        const path = xhr.url || 'unknown';
-        
-        showStatusMessage(`Network error: Failed to complete ${method} request to ${path}`, 'error');
-        showToast(`Network error. Please check your connection and try again.`, 'error');
-    });
-
-    // Handle server errors
-    document.addEventListener('htmx:responseError', function(evt) {
-        const xhr = evt.detail.xhr;
-        const status = xhr.status;
-        const path = xhr.responseURL || 'unknown';
-        
-        let message = `Server error ${status}: Failed to load ${path}`;
-        
-        // Add retry functionality for 5xx errors
-        if (status >= 500 && status < 600) {
-            message += '. Click the page to retry.';
-            
-            // Add retry button to body
-            const retryBtn = document.createElement('div');
-            retryBtn.id = 'htmx-error-retry';
-            retryBtn.className = 'fixed bottom-4 right-4 bg-red-600 text-white px-4 py-2 rounded-md shadow-lg flex items-center gap-2 z-50 animate-fade-in-up';
-            retryBtn.innerHTML = `
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
-                </svg>
-                <span>Retry (${status})</span>
-            `;
-            document.body.appendChild(retryBtn);
-            
-            // Remove on click after animation
-            setTimeout(() => {
-                retryBtn.onclick = () => {
-                    document.getElementById('htmx-error-retry').remove();
-                    // Reload current page or specific target
-                    window.location.reload();
-                };
-            }, 100);
-        }
-        
-        showToast(message, 'error');
-    });
-
-    // Click to reload page (for 5xx errors)
-    document.addEventListener('click', function(evt) {
-        const retryBtn = document.getElementById('htmx-error-retry');
-        if (retryBtn) {
-            // Prevent this from triggering the reload immediately
-            retryBtn.style.pointerEvents = 'none';
         }
     });
 

@@ -54,7 +54,7 @@
             <!-- Route Editor (Right) -->
             <div id="route-editor" class="w-80 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-800 p-4 rounded-sm overflow-y-auto">
                 {% if active_route %}
-                <form hx-post="/settings/agent-routes" hx-target="#settings-content">
+                <form hx-post="/settings/routes/upsert" hx-target="#settings-content">
                     <input type="hidden" name="id" value="{{ active_route.id }}">
                     <div class="space-y-4">
                         <div class="flex justify-between items-center mb-2">

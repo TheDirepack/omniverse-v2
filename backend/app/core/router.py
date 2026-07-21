@@ -25,6 +25,12 @@ def calculate_candidate_hash(provider_id: int, key_id: int | None, model: str) -
     return hashlib.sha256(payload.encode()).hexdigest()
 
 
+def _ensure_aware(dt: datetime | None) -> datetime | None:
+    if dt is not None and dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
 def _clean_error(e: Exception) -> str:
     msg = str(e).split("\n")[0]
     if " - {" in msg:
@@ -64,15 +70,17 @@ class ModelRouter:
         health = self._get_health(session, provider_id, key_id, model)
 
         # 2. Decay check
+        last_failure_at = _ensure_aware(health.last_failure_at)
         if (
-            health.last_failure_at
-            and (now - health.last_failure_at).total_seconds() > 3600
+            last_failure_at
+            and (now - last_failure_at).total_seconds() > 3600
         ):
             health.failure_count = max(0, health.failure_count - 1)
 
         # 3. Update
         # If the disability window expired, reset the failure counter
-        if health.disabled_until and now > health.disabled_until:
+        disabled_until = _ensure_aware(health.disabled_until)
+        if disabled_until and now > disabled_until:
             health.failure_count = 0
             health.disabled_until = None
 
@@ -81,7 +89,7 @@ class ModelRouter:
 
         # 4. Threshold check
         if health.failure_count >= 5:
-            if not health.disabled_until or now > health.disabled_until:
+            if not health.disabled_until or now > _ensure_aware(health.disabled_until):
                 # Use atomic update to avoid race conditions when checking vs. setting
                 session.execute(
                     select(CandidateHealth)
@@ -264,7 +272,7 @@ class ModelRouter:
                     )
                     if (
                         health.disabled_until
-                        and health.disabled_until > datetime.now(timezone.utc)
+                        and _ensure_aware(health.disabled_until) > datetime.now(timezone.utc)
                     ):
                         continue
 

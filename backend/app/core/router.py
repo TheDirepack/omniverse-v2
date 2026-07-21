@@ -325,7 +325,7 @@ class ModelRouter:
                     # But BadRequestError (e.g. "function calling not enabled") is a
                     # model capability issue — fall through to the next candidate
                     # without circuit-breaking (the model isn't transiently down).
-                    is_capability_issue = isinstance(e, litellm.BadRequestError)
+                    is_capability_issue = isinstance(e, (litellm.BadRequestError, litellm.NotFoundError))
                     is_transient_error = isinstance(
                         e,
                         (

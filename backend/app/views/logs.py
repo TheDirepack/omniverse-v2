@@ -114,7 +114,7 @@ async def logs_list(
 ):
     from fastapi import HTTPException
 
-    from app.api.routers.runs import get_file_logs
+    from app.api.v1.execution.runs import get_file_logs
 
     try:
         data = get_file_logs(

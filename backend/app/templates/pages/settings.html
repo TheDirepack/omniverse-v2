@@ -117,7 +117,7 @@
     }
 
     function selectRoute(routeId) {
-        htmx.ajax('GET', `/settings/routes/${routeId}`, {
+        htmx.ajax('GET', `/api/v1/settings/routes/${routeId}`, {
             target: '#route-editor',
             swap: 'innerHTML'
         });

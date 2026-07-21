@@ -110,7 +110,7 @@ async def batch_research(
 async def toggle_explored(request: Request, world_id: int, page: int = Query(default=1, ge=1), page_size: int = Query(default=100, ge=10, le=1000)):
 
     uni_service = UniverseService()
-    uni_service.reset_explored(world_id)
+    uni_service.toggle_explored(world_id)
     total_count = uni_service.get_all_universes(count_only=True)
     worlds = uni_service.get_all_universes(offset=(page - 1) * page_size, limit=page_size)
     total_pages = (total_count + page_size - 1) // page_size if total_count > 0 else 1

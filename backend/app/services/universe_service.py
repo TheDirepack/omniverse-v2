@@ -513,6 +513,21 @@ class UniverseService:
             if not self.session:
                 session.close()
 
+    def toggle_explored(self, universe_id: int) -> bool:
+        session = self.session or Session(engine)
+        try:
+            repo = UniverseRepository(session)
+            universe = repo.get_by_id(universe_id)
+            if universe:
+                universe.is_explored = not universe.is_explored
+                repo.update(universe)
+                session.commit()
+                return True
+            return False
+        finally:
+            if not self.session:
+                session.close()
+
     def reset_explored(self, universe_id: int) -> bool:
         session = self.session or Session(engine)
         try:

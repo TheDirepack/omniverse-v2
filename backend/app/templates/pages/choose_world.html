@@ -28,7 +28,7 @@
                         </label>
                         <span id="selected-count" class="text-xs text-gray-500 dark:text-gray-400">0 selected</span>
                     </div>
-                    <button hx-post="/worlds/delete-selected"
+                    <button id="delete-selected-btn" hx-post="/worlds/delete-selected"
                             hx-target="#database-worlds"
                             data-hx-vals='{"uuids": []}'
                             hx-confirm="Delete selected worlds?"
@@ -87,9 +87,14 @@ function getSelectedWorlds() {
 }
 (function() {
     function updateCount() {
-        var count = document.querySelectorAll('.world-checkbox:checked').length;
+        var checked = document.querySelectorAll('.world-checkbox:checked');
+        var count = checked.length;
         var el = document.getElementById('selected-count');
         if (el) el.textContent = count + ' selected';
+        
+        var uuids = Array.from(checked).map(function(cb) { return cb.value; });
+        var btn = document.getElementById('delete-selected-btn');
+        if (btn) btn.setAttribute('data-hx-vals', JSON.stringify({ uuids: uuids }));
     }
     document.addEventListener('change', function(e) {
         if (e.target && e.target.matches('.world-checkbox')) {

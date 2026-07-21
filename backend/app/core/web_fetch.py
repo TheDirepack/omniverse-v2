@@ -629,14 +629,14 @@ class WebFetcher:
         page, context = await browser_manager.get_page()
         try:
             try:
-                response = await page.goto(url, wait_until="networkidle", timeout=20000)
+                response = await page.goto(url, wait_until="domcontentloaded", timeout=25000)
             except (TimeoutError, ConnectionError, OSError) as e:
                 logger.debug(
-                    "networkidle timeout for %s, falling back to domcontentloaded: %s",
+                    "domcontentloaded timeout for %s, falling back to load: %s",
                     url, e
                 )
                 response = await page.goto(
-                    url, wait_until="domcontentloaded", timeout=15000
+                    url, wait_until="load", timeout=25000
                 )
 
             # 1. Initial cookie dismissal attempt

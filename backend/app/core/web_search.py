@@ -72,11 +72,11 @@ class WebSearcher:
         page, context = await browser_manager.get_page()
         try:
             try:
-                await page.goto(search_url, wait_until="networkidle", timeout=20000)
+                await page.goto(search_url, wait_until="domcontentloaded", timeout=25000)
             except (TimeoutError, ConnectionError, OSError) as e:
                 self.logger.warning("Search page load failed, retrying: %s", e)
                 await page.goto(
-                    search_url, wait_until="domcontentloaded", timeout=15000
+                    search_url, wait_until="load", timeout=25000
                 )
             html = await page.content()
 

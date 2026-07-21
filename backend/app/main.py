@@ -6,6 +6,7 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 # Configure root logger from environment
 _log_level_str = os.environ.get("APP_LOG_LEVEL", "INFO").upper()
@@ -17,15 +18,6 @@ logging.basicConfig(
     force=True,
 )
 
-# DEPRECATED: Old API routers - disabled
-# from app.api.routers.providers import router as providers_router
-# from app.api.routers.artifacts import router as artifacts_router
-# from app.api.routers.research import router as research_router
-# from app.api.routers.routes import router as routes_router
-# from app.api.routers.runs import router as runs_router
-# from app.api.routers.settings import router as settings_router
-# from app.api.routers.notebook import router as notebook_router
-# from app.api.routers.worlds import router as worlds_router
 from app.core.browser import browser_manager
 from app.db.session import init_db
 from app.views.flow import router as flow_views_router
@@ -103,6 +95,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
+
 @app.get("/api/health")
 async def health():
     return {"status": "ok"}
@@ -123,14 +117,3 @@ app.include_router(logs_views_router, prefix="/logs")
 from app.api.v1 import api_router
 
 app.include_router(api_router, prefix="/api/v1")
-
-
-# DEPRECATED: Old API routes - disabled
-# app.include_router(research_router, prefix="/api")
-# app.include_router(notebook_router, prefix="/api")
-# app.include_router(settings_router, prefix="/api")
-# app.include_router(routes_router, prefix="/api")
-# app.include_router(providers_router, prefix="/api")
-# app.include_router(worlds_router, prefix="/api")
-# app.include_router(runs_router, prefix="/api")
-# app.include_router(artifacts_router, prefix="/api/artifacts")

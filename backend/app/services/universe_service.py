@@ -75,6 +75,7 @@ class UniverseService:
             session = self.session or Session(engine)
             try:
                 from sqlmodel import func, select
+
                 from app.db.schema import Universe
                 result = session.exec(select(func.count()).select_from(Universe))
                 return result.one()

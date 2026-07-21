@@ -50,32 +50,7 @@
             }
         }
     </script>
-    <style>
-        body { font-family: 'Inter', system-ui, -apple-system, sans-serif; }
-        .htmx-indicator { display: none; }
-        .htmx-request .htmx-indicator { display: flex; }
-        .htmx-request.htmx-indicator { display: flex; }
-        .no-scrollbar::-webkit-scrollbar { display: none; }
-        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-        /* Mobile Sidebar Drawer Styles */
-        .mobile-drawer {
-            transition: transform 0.3s ease-in-out;
-            transform: translateX(-100%);
-        }
-        .mobile-drawer.open {
-            transform: translateX(0);
-        }
-        .overlay {
-            display: none;
-            position: fixed;
-            inset: 0;
-            background: rgba(0, 0, 0, 0.5);
-            z-index: 40;
-        }
-        .overlay.active {
-            display: block;
-        }
-    </style>
+    <link rel="stylesheet" href="/static/css/main.css">
 </head>
 <body class="h-full overflow-hidden text-gray-900 dark:text-gray-100">
     <!-- Mobile Overlay for sidebar -->
@@ -670,5 +645,31 @@
     document.head.appendChild(style);
     </script>
     {% block extra_content %}{% endblock %}
+
+    <!-- Global HTMX Error Toast Container -->
+    <div id="htmx-error-toast" class="hidden">
+        <span id="htmx-error-message">An unexpected error occurred.</span>
+        <button onclick="document.getElementById('htmx-error-toast').classList.add('hidden')" class="hover:opacity-75 focus:outline-none">&times;</button>
+    </div>
+    <script>
+        document.body.addEventListener('htmx:responseError', function(evt) {
+            const toast = document.getElementById('htmx-error-toast');
+            const msg = document.getElementById('htmx-error-message');
+            if (toast && msg) {
+                msg.textContent = `Error ${evt.detail.xhr.status}: ${evt.detail.xhr.statusText || 'Request failed'}`;
+                toast.classList.remove('hidden');
+                setTimeout(function() { toast.classList.add('hidden'); }, 5000);
+            }
+        });
+        document.body.addEventListener('htmx:sendError', function() {
+            const toast = document.getElementById('htmx-error-toast');
+            const msg = document.getElementById('htmx-error-message');
+            if (toast && msg) {
+                msg.textContent = 'Network error: Unable to connect to server';
+                toast.classList.remove('hidden');
+                setTimeout(function() { toast.classList.add('hidden'); }, 5000);
+            }
+        });
+    </script>
 </body>
 </html>

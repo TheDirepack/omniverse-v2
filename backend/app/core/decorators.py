@@ -1,10 +1,9 @@
-from fastapi import FastAPI
 import functools
-import logging
-import traceback
 import inspect
+import logging
+from typing import Any, Callable
+
 from fastapi import HTTPException
-from typing import Callable, Any
 
 logger = logging.getLogger("api_error_logger")
 

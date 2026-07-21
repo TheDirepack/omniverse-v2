@@ -1,13 +1,17 @@
 import asyncio
 import json
 from pathlib import Path
+from typing import Annotated
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Form, Query, Request
 from fastapi.responses import HTMLResponse
 from sqlmodel import Session, select
 
 from app.core.dependencies import get_main_session
-from app.core.templates import render_worlds_table, render_worlds_table_paginated, templates
+from app.core.templates import (
+    render_worlds_table_paginated,
+    templates,
+)
 from app.db.schema import Artifact
 from app.services.settings_service import SettingsService
 from app.services.universe_service import UniverseService
@@ -39,25 +43,25 @@ async def database_worlds(
     uni_service = UniverseService()
     total_count = len(uni_service.filter_universes(q=q, explored=explored, franchise=franchise, limit=1))
     worlds = uni_service.filter_universes(
-        q=q, 
-        explored=explored, 
-        franchise=franchise, 
+        q=q,
+        explored=explored,
+        franchise=franchise,
         offset=(page - 1) * page_size,
         limit=page_size
     )
-    
+
     # Calculate pagination metadata
     total_pages = (total_count + page_size - 1) // page_size if total_count > 0 else 1
     current_page = page
     items_per_page = page_size
-    
+
     pagination_style = _get_pagination_style()
-    
+
     return render_worlds_table_paginated(
-        request, 
-        worlds, 
-        q=q, 
-        explored=explored, 
+        request,
+        worlds,
+        q=q,
+        explored=explored,
         franchise=franchise,
         total_pages=total_pages,
         total_items=total_count,
@@ -82,7 +86,7 @@ async def batch_research(
     for name in names:
         run_id = str(uuid.uuid4())
         background_tasks.add_task(run_pipeline_in_background, run_id, [name])
-    
+
     uni_service = UniverseService()
     total_count = uni_service.get_all_universes(count_only=True)
     worlds = uni_service.get_all_universes(
@@ -90,12 +94,12 @@ async def batch_research(
         limit=page_size
     )
     total_pages = (total_count + page_size - 1) // page_size if total_count > 0 else 1
-    
+
     pagination_style = _get_pagination_style()
-    
+
     return render_worlds_table_paginated(
-        request, 
-        worlds, 
+        request,
+        worlds,
         batch_started=len(names),
         total_pages=total_pages,
         total_items=total_count,
@@ -114,12 +118,12 @@ async def toggle_explored(request: Request, world_id: int, page: int = Query(def
     total_count = uni_service.get_all_universes(count_only=True)
     worlds = uni_service.get_all_universes(offset=(page - 1) * page_size, limit=page_size)
     total_pages = (total_count + page_size - 1) // page_size if total_count > 0 else 1
-    
+
     pagination_style = _get_pagination_style()
-    
+
     return render_worlds_table_paginated(
-        request, 
-        worlds, 
+        request,
+        worlds,
         total_pages=total_pages,
         total_items=total_count,
         current_page=page,
@@ -134,14 +138,14 @@ async def delete_world(request: Request, world_id: int, page: int = Query(defaul
     uni_service.delete_universe(world_id)
     total_count = uni_service.get_all_universes(count_only=True)
     worlds = uni_service.get_all_universes(
-        offset=(page - 1) * page_size, 
+        offset=(page - 1) * page_size,
         limit=page_size
     )
     total_pages = (total_count + page_size - 1) // page_size if total_count > 0 else 1
     pagination_style = _get_pagination_style()
     return render_worlds_table_paginated(
-        request, 
-        worlds, 
+        request,
+        worlds,
         total_pages=total_pages,
         total_items=total_count,
         current_page=page,
@@ -151,7 +155,13 @@ async def delete_world(request: Request, world_id: int, page: int = Query(defaul
     )
 
 @router.post("/delete-selected", response_class=HTMLResponse)
-async def delete_selected(request: Request, uuids: str = Form(default="[]"), session: Session = Depends(get_main_session), page: int = Query(default=1, ge=1), page_size: int = Query(default=100, ge=10, le=1000)):
+async def delete_selected(
+    request: Request,
+    session: Annotated[Session, Depends(get_main_session)],
+    uuids: str = Form(default="[]"),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=100, ge=10, le=1000),
+):
     uuid_list = json.loads(uuids)
     # Remove duplicates and process safely
     seen = set()
@@ -160,24 +170,24 @@ async def delete_selected(request: Request, uuids: str = Form(default="[]"), ses
         if uuid not in seen:
             seen.add(uuid)
             unique_uuids.append(uuid)
-    
+
     uni_service = UniverseService(session)
     for uuid_str in unique_uuids:
         world = uni_service.get_universe_by_uuid(uuid_str)
         if world:
             uni_service.delete_universe(world.id)
-    
+
     total_count = uni_service.get_all_universes(count_only=True)
     worlds = uni_service.get_all_universes(
-        offset=(page - 1) * page_size, 
+        offset=(page - 1) * page_size,
         limit=page_size
     )
     total_pages = (total_count + page_size - 1) // page_size if total_count > 0 else 1
-    
+
     pagination_style = _get_pagination_style()
     return render_worlds_table_paginated(
-        request, 
-        worlds, 
+        request,
+        worlds,
         total_pages=total_pages,
         total_items=total_count,
         current_page=page,
@@ -198,24 +208,24 @@ async def reset_selected_explored(request: Request, ids: str = Form(default="[]"
         if uid not in seen:
             seen.add(uid)
             unique_ids.append(uid)
-    
+
     uni_service = UniverseService()
     for uuid_str in unique_ids:
         world = uni_service.get_universe_by_uuid(uuid_str)
         if world:
             uni_service.reset_explored(world.id)
-    
+
     total_count = uni_service.get_all_universes(count_only=True)
     worlds = uni_service.get_all_universes(
-        offset=(page - 1) * page_size, 
+        offset=(page - 1) * page_size,
         limit=page_size
     )
     total_pages = (total_count + page_size - 1) // page_size if total_count > 0 else 1
-    
+
     pagination_style = _get_pagination_style()
     return render_worlds_table_paginated(
-        request, 
-        worlds, 
+        request,
+        worlds,
         total_pages=total_pages,
         total_items=total_count,
         current_page=page,
@@ -230,15 +240,15 @@ async def reset_all_explored(request: Request, page: int = Query(default=1, ge=1
     uni_service.reset_all_explored()
     total_count = uni_service.get_all_universes(count_only=True)
     worlds = uni_service.get_all_universes(
-        offset=(page - 1) * page_size, 
+        offset=(page - 1) * page_size,
         limit=page_size
     )
     total_pages = (total_count + page_size - 1) // page_size if total_count > 0 else 1
-    
+
     pagination_style = _get_pagination_style()
     return render_worlds_table_paginated(
-        request, 
-        worlds, 
+        request,
+        worlds,
         total_pages=total_pages,
         total_items=total_count,
         current_page=page,
@@ -285,7 +295,7 @@ async def worlds_import_action_form(request: Request):
     offset = max(0, (page - 1) * page_size)
     worlds = service.get_all_universes(offset=offset, limit=page_size)
     total_pages = (total_count + page_size - 1) // page_size if total_count > 0 else 1
-    
+
     pagination_style = _get_pagination_style()
     return render_worlds_table_paginated(
         request,
@@ -300,7 +310,7 @@ async def worlds_import_action_form(request: Request):
 
 
 @router.get("/import", response_class=HTMLResponse)
-async def worlds_import_fragment(request: Request, q: str = Query(default=""), page: int = Query(default=1, ge=1), page_size: int = Query(default=100, ge=10, le=1000)):
+async def worlds_import_fragment(request: Request, q: str = Query(default="")):
     json_path = Path(__file__).parent.parent / "db" / "default_worlds.json"
     entries = []
     if json_path.exists():
@@ -450,7 +460,11 @@ async def world_neighborhood(request: Request, uuid: str):
     )
 
 @router.get("/details/{uuid}", response_class=HTMLResponse)
-async def world_details_page(request: Request, uuid: str, session: Session = Depends(get_main_session)):
+async def world_details_page(
+    request: Request,
+    uuid: str,
+    session: Annotated[Session, Depends(get_main_session)],
+):
     service = UniverseService(session)
     world = service.get_universe_by_uuid(uuid)
     if not world:

@@ -1,12 +1,13 @@
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
 from app.core.dependencies import get_main_session
 from app.db.schema import Universe
 from app.services.universe_service import UniverseService
+
 
 class AddWorldPayload(BaseModel):
     world_name: str
@@ -51,7 +52,7 @@ def create_universe(
     existing = service.get_universe(payload.world_name)
     if existing:
         return {"status": "exists", "world_name": payload.world_name, "id": existing.id}
-    
+
     universe = service.create_universe(
         name=payload.world_name,
         franchise=payload.franchise,
@@ -60,14 +61,15 @@ def create_universe(
         era=payload.era,
         parent_id=payload.parent_id,
     )
-    
+
     if payload.auto_research:
         import uuid
+
         from app.api.routers.runs import run_pipeline_in_background
         run_id = str(uuid.uuid4())
         background_tasks.add_task(run_pipeline_in_background, run_id, [universe.uuid])
         return {"status": "queued", "run_id": run_id, "world_name": universe.name}
-        
+
     return {"status": "created", "world_name": universe.name, "id": universe.id}
 
 @router.get("/by-uuid/{uuid}", response_model=Universe)
@@ -91,11 +93,11 @@ def get_universe(
     if isinstance(id, int) or str(id).isdigit():
         world = service.get_universe_by_id(int(id))
         if world: return world
-    
+
     # Try by slug
     world = service.get_universe_by_slug(str(id))
     if world: return world
-    
+
     raise HTTPException(status_code=404, detail="Universe not found")
 
 @router.put("/{id}", response_model=Universe)
@@ -145,13 +147,21 @@ def clear_logs():
 
 @router.post("/reset-database")
 def reset_database():
+
+    from app.db.extrapolation_schema import Theory
     from app.db.extrapolation_session import engine as extrapolation_engine
     from app.db.notebook_schema import NotebookEntry, NotebookUniverse
     from app.db.notebook_session import notebook_engine
-    from app.db.schema import Anomaly, Artifact, ArtifactRelation, ExecutionState, ModelConfig, TierSystem, WorldTier
-    from app.db.extrapolation_schema import Theory
+    from app.db.schema import (
+        Anomaly,
+        Artifact,
+        ArtifactRelation,
+        ExecutionState,
+        ModelConfig,
+        TierSystem,
+        WorldTier,
+    )
     from app.db.session import engine as main_engine
-    from sqlmodel import delete
 
     with Session(main_engine) as s:
         for table in [ExecutionState, ArtifactRelation, Artifact, WorldTier, TierSystem, Anomaly, ModelConfig]:

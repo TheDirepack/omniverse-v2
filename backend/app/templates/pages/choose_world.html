@@ -45,14 +45,14 @@
                 <h2 class="text-lg font-semibold mb-2">Add New World</h2>
                  <button class="w-full py-2 px-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition text-sm font-medium"
                          hx-get="/worlds/import"
-                         hx-target="#world-modal-content"
-                         hx-swap="innerHTML"
-                         hx-trigger="click">
+                          hx-target="#modal-content"
+                          hx-swap="innerHTML"
+                          hx-trigger="click">
                     Import from Registry
                 </button>
                  <button class="w-full py-2 px-4 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition text-sm font-medium"
                          hx-get="/worlds/create_fragment"
-                         hx-target="#world-modal-content"
+                         hx-target="#modal-content"
                          hx-swap="innerHTML"
                          hx-trigger="click">
                     Create Custom World
@@ -62,19 +62,22 @@
     </div>
 </div>
 
-<div id="world-modal" class="fixed inset-0 bg-black/50 flex items-center justify-center hidden z-50" onclick="if(event.target===this)this.classList.add('hidden')">
+<div id="modal-root" class="fixed inset-0 bg-black/50 flex items-center justify-center hidden z-50" onclick="if(event.target===this)closeModal()">
     <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-lg w-full mx-4 p-6 max-h-[80vh] overflow-y-auto">
         <div class="flex justify-end">
-            <button onclick="document.getElementById('world-modal').classList.add('hidden')" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">&times;</button>
+            <button onclick="closeModal()" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">&times;</button>
         </div>
-        <div id="world-modal-content"></div>
+        <div id="modal-content"></div>
     </div>
 </div>
 
 <script>
+function closeModal() {
+    document.getElementById('modal-root').classList.add('hidden');
+}
 document.addEventListener('htmx:afterSwap', function(e) {
-    if (e.detail.target.id === 'world-modal-content') {
-        document.getElementById('world-modal').classList.remove('hidden');
+    if (e.detail.target.id === 'modal-content') {
+        document.getElementById('modal-root').classList.remove('hidden');
     }
 });
 </script>

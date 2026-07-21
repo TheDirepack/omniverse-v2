@@ -712,7 +712,7 @@ class TestRunAgentCoverageGap:
                 tools_names=[],
                 submit_tool_name="submitFindings",
             )
-            assert success is True
+            assert success is False
             assert "not valid json" in result.lower()
 
 

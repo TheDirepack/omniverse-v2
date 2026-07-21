@@ -115,7 +115,11 @@ async def settings_tab_providers(request: Request):
 @router.get("/providers/new", response_class=HTMLResponse)
 async def settings_providers_new(request: Request):
     template = templates.env.get_template("components/provider_form.html")
-    return HTMLResponse(content=template.render(request=request, active_provider=None))
+    return HTMLResponse(content=template.render(
+        request=request,
+        active_provider=None,
+        presets=PROVIDER_PRESETS,
+    ))
 
 
 @router.get("/providers/{provider_id}", response_class=HTMLResponse)
@@ -135,7 +139,7 @@ async def settings_provider_detail(request: Request, provider_id: int):
 
     template = templates.env.get_template("components/provider_form.html")
     return HTMLResponse(content=template.render(
-        request=request, active_provider=provider, api_keys=api_keys
+        request=request, active_provider=provider, api_keys=api_keys, presets=PROVIDER_PRESETS
     ))
 
 

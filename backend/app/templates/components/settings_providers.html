@@ -74,10 +74,10 @@
                         <div class="flex-1">
                             <div id="model-list" class="flex flex-wrap gap-1.5"></div>
                             <input type="hidden" name="models" value="{{ active_provider.models or '' }}">
-                            <script>renderModelList();</script>
+                            <script>if (typeof window.renderModelList === 'function') window.renderModelList();</script>
                         </div>
                         <button type="button" class="h-9 px-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 text-xs font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-sm flex items-center gap-1"
-                                onclick="renderModelList(); syncModels('{{ active_provider.id }}')">
+                                onclick="if (typeof window.renderModelList === 'function') window.renderModelList(); syncModels('{{ active_provider.id }}')">
                             🔄 Sync
                         </button>
                     </div>
@@ -126,13 +126,13 @@
             {% else %}
             <!-- CREATE NEW PROVIDER FORM -->
             <form hx-post="/settings/providers/upsert" hx-target="#settings-content" hx-indicator="#settings-indicator">
-                <div class="space-y-6">
+                <div class="space-y-6" id="create-provider-form">
                     <div class="space-y-2">
                         <h3 class="text-lg font-bold text-gray-900 dark:text-white">Create New Provider</h3>
                         <p class="text-xs text-gray-500 dark:text-gray-400">Define a new API provider to use in your routes.</p>
                     </div>
 
-                    <div class="space-y-4">
+                    <div class="grid grid-cols-2 gap-6">
                         <div class="flex flex-col gap-1">
                             <label class="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Provider Name</label>
                             <input type="text" name="name" required placeholder="e.g. OpenAI"
@@ -140,19 +140,54 @@
                         </div>
                         <div class="flex flex-col gap-1">
                             <label class="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Provider Type</label>
-                            <input type="text" name="provider_type" placeholder="e.g. openai"
-                                   class="h-10 border border-gray-300 dark:border-gray-700 px-3 py-1 text-xs bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500 rounded-sm">
+                            <select name="provider_type" id="create-provider-type" onchange="updateCreateBaseUrl(this)"
+                                    class="h-10 border border-gray-300 dark:border-gray-700 px-3 py-1 text-xs bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500 rounded-sm">
+                                <option value="">Custom</option>
+                                {% for key, val in presets.items() %}
+                                <option value="{{ val.provider_type }}" data-base-url="{{ val.base_url }}">
+                                    {{ key|capitalize }}
+                                </option>
+                                {% endfor %}
+                            </select>
                         </div>
-                        <div class="flex flex-col gap-1">
+                        <div class="flex flex-col gap-1" id="create-base-url-group">
                             <label class="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Base URL</label>
-                            <input type="text" name="base_url" placeholder="https://api.openai.com/v1"
+                            <input type="text" name="base_url" id="create-base-url" placeholder="https://api.openai.com/v1"
                                    class="h-10 border border-gray-300 dark:border-gray-700 px-3 py-1 text-xs bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500 rounded-sm">
                         </div>
                         <div class="flex flex-col gap-1">
-                            <label class="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Supported Models (CSV)</label>
-                            <input type="text" name="models" placeholder="gpt-4, gpt-3.5-turbo"
-                                   class="h-10 border border-gray-300 dark:border-gray-700 px-3 py-1 text-xs bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500 rounded-sm">
+                             <label class="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Supported Models</label>
+                            <div class="flex gap-2">
+                                <div class="flex-1">
+                                    <div id="create-model-list" class="flex flex-wrap gap-1.5 min-h-[2rem]"></div>
+                                    <input type="hidden" name="models" id="create-models-input" value="">
+                                    <button type="button" onclick="addCreateModel()"
+                                            class="mt-1 px-2 py-0.5 border border-dashed border-gray-400 dark:border-gray-600 rounded text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300">+ Add Model</button>
+                                </div>
+                                <button type="button" class="h-9 px-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 text-xs font-medium text-gray-400 dark:text-gray-500 rounded-sm flex items-center gap-1 cursor-not-allowed"
+                                        title="Save the provider first, then sync models from the edit screen">
+                                    🔄 Sync
+                                </button>
+                            </div>
                         </div>
+                    </div>
+
+                    <div class="space-y-3">
+                        <div class="flex justify-between items-center">
+                            <label class="text-[10px] font-bold text-gray-400 uppercase tracking-widest">API Keys</label>
+                            <button type="button" class="text-[10px] px-2 py-0.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 text-gray-600 dark:text-gray-400 rounded-sm hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                                    onclick="addCreateKey()">+ Add Key</button>
+                        </div>
+                        <table class="w-full text-xs border-collapse" id="create-keys-table">
+                            <thead class="bg-gray-50 dark:bg-gray-800 text-gray-500 dark:text-gray-400 text-left">
+                                <tr>
+                                    <th class="p-2 border border-gray-200 dark:border-gray-700">Key</th>
+                                    <th class="p-2 border border-gray-200 dark:border-gray-700 w-20 text-center">Prio</th>
+                                    <th class="p-2 border border-gray-200 dark:border-gray-700 w-12 text-right">Act</th>
+                                </tr>
+                            </thead>
+                            <tbody id="create-keys-body"></tbody>
+                        </table>
                     </div>
 
                     <div class="flex gap-3 pt-4">
@@ -166,6 +201,148 @@
                     </div>
                 </div>
             </form>
+
+            <script>
+            function updateCreateBaseUrl(select) {
+                var selectedOption = select.options[select.selectedIndex];
+                var baseUrl = selectedOption.getAttribute('data-base-url');
+                var group = document.getElementById('create-base-url-group');
+                var input = document.getElementById('create-base-url');
+                if (baseUrl) {
+                    input.value = baseUrl;
+                    group.style.display = 'none';
+                } else {
+                    input.value = '';
+                    group.style.display = '';
+                }
+            }
+
+            function getCreateModels() {
+                var input = document.getElementById('create-models-input');
+                return input.value ? input.value.split(',').map(function(s) { return s.trim(); }).filter(Boolean) : [];
+            }
+
+            function renderCreateModelList() {
+                var models = getCreateModels();
+                var container = document.getElementById('create-model-list');
+                container.innerHTML = models.map(function(m, i) {
+                    return '<span class="inline-flex items-center gap-1 px-2 py-0.5 bg-gray-100 dark:bg-gray-800 rounded text-xs border border-gray-300 dark:border-gray-700">' +
+                        m +
+                        ' <button type="button" onclick="removeCreateModel(' + i + ')" class="text-red-500 hover:text-red-700 leading-none">&times;</button>' +
+                        '</span>';
+                }).join('');
+            }
+
+            function addCreateModel() {
+                var name = prompt('Enter model name:');
+                if (!name || !name.trim()) return;
+                var models = getCreateModels();
+                models.push(name.trim());
+                document.getElementById('create-models-input').value = models.join(', ');
+                renderCreateModelList();
+            }
+
+            function removeCreateModel(index) {
+                var models = getCreateModels();
+                models.splice(index, 1);
+                document.getElementById('create-models-input').value = models.join(', ');
+                renderCreateModelList();
+            }
+
+            function getCreateKeys() {
+                var tbody = document.getElementById('create-keys-body');
+                var rows = tbody.querySelectorAll('tr');
+                return Array.from(rows).map(function(row) {
+                    return {
+                        api_key: row.querySelector('input.key-value').value,
+                        priority: row.querySelector('input.key-priority').value || '0'
+                    };
+                });
+            }
+
+            function renderCreateKeys() {
+                var keys = getCreateKeys();
+                var tbody = document.getElementById('create-keys-body');
+                tbody.innerHTML = keys.map(function(k, i) {
+                    return '<tr class="bg-white dark:bg-gray-900">' +
+                        '<td class="p-1 border border-gray-200 dark:border-gray-700">' +
+                        '<input type="password" name="keys[' + i + '].api_key" value="' + k.api_key + '" class="key-value w-full border-none p-1 bg-transparent focus:ring-0 text-xs text-gray-900 dark:text-gray-100">' +
+                        '</td>' +
+                        '<td class="p-1 border border-gray-200 dark:border-gray-700 text-center">' +
+                        '<input type="number" name="keys[' + i + '].priority" value="' + k.priority + '" class="key-priority w-full border-none p-1 bg-transparent text-center text-xs text-gray-900 dark:text-gray-100">' +
+                        '</td>' +
+                        '<td class="p-1 border border-gray-200 dark:border-gray-700 text-right">' +
+                        '<button type="button" onclick="removeCreateKey(' + i + ')" class="text-red-500 hover:text-red-700 transition-colors">✕</button>' +
+                        '</td>' +
+                        '</tr>';
+                }).join('');
+            }
+
+            function addCreateKey() {
+                var apiKey = prompt('Enter API key:');
+                if (!apiKey) return;
+                var keys = getCreateKeys();
+                keys.push({ api_key: apiKey, priority: '0' });
+                var tbody = document.getElementById('create-keys-body');
+                var i = keys.length - 1;
+                var tr = document.createElement('tr');
+                tr.className = 'bg-white dark:bg-gray-900';
+                tr.innerHTML = '<td class="p-1 border border-gray-200 dark:border-gray-700">' +
+                    '<input type="password" name="keys[' + i + '].api_key" value="' + apiKey + '" class="key-value w-full border-none p-1 bg-transparent focus:ring-0 text-xs text-gray-900 dark:text-gray-100">' +
+                    '</td>' +
+                    '<td class="p-1 border border-gray-200 dark:border-gray-700 text-center">' +
+                    '<input type="number" name="keys[' + i + '].priority" value="0" class="key-priority w-full border-none p-1 bg-transparent text-center text-xs text-gray-900 dark:text-gray-100">' +
+                    '</td>' +
+                    '<td class="p-1 border border-gray-200 dark:border-gray-700 text-right">' +
+                    '<button type="button" onclick="this.closest(\'tr\').remove()" class="text-red-500 hover:text-red-700 transition-colors">✕</button>' +
+                    '</td>';
+                tbody.appendChild(tr);
+            }
+
+            function removeCreateKey(index) {
+                var keys = getCreateKeys();
+                keys.splice(index, 1);
+                renderCreateKeys();
+            }
+
+            document.getElementById('create-provider-type').value = '';
+            </script>
+
+            <script>
+            if (typeof window.renderModelList !== 'function') {
+                window.renderModelList = function() {
+                    var hidden = document.querySelector('input[name="models"]');
+                    var container = document.getElementById('model-list');
+                    if (!hidden || !container) return;
+                    var models = hidden.value ? hidden.value.split(',').map(function(s) { return s.trim(); }).filter(Boolean) : [];
+                    container.innerHTML = models.map(function(m, i) {
+                        return '<span class="inline-flex items-center gap-1 px-2 py-0.5 bg-gray-100 dark:bg-gray-800 rounded text-xs border border-gray-300 dark:border-gray-700">' +
+                            m +
+                            ' <button type="button" onclick="window.removeModel(' + i + ')" class="text-red-500 hover:text-red-700 leading-none">&times;</button>' +
+                            '</span>';
+                    }).join('') +
+                    '<button type="button" onclick="window.addModel()" class="px-2 py-0.5 border border-dashed border-gray-400 dark:border-gray-600 rounded text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300">+ Add</button>';
+                };
+                window.addModel = function() {
+                    var name = prompt('Enter model name:');
+                    if (!name || !name.trim()) return;
+                    var hidden = document.querySelector('input[name="models"]');
+                    if (!hidden) return;
+                    var models = hidden.value ? hidden.value.split(',').map(function(s) { return s.trim(); }).filter(Boolean) : [];
+                    models.push(name.trim());
+                    hidden.value = models.join(', ');
+                    window.renderModelList();
+                };
+                window.removeModel = function(index) {
+                    var hidden = document.querySelector('input[name="models"]');
+                    if (!hidden) return;
+                    var models = hidden.value ? hidden.value.split(',').map(function(s) { return s.trim(); }).filter(Boolean) : [];
+                    models.splice(index, 1);
+                    hidden.value = models.join(', ');
+                    window.renderModelList();
+                };
+            }
+            </script>
             {% endif %}
         </div>
     </div>

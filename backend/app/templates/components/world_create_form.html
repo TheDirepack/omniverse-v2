@@ -8,12 +8,10 @@
     {% endif %}
 
       <form hx-post="{{ url_for('worlds_create_action') }}"
-            aria-labelledby="world-form-title"
+            hx-target="#modal-content"
+            hx-swap="innerHTML"
             class="space-y-4">
-        <div class="sr-only" id="world-form-title">World Creation Form</div>
-          hx-target="#world-modal-content"
-          hx-swap="innerHTML"
-          class="grid grid-cols-2 gap-4">
+        <div class="grid grid-cols-2 gap-4">
          <div class="col-span-2">
              <label for="world-name" class="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">Name *</label>
              <input type="text" id="world-name" name="name" required
@@ -35,6 +33,7 @@
                     class="bg-blue-600 text-white px-6 py-2 rounded text-sm hover:bg-blue-700 transition">
                 Create World
             </button>
+        </div>
         </div>
     </form>
 </div>

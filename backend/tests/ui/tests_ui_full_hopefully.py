@@ -13,11 +13,9 @@ Requires:
 """
 
 import asyncio
-import json
 import logging
 import os
 from datetime import datetime
-from typing import Any
 
 import pytest
 from cloakbrowser import launch_async
@@ -41,42 +39,42 @@ class OmniverseBrowserTester:
         """Create a test world for detailed interaction testing."""
         # Navigate to worlds page
         await self.navigate("/worlds")
-        
+
         # Create a test world
         create_btn = await self.page.query_selector('button[hx-get="/worlds/create_fragment"]')
         if create_btn:
             await create_btn.click()
             await asyncio.sleep(0.5)
-            
+
             # Fill form
             name_input = await self.page.query_selector("#world-name")
             if name_input:
                 test_name = f"TestWorld_{datetime.now().strftime('%H%M%S')}"
                 await name_input.click()
                 await name_input.type(test_name)
-                
+
                 parent_select = await self.page.query_selector("#world-parent-id")
                 if parent_select:
                     await parent_select.select_option("")
-                
+
                 submit_btn = await self.page.query_selector('form[hx-post="/worlds/create"] button[type="submit"]')
                 if submit_btn:
                     await submit_btn.click()
                     await asyncio.sleep(1.0)
-                    
+
                     # Verify creation success
                     body_text = await self.get_element_text("body")
                     if "Created" in body_text or "success" in body_text.lower():
                         self.log("SETUP", "Test World Created", "PASS", f"{test_name}")
                     else:
                         self.log("SETUP", "Test World Creation", "INFO", "May already exist or error")
-                    
+
                     # Close modal
                     close_btn = await self.page.query_selector("#world-modal button[onclick*='hidden']")
                     if close_btn:
                         await close_btn.click()
                         await asyncio.sleep(0.3)
-        
+
         # Wait for page to stabilize
         await asyncio.sleep(1.0)
         self.log("SETUP", "Setup Complete", "INFO", "Ready for tests")
@@ -244,7 +242,7 @@ class OmniverseBrowserTester:
                 self.clear_errors()
                 await abort_btn.click()
                 await asyncio.sleep(0.5)
-                
+
                 # Check for any JS errors (ReferenceError from missing hx-vals)
                 js_errors = [e for e in self.console_errors if "ReferenceError" in e]
                 if js_errors:
@@ -265,7 +263,7 @@ class OmniverseBrowserTester:
             if first_world:
                 await first_world.click()
                 await asyncio.sleep(0.5)
-                
+
                 # Test Re-research button - uses hx-vals with uuids
                 try:
                     re_research_btn = await self.page.query_selector('button[hx-post="/worlds/re-research"]')
@@ -273,7 +271,7 @@ class OmniverseBrowserTester:
                         self.clear_errors()
                         await re_research_btn.click()
                         await asyncio.sleep(0.5)
-                        
+
                         js_errors = [e for e in self.console_errors if "ReferenceError" in e]
                         if js_errors:
                             self.log("WORLD", "Re-research hx-vals", "FAIL", f"JS errors: {js_errors}")
@@ -287,18 +285,18 @@ class OmniverseBrowserTester:
     async def test_choose_world_page(self):
         """Test Choose World page - bulk delete uses hx-vals."""
         await self.navigate("/choose_world")
-        
+
         try:
             # Test bulk delete - uses hx-vals with uuids array
             delete_btn = await self.page.query_selector('button[hx-post="/worlds/delete"]')
             if delete_btn:
                 self.assert_no_errors("CHOOSE_WORLD", "Delete Button hx-vals")
-                
+
             # Test set active world
             active_btn = await self.page.query_selector('button[hx-post="/worlds/set-active-world"]')
             if active_btn:
                 self.assert_no_errors("CHOOSE_WORLD", "Set Active hx-vals")
-                
+
             # Test create universe fragment
             create_btn = await self.page.query_selector('button[hx-get="/worlds/create_fragment"]')
             if create_btn:
@@ -309,10 +307,10 @@ class OmniverseBrowserTester:
     async def test_database_worlds_component(self):
         """Test Database Worlds component - research button hx-vals."""
         await self.navigate("/worlds")
-        
+
         # Wait for worlds to load
         await asyncio.sleep(1.0)
-        
+
         try:
             research_btns = await self.count_elements('button[hx-post="/worlds/research"]')
             if research_btns > 0:
@@ -327,14 +325,14 @@ class OmniverseBrowserTester:
         """Test Knowledge World Detail component - re-evaluate theory hx-vals."""
         # This tests the theory_card.html fix
         await self.navigate("/worlds")
-        
+
         try:
             # Navigate to a world to see knowledge tab
             first_world = await self.page.query_selector(".world-link")
             if first_world:
                 await first_world.click()
                 await asyncio.sleep(0.5)
-                
+
                 # Check for re-evaluate button (hx-vals)
                 re_eval_btn = await self.page.query_selector('button[hx-post="/api/v1/theories/reevaluate"]')
                 if re_eval_btn:
@@ -345,7 +343,7 @@ class OmniverseBrowserTester:
     async def test_theory_card(self):
         """Test Theory Card component - reevaluate button hx-vals."""
         await self.navigate("/theory")
-        
+
         try:
             # Find reevaluate buttons in theory cards
             reeval_btns = await self.count_elements('button[hx-post="/api/v1/theories/reevaluate"]')
@@ -361,13 +359,13 @@ class OmniverseBrowserTester:
         """Test Knowledge Theory Tab - reevaluate hx-vals."""
         # Navigate to knowledge tab of a world
         await self.navigate("/worlds")
-        
+
         # Click into a world
         first_world = await self.page.query_selector(".world-link")
         if first_world:
             await first_world.click()
             await asyncio.sleep(0.5)
-            
+
             try:
                 # Look for reevaluate button in theory card
                 reeval_btn = await self.page.query_selector('button[hx-post="/api/v1/theories/reevaluate"]')
@@ -379,11 +377,11 @@ class OmniverseBrowserTester:
     async def test_settings_health_component(self):
         """Test Settings Health component - reset DB uses hx-vals."""
         await self.navigate("/settings")
-        
+
         try:
             # Wait for health tab to load
             await asyncio.sleep(2.0)
-            
+
             # Check for reset DB button (hx-vals with uuid)
             reset_btn = await self.page.query_selector('button[hx-post="/api/v1/settings/reset_db"]')
             if reset_btn:
@@ -397,7 +395,7 @@ class OmniverseBrowserTester:
     async def test_world_list_component(self):
         """Test World List component - research button hx-vals."""
         await self.navigate("/worlds")
-        
+
         try:
             # Count research buttons
             research_btns = await self.count_elements('button[hx-post="/worlds/research"]')
@@ -412,7 +410,7 @@ class OmniverseBrowserTester:
     async def test_active_runs_table(self):
         """Test Active Runs Table - abort button hx-vals."""
         await self.navigate("/runs")
-        
+
         try:
             # Find abort buttons
             abort_btns = await self.count_elements('button[hx-post="/api/v1/execution/runs/abort"]')
@@ -428,51 +426,51 @@ class OmniverseBrowserTester:
         Validates that hx-vals attributes work correctly across all pages.
         """
         self.log("INTEGRATION", "HTMX Integration Test", "INFO", "Starting validation")
-        
+
         # Test 1: Worlds page - research start with universe_uuids payload
         self.log("INTEGRATION", "Step 1", "INFO", "Testing Worlds page research trigger")
         await self.test_worlds_page()
-        
+
         # Test 2: Run details - abort run
         self.log("INTEGRATION", "Step 2", "INFO", "Testing Run Details abort")
         await self.test_run_details_page()
-        
+
         # Test 3: World details - re-research functionality
         self.log("INTEGRATION", "Step 3", "INFO", "Testing World Details re-research")
         await self.test_world_details_page()
-        
+
         # Test 4: Choose world - bulk operations
         self.log("INTEGRATION", "Step 4", "INFO", "Testing Choose World page")
         await self.test_choose_world_page()
-        
+
         # Test 5: Settings health - DB reset
         self.log("INTEGRATION", "Step 5", "INFO", "Testing Settings Health component")
         await self.test_settings_health_component()
-        
+
         # Test 6: Knowledge components - theory reevaluation
         self.log("INTEGRATION", "Step 6", "INFO", "Testing Knowledge components")
         await self.test_knowledge_world_detail()
         await self.test_knowledge_theory_tab()
-        
+
         # Test 7: Theory cards
         self.log("INTEGRATION", "Step 7", "INFO", "Testing Theory Cards")
         await self.test_theory_card()
-        
+
         # Test 8: Database components
         self.log("INTEGRATION", "Step 8", "INFO", "Testing Database Components")
         await self.test_database_worlds_component()
         await self.test_world_list_component()
         await self.test_active_runs_table()
-        
+
         # Summary
         total = len(self.results)
         passed = len([r for r in self.results if r["status"] == "PASS"])
         failed = len([r for r in self.results if r["status"] == "FAIL"])
-        
+
         self.log("INTEGRATION", "Summary", "INFO", f"Total: {total}, Passed: {passed}, Failed: {failed}")
-        
+
         if failed > 0:
-            errors = [f"{r['category']}/{r['element']} - {r['detail']}" 
+            errors = [f"{r['category']}/{r['element']} - {r['detail']}"
                     for r in self.results if r["status"] == "FAIL"][:5]
             self.log("INTEGRATION", "Errors", "WARN", "; ".join(errors))
 

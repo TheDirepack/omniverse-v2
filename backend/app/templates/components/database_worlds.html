@@ -78,10 +78,13 @@ function toggleSelectAll(source) {
 }
 
 function updateBulkBar() {
-    var checked = document.querySelectorAll('.world-checkbox:checked').length;
+    var checked = document.querySelectorAll('.world-checkbox:checked');
     var btn = document.getElementById('start-research-btn');
     if (btn) {
-        btn.textContent = checked > 1 ? 'Start Research (' + checked + ')' : 'Start Research';
+        btn.textContent = checked.length > 1 ? 'Start Research (' + checked.length + ')' : 'Start Research';
+        btn.dataset.hxVals = JSON.stringify({
+            payload: Array.from(checked).map(function(cb) { return cb.value; })
+        });
     }
 }
 </script>

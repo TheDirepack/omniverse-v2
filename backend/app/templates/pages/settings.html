@@ -5,15 +5,14 @@
 {% block content %}
 <div class="flex flex-col h-full overflow-hidden bg-white dark:bg-gray-950">
     <!-- TAB BAR -->
-    <div class="h-11 border-b border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 flex items-center px-4 gap-1 shrink-0" role="tablist">
+    <div class="h-11 border-b border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 flex items-center px-4 gap-1 shrink-0" role="tablist" id="settings-tab-bar">
         <button role="tab" 
                 id="tab-general"
                 class="tab-btn px-4 py-1 text-xs font-semibold border-b-2 transition-colors rounded-t-sm {% if request.url.path == '/settings' or request.url.path == '/settings/' %}border-blue-600 text-blue-600 dark:text-blue-400{% else %}border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200{% endif %}"
                 hx-get="{{ url_for('settings_tab_general') }}"
                 hx-target="#settings-content"
                 hx-swap="innerHTML"
-                hx-indicator="#settings-indicator"
-                onclick="setActiveTab(this)">
+                hx-indicator="#settings-indicator">
             General
         </button>
         <button role="tab" 
@@ -22,8 +21,7 @@
                 hx-get="{{ url_for('settings_tab_providers') }}"
                 hx-target="#settings-content"
                 hx-swap="innerHTML"
-                hx-indicator="#settings-indicator"
-                onclick="setActiveTab(this)">
+                hx-indicator="#settings-indicator">
             Providers
         </button>
         <button role="tab" 
@@ -32,8 +30,7 @@
                 hx-get="{{ url_for('settings_tab_routes') }}"
                 hx-target="#settings-content"
                 hx-swap="innerHTML"
-                hx-indicator="#settings-indicator"
-                onclick="setActiveTab(this)">
+                hx-indicator="#settings-indicator">
             Agent Routes
         </button>
         <button role="tab" 
@@ -42,8 +39,7 @@
                 hx-get="{{ url_for('settings_tab_health') }}"
                 hx-target="#settings-content"
                 hx-swap="innerHTML"
-                hx-indicator="#settings-indicator"
-                onclick="setActiveTab(this)">
+                hx-indicator="#settings-indicator">
             Health
         </button>
         <div id="settings-indicator" class="htmx-indicator flex items-center ml-auto px-4">
@@ -77,28 +73,39 @@
         }
     }
 
-    document.addEventListener('htmx:afterSwap', function(evt) {
-        var tabs = document.querySelectorAll('.tab-btn');
-        tabs.forEach(function(btn) {
-            if (btn.getAttribute('hx-target') === '#' + evt.detail.target.id) {
-                setActiveTab(btn);
+    document.getElementById('settings-tab-bar').addEventListener('click', function(e) {
+        var btn = e.target.closest('.tab-btn');
+        if (btn) {
+            document.querySelectorAll('.tab-btn').forEach(function(t) {
+                t.classList.remove('border-blue-600', 'text-blue-600', 'dark:text-blue-400');
+                t.classList.add('border-transparent', 'text-gray-500', 'dark:text-gray-400');
+            });
+            btn.classList.remove('border-transparent', 'text-gray-500', 'dark:text-gray-400');
+            btn.classList.add('border-blue-600', 'text-blue-600', 'dark:text-blue-400');
+            var hash = TAB_HASHES[btn.id];
+            if (hash !== undefined) {
+                history.replaceState(null, '', hash ? '#' + hash : window.location.pathname);
             }
-        });
-        activateTabFromHash();
+        }
     });
 
-    function setActiveTab(element) {
-        document.querySelectorAll('.tab-btn').forEach(function(btn) {
-            btn.classList.remove('border-blue-600', 'text-blue-600', 'dark:text-blue-400');
-            btn.classList.add('border-transparent', 'text-gray-500', 'dark:text-gray-400');
-        });
-        element.classList.remove('border-transparent', 'text-gray-500', 'dark:text-gray-400');
-        element.classList.add('border-blue-600', 'text-blue-600', 'dark:text-blue-400');
-        var hash = TAB_HASHES[element.id];
-        if (hash !== undefined) {
-            history.replaceState(null, '', hash ? '#' + hash : window.location.pathname);
+    document.addEventListener('htmx:afterSwap', function(evt) {
+        if (evt.detail.target.id === 'settings-content') {
+            var hash = window.location.hash.replace('#', '');
+            var tabId = Object.keys(TAB_HASHES).find(function(k) { return TAB_HASHES[k] === hash; });
+            if (tabId) {
+                var btn = document.getElementById(tabId);
+                if (btn) {
+                    document.querySelectorAll('.tab-btn').forEach(function(t) {
+                        t.classList.remove('border-blue-600', 'text-blue-600', 'dark:text-blue-400');
+                        t.classList.add('border-transparent', 'text-gray-500', 'dark:text-gray-400');
+                    });
+                    btn.classList.remove('border-transparent', 'text-gray-500', 'dark:text-gray-400');
+                    btn.classList.add('border-blue-600', 'text-blue-600', 'dark:text-blue-400');
+                }
+            }
         }
-    }
+    });
 
     document.addEventListener('DOMContentLoaded', activateTabFromHash);
 

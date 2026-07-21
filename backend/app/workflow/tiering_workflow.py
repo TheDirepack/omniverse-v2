@@ -234,7 +234,7 @@ async def architecture_node(state: dict[str, Any]) -> dict[str, Any]:
         tier_match = re.search(r"TIER:\s*(\d+)", stability_result, re.IGNORECASE)
         if tier_match:
             try:
-                tier_num = int(tier_match.group(1))
+                tier_num = max(0, min(10, int(tier_match.group(1))))
             except ValueError:
                 exec_service.log_transition(
                     run_id,
@@ -381,22 +381,22 @@ async def architecture_node(state: dict[str, Any]) -> dict[str, Any]:
             stability_prompts = get_stability_prompt(
                 world_data, new_rubric_text
             )
-        _, stability_result, _ = await run_agent(
-            agent_name="Stability Unit",
-            system_prompt=stability_prompts["system"],
-            user_prompt=stability_prompts["user"],
-            step="Stability Re-check",
-            run_id=run_id,
-            tools_names=["webSearch", "fetchPage"],
-            submit_tool_name="submit_stability",
-        )
-        parsed = _parse_stability_result(stability_result)
-        tier_val = parsed["tier"] if parsed["tier"] is not None else -1
-        if universe.id is None:
-            raise ValueError("Universe record missing ID")
-        tier_service.slot_world(
-            universe.id, new_rubric_id, tier_val, parsed["justification"]
-        )
+            _, stability_result, _ = await run_agent(
+                agent_name="Stability Unit",
+                system_prompt=stability_prompts["system"],
+                user_prompt=stability_prompts["user"],
+                step="Stability Re-check",
+                run_id=run_id,
+                tools_names=["webSearch", "fetchPage"],
+                submit_tool_name="submit_stability",
+            )
+            parsed = _parse_stability_result(stability_result)
+            tier_val = parsed["tier"] if parsed["tier"] is not None else -1
+            if universe.id is None:
+                raise ValueError("Universe record missing ID")
+            tier_service.slot_world(
+                universe.id, new_rubric_id, tier_val, parsed["justification"]
+            )
 
         exec_service.log_transition(
             run_id,

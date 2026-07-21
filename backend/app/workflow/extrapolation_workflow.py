@@ -72,7 +72,7 @@ async def extrapolation_node(state: dict[str, Any]) -> dict[str, Any]:
             _, speculation, _ = await run_agent(
                 agent_name="Ontological Theorist",
                 system_prompt=theory_prompt["system"],
-                user_prompt=theory_prompt["user"],
+                user_prompt=user_prompt,
                 step=f"Theorize {universe.name}",
                 run_id=run_id,
                 tools_names=[],

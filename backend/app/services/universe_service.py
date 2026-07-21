@@ -69,8 +69,18 @@ class UniverseService:
                 session.close()
 
     def get_all_universes(
-        self, limit: int = 100, offset: int = 0, fields: list[str] | None = None
-    ) -> Sequence[Any]:
+        self, limit: int = 100, offset: int = 0, fields: list[str] | None = None, count_only: bool = False
+    ) -> int | Sequence[Any]:
+        if count_only:
+            session = self.session or Session(engine)
+            try:
+                from sqlmodel import func, select
+                from app.db.schema import Universe
+                result = session.exec(select(func.count()).select_from(Universe))
+                return result.one()
+            finally:
+                if not self.session:
+                    session.close()
         limit = min(max(limit, 1), 1000)
         offset = max(offset, 0)
         session = self.session or Session(engine)
@@ -198,11 +208,13 @@ class UniverseService:
     def import_from_registry(self, world_id: str) -> Universe | None:
         try:
             json_path = Path(__file__).parent.parent / "db" / "default_worlds.json"
+            logger.info(f"Checking registry file: {json_path}, exists: {json_path.exists()}")
             if not json_path.exists():
                 return None
             with json_path.open() as f:
                 entries = json.load(f)
             match = next((e for e in entries if e.get("id") == world_id), None)
+            logger.info(f"Registry lookup for {world_id}: {match}")
             if not match:
                 return None
 
@@ -587,11 +599,9 @@ class UniverseService:
 
             results = session.exec(query.offset(offset).limit(limit)).all()
             if fields:
-                valid_fields = [f for f in fields if hasattr(ArtifactRelation, f)]
+                valid_fields = [f for f in fields if hasattr(Universe, f)]
                 return [
-                    dict(zip(valid_fields, r))
-                    if isinstance(r, tuple)
-                    else {f: getattr(r, f, None) for f in valid_fields}
+                    {f: getattr(r, f, None) for f in valid_fields}
                     for r in results
                 ]
 

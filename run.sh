@@ -70,4 +70,4 @@ elif command -v lsof &>/dev/null; then
 fi
 
 info "Starting Omniverse V2 Backend (mode: $MODE, $HOST:$PORT)..."
-uvicorn app.main:app --host "$HOST" --port "$PORT" $RELOAD
+uvicorn app.main:app --app-dir "$BASE_DIR/backend" --host "$HOST" --port "$PORT" $RELOAD

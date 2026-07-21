@@ -68,7 +68,8 @@ class AcquisitionCache:
             artifact = await self._pending[url]
             return artifact, "deduped_fetch"
 
-        future = asyncio.get_event_loop().create_future()
+        # future = asyncio.get_event_loop().create_future()
+        future = asyncio.get_running_loop().create_future()
         self._pending[url] = future
         try:
             artifact = await do_fetch()
@@ -84,7 +85,8 @@ class AcquisitionCache:
                 future.set_exception(e)
             raise
         finally:
-            self._pending.pop(url, None)
+            if self._pending.get(url) is future:
+                self._pending.pop(url, None)
 
     async def get_by_hash(
         self, content_hash: str

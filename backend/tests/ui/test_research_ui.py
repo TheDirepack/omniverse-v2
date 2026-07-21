@@ -1,8 +1,9 @@
-import uuid
+import uuid as uuid_lib
 
 import pytest
 from fastapi.testclient import TestClient
 
+from app.db.schema import Universe
 from app.main import app
 
 
@@ -13,16 +14,12 @@ def client():
 
 
 @pytest.fixture
-def setup_world():
-    """Create a test world/artifact"""
-    return {
-        "type": "UNIVERSE",
-        "universe": "test-research-world",
-        "content": "Test world for research workflow testing",
-        "tags": ["research", "test"],
-        "is_explored": True,
-        "tier": None
-    }
+def universe_uuid(session):
+    u = Universe(name=f"test-research-{uuid_lib.uuid4().hex[:8]}")
+    session.add(u)
+    session.commit()
+    session.refresh(u)
+    return u.uuid
 
 
 @pytest.mark.asyncio
@@ -35,32 +32,21 @@ async def test_research_page_loads(client):
 
 
 @pytest.mark.asyncio
-async def test_start_research_workflow(client, setup_world):
+async def test_start_research_workflow(client, universe_uuid):
     """Test starting a research workflow from UI"""
-    # First create the world artifact
-    response = client.post("/api/v1/db/artifacts/save", json=setup_world)
-    assert response.status_code == 200
-
-    # Start research workflow
     response = client.post(
         "/api/v1/execution/runs/start",
-        json={
-            "run_type": "research",
-            "world_name": "test-research-world",
-            "min_turns": 3,
-            "max_turns": 10
-        }
+        json={"payload": [universe_uuid]}
     )
 
     assert response.status_code == 200
     data = response.json()
-    assert "success" in data or "run_id" in data
+    assert "run_id" in data
 
 
 @pytest.mark.asyncio
 async def test_tiering_workflow_from_ui(client):
     """Test tiering workflow via UI"""
-    # Start tiering workflow
     response = client.post("/api/v1/execution/runs/tiering")
 
     assert response.status_code == 200
@@ -69,7 +55,6 @@ async def test_tiering_workflow_from_ui(client):
 @pytest.mark.asyncio
 async def test_extrapolation_workflow_from_ui(client):
     """Test extrapolation workflow via UI"""
-    # Start extrapolation workflow
     response = client.post("/api/v1/execution/runs/extrapolation")
 
     assert response.status_code == 200
@@ -87,47 +72,46 @@ async def test_focused_search_workflow(client):
 
 
 @pytest.mark.asyncio
-async def test_active_runs_management(client, setup_world):
+async def test_active_runs_management(client, session):
     """Test managing active runs from UI"""
-    # Create multiple runs
+    uuids = []
     for _i in range(2):
+        u = Universe(name=f"test-world-{uuid_lib.uuid4().hex[:8]}")
+        session.add(u)
+        session.commit()
+        session.refresh(u)
+        uuids.append(u.uuid)
+
+    for uid in uuids:
         client.post(
             "/api/v1/execution/runs/start",
-            json={
-                "run_type": "research",
-                "world_name": "test-world",
-                "min_turns": 3,
-                "max_turns": 5
-            }
+            json={"payload": [uid]}
         )
 
-    # List active runs
     response = client.get("/api/v1/execution/runs/active")
     assert response.status_code == 200
 
-    # Abort all runs
     response = client.delete("/api/v1/execution/runs/abort-all")
     assert response.status_code == 200
 
 
 @pytest.mark.asyncio
-async def test_research_with_notebook(client, setup_world):
+async def test_research_with_notebook(client, session):
     """Test research workflow with notebook integration"""
-    # Save initial note
+    u = Universe(name=f"test-notebook-{uuid_lib.uuid4().hex[:8]}")
+    session.add(u)
+    session.commit()
+    session.refresh(u)
+
     client.post("/api/v1/db/notebook/save", json={
-        "id": f"notebook-{uuid.uuid4()}",
+        "id": f"notebook-{uuid_lib.uuid4()}",
         "content": "Initial research notes",
         "type": "note",
         "tags": ["research"]
     })
 
-    # Start research
     response = client.post(
         "/api/v1/execution/runs/start",
-        json={
-            "run_type": "research",
-            "world_name": "test-research-world",
-            "min_turns": 3
-        }
+        json={"payload": [u.uuid]}
     )
     assert response.status_code == 200

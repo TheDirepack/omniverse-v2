@@ -23,10 +23,15 @@ class ContextManager:
             return litellm.token_counter(messages=messages, model=model)
         except Exception:
             # Fallback approximation: 4 chars per token
-            text = "".join([
-                m.get("content", "") if isinstance(m.get("content"), str) else ""
-                for m in messages
-            ])
+            text = ""
+            for m in messages:
+                if "content" in m and isinstance(m["content"], str):
+                    text += m["content"]
+                if "tool_calls" in m and isinstance(m["tool_calls"], list):
+                    for tc in m["tool_calls"]:
+                        if "function" in tc:
+                            text += tc["function"].get("name", "")
+                            text += tc["function"].get("arguments", "")
             return len(text) // 4
 
     async def compress_context(
@@ -92,12 +97,15 @@ class ContextManager:
             print(f"Context compression failed: {e}")
             return messages, "" # Fallback to original on failure
 
+        # Filter recent history to avoid goal duplication
+        filtered_recent = [m for m in recent_history if m is not original_goal]
+
         # 3. Reconstruct history
         compressed_history = [
             system_msg,
             original_goal,
             {"role": "system", "content": f"Context Summary of previous turns:\n{summary_text}"},
-            *recent_history
+            *filtered_recent
         ]
 
         return compressed_history, summary_text

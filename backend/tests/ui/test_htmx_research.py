@@ -1,6 +1,6 @@
 from sqlmodel import Session
 
-from app.db.schema import Artifact, Universe, UniverseRelation
+from app.db.schema import Universe
 from app.db.session import engine
 
 

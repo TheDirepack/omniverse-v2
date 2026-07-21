@@ -67,6 +67,11 @@ class Universe(SQLModel, table=True):
     summary: str | None = None
     raw_data: str | None = None
     is_explored: bool = Field(default=False)
+    franchise: str | None = Field(default=None, index=True)
+    continuity: str | None = Field(default=None, index=True)
+    era: str | None = Field(default=None, index=True)
+    category: str | None = Field(default=None, index=True)
+    description: str | None = None
 
     @property
     def display_name(self) -> str:

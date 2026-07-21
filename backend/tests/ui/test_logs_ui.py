@@ -1,8 +1,9 @@
-import uuid
+import uuid as uuid_lib
 
 import pytest
 from fastapi.testclient import TestClient
 
+from app.db.schema import Universe
 from app.main import app
 
 
@@ -52,24 +53,22 @@ async def test_clear_logs_button(client):
 
 
 @pytest.mark.asyncio
-async def test_abort_run_via_ui(client):
+async def test_abort_run_via_ui(client, session):
     """Test aborting a run via UI"""
-    # Create a run first
+    u = Universe(name=f"test-world-{uuid_lib.uuid4().hex[:8]}")
+    session.add(u)
+    session.commit()
+    session.refresh(u)
+
     start_response = client.post(
         "/api/v1/execution/runs/start",
-        json={
-            "run_type": "research",
-            "world_name": "test-world",
-            "min_turns": 3,
-            "max_turns": 5
-        }
+        json={"payload": [u.uuid]}
     )
     assert start_response.status_code == 200
 
     data = start_response.json()
-    run_id = data.get("run_id") or f"run-{uuid.uuid4()}"
+    run_id = data.get("run_id") or f"run-{uuid_lib.uuid4()}"
 
-    # Test abort endpoint
     response = client.delete(f"/api/v1/execution/runs/abort/{run_id}")
 
     assert response.status_code in [200, 404]

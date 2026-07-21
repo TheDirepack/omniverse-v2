@@ -25,6 +25,8 @@ class RetryHandler:
         self.agent_history = turn_history
 
         try:
+            if critique is None:
+                raise TypeError("Critique is None")
             parsed_critique = json.loads(critique)
             current_corrections = parsed_critique.get("Correction_Queue", [])
 

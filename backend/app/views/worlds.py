@@ -310,7 +310,7 @@ async def worlds_import_fragment(request: Request, q: str = Query(default=""), p
         all_entries = await asyncio.to_thread(_read_json)
 
         service = UniverseService()
-        existing = service.get_all_universes(offset=(page - 1) * page_size, limit=page_size)
+        existing = service.get_all_universes(limit=10000)
         existing_slugs = {w.slug for w in existing if w.slug}
         existing_names = {w.name for w in existing}
 

@@ -130,41 +130,41 @@
         // Optimistic UI update - show spinner immediately
         const originalValue = modelsInput.value;
         modelsInput.classList.add('htmx-indicator');
-        modelsInput.innerHTML = '<span class="animate-spin text-blue-500">⏳</span>';
         modelsInput.disabled = true;
         
         // HTMX POST with abort handling
         const formData = new FormData();
         formData.append('provider_id', providerId);
         
-        const xhr = htmx.ajax('POST', '/api/v1/settings/providers/' + providerId + '/sync', {
+        htmx.ajax('POST', '/api/v1/settings/providers/' + providerId + '/sync', {
             target: '#model-list',
-            swap: false,
-            values: formData,
-            eventHandler: (evt) => {
-                // Success - optimistic update confirmed
-                evt.detail.xhr.onload = () => {
-                    // Update with actual results from backend
-                    renderModelList();
-                };
-            },
-            onError: (event) => {
-                // Network error recovery
+            swap: 'innerHTML',
+            values: formData
+        });
+        
+        // Add event listeners for completion/error
+        document.body.addEventListener('htmx:afterOnLoad', function(evt) {
+            if (evt.detail.target.id === 'model-list') {
+                modelsInput.classList.remove('htmx-indicator');
+                modelsInput.disabled = false;
+                renderModelList();
+            }
+        }, {once: true});
+        
+        document.body.addEventListener('htmx:sendError', function(evt) {
+            if (evt.detail.target.id === 'model-list') {
                 modelsInput.value = originalValue;
                 modelsInput.classList.remove('htmx-indicator');
-                modelsInput.innerHTML = '';
                 modelsInput.disabled = false;
-                
                 showToast('Failed to sync models. Please try again.', 'error');
             }
-        });
+        }, {once: true});
         
         // Timeout fallback after 30 seconds
         setTimeout(() => {
             if (modelsInput.classList.contains('htmx-indicator')) {
                 modelsInput.value = originalValue;
                 modelsInput.classList.remove('htmx-indicator');
-                modelsInput.innerHTML = '';
                 modelsInput.disabled = false;
                 showToast('Sync request timed out. Please try again.', 'warning');
             }
@@ -247,7 +247,7 @@
     });
     
     // Global 4xx/5xx error template
-    const ERROR_TEMPLATE = `
+    const ErrorTemplate = (statusText, message) => `
     <div class="fixed inset-0 z-[10000] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
          role="alert"
          aria-live="assertive"
@@ -314,10 +314,7 @@
         
         const errorMsg = message || `Request failed with status ${status}.`;
         
-        content.innerHTML = ERROR_TEMPLATE.replace(
-            '${statusText}', statusText,
-            '${message}', errorMsg
-        );
+        content.innerHTML = ErrorTemplate(statusText, errorMsg);
         
         // Animate in
         modal.classList.add('flex');
@@ -332,7 +329,7 @@
     
     // Toast notification system
     function showToast(message, type = 'info') {
-        const toast = document.getElementById('toast-container');
+        let toast = document.getElementById('toast-container');
         if (!toast) {
             // Create toast container if it doesn't exist
             const container = document.createElement('div');

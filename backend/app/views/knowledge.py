@@ -1,3 +1,4 @@
+import html
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, Request
@@ -236,23 +237,23 @@ async def notebook_entry_detail(
         return HTMLResponse(content=f'''
 <div class="p-6 space-y-4">
     <div class="flex items-center justify-between">
-        <h3 class="text-sm font-bold text-gray-900 dark:text-gray-100">{entry.title}</h3>
+        <h3 class="text-sm font-bold text-gray-900 dark:text-gray-100">{html.escape(entry.title)}</h3>
         <button onclick="hideInspector()" class="text-gray-400 hover:text-gray-600 text-sm">✕</button>
     </div>
     <div>
         <div class="text-[10px] font-bold text-gray-400 uppercase mb-1">Kind</div>
-        <span class="px-2 py-0.5 bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 text-[10px] font-bold uppercase rounded-sm">{entry.kind}</span>
+        <span class="px-2 py-0.5 bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 text-[10px] font-bold uppercase rounded-sm">{html.escape(entry.kind)}</span>
     </div>
     <div>
         <div class="text-[10px] font-bold text-gray-400 uppercase mb-1">Summary</div>
-        <p class="text-sm text-gray-700 dark:text-gray-300">{entry.summary}</p>
+        <p class="text-sm text-gray-700 dark:text-gray-300">{html.escape(entry.summary)}</p>
     </div>
-    {f'<div><div class="text-[10px] font-bold text-gray-400 uppercase mb-1">Details</div><p class="text-sm text-gray-700 dark:text-gray-300">{entry.details}</p></div>' if entry.details else ''}
+    {f'<div><div class="text-[10px] font-bold text-gray-400 uppercase mb-1">Details</div><p class="text-sm text-gray-700 dark:text-gray-300">{html.escape(entry.details)}</p></div>' if entry.details else ''}
     <div>
         <div class="text-[10px] font-bold text-gray-400 uppercase mb-1">Status</div>
-        <span class="text-xs text-gray-600 dark:text-gray-400">{entry.status}</span>
+        <span class="text-xs text-gray-600 dark:text-gray-400">{html.escape(entry.status)}</span>
     </div>
-    <div class="text-[10px] text-gray-400">Created: {entry.created_at}</div>
+    <div class="text-[10px] text-gray-400">Created: {html.escape(str(entry.created_at))}</div>
 </div>
 ''')
     except (ValueError, TypeError, KeyError, AttributeError) as e:

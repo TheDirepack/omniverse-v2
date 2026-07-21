@@ -4,54 +4,24 @@
 
 {% block content %}
 <div class="flex flex-col h-full overflow-hidden">
-    <!-- TOOLBAR -->
-    <div class="toolbar h-12 border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950 flex items-center px-4 gap-3 shrink-0">
-        <!-- Left Zone: Search + Filter -->
-        <div class="flex items-center gap-2 flex-1 min-w-0">
-            <input type="text" id="run-filter" name="filter"
-                   placeholder="Filter runs..."
-                   class="h-7 px-3 text-xs bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-sm focus:outline-none focus:ring-1 focus:ring-blue-500 w-64"
-                    hx-get="/api/v1/execution/runs/active-detailed"
-                   hx-trigger="keyup changed delay:300ms"
-                   hx-target="#execution-table"
-                   hx-include="#run-filter">
-            <div class="relative">
-                <button class="h-7 px-2 text-xs font-medium bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-sm text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
-                        data-filter-popup="execution"
-                        aria-haspopup="true"
-                        aria-expanded="false"
-                        onclick="toggleFilterPopup(this, 'execution', '/api/v1/execution/runs/active-detailed', [{value:'status',label:'Status'},{value:'world',label:'World'},{value:'progress',label:'Progress'}])">
-                    ⚙️ Filter
-                </button>
-            </div>
-            <div id="execution-indicator" class="htmx-indicator text-xs animate-spin">⌛</div>
-        </div>
-
-        <!-- Center: empty -->
-        <div class="flex-1"></div>
-
-        <div class="w-px h-6 bg-gray-200 dark:bg-gray-700"></div>
-
-        <!-- Right Zone: Actions -->
-        <div class="flex items-center gap-2 shrink-0">
-<button class="px-3 py-1 text-xs font-semibold bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-300 rounded-sm hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
-                    hx-post="/api/v1/tools/clear-logs"
-                    hx-target="#execution-table"
-                    hx-swap="innerHTML"
-                    onclick="return confirm('Clear all logs?')">
-    Clear Logs
-</button>
-<button class="px-3 py-1 text-xs font-semibold bg-red-600 text-white rounded-sm hover:bg-red-700 transition-colors"
-                    hx-post="/api/v1/execution/runs/abort-all"
-                    hx-target="#execution-table"
-                    hx-confirm="Are you sure you want to abort all active research runs?">
-    Abort All
-</button>
-        </div>
+    <!-- TABS -->
+    <div class="flex border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950 shrink-0">
+        <button class="tab-btn px-4 py-2 text-xs font-medium border-b-2 transition-colors active-runs-tab border-blue-600 text-blue-600 dark:text-blue-400"
+                onclick="switchLogsTab('active-runs')">
+            Active Runs
+        </button>
+        <button class="tab-btn px-4 py-2 text-xs font-medium border-b-2 transition-colors agent-logs-tab border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
+                onclick="switchLogsTab('agent-logs')">
+            Agent Logs
+        </button>
     </div>
 
-    <!-- CONTENT: Run Table -->
-    <div class="flex-1 overflow-y-auto bg-white dark:bg-gray-950">
+    <!-- TOOLBAR -->
+    <div id="logs-toolbar" class="toolbar h-12 border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950 flex items-center px-4 gap-3 shrink-0">
+    </div>
+
+    <!-- CONTENT -->
+    <div id="logs-content" class="flex-1 overflow-y-auto bg-white dark:bg-gray-950">
         <div id="execution-table"
              hx-get="/api/v1/execution/runs/active-detailed"
              hx-trigger="load, every 5s"
@@ -64,6 +34,57 @@
 </div>
 
 <script>
+let logsTab = 'active-runs';
+
+function switchLogsTab(tab) {
+    logsTab = tab;
+    document.querySelectorAll('.tab-btn').forEach(function(btn) {
+        btn.classList.remove('border-blue-600', 'text-blue-600', 'dark:text-blue-400');
+        btn.classList.add('border-transparent', 'text-gray-500', 'dark:text-gray-400');
+    });
+    if (tab === 'active-runs') {
+        document.querySelector('.active-runs-tab').classList.remove('border-transparent', 'text-gray-500', 'dark:text-gray-400');
+        document.querySelector('.active-runs-tab').classList.add('border-blue-600', 'text-blue-600', 'dark:text-blue-400');
+        document.getElementById('logs-toolbar').innerHTML = '';
+        document.getElementById('logs-content').innerHTML =
+            '<div id="execution-table" hx-get="/api/v1/execution/runs/active-detailed" hx-trigger="load, every 5s" class="w-full">' +
+            '<div class="flex items-center justify-center h-32 text-gray-400 dark:text-gray-500 text-xs italic">Loading...</div></div>';
+        htmx.process(document.getElementById('logs-content'));
+    } else {
+        document.querySelector('.agent-logs-tab').classList.remove('border-transparent', 'text-gray-500', 'dark:text-gray-400');
+        document.querySelector('.agent-logs-tab').classList.add('border-blue-600', 'text-blue-600', 'dark:text-blue-400');
+        document.getElementById('logs-toolbar').innerHTML =
+            '<div class="flex items-center gap-2 flex-1 min-w-0">' +
+            '<input type="text" id="log-filter" name="filter" placeholder="Filter logs..." class="h-7 px-3 text-xs bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-sm focus:outline-none focus:ring-1 focus:ring-blue-500 w-48"' +
+            ' hx-get="/logs/list" hx-trigger="keyup changed delay:300ms" hx-target="#logs-content" hx-include="#log-filter, #log-agent, #log-model, #log-event">' +
+            '<select id="log-agent" class="h-7 px-2 text-xs bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-sm"' +
+            ' hx-get="/logs/list" hx-trigger="change" hx-target="#logs-content" hx-include="#log-filter, #log-agent, #log-model, #log-event">' +
+            '<option value="">All Agents</option>{% for a in agent_names %}<option value="{{ a }}">{{ a }}</option>{% endfor %}' +
+            '</select>' +
+            '<select id="log-model" class="h-7 px-2 text-xs bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-sm"' +
+            ' hx-get="/logs/list" hx-trigger="change" hx-target="#logs-content" hx-include="#log-filter, #log-agent, #log-model, #log-event">' +
+            '<option value="">All Models</option>{% for m in model_names %}<option value="{{ m }}">{{ m }}</option>{% endfor %}' +
+            '</select>' +
+            '<select id="log-event" class="h-7 px-2 text-xs bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-sm"' +
+            ' hx-get="/logs/list" hx-trigger="change" hx-target="#logs-content" hx-include="#log-filter, #log-agent, #log-model, #log-event">' +
+            '<option value="">All Events</option>{% for e in event_types %}<option value="{{ e }}">{{ e }}</option>{% endfor %}' +
+            '</select>' +
+            '</div>' +
+            '<div class="flex-1"></div>' +
+            '<div class="flex items-center gap-2 shrink-0">' +
+            '<button class="px-3 py-1 text-xs font-semibold bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-300 rounded-sm hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"' +
+                         ' hx-post="/api/v1/tools/worlds/clear-logs"' +
+            ' hx-target="#logs-content"' +
+            ' hx-swap="innerHTML"' +
+            ' onclick="return confirm(\'Clear all logs?\')">Clear Logs</button>' +
+            '</div>';
+        document.getElementById('logs-content').innerHTML =
+            '<div id="log-list-container" hx-get="/logs/list" hx-trigger="load" class="w-full">' +
+            '<div class="flex items-center justify-center h-32 text-gray-400 dark:text-gray-500 text-xs italic">Loading agent logs...</div></div>';
+        htmx.process(document.getElementById('logs-content'));
+    }
+}
+
 function toggleFilterPopup(btn, popupId, target, fields) {
     var expanded = btn.getAttribute('aria-expanded') === 'true';
     if (expanded) { closeFilterPopup(popupId); return; }

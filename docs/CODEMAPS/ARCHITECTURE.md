@@ -1,6 +1,6 @@
 # Omniverse V2 Architecture Codemap
 
-**Last Updated:** 2026-07-16
+**Last Updated:** 2026-07-21
 **Entry Point:** `backend/app/main.py`
 
 ## System Overview
@@ -30,8 +30,8 @@ graph TD
 
 | Component | Files | Responsibility |
 | :--- | :--- | :--- |
-| **Routers** | `api/routers/*.py` | REST API endpoints |
-| **Views** | `views/*.py` | HTMX server-rendered pages |
+| **API v1** | `api/v1/*.py` | REST API endpoints |
+| **Views** | `views/*.py` | HTMX server-rendered pages (11 files) |
 | **Main** | `main.py` | Application entry point |
 
 ### 2. Service Layer (`backend/app/services/`)
@@ -46,6 +46,9 @@ graph TD
 | `knowledge_retriever` | Graph query optimization |
 | `research_workspace` | Notebook/file management |
 | `settings_service` | Configuration management |
+| `provider_service` | LLM provider operations, model sync |
+| `effect_executor` | Tool call effect management |
+| `ocr_service` | Image-to-text extraction |
 
 ### 3. Repository Layer (`backend/app/repositories/`)
 **Purpose**: Pure data access (SQLModel)
@@ -57,6 +60,7 @@ graph TD
 | `theory` | Extrapolation DB | Speculative claims |
 | `settings` | Settings DB | Provider configs |
 | `execution` | Operational DB | Run logs, state |
+| `acquisition_cache` | Acquisition DB | Web artifact cache |
 
 ### 4. Agent/Workflow Layer (`backend/app/agents/` & `backend/app/workflow/`)
 **Purpose**: AI reasoning and state transitions
@@ -126,7 +130,7 @@ The core workflow processes universes from untiered to tiered:
                 ↓
    Polished Summaries → Display
 
-4. MARK EX plored
+4. MARK EXPLORED
    Update `is_explored = True`
 ```
 
@@ -181,6 +185,14 @@ The core workflow processes universes from untiered to tiered:
 │  │ExecutionState│ │CandidateHealth │                        │
 │  └──────────────┘ └────────────────┘                        │
 └─────────────────────────────────────────────────────────────┘
+                              ↑
+                              │
+┌─────────────────────────────────────────────────────────────┐
+│              Acquisition DB (Web Cache)                     │
+│  ┌──────────────────┐ ┌──────────────────┐                  │
+│  │AcquisitionArtifact││WorldAcquisition   │                  │
+│  └──────────────────┘ └──────────────────┘                  │
+└─────────────────────────────────────────────────────────────┘
 ```
 
 ## External Dependencies
@@ -208,12 +220,24 @@ The core workflow processes universes from untiered to tiered:
 
 ## API Structure
 
-- **`/api/v1/db/`** - Database operations (artifacts, notebook, claims)
+### REST API (`/api/v1/`)
+- **`/api/v1/db/`** - Database operations (worlds, artifacts, notebook, claims)
 - **`/api/v1/execution/`** - Execution & workflow (runs, logs, tiering, extrapolation)
 - **`/api/v1/settings/`** - Configuration (providers, models, keys)
 - **`/api/v1/tools/`** - Utility operations (worlds, research, registry)
 
-Old `/api/` endpoints are deprecated.
+### HTMX View Routes
+- **`/settings/`** - Settings UI (providers, routes, health, snapshots)
+- **`/worlds/`** - Universe management
+- **`/research/`** - Research workflow
+- **`/knowledge/`** - Knowledge graph exploration
+- **`/logs/`** - Execution log viewer
+- **`/flow/`** - Pipeline visualization
+- **`/theory/`** - Speculative theory viewer
+- **`/validation/`** - Research validation
+- **`/provenance/`** - Evidence tracking
+
+Old `/api/` endpoints are commented out (`main.py:129-136`).
 
 ## Related Areas
 

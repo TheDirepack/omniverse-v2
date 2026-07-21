@@ -134,6 +134,21 @@ def test_route_upsert(client):
     assert route_response.status_code == 200
     assert task in route_response.text
 
+    match = re.search(
+        r"onclick=\"selectRoute\('(\d+)'\)\"", route_response.text
+    )
+    if not match:
+        match = re.search(r"hx-post=\"/settings/routes/(\d+)/delete\"", route_response.text)
+    assert match, "Route ID not found in response"
+    route_id = match.group(1)
+
+    detail_response = client.get(
+        f"/settings/routes/{route_id}",
+        headers={"HX-Request": "true"},
+    )
+    assert detail_response.status_code == 200
+    assert task in detail_response.text
+
 
 def test_route_delete(client):
     task = _unique("DEL")

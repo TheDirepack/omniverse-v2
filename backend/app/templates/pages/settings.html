@@ -196,9 +196,6 @@
         const apiKey = prompt('Enter API key:');
         if (!apiKey) return;
         const priority = prompt('Enter priority (0-10):', '0') || '0';
-        const form = new FormData();
-        form.set('api_key', apiKey);
-        form.set('priority', priority);
 
         const btn = document.querySelector(`button[type="button"][onclick*="addProviderKey('${providerId}')"]`);
         if (btn) {
@@ -209,7 +206,7 @@
         htmx.ajax('POST', `/settings/providers/${providerId}/keys`, {
             target: '#settings-content',
             swap: 'innerHTML',
-            values: form,
+            values: {api_key: apiKey, priority: priority},
             indicator: '#settings-indicator',
             onError: () => {
                 if (btn) {

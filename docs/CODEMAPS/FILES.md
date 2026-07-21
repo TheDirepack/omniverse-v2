@@ -1,6 +1,6 @@
 # Omniverse V2 File Registry
 
-**Last Updated:** 2026-07-11
+**Last Updated:** 2026-07-21
 
 This directory contains a comprehensive registry of key files and their purposes in the Omniverse V2 codebase.
 
@@ -10,72 +10,46 @@ This directory contains a comprehensive registry of key files and their purposes
 omniverse-v2/
 ├── backend/                          # Python backend (FastAPI + LangGraph)
 │   ├── app/                          # Main application package
-│   │   ├── api/                      # HTTP API layer
-│   │   │   ├── routers/              # API route handlers
-│   │   │   └── __init__.py
+│   │   ├── __init__.py
+│   │   ├── main.py                   # FastAPI entry point, router assembly
 │   │   ├── agents/                   # Agent node implementations
-│   │   │   ├── nodes.py              # LangGraph node definitions
-│   │   │   ├── prompts.py            # Agent system prompts
-│   │   │   ├── prompt_templates.py   # Template variables
-│   │   │   ├── workflow.py           # Workflow configuration
-│   │   │   └── workflow_state.py     # State schema
-│   │   ├── api/                      # API routes
+│   │   ├── api/                      # HTTP API layer (/api/v1/)
+│   │   │   ├── v1/                   # Versioned API endpoints
+│   │   │   └── routers/              # DEPRECATED — commented out in main.py
 │   │   ├── core/                     # Core engine utilities
-│   │   │   ├── agent_engine.py       # Agent loop execution
-│   │   │   ├── browser.py            # Browser manager (Cloakbrowser)
-│   │   │   ├── router.py             # LLM provider routing
-│   │   │   ├── tools.py              # Agent tools
-│   │   │   ├── runtime_state.py      # Context variables
-│   │   │   └── web_search.py         # Search utilities
-│   │   ├── db/                       # Database schemas
-│   │   │   ├── schema.py             # Main DB models
-│   │   │   ├── notebook_schema.py # Staging DB models
-│   │   │   └── session.py            # DB session management
+│   │   ├── db/                       # Database schemas and sessions
 │   │   ├── repositories/             # Data access layer
-│   │   │   ├── universe.py           # Universe operations
-│   │   │   ├── tiering.py            # Tiering operations
-│   │   │   ├── theory.py             # Theory operations
-│   │   │   ├── settings.py           # Settings operations
-│   │   │   └── execution.py          # Execution operations
-│   │   ├── services/                 # Business logic layer
-│   │   │   ├── universe_service.py   # World lifecycle
-│   │   │   ├── execution_service.py  # Run management
-│   │   │   ├── tiering_service.py    # Power tiering
-│   │   │   ├── theory_service.py     # Extrapolation
-│   │   │   ├── knowledge_retriever.py# Graph querying
-│   │   │   ├── research_workspace.py # Research notebook
-│   │   │   └── settings_service.py   # Config management
 │   │   ├── research/                 # Research workflow
-│   │   │   ├── researcher.py         # Research agent
-│   │   │   └── summarizer.py         # Summary generation
-│   │   ├── workflow/                 # LangGraph workflows
-│   │   │   ├── tiering_workflow.py   # Tiering state machine
-│   │   │   └── extrapolation_workflow.py # Extrapolation
-│   │   ├── views/                    # HTMX views
-│   │   │   ├── index.py              # Landing page
-│   │   │   ├── research.py           # Research views
-│   │   │   ├── worlds.py             # Universe views
-│   │   │   ├── knowledge.py          # Knowledge graph
-│   │   │   ├── settings.py           # Settings views
-│   │   │   ├── logs.py               # Log viewer
-│   │   │   ├── provenance.py         # Evidence viewer
-│   │   │   ├── theory.py             # Theory viewer
-│   │   │   ├── validation.py         # Validation
-│   │   │   ├── inference.py          # Inference
-│   │   │   └── flow.py               # Pipeline state
-│   │   ├── main.py                   # FastAPI entry point
-│   │   └── __init__.py
-│   ├── tests/                       # Python tests
-│   ├── data/                        # Database files
-│   ├── scripts/                     # Utility scripts
-│   └── pyproject.toml               # Python project config
-└── docs/CODEMAPS/                   # Generated documentation
-    ├── INDEX.md
-    ├── ARCHITECTURE.md
-    ├── BACKEND.md
-    ├── DATABASE.md
-    ├── FRONTEND.md
-    └── FILES.md
+│   │   ├── services/                 # Business logic layer
+│   │   ├── static/                   # Static assets
+│   │   ├── templates/                # Jinja2 templates
+│   │   │   ├── base.html
+│   │   │   ├── components/           # 47 reusable HTMX fragments
+│   │   │   ├── fragments/
+│   │   │   ├── layout/               # 3-panel layout system
+│   │   │   ├── pages/                # 15 full-page templates
+│   │   │   └── workflow/
+│   │   └── views/                    # 11 HTMX view handlers
+│   ├── tests/                        # Python tests
+│   │   ├── backend/                  # 80+ unit/integration test files
+│   │   ├── ui/                       # 21 HTMX E2E test files
+│   │   ├── live/                     # 2 LLM behavioral test files
+│   │   └── conftest.py
+│   ├── data/                         # SQLite database files
+│   ├── logs/                         # Agent log output
+│   ├── scripts/                      # Utility scripts
+│   └── pyproject.toml                # Python project config
+├── docs/                             # Documentation
+│   ├── CODEMAPS/                     # Architecture codemaps
+│   ├── UI/                           # Design system specs
+│   └── archive/                      # Historical docs
+├── AGENTS.md                         # Agent documentation
+├── README.md
+├── CHANGELOG.md
+├── run.sh                            # Application startup
+├── test.sh                           # Test runner
+├── lint.sh                           # Ruff linting
+└── setup.sh                          # Environment setup
 ```
 
 ## Key Files by Category
@@ -93,9 +67,12 @@ omniverse-v2/
 
 | File | Purpose |
 | :--- | :--- |
+| `backend/app/agents/nodes.py` | LangGraph node definitions |
 | `backend/app/agents/prompts.py` | System prompts for all agents |
 | `backend/app/agents/prompt_templates.py` | Prompt template variables |
 | `backend/app/agents/workflow.py` | Workflow configuration |
+| `backend/app/agents/workflow_state.py` | OmniverseState schema |
+| `backend/app/agents/agent_names.py` | Agent name constants |
 | `backend/app/core/agent_engine.py` | Agent execution loop |
 | `backend/app/core/tools.py` | Available agent tools |
 
@@ -116,6 +93,8 @@ omniverse-v2/
 | `backend/app/repositories/tiering.py` | Tiering result storage |
 | `backend/app/repositories/theory.py` | Theory persistence |
 | `backend/app/repositories/settings.py` | Settings management |
+| `backend/app/repositories/execution.py` | Execution state management |
+| `backend/app/repositories/acquisition_cache.py` | Web artifact caching |
 
 ### Services
 
@@ -124,27 +103,62 @@ omniverse-v2/
 | `backend/app/services/universe_service.py` | World management |
 | `backend/app/services/execution_service.py` | Run lifecycle |
 | `backend/app/services/tiering_service.py` | Power tiering logic |
+| `backend/app/services/theory_service.py` | Extrapolation management |
 | `backend/app/services/knowledge_retriever.py` | Graph queries |
 | `backend/app/services/research_workspace.py` | Notebook management |
+| `backend/app/services/settings_service.py` | Configuration management |
+| `backend/app/services/provider_service.py` | LLM provider operations |
+| `backend/app/services/effect_executor.py` | Tool call effect management |
+| `backend/app/services/ocr_service.py` | Image-to-text extraction |
 
 ### Database
 
 | File | Purpose |
 | :--- | :--- |
-| `backend/app/db/schema.py` | Main DB tables |
-| `backend/app/db/notebook_schema.py` | Staging DB tables |
-| `backend/app/db/session.py` | Session management |
+| `backend/app/db/schema.py` | Main DB tables (17 tables) |
+| `backend/app/db/notebook_schema.py` | Staging/Notebook DB (13 tables) |
+| `backend/app/db/extrapolation_schema.py` | Extrapolation DB (1 table) |
+| `backend/app/db/session.py` | Main DB session |
+| `backend/app/db/settings_session.py` | Settings DB session |
+| `backend/app/db/operational_session.py` | Operational DB session |
+| `backend/app/db/notebook_session.py` | Notebook DB session |
+| `backend/app/db/extrapolation_session.py` | Extrapolation DB session |
 
-### Views
+### HTMX Views
 
 | File | Purpose |
 | :--- | :--- |
 | `backend/app/views/index.py` | Landing page |
 | `backend/app/views/research.py` | Research views |
+| `backend/app/views/research_results.py` | Research results viewer |
 | `backend/app/views/worlds.py` | Universe views |
 | `backend/app/views/knowledge.py` | Knowledge graph |
+| `backend/app/views/settings.py` | Settings views (providers, routes, health) |
 | `backend/app/views/logs.py` | Log viewer |
 | `backend/app/views/provenance.py` | Evidence viewer |
+| `backend/app/views/theory.py` | Theory viewer |
+| `backend/app/views/validation.py` | Validation |
+| `backend/app/views/flow.py` | Pipeline state |
+
+### Core Engine
+
+| File | Purpose |
+| :--- | :--- |
+| `backend/app/core/agent_engine.py` | Agent turn execution |
+| `backend/app/core/router.py` | LLM provider routing & health |
+| `backend/app/core/browser.py` | Cloakbrowser manager |
+| `backend/app/core/tools.py` | Agent tool definitions |
+| `backend/app/core/runtime_state.py` | ContextVar isolation |
+| `backend/app/core/context_manager.py` | Token counting & pruning |
+| `backend/app/core/context.py` | Universe context |
+| `backend/app/core/domain.py` | ResearchTarget, ResearchWorkspace |
+| `backend/app/core/web_search.py` | Search abstraction |
+| `backend/app/core/web_fetch.py` | Page fetching |
+| `backend/app/core/acquisition_cache.py` | Web result deduplication |
+| `backend/app/core/agent_logger.py` | Structured logging |
+| `backend/app/core/provider_models.py` | Provider/model schemas |
+| `backend/app/core/templates.py` | Jinja2 configuration |
+| `backend/app/core/importers/*.py` | OCR, Web page importers |
 
 ## Configuration Files
 
@@ -163,7 +177,7 @@ omniverse-v2/
 | `setup.sh` | Environment setup |
 | `run.sh` | Application startup |
 | `test.sh` | Test runner |
-| `lint.sh` | Linting |
+| `lint.sh` | Ruff linting |
 
 ## Database Files
 
@@ -174,6 +188,7 @@ omniverse-v2/
 | `backend/data/operational.db` | Execution logs |
 | `backend/data/notebook.db` | Research staging |
 | `backend/data/extrapolation.db` | Speculative theories |
+| `backend/data/acquisition.db` | Web artifact cache |
 
 ## Default Data
 
@@ -183,4 +198,4 @@ omniverse-v2/
 
 ---
 
-*Note: This registry is auto-generated from the codebase structure.*
+*Note: This registry reflects the current codebase structure.*

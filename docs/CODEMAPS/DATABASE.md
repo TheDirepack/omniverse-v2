@@ -1,6 +1,6 @@
 # Omniverse V2 Database Codemap
 
-**Last Updated:** 2026-07-11
+**Last Updated:** 2026-07-21
 
 ## Database Topology
 
@@ -231,8 +231,21 @@ The **Main DB** stores the polymorphic Knowledge Graph - the core of the system.
 | :--- | :--- | :--- |
 | **NotebookUniverse** | Research universes | `uuid` (PK), `name`, `franchise`, `is_explored` |
 | **NotebookEntry** | Research notes | `id` (PK), `universe_uuid` (FK), `title`, `summary`, `kind`, `details`, `status`, `priority` |
-| **Source** | Research sources | `id` (PK), `universe_uuid` (FK), `url`, `title`, `reason_saved`, `coverage`, `reliability`, `extraction_status` |
-| **TimelineEvent** | Event chronology | `id` (PK), `universe_uuid` (FK), `title`, `date`, `era`, `summary`, `description`, `importance`, `confidence` |
+| **NotebookClaim** | Knowledge claims in staging | `id` (PK), `universe_uuid` (FK), `claim_text`, `claim_type`, `confidence` |
+| **ResearchSource** | Research sources | `id` (PK), `universe_uuid` (FK), `url`, `title`, `reason_saved`, `coverage`, `reliability`, `extraction_status` |
+| **AcquisitionArtifact** | Web artifact cache | `id` (PK), `url`, `content_hash`, `extracted_text` |
+| **WorldAcquisitionUsage** | Links artifacts to runs/universes | `acquisition_artifact_id` (FK), `run_id`, `universe_id` |
+| **ProvenanceEdge** | Provenance tracking | `id` (PK), `from_node`, `to_node`, `edge_type` |
+| **TimelineEntry** | Event chronology | `id` (PK), `universe_uuid` (FK), `title`, `date`, `era`, `summary`, `description`, `importance`, `confidence` |
+| **TimelineParticipant** | Entities in timeline events | `timeline_entry_id` (FK), `entity_name`, `role` |
+| **TimelineLocation** | Locations in timeline events | `timeline_entry_id` (FK), `location_name` |
+| **TimelineSource** | Sources for timeline events | `timeline_entry_id` (FK), `source_url` |
+| **TimelineClaim** | Claims for timeline events | `timeline_entry_id` (FK), `claim_text` |
+| **Snapshot** | Database snapshots | `id` (PK), `name`, `snapshot_type`, `metadata`, `created_at` |
+
+### Acquisition DB
+
+The Acquisition Cache repository (`app/repositories/acquisition_cache.py`) stores web-scraped artifacts in the same Notebook DB under `AcquisitionArtifact` and `WorldAcquisitionUsage` tables. It is not a separate database file.
 
 ---
 

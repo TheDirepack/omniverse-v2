@@ -321,8 +321,12 @@ class ModelRouter:
                             )
                     return response, candidate["full_model"], str(candidate["key"].id)
                 except Exception as e:
-                    # Programming errors should NOT be reported as provider failures.
-                    if not isinstance(
+                    # Programming/logic errors should be raised, not circuit-broken.
+                    # But BadRequestError (e.g. "function calling not enabled") is a
+                    # model capability issue — fall through to the next candidate
+                    # without circuit-breaking (the model isn't transiently down).
+                    is_capability_issue = isinstance(e, litellm.BadRequestError)
+                    is_transient_error = isinstance(
                         e,
                         (
                             litellm.APIError,
@@ -331,7 +335,9 @@ class ModelRouter:
                             litellm.RateLimitError,
                             litellm.ServiceUnavailableError,
                         ),
-                    ):
+                    )
+
+                    if not is_capability_issue and not is_transient_error:
                         agent_logger.log(
                             agent="ModelRouter",
                             event_type=AgentEventType.ERROR,
@@ -341,20 +347,22 @@ class ModelRouter:
                         )
                         raise
 
-                    # Report failure
-                    with Session(operational_engine) as health_session:
-                        self._report_failure(
-                            health_session,
-                            candidate["provider"].id,
-                            candidate["key"].id if candidate["key"].id != -1 else None,
-                            candidate["model"],
-                        )
+                    # Report failure for transient errors only
+                    if is_transient_error:
+                        with Session(operational_engine) as health_session:
+                            self._report_failure(
+                                health_session,
+                                candidate["provider"].id,
+                                candidate["key"].id if candidate["key"].id != -1 else None,
+                                candidate["model"],
+                            )
 
                     clean_e = _clean_error(e)
+                    fallback_type = "Model capability" if is_capability_issue else "Transient error"
                     agent_logger.log(
                         agent="ModelRouter",
                         event_type=AgentEventType.ERROR,
-                        content=f"Fallback: {candidate['full_model']} failed due to {clean_e}. Trying next candidate.",
+                        content=f"{fallback_type}: {candidate['full_model']} failed due to {clean_e}. Trying next candidate.",
                         model=candidate["full_model"],
                         key_id=str(candidate["key"].id),
                     )
@@ -364,14 +372,14 @@ class ModelRouter:
                             log_entry = ExecutionState(
                                 run_id=run_id,
                                 node_name="ModelRouter",
-                                thought=f"Fallback: {candidate['full_model']} failed due to {clean_e}. Trying next candidate.",
+                                thought=f"{fallback_type}: {candidate['full_model']} failed due to {clean_e}. Trying next candidate.",
                                 status="INFO",
                                 state_snapshot="{}",
                             )
                             log_session.add(log_entry)
                             log_session.commit()
                     print(
-                        f"[ModelRouter] Fallback failed for {candidate['full_model']} with key {candidate['key'].id}: {clean_e}"
+                        f"[ModelRouter] {fallback_type}: {candidate['full_model']} with key {candidate['key'].id}: {clean_e}"
                     )
                     continue
 

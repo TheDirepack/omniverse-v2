@@ -3,6 +3,8 @@ import shutil
 from datetime import UTC, datetime
 from pathlib import Path
 
+import httpx
+
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse
 from sqlmodel import Session, select
@@ -250,7 +252,7 @@ async def settings_provider_sync(request: Request, provider_id: int):
     try:
         models = service.sync_provider_models(provider_id)
         return HTMLResponse(content=models)
-    except (ValueError, TypeError, KeyError, ConnectionError, OSError) as e:
+    except (ValueError, TypeError, KeyError, ConnectionError, OSError, httpx.HTTPStatusError, httpx.RequestError) as e:
         return HTMLResponse(f"Sync failed: {e!s}", status_code=500)
 
 
@@ -523,8 +525,8 @@ async def settings_snapshots_fragment(request: Request):
     with Session(notebook_engine) as session:
         snapshots = session.exec(select(Snapshot)).all()
 
-    template = templates.env.get_template("world_snapshots.html")
-    return HTMLResponse(content=template.render(request=request, snapshots=snapshots))
+    template = templates.env.get_template("components/world_snapshots.html")
+    return HTMLResponse(content=template.render(request=request, snapshots=snapshots, snapshot_url_prefix="/settings"))
 
 
 @router.post("/snapshots/create", response_class=HTMLResponse)

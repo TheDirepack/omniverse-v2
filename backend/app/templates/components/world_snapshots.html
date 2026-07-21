@@ -4,7 +4,7 @@
         <div class="flex gap-2">
             <input type="text" name="name" id="snapshot-name" placeholder="Snapshot Name..." class="text-sm p-1 border rounded">
             <input type="hidden" name="snapshot_type" value="FULL">
-            <button hx-post="/worlds/snapshots/create" 
+            <button hx-post="{{ snapshot_url_prefix }}/snapshots/create" 
                     hx-include="#snapshot-name, [name='snapshot_type']" 
                     hx-target="#snapshots-list" 
                     hx-swap="innerHTML"
@@ -23,13 +23,13 @@
                 <span class="text-xs bg-gray-700 px-2 py-0.5 rounded ml-2">{{ s.snapshot_type }}</span>
             </div>
             <div class="flex gap-2">
-                <button hx-post="/worlds/snapshots/{{ s.id }}/restore" 
+                <button hx-post="{{ snapshot_url_prefix }}/snapshots/{{ s.id }}/restore" 
                         hx-target="body" 
                         hx-confirm="Are you sure you want to restore this snapshot? This will overwrite the current database."
                         class="text-xs bg-green-700 text-white px-2 py-1 rounded hover:bg-green-600">
                     Restore
                 </button>
-                <button hx-delete="/worlds/snapshots/{{ s.id }}" 
+                <button hx-delete="{{ snapshot_url_prefix }}/snapshots/{{ s.id }}" 
                         hx-target="#snapshots-list" 
                         hx-swap="innerHTML"
                         hx-confirm="Permanently delete this snapshot?"

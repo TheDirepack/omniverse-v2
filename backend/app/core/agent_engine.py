@@ -170,6 +170,8 @@ async def _execute_tool(
     if name in AGENT_TOOLS:
         print(f"DEBUG: _execute_tool calling {name} from AGENT_TOOLS")
         func = AGENT_TOOLS[name]["func"]
+        if func is None:
+            return f"Error: Tool {name} is not implemented."
         return await func(args)
 
     return f"Error: Tool {name} not found."
@@ -328,11 +330,35 @@ async def run_agent(
                         set_current_summary(summary)
 
 
-            # Enforce minimum turns before allowing submission
-            if _turn < min_turns:
-                pass
+            # Re-filter tools based on the current disabled set
+            active_tools = [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": name,
+                        "description": info["description"],
+                        "parameters": info["parameters"],
+                    },
+                }
+                for name, info in AGENT_TOOLS.items()
+                if name in filtered_tools_names and name not in disabled_tools
+            ]
 
-            active_tools = litellm_tools
+            # Add the submit tool
+            active_tools.append({
+                "type": "function",
+                "function": {
+                    "name": submit_tool_name,
+                    "description": "Submit final findings.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "dataset": {"type": "object", "description": "The final dataset/findings object."},
+                        },
+                        "required": ["dataset"],
+                    },
+                },
+            })
 
             # Log prompts before calling model
             prompt_content = json.dumps(messages)
@@ -400,7 +426,7 @@ async def run_agent(
 
                     if name == submit_tool_name:
                         # 1. Enforce minimum turns
-                        if _turn < min_turns:
+                        if _turn < min_turns - 1:
                             messages.append(
                                 {
                                     "role": "tool",
@@ -443,7 +469,7 @@ async def run_agent(
                                     "name": name,
                                     "content": "Submission rejected: The dataset provided is not valid JSON. Please ensure you return a properly formatted JSON object.",
                                 })
-                                return True, "Submission rejected: The dataset provided is not valid JSON. Please ensure you return a properly formatted JSON object.", messages
+                                continue
                             except (ValueError, TypeError, KeyError) as e:
                                 messages.append({
                                     "role": "tool",
@@ -607,8 +633,7 @@ async def run_agent(
                             "content": "Please use the available tools to research and eventually call the submit tool.",
                         }
                     )
-
-                continue
+                    continue
 
             if not content:
                 messages.append(
@@ -625,5 +650,3 @@ async def run_agent(
             continue
 
         return (False, "MAX_TURNS_REACHED", messages)
-
-    return (False, "Error: Max turns reached without submission.", messages)

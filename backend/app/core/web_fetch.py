@@ -245,7 +245,11 @@ class WebFetcher:
         # Preset Cleanup Profiles
         if preset == "wiki":
             wiki_selectors = [
-                ".mw-editsection", ".mw-jump-link", ".navbox", ".catlinks"
+                ".mw-editsection", ".mw-jump-link", ".navbox", ".catlinks",
+                "nav", "header", "footer", ".sidebar", "#mw-navigation",
+                ".vector-header-container", ".vector-sidebar-container",
+                ".vector-page-toolbar", "#siteNotice", ".mw-panel",
+                ".uls-menu", ".vector-menu", ".vector-popup-menu"
             ]
             for selector in wiki_selectors:
                 for el in work_soup.select(selector):

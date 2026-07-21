@@ -17,8 +17,10 @@ from app.core.enums import RunPhase
 from app.core.runtime_state import (
     abort_run,
     add_active_run,
+    clear_failed_run,
     get_active_runs,
     get_failed_run_errors,
+    get_failed_run_uuids,
     is_aborted,
     is_failed,
     mark_run_failed,

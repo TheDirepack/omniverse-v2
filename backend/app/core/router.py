@@ -264,7 +264,7 @@ class ModelRouter:
                     )
                     if (
                         health.disabled_until
-                        and health.disabled_until > datetime.utcnow()
+                        and health.disabled_until > datetime.now(timezone.utc)
                     ):
                         continue
 

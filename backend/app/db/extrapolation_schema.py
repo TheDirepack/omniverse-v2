@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import MetaData
 from sqlmodel import Field, SQLModel
@@ -16,4 +16,4 @@ class Theory(ExtrapolationModel, table=True):
     universe_id: int = Field(index=True)
     theory_text: str
     auditor_feedback: str | None = None
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

@@ -1,5 +1,5 @@
 import hashlib
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import Column, ForeignKey, MetaData, UniqueConstraint
 from sqlmodel import Field, LargeBinary, SQLModel
@@ -22,7 +22,7 @@ class TimelineEntry(NotebookModel, table=True):
     description: str | None = None
     importance: int = Field(default=1)
     confidence: float = Field(default=1.0)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class TimelineParticipant(NotebookModel, table=True):
     __tablename__ = "timeline_participant"
@@ -62,8 +62,8 @@ class NotebookUniverse(NotebookModel, table=True):
     summary: str | None = None
     research_status: str | None = None
     is_explored: bool = Field(default=False)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 
@@ -82,7 +82,7 @@ class AcquisitionArtifact(NotebookModel, table=True):
     engine_name: str | None = None
     engine_version: str | None = None
     fetch_duration_ms: int | None = None
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     @staticmethod
     def compute_hash(content: str | bytes) -> str:
@@ -104,7 +104,7 @@ class WorldAcquisitionUsage(NotebookModel, table=True):
     universe_uuid: str = Field(index=True)
     run_id: str = Field(index=True)
     usage_type: str
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class ProvenanceEdge(NotebookModel, table=True):
@@ -118,7 +118,7 @@ class ProvenanceEdge(NotebookModel, table=True):
     target_id: int
     relation: str
     run_id: str | None = None
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class ResearchSource(NotebookModel, table=True):
@@ -132,7 +132,7 @@ class ResearchSource(NotebookModel, table=True):
     coverage: str | None = None
     reliability: str | None = None
     extraction_status: str = Field(default="UNREAD")
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 
@@ -150,7 +150,7 @@ class NotebookClaim(NotebookModel, table=True):
     wiki_source: str | None = None
     confidence: float | None = None
     universe_id: int | None = Field(default=None, foreign_key="notebook_universe.id")
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class NotebookEntry(NotebookModel, table=True):
@@ -165,8 +165,8 @@ class NotebookEntry(NotebookModel, table=True):
     status: str = Field(default="OPEN")
     priority: int = Field(default=0)
     run_id: str | None = Field(default=None, index=True)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 
@@ -176,7 +176,7 @@ class Snapshot(NotebookModel, table=True):
 
     id: int | None = Field(default=None, primary_key=True)
     name: str = Field(index=True)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     snapshot_type: str = Field(default="FULL")  # FULL, UNVERIFIED
     data_blob: bytes | None = Field(sa_column=Column(LargeBinary, nullable=True))
     snapshot_metadata: str | None = None

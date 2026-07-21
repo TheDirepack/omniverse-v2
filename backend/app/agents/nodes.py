@@ -97,20 +97,15 @@ async def research_node(state: OmniverseState) -> dict[str, Any]:
     )
 
     if not verified_worlds:
+        error_msg = f"All {len(target_worlds)} world(s) failed research. Errors: {'; '.join(errors)}"
         exec_service.log_transition(
             run_id,
             "Manager",
-            f"All {len(target_worlds)} world(s) failed research; nothing to consolidate. Errors: {errors}",
+            error_msg,
             RunStatus.FAILED,
             state,
         )
-
-        return {
-            "research_results": successful_results,
-            "verified_worlds": verified_worlds,
-            "errors": errors,
-            "active_task": RunPhase.DB_INTEGRATION,
-        }
+        raise RuntimeError(error_msg)
 
     return {
         "research_results": successful_results,

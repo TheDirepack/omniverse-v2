@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from uuid import uuid4
 
@@ -91,7 +91,7 @@ class UniverseRelation(SQLModel, table=True):
     )
     relation_type: str = Field(index=True)
     description: str | None = None
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class TierSystem(SQLModel, table=True):
@@ -101,7 +101,7 @@ class TierSystem(SQLModel, table=True):
     is_active: bool = Field(default=True)
     parent_id: int | None = Field(default=None, foreign_key="tiersystem.id")
     amendment_reason: str | None = None
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class WorldTier(SQLModel, table=True):
@@ -121,7 +121,7 @@ class Anomaly(SQLModel, table=True):
         sa_column=Column(ForeignKey("universe.id", ondelete="CASCADE"), nullable=False)
     )
     description: str
-    detected_at: datetime = Field(default_factory=datetime.utcnow)
+    detected_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class ExecutionState(SQLModel, table=True):
@@ -134,7 +134,7 @@ class ExecutionState(SQLModel, table=True):
     duration_ms: float | None = Field(default=None)
     token_usage: int | None = Field(default=None)
     cost: float | None = Field(default=None)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class ModelConfig(SQLModel, table=True):
@@ -163,8 +163,8 @@ class Artifact(SQLModel, table=True):
     source_reference: str | None = None
     source_wiki: str | None = None
     payload_json: str = Field(default="{}")
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     @property
     def evidence_refs_parsed(self) -> list[int]:
@@ -197,7 +197,7 @@ class ArtifactRelation(SQLModel, table=True):
     )
     relation_type: str = Field(index=True)
     description: str | None = None
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 # Define relationships after both classes are defined to avoid circularity and ambiguity
@@ -236,7 +236,7 @@ class Evidence(SQLModel, table=True):
     source_url: str = Field(index=True)
     section: str | None = Field(default=None, index=True)
     source_name: str | None = None
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     __table_args__ = (UniqueConstraint("universe_id", "source_url", "section"),)
 
 
@@ -245,7 +245,7 @@ class EvidenceChunk(SQLModel, table=True):
     evidence_id: int = Field(foreign_key="evidence.id", ondelete="CASCADE")
     content: str
     chunk_index: int
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class ArtifactVersion(SQLModel, table=True):
@@ -256,7 +256,7 @@ class ArtifactVersion(SQLModel, table=True):
     version: int = Field(index=True)
     payload_json: str
     evidence_refs: str
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class CandidateHealth(SQLModel, table=True):

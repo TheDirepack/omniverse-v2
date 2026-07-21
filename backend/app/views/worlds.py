@@ -81,7 +81,7 @@ async def batch_research(
 ):
     import uuid
 
-    from app.api.routers.runs import run_pipeline_in_background
+    from app.api.v1.execution.runs import run_pipeline_in_background
     names = [w.strip() for w in world_names.split(",") if w.strip()]
     for name in names:
         run_id = str(uuid.uuid4())

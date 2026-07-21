@@ -65,7 +65,7 @@ def create_universe(
     if payload.auto_research:
         import uuid
 
-        from app.api.routers.runs import run_pipeline_in_background
+        from app.api.v1.execution.runs import run_pipeline_in_background
         run_id = str(uuid.uuid4())
         background_tasks.add_task(run_pipeline_in_background, run_id, [universe.uuid])
         return {"status": "queued", "run_id": run_id, "world_name": universe.name}

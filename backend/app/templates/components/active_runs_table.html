@@ -10,29 +10,71 @@
     </thead>
     <tbody class="divide-y divide-gray-200 dark:divide-gray-700 bg-white dark:bg-gray-950">
         {% for run in runs %}
-        <tr class="hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
-            <td class="px-4 py-2 font-medium truncate max-w-xs text-gray-900 dark:text-gray-100">{{ run.world }}</td>
-            <td class="px-4 py-2 text-gray-600 dark:text-gray-400 truncate max-w-xs">{{ run.focus }}</td>
+        <tr class="hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors {{ 'bg-red-50 dark:bg-red-900/10' if run.failed }}">
+            <td class="px-4 py-2 font-medium truncate max-w-xs">
+                {% if run.failed %}
+                <span class="text-red-600 dark:text-red-400" title="{{ run.errors | join('; ') if run.errors else 'Unknown error' }}">
+                    {{ run.world }}
+                </span>
+                {% else %}
+                <span class="text-gray-900 dark:text-gray-100">{{ run.world }}</span>
+                {% endif %}
+            </td>
+            <td class="px-4 py-2 text-gray-600 dark:text-gray-400 truncate max-w-xs">
+                {% if run.failed %}
+                <span class="text-red-500">FAILED</span>
+                {% else %}
+                {{ run.focus }}
+                {% endif %}
+            </td>
             <td class="px-4 py-2">
                 <div class="w-full bg-gray-200 dark:bg-gray-700 h-1.5 rounded-full overflow-hidden">
+                    {% if run.failed %}
+                    <div class="bg-red-500 h-full" style="width: 100%"></div>
+                    {% else %}
                     <div class="bg-[#2563eb] h-full transition-all duration-500" style="width: {{ run.progress }}%"></div>
+                    {% endif %}
                 </div>
             </td>
-            <td class="px-4 py-2 text-right text-gray-500 dark:text-gray-400">{{ run.progress }}%</td>
+            <td class="px-4 py-2 text-right {{ 'text-red-500' if run.failed else 'text-gray-500 dark:text-gray-400' }}">
+                {% if run.failed %}ERR{% else %}{{ run.progress }}%{% endif %}
+            </td>
             <td class="px-4 py-2 text-center space-x-2">
+                {% if run.failed %}
+                <button hx-post="/api/v1/execution/runs/resume/{{ run.run_id }}"
+                        hx-target="#execution-table"
+                        hx-trigger="click"
+                        class="px-2 py-1 bg-amber-500 text-white hover:bg-amber-600 transition text-[10px] font-bold uppercase tracking-tighter rounded-sm">
+                    Resume
+                </button>
+                <button hx-post="/api/v1/execution/runs/dismiss/{{ run.run_id }}"
+                        hx-target="#execution-table"
+                        hx-trigger="click"
+                        class="px-2 py-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition text-[10px] font-bold uppercase tracking-tighter rounded-sm">
+                    Dismiss
+                </button>
+                {% else %}
                 <a href="/api/runs/{{ run.run_id }}" 
                    class="inline-block px-2 py-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition text-[10px] font-bold uppercase tracking-tighter">
                     Logs
                 </a>
-<button hx-post="/api/v1/execution/runs/abort" 
-                data-hx-vals='{"runId": "{{ run.run_id }}"}'
-                hx-target="#execution-table"
-                hx-trigger="click"
-                class="px-2 py-1 bg-white dark:bg-gray-800 border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 transition text-[10px] font-bold uppercase tracking-tighter">
-    Abort
-</button>
+                <button hx-post="/api/v1/execution/runs/abort" 
+                        data-hx-vals='{"runId": "{{ run.run_id }}"}'
+                        hx-target="#execution-table"
+                        hx-trigger="click"
+                        class="px-2 py-1 bg-white dark:bg-gray-800 border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 transition text-[10px] font-bold uppercase tracking-tighter">
+                    Abort
+                </button>
+                {% endif %}
             </td>
         </tr>
+        {% if run.failed and run.errors %}
+        <tr class="bg-red-50/50 dark:bg-red-900/5 border-t-0">
+            <td colspan="5" class="px-4 py-1 text-[10px] text-red-600 dark:text-red-400 italic leading-relaxed">
+                Error{% if run.errors | length > 1 %}s{% endif %}: {{ run.errors | join('; ') }}
+            </td>
+        </tr>
+        {% endif %}
         {% endfor %}
         {% if not runs %}
         <tr>

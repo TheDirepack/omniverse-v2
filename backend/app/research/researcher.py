@@ -50,10 +50,17 @@ async def save_audit_artifacts(
 
 
 class WorldResearcher:
-    def __init__(self, target: ResearchTarget, run_id: str, focus: str | None = None):
+    def __init__(
+        self,
+        target: ResearchTarget,
+        run_id: str,
+        focus: str | None = None,
+        saved_state: dict | None = None,
+    ):
         self.target = target
         self.run_id = run_id
         self.focus = focus
+        self.saved_state = saved_state
 
         self.uni_service = UniverseService()
         self.tier_service = TieringService()
@@ -96,8 +103,24 @@ class WorldResearcher:
                 else 2
             )
 
-            retry_handler = RetryHandler(max_iterations=max_iterations)
-            loop_history = []
+            if self.saved_state and self.saved_state.get("world_uuid") == self.target.uuid:
+                rh = self.saved_state.get("retry_handler", {})
+                retry_handler = RetryHandler(max_iterations=rh.get("max_iterations", max_iterations))
+                retry_handler.current_iteration = rh.get("current_iteration", 0)
+                retry_handler.last_result = rh.get("last_result")
+                retry_handler.feedback_history = rh.get("feedback_history", [])
+                retry_handler.agent_history = rh.get("agent_history")
+                loop_history = self.saved_state.get("loop_history", [])
+                self.exec_service.log_transition(
+                    self.run_id,
+                    "Research Unit",
+                    f"Resuming research for {world_name} from iteration {retry_handler.current_iteration}",
+                    "RESEARCHING",
+                    {},
+                )
+            else:
+                retry_handler = RetryHandler(max_iterations=max_iterations)
+                loop_history = []
 
             while retry_handler.current_iteration < retry_handler.max_iterations:
                 # Researcher Turn
@@ -160,8 +183,24 @@ class WorldResearcher:
             }
 
         except Exception as e:
+            resume_state = {
+                "world_uuid": self.target.uuid,
+                "world_name": world_name,
+                "loop_history": loop_history if isinstance(loop_history, list) else [],
+                "retry_handler": {
+                    "max_iterations": retry_handler.max_iterations,
+                    "current_iteration": retry_handler.current_iteration,
+                    "last_result": retry_handler.last_result,
+                    "feedback_history": retry_handler.feedback_history,
+                    "agent_history": retry_handler.agent_history,
+                },
+            }
             self.exec_service.log_transition(
-                self.run_id, "Research Unit", f"Agent failed for {world_name}: {e!s}", "FAILED", {}
+                self.run_id,
+                "Research Unit",
+                f"Agent failed for {world_name}: {e!s}",
+                "FAILED",
+                {"resume_state": json.dumps(resume_state, default=str)},
             )
             raise
         finally:
@@ -333,8 +372,9 @@ async def research_single_world(
     target: ResearchTarget,
     run_id: str,
     focus: str | None = None,
+    saved_state: dict | None = None,
 ) -> dict[str, Any]:
-    researcher = WorldResearcher(target, run_id, focus)
+    researcher = WorldResearcher(target, run_id, focus, saved_state=saved_state)
     return await researcher.research()
 
 

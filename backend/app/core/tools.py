@@ -259,7 +259,7 @@ async def tool_web_search(args: dict[str, Any]) -> str:
         for eng in engines:
             tasks.append(run_search(q, eng))
 
-    results = await asyncio.gather(*tasks)
+    results = await asyncio.gather(*tasks, return_exceptions=True)
 
     # Group results by query
     query_results = {q: [] for q in queries}
@@ -437,7 +437,13 @@ async def tool_fetch_page(args: dict[str, Any]) -> str:
         except (ValueError, TypeError, KeyError, AttributeError) as e:
             return (f"Error fetching {url}: {e!s}", None, "fetch_failed", None)
 
-    fetch_results = await asyncio.gather(*[run_fetch(url) for url in urls])
+    fetch_results = await asyncio.gather(*[run_fetch(url) for url in urls], return_exceptions=True)
+    # Normalize exception entries to error tuples so downstream processing stays consistent
+    fetch_results = [
+        (f"Error fetching URL: {r!s}", None, "fetch_failed", None)
+        if isinstance(r, BaseException) else r
+        for r in fetch_results
+    ]
 
     output_parts = []
     for output_str, _, _, _ in fetch_results:

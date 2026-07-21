@@ -1,5 +1,6 @@
 import logging
 import urllib.parse
+from contextlib import suppress
 from typing import Any
 
 from bs4 import BeautifulSoup
@@ -121,8 +122,10 @@ class WebSearcher:
                 ),
             }
         finally:
-            await page.close()
-            await context.close()
+            with suppress(Exception):
+                await page.close()
+            with suppress(Exception):
+                await context.close()
             browser_manager.release_page(context)
 
     def _is_ai_container(self, element) -> bool:

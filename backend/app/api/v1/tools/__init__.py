@@ -94,7 +94,7 @@ async def research_worlds(
 
     import uuid
     run_id = str(uuid.uuid4())
-    from app.api.routers.runs import run_pipeline_in_background
+    from app.api.v1.execution.runs import run_pipeline_in_background
 
     background_tasks.add_task(
         run_pipeline_in_background, run_id, worlds
@@ -183,7 +183,7 @@ def import_world(payload: ImportWorldPayload, background_tasks: BackgroundTasks)
         import uuid
 
         run_id = str(uuid.uuid4())
-        from app.api.routers.runs import run_pipeline_in_background
+        from app.api.v1.execution.runs import run_pipeline_in_background
 
         background_tasks.add_task(
             run_pipeline_in_background, run_id, [world.uuid]
@@ -221,7 +221,7 @@ def create_world(payload: AddWorldPayload, background_tasks: BackgroundTasks, se
         import uuid
 
         run_id = str(uuid.uuid4())
-        from app.api.routers.runs import run_pipeline_in_background
+        from app.api.v1.execution.runs import run_pipeline_in_background
 
         background_tasks.add_task(
             run_pipeline_in_background, run_id, [world.uuid]
@@ -248,7 +248,7 @@ def add_world(payload: AddWorldPayload, background_tasks: BackgroundTasks, sessi
         import uuid
 
         run_id = str(uuid.uuid4())
-        from app.api.routers.runs import run_pipeline_in_background
+        from app.api.v1.execution.runs import run_pipeline_in_background
 
         background_tasks.add_task(
             run_pipeline_in_background, run_id, [world.uuid]
@@ -332,7 +332,7 @@ def research_unexplored(background_tasks: BackgroundTasks):
     import uuid
 
     run_id = str(uuid.uuid4())
-    from app.api.routers.runs import run_pipeline_in_background
+    from app.api.v1.execution.runs import run_pipeline_in_background
 
     background_tasks.add_task(run_pipeline_in_background, run_id, unexplored)
     return {"status": "started", "run_id": run_id, "worlds": unexplored}

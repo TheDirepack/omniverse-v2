@@ -55,7 +55,7 @@ async def focused_search_submit(
     features: str = Form(...),
 ):
     # Lazy import to avoid circular dependency (runs.py imports from views)
-    from app.api.routers.runs import run_focused_search_in_background
+    from app.api.v1.execution.runs import run_focused_search_in_background
 
     world_list = [w.strip() for w in worlds.split(",") if w.strip()]
     feature_list = [f.strip() for f in features.split(",") if f.strip()]

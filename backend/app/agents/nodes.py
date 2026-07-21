@@ -46,10 +46,41 @@ async def research_node(state: OmniverseState) -> dict[str, Any]:
 
     focus_str = ", ".join(focused_features) if focused_features else None
 
+    failed_state_map: dict[str, dict] = {}
+    try:
+        from app.db.schema import ExecutionState
+        from app.db.session import engine
+        from sqlmodel import Session, select
+        with Session(engine) as _sess:
+            stmt = (
+                select(ExecutionState)
+                .where(ExecutionState.run_id == run_id)
+                .where(ExecutionState.node_name == "Research Unit")
+                .where(ExecutionState.status == "FAILED")
+                .order_by(ExecutionState.created_at.desc())
+            )
+            for entry in _sess.exec(stmt).all():
+                try:
+                    snap = json.loads(entry.state_snapshot)
+                    rs = snap.get("resume_state")
+                    if rs and isinstance(rs, dict):
+                        uuid_val = rs.get("world_uuid")
+                        if uuid_val and uuid_val not in failed_state_map:
+                            failed_state_map[uuid_val] = rs
+                except (json.JSONDecodeError, TypeError, KeyError):
+                    pass
+    except Exception:
+        pass
+
     for i in range(0, len(target_worlds), batch_size):
         batch = target_worlds[i : i + batch_size]
         tasks = [
-            research_single_world(world, run_id, focus=focus_str)
+            research_single_world(
+                world,
+                run_id,
+                focus=focus_str,
+                saved_state=failed_state_map.get(world.uuid),
+            )
             for world in batch
         ]
         batch_results = await asyncio.gather(*tasks, return_exceptions=True)

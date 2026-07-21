@@ -18,7 +18,10 @@ from app.core.runtime_state import (
     abort_run,
     add_active_run,
     get_active_runs,
+    get_failed_run_errors,
     is_aborted,
+    is_failed,
+    mark_run_failed,
     remove_run,
 )
 from app.core.templates import templates
@@ -110,18 +113,29 @@ async def run_pipeline_in_background(run_id: str, universe_uuids: list[str]):
         "architecture_attempts": 0,
     }
     try:
-        await app_graph.ainvoke(inputs)
+        final_state = await app_graph.ainvoke(inputs)
+        errors = final_state.get("errors", [])
+        if errors:
+            await mark_run_failed(run_id, errors, universe_uuids)
+            exec_service.log_transition(
+                run_id,
+                "Manager",
+                f"Run completed with {len(errors)} error(s): {'; '.join(errors)}",
+                RunPhase.FAILED,
+                {"errors": errors, "resumable": True},
+            )
+        else:
+            await remove_run(run_id)
     except (ValueError, TypeError, KeyError, RuntimeError, AttributeError, OSError) as e:
+        error_msg = str(e)
         exec_service.log_transition(
             run_id,
             "Manager",
-            f"Critical Extrapolation Failure: {e!s}",
+            f"Critical Pipeline Failure: {error_msg}",
             RunPhase.FAILED,
-            {"error": str(e)},
+            {"error": error_msg, "resumable": True},
         )
-
-    finally:
-        await remove_run(run_id)
+        await mark_run_failed(run_id, [error_msg], universe_uuids)
 
 
 async def run_focused_search_in_background(
@@ -405,6 +419,31 @@ async def abort_all_runs():
     return {"status": "all_aborted", "count": len(active_runs)}
 
 
+@router.post("/resume/{run_id}")
+async def resume_run(run_id: str, background_tasks: BackgroundTasks):
+    exec_service = ExecutionService()
+    failed_uuids = await get_failed_run_uuids(run_id)
+    if not failed_uuids:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Run {run_id} is not in a resumable failed state (no universe UUIDs found).",
+        )
+
+    await clear_failed_run(run_id)
+    exec_service.log_transition(
+        run_id, "Manager", "Resuming failed run", RunPhase.RESEARCH, {}
+    )
+
+    background_tasks.add_task(run_pipeline_in_background, run_id, failed_uuids)
+    return {"status": "resumed", "run_id": run_id, "uuids": failed_uuids}
+
+
+@router.post("/dismiss/{run_id}")
+async def dismiss_failed_run(run_id: str):
+    await remove_run(run_id)
+    return {"status": "dismissed", "run_id": run_id}
+
+
 @router.get("/active-detailed")
 async def get_active_runs_detailed(request: Request, filter: str | None = None):
     active_ids = await get_active_runs()
@@ -443,12 +482,16 @@ async def get_active_runs_detailed(request: Request, filter: str | None = None):
             elif phase == RunPhase.SUMMARIZING: progress = 90
             elif phase == RunPhase.COMPLETED: progress = 100
 
+            failed = await is_failed(rid)
+            errors = await get_failed_run_errors(rid) if failed else []
             detailed_runs.append({
                 "run_id": rid,
                 "world": world_name,
                 "focus": focus_str,
-                "progress": progress,
-                "status": phase
+                "progress": 0 if failed else progress,
+                "status": "FAILED" if failed else phase,
+                "failed": failed,
+                "errors": errors,
             })
 
     template = templates.env.get_template("components/active_runs_table.html")

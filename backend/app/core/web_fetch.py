@@ -4,6 +4,7 @@ import ipaddress
 import logging
 import re
 import socket
+from contextlib import suppress
 from typing import Any
 from urllib.parse import urljoin, urlparse
 
@@ -726,8 +727,10 @@ class WebFetcher:
 
             return result
         finally:
-            await page.close()
-            await context.close()
+            with suppress(Exception):
+                await page.close()
+            with suppress(Exception):
+                await context.close()
             browser_manager.release_page(context)
 
 

@@ -179,22 +179,12 @@ async def world_tab_content(
             from app.db.notebook_session import notebook_engine
             nsession = Session(notebook_engine)
 
-            # Find notebook universe by uuid
-            notebook_universe = nsession.exec(
-                select(NotebookUniverse).where(
-                    func.lower(NotebookUniverse.name) == func.lower(world.name)
-                )
-            ).first()
-
-            entries = []
-            claims = []
-            if notebook_universe:
-                entries = nsession.exec(
-                    select(NotebookEntry).where(NotebookEntry.universe_uuid == world.uuid)
-                ).all()
-                claims = nsession.exec(
-                    select(NotebookClaim).where(NotebookClaim.universe_id == notebook_universe.id)
-                ).all()
+            entries = nsession.exec(
+                select(NotebookEntry).where(NotebookEntry.universe_uuid == world.uuid)
+            ).all()
+            claims = nsession.exec(
+                select(NotebookClaim).where(NotebookClaim.universe_uuid == world.uuid)
+            ).all()
             nsession.close()
 
             template = templates.env.get_template("components/knowledge_notebook_tab.html")

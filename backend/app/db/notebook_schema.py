@@ -128,6 +128,7 @@ class NotebookClaim(NotebookModel, table=True):
     __tablename__ = "notebook_claim"
 
     id: int | None = Field(default=None, primary_key=True)
+    universe_uuid: str = Field(index=True)
     subject: str = Field(index=True)
     predicate: str
     object_val: str = Field(nullable=False)

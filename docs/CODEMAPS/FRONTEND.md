@@ -291,7 +291,7 @@ response.headers["HX-Trigger"] = (
 - **Artifacts**: `artifact_detail.html`, `artifact_list.html`
 - **Entities**: `entity_detail.html`
 - **Notebook**: `research_notebook.html`, `research_notebook_entry.html`, `notebook_artifact_card.html`, `notebook_claim_card.html`
-- **Research**: `research_queue.html`, `focused_search_panel.html`, `research_sources.html`, `research_timeline.html`, `research_history.html`
+- **Research**: `research_queue.html`, `focused_search_panel.html`, `research_sources.html`, `research_history.html`
 - **Provenance**: `provenance_trace.html`
 - **Settings**: `settings_general.html`, `settings_health.html`, `settings_providers.html`, `settings_routes.html`, `provider_form.html`
 - **Worlds**: `world_list.html`, `world_detail.html`, `world_create_form.html`, `world_hierarchy.html`, `world_import_list.html`, `world_neighborhood.html`, `world_row.html`, `database_worlds.html`, `database_worlds_paginated.html`, `world_snapshots.html`

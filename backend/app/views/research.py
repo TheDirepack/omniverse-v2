@@ -157,21 +157,4 @@ async def workspace_sources(request: Request):
     )
 
 
-@router.get("/workspace/timeline", response_class=HTMLResponse)
-async def workspace_timeline(request: Request):
-    active_world = request.cookies.get("active_world_id")
-    if not active_world:
-        return HTMLResponse(content="No active world set.", status_code=400)
-
-    uni_service = UniverseService()
-    world = uni_service.get_universe_by_uuid(active_world)
-    if not world:
-        return HTMLResponse(content="World not found.", status_code=404)
-
-    workspace_service = WorkspaceService()
-    timeline = workspace_service.get_timeline(world.uuid)
-
-    template = templates.env.get_template("components/research_timeline.html")
-    return HTMLResponse(
-        content=template.render(request=request, world=world, timeline=timeline)
-    )
+# workspace_timeline removed per instructions

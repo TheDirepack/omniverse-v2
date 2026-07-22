@@ -61,7 +61,7 @@ app.mount("/research", ...)
 | **Tiering Service** | `tiering_service.py` | Trigger tiering workflows, anomaly detection |
 | **Theory Service** | `theory_service.py` | Speculative theory management |
 | **Knowledge Retriever** | `knowledge_retriever.py` | Optimized artifact graph queries, pagination |
-| **Research Workspace** | `research_workspace.py` | Notebook CRUD, source management, timeline events |
+| **Research Workspace** | `research_workspace.py` | Notebook CRUD, source management, domain cache, visited URL tracking |
 | **Settings Service** | `settings_service.py` | Provider configs, agent routes, validation |
 | **Provider Service** | `provider_service.py` | LLM provider operations, model sync |
 | **Effect Executor** | `effect_executor.py` | Tool call effect management |
@@ -129,7 +129,7 @@ Manager → Research → DB Integrator → Mark Explored → Summary → Finishe
 | **Agent Engine** | `agent_engine.py` | Agent turn execution | `run_agent()`, Capability enum |
 | **Router** | `router.py` | LLM provider routing | `ModelRouter`, health checking, fallback chain |
 | **Browser** | `browser.py` | Cloakbrowser management | `BrowserManager` singleton, Semaphore(5) |
-| **Tools** | `tools.py` | Agent tool definitions | `webSearch`, `fetchPage`, `queryArtifacts`, `upsertArtifacts`, `saveNotebookEntry`, `loadNotebookEntry`, `readWorkspace`, `writeWorkspace`, `submitWork`, `recordTimelineEvent`, `manageSource`, `acquireArtifacts` |
+| **Tools** | `tools.py` | Agent tool definitions | `webSearch`, `fetchPage`, `queryArtifacts`, `upsertArtifacts`, `saveNotebookEntry`, `loadNotebookEntry`, `readWorkspace`, `writeWorkspace`, `submitWork`, `manageSource`, `acquireArtifacts` |
 | **Runtime State** | `runtime_state.py` | ContextVar management | `run_id` isolation |
 | **Context Manager** | `context_manager.py` | Token counting & pruning | `ContextManager`, compression, pruning |
 | **Context** | `context.py` | Universe context | Universe context management |

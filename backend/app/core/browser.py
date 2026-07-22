@@ -1,9 +1,11 @@
 import asyncio
 import logging
 import os
+import time
 import urllib.request
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager, suppress
+from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
@@ -26,6 +28,68 @@ def intercept_route(route):
         return route.abort()
 
     return route.continue_()
+
+
+# ============================================================================
+# Adblocker: Load and cache blocked domains from Anudeep's blacklist
+# ============================================================================
+BLOCKED_DOMAINS: set[str] = set()
+_CACHE_FILE = Path(__file__).parent.parent.parent / "data" / "adservers.txt"
+_MAX_AGE_SECONDS = 24 * 60 * 60  # 24 hours
+
+
+def _load_blocked_domains() -> set[str]:
+    """Load blocked domains from local cache file or fetch from remote source."""
+    domains: set[str] = set()
+    
+    # Try to load from local cache first
+    if _CACHE_FILE.exists():
+        try:
+            mtime = _CACHE_FILE.stat().st_mtime
+            if time.time() - mtime < _MAX_AGE_SECONDS:
+                with _CACHE_FILE.open("r", encoding="utf-8") as f:
+                    for line in f:
+                        line = line.strip()
+                        if not line or line.startswith("#"):
+                            continue
+                        parts = line.split()
+                        if len(parts) >= 2:
+                            # Take the last part as the domain (handles 0.0.0.0, 127.0.0.1 prefixes)
+                            domains.add(parts[-1].lower())
+                logger.info("Loaded %d blocked domains from local cache", len(domains))
+                return domains
+        except Exception as e:
+            logger.debug("Failed to load blocked domains from cache: %s", e)
+    
+    # Fetch from remote source
+    try:
+        url = "https://raw.githubusercontent.com/anudeepND/blacklist/master/adservers.txt"
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            lines = resp.read().decode("utf-8").splitlines()
+            for line in lines:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                parts = line.split()
+                if len(parts) >= 2:
+                    domains.add(parts[-1].lower())
+        
+        # Write to cache file
+        _CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        with _CACHE_FILE.open("w", encoding="utf-8") as f:
+            for d in sorted(domains):
+                f.write(f"0.0.0.0 {d}\n")
+        
+        logger.info("Loaded and cached %d blocked domains from remote source", len(domains))
+    except Exception as e:
+        logger.warning("Failed to fetch adserver blacklist: %s", e)
+    
+    return domains
+
+
+# Load blocked domains on module import
+BLOCKED_DOMAINS = _load_blocked_domains()
 
 # Number of independent browser processes in the pool. Each process gets its
 # own concurrency semaphore, so load spreads across real OS processes instead

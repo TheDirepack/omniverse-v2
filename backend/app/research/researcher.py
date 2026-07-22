@@ -90,7 +90,7 @@ class WorldResearcher:
             )
 
             researcher_tools = get_tools_for_agent("Researcher")
-            auditor_tools = ["fetchPage", "compareSourceFreshness", "loadNotebookEntry", "queryArtifacts"]
+            auditor_tools = ["fetchPage", "loadNotebookEntry", "queryArtifacts"]
 
             # Context Gathering
             context = await self._gather_universe_context(universe)

@@ -4,7 +4,6 @@ AGENT_TOOLS = {
         "webSearch",
         "fetchPage",
         "ocrImage",
-        "compareSourceFreshness",
         "saveNotebookEntry",
         "loadNotebookEntry",
         "deleteNotebookEntry",
@@ -12,7 +11,6 @@ AGENT_TOOLS = {
     ],
     "LogicAuditor": [
         "fetchPage",
-        "compareSourceFreshness",
         "loadNotebookEntry",
         "queryArtifacts",
     ],

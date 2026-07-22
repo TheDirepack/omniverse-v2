@@ -10,7 +10,6 @@ from app.core.tools import (
     _get_universe_uuid,
     _store_artifact,
     build_freshness_comparison_report,
-    tool_compare_source_freshness,
     tool_link_entity_to_canonical,
     tool_link_universes,
     tool_save_notebook_entry,
@@ -81,21 +80,7 @@ class TestBuildFreshnessReport:
             })
 
 
-class TestToolCompareSourceFreshness:
-    async def test_missing_urls(self):
-        result = await tool_compare_source_freshness({})
-        assert "Missing or invalid urls" in result
-
-    async def test_invalid_urls_type(self):
-        result = await tool_compare_source_freshness({"urls": "not-list"})
-        assert "Missing or invalid urls" in result
-
-    @patch("app.core.tools.web_fetcher.fetch_page", new_callable=AsyncMock)
-    async def test_fetch_failure_returns_none(self, mock_fetch):
-        mock_fetch.side_effect = RuntimeError("fail")
-        result = await tool_compare_source_freshness({"urls": ["http://x.com", "http://y.com"]})
-        assert "CANDIDATE: http://x.com" in result
-        assert "Unavailable" in result
+# TestToolCompareSourceFreshness removed per instructions
 
 
 class TestToolLinkUniverses:

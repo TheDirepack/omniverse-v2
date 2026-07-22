@@ -220,36 +220,27 @@ class WorkspaceService:
             result += f"\n(... and {len(events) - limit} more. Use addTimelineDetail to add more ...)"
         return result
 
-    def get_full_workspace_index(self, universe_uuid: str) -> str:
-        """Aggregates all indices into a single context block, using truncation to avoid context overflow."""
-        # Use limits to prevent context overflow
-        notebook_str = self.get_notebook_index_str(universe_uuid, limit=15)
-        sources_str = self.get_sources_index_str(universe_uuid, limit=15)
-        timeline_str = self.get_timeline_index_str(universe_uuid, limit=15)
-
-        index = (
-            f"{notebook_str}\n\n"
-            f"{sources_str}\n\n"
-            f"{timeline_str}"
+    def get_domain_cache(self, universe_uuid: str) -> list[WorldDomainCache]:
+        """Returns cached domain preferences for a world."""
+        statement = (
+            select(WorldDomainCache)
+            .where(WorldDomainCache.universe_uuid == universe_uuid)
+            .order_by(WorldDomainCache.overall_score.desc())
         )
+        return self.session.exec(statement).all()
 
-        if self.universe_service:
-            universe = self.universe_service.get_universe_by_uuid(universe_uuid)
-            if universe:
-                artifacts = self.universe_service.get_artifacts_summary(universe.id)
-                if artifacts:
-                    limit = 30
-                    display_artifacts = artifacts[:limit]
-                    artifact_lines = [f"- {name} ({atype})" for name, atype in display_artifacts]
-                    index += "\n\nCANONICAL ARTIFACTS:\n" + "\n".join(artifact_lines)
-                    if len(artifacts) > limit:
-                        index += f"\n(... and {len(artifacts) - limit} more. Use queryArtifacts to search for specific artifacts ...)"
-                else:
-                    index += "\n\nCANONICAL ARTIFACTS:\nNo artifacts found."
-            else:
-                index += "\n\nCANONICAL ARTIFACTS:\nUniverse not found."
+    def get_domain_cache_index_str(self, universe_uuid: str, limit: int = 5) -> str:
+        """Generates a concise list of cached canonical sources for prompt injection."""
+        caches = self.get_domain_cache(universe_uuid)
+        if not caches:
+            return "No cached domain preferences."
 
-        return index
+        display_caches = caches[:limit]
+        lines = [
+            f"- {c.domain} (Score: {c.overall_score:.1f}, Confidence: {c.confidence:.2f}, URL: {c.url})"
+            for c in display_caches
+        ]
+        return "CACHED CANONICAL SOURCES & DOMAIN PREFERENCES:\n" + "\n".join(lines)
 
     def create_timeline_event(
         self,

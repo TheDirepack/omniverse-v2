@@ -1,5 +1,7 @@
+import asyncio
 import hashlib
 import re
+import time
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -42,7 +44,11 @@ def _clean_error(e: Exception) -> str:
 
 class ModelRouter:
     def __init__(self):
-        pass
+        self._initialized = False
+        self._cooldowns: dict[str, float] = {}
+        self._cooldown_seconds = 60  # default cooldown period for rate-limited models
+        self._last_blacklist_check = 0
+        self._blacklist_check_interval = 24 * 60 * 60  # 24 hours in seconds
 
     def _get_health(
         self, session: Session, provider_id: int, key_id: int | None, model: str
@@ -276,6 +282,12 @@ class ModelRouter:
                         and _ensure_aware(health.disabled_until) > datetime.now(timezone.utc)
                     ):
                         continue
+
+                # Check if candidate is on rate-limit cooldown
+                candidate_key = candidate["full_model"]
+                cooldown_until = self._cooldowns.get(candidate_key)
+                if cooldown_until and time.time() < cooldown_until:
+                    continue
 
                 try:
                     full_model = candidate["full_model"]

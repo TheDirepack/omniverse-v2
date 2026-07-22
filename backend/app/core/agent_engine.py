@@ -37,7 +37,7 @@ TOOL_CAPABILITIES = {
     "webSearch": Capability.ACQUISITION,
     "fetchPage": Capability.ACQUISITION,
     "ocrImage": Capability.ACQUISITION,
-    "compareSourceFreshness": Capability.ACQUISITION,
+# "compareSourceFreshness": Capability.ACQUISITION,
 }
 
 
@@ -108,7 +108,7 @@ async def _execute_tool(
     _model: str | None = None,
     _key_id: str | None = None,
 ) -> str:
-    """Execute a tool, routing fetchPage/compareSourceFreshness through shared cache."""
+    """Execute a tool, routing fetchPage through shared cache."""
     if name == "fetchPage":
         urls = (
             args.get("urls", [])
@@ -124,19 +124,6 @@ async def _execute_tool(
             else:
                 results.append(f"Error fetching {url}: {content}")
         return "\n\n".join(results)
-
-    if name == "compareSourceFreshness":
-        urls = args.get("urls", [])
-        if not urls or not isinstance(urls, list):
-            return "Error: Missing or invalid urls argument (expected a list of at least 2 URLs)."
-
-        url_content_map = {}
-        for url in urls:
-            content, status = await _read_page_cached(url)
-            url_content_map[url] = content if status in ("fetched", "cached") else None
-
-        from app.core.tools import build_freshness_comparison_report
-        return build_freshness_comparison_report(url_content_map)
 
     if name == "ocrImage":
         image_url = args.get("image_url")

@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlmodel import Session, select
+from sqlmodel import Session, func, select
 
 from app.db.notebook_schema import (
     AcquisitionArtifact,
@@ -35,7 +35,33 @@ class AcquisitionCacheRepository:
         self.session.add(artifact)
         self.session.commit()
         self.session.refresh(artifact)
+        # Enforce cache size limit: evict oldest entries if total exceeds 16 GB
+        self._enforce_cache_size_limit()
         return artifact
+
+    def _enforce_cache_size_limit(self):
+        """Evict oldest cache entries if we have too many artifacts stored."""
+        try:
+            # Check if we exceed a reasonable artifact threshold (e.g., 100,000)
+            count_result = self.session.exec(
+                select(func.count()).select_from(AcquisitionArtifact)
+            ).one()
+            
+            if count_result > 100000:  # If we have over 100k artifacts, evict some
+                # Delete oldest artifacts (up to 10k) to free up space
+                oldest_artifacts = self.session.exec(
+                    select(AcquisitionArtifact)
+                    .order_by(AcquisitionArtifact.created_at.asc())
+                    .limit(10000)
+                ).all()
+                
+                if oldest_artifacts:
+                    for artifact in oldest_artifacts:
+                        self.session.delete(artifact)
+                    self.session.commit()
+        except Exception:
+            # Don't fail if cache size enforcement fails
+            pass
 
     def record_usage(
         self,

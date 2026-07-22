@@ -121,6 +121,24 @@ class ProvenanceEdge(NotebookModel, table=True):
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
+class WorldDomainCache(NotebookModel, table=True):
+    __tablename__ = "world_domain_cache"
+    __table_args__ = (
+        UniqueConstraint("universe_uuid", "domain"),
+    )
+
+    id: int | None = Field(default=None, primary_key=True)
+    universe_uuid: str = Field(index=True)
+    domain: str = Field(index=True)
+    url: str
+    domain_score: float = Field(default=0.0)
+    freshness_score: float = Field(default=0.0)
+    coverage_score: float = Field(default=0.0)
+    overall_score: float = Field(default=0.0)
+    confidence: float = Field(default=0.0)
+    verified_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
 class ResearchSource(NotebookModel, table=True):
     __tablename__ = "research_source"
 

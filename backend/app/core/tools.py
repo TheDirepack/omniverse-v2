@@ -232,13 +232,15 @@ async def tool_web_search(args: dict[str, Any]) -> str:
         engines = ["duckduckgo"]
 
     site_filter = args.get("site_filter")
-    max_results = args.get("max_results", 10)
+    requested_max_results = args.get("max_results", 10)
+    # Fetch a larger candidate pool to allow rigorous negative filtering, domain reputation scoring, and post-sort slicing
+    candidate_fetch_limit = max(requested_max_results * 3, 30)
 
     async def run_search(q, eng):
-        url = f"search:{eng}:{q}|site:{site_filter}|max:{max_results}"
+        url = f"search:{eng}:{q}|site:{site_filter}|max:{candidate_fetch_limit}"
         async def fetch_func():
             res = await web_searcher.perform_search(
-                q, engine=eng, site_filter=site_filter, max_results=max_results
+                q, engine=eng, site_filter=site_filter, max_results=candidate_fetch_limit
             )
             return AcquisitionArtifact(
                 content_hash=AcquisitionArtifact.compute_hash(
@@ -261,10 +263,143 @@ async def tool_web_search(args: dict[str, Any]) -> str:
 
     results = await asyncio.gather(*tasks, return_exceptions=True)
 
-    # Group results by query
+    # Negative domain filtering
+    BLOCKED_DOMAINS_PATTERNS = {
+        "reddit.com", "youtube.com", "tiktok.com", "twitter.com", "facebook.com",
+        "instagram.com", "pinterest.com", "quora.com", "imdb.com", "amazon.com",
+        "ebay.com", "wikipedia.org"  # Deprioritize Wikipedia when wikis exist
+    }
+
+    def get_domain(link: str) -> str:
+        try:
+            parsed = urlparse(link)
+            return parsed.netloc.lower()
+        except Exception:
+            return ""
+
+    def score_domain(domain: str) -> float:
+        if not domain:
+            return 10.0
+        if "fallout.wiki" in domain or "es.fallout.wiki" in domain or "oldschoolrs.wiki" in domain or "zeldawiki" in domain:
+            return 100.0
+        if "fandom.com" in domain or "wikia.com" in domain:
+            return 85.0
+        if "wiki" in domain:
+            return 90.0
+        if "github.com" in domain or "readthedocs.io" in domain or "official" in domain:
+            return 90.0
+        if "wikipedia.org" in domain:
+            return 70.0
+        if "forum" in domain or "boards" in domain:
+            return 40.0
+        return 30.0
+
+    universe_uuid = _get_universe_uuid()
+    workspace_service = WorkspaceService() if universe_uuid else None
+
     query_results = {q: [] for q in queries}
     for q, eng, res in results:
-        query_results[q].append((eng, res))
+        if not res or isinstance(res, str) or res.get("status") != "SUCCESS":
+            query_results[q].append((eng, res))
+            continue
+
+        raw_search_results = res.get("results", [])
+        filtered_scored_candidates = []
+
+        for item in raw_search_results:
+            link = item.get("url", "")
+            domain = get_domain(link)
+            
+            # Apply negative filtering
+            if any(b in domain for b in BLOCKED_DOMAINS_PATTERNS):
+                # Skip unless no other alternative exists
+                continue
+
+            # Compute composite ranking score
+            d_score = score_domain(domain)
+            # Freshness / coverage heuristic placeholder from snippet length and title density
+            snippet = item.get("snippet", "")
+            cov_score = min(100.0, float(len(snippet)) / 2.0 + (20.0 if "wiki" in link else 10.0))
+            fresh_score = 90.0 # Default baseline freshness
+
+            overall = (0.55 * d_score) + (0.25 * fresh_score) + (0.20 * cov_score)
+
+            filtered_scored_candidates.append({
+                "item": item,
+                "domain": domain,
+                "d_score": d_score,
+                "cov_score": cov_score,
+                "fresh_score": fresh_score,
+                "overall": overall
+            })
+
+        # Fallback if strict filtering dropped everything
+        if not filtered_scored_candidates and raw_search_results:
+            for item in raw_search_results:
+                link = item.get("url", "")
+                domain = get_domain(link)
+                d_score = score_domain(domain)
+                filtered_scored_candidates.append({
+                    "item": item,
+                    "domain": domain,
+                    "d_score": d_score,
+                    "cov_score": 50.0,
+                    "fresh_score": 50.0,
+                    "overall": d_score
+                })
+
+        # Sort by overall composite score descending
+        filtered_scored_candidates.sort(key=lambda x: x["overall"], reverse=True)
+
+        # Apply result count cap AFTER filtering and sorting
+        top_candidates = filtered_scored_candidates[:requested_max_results]
+
+        # Persist top 3-4 sources into world domain cache if universe is active
+        if universe_uuid and workspace_service and top_candidates:
+            try:
+                with workspace_service.session as session:
+                    for cand in top_candidates[:4]:
+                        d = cand["domain"]
+                        if not d:
+                            continue
+                        existing = session.exec(
+                            select(WorldDomainCache).where(
+                                WorldDomainCache.universe_uuid == universe_uuid,
+                                WorldDomainCache.domain == d
+                            )
+                        ).first()
+                        
+                        if existing:
+                            existing.url = cand["item"]["url"]
+                            existing.domain_score = cand["d_score"]
+                            existing.coverage_score = cand["cov_score"]
+                            existing.freshness_score = cand["fresh_score"]
+                            existing.overall_score = cand["overall"]
+                            existing.confidence = min(1.0, cand["overall"] / 100.0)
+                            existing.verified_at = datetime.now(timezone.utc)
+                            session.add(existing)
+                        else:
+                            new_cache = WorldDomainCache(
+                                universe_uuid=universe_uuid,
+                                domain=d,
+                                url=cand["item"]["url"],
+                                domain_score=cand["d_score"],
+                                coverage_score=cand["cov_score"],
+                                freshness_score=cand["fresh_score"],
+                                overall_score=cand["overall"],
+                                confidence=min(1.0, cand["overall"] / 100.0),
+                            )
+                            session.add(new_cache)
+                    session.commit()
+            except Exception as e:
+                import logging
+                logging.getLogger("tools").exception(f"Failed to persist WorldDomainCache: {e}")
+
+        repackaged_res = {
+            "status": "SUCCESS",
+            "results": [c["item"] for c in top_candidates]
+        }
+        query_results[q].append((eng, repackaged_res))
 
     output_blocks = []
     for i, q in enumerate(queries, 1):
@@ -510,29 +645,7 @@ def build_freshness_comparison_report(url_content_map: dict[str, str | None]) ->
     )
 
 
-async def tool_compare_source_freshness(args: dict[str, Any]) -> str:
-    """
-    Standalone/direct-use form: fetches each candidate URL itself (no shared
-    cache/budget). Used for direct calls and tests. When this tool is invoked
-    through the normal agent loop, agent_engine.py intercepts it before it
-    reaches here and instead performs budgeted, cached fetches, then calls
-    build_freshness_comparison_report() directly — see the "compareSourceFreshness"
-    branch in agent_engine.py's tool dispatch.
-    """
-    urls = args.get("urls", [])
-    if not urls or not isinstance(urls, list):
-        return "Error: Missing or invalid urls argument (expected a list of at least 2 URLs)."
-
-    url_content_map = {}
-    for url in urls:
-        try:
-            url_content_map[url] = await web_fetcher.fetch_page(
-                url, include_freshness=True
-            )
-        except (TimeoutError, ConnectionError, OSError, ValueError, RuntimeError):
-            url_content_map[url] = None
-
-    return build_freshness_comparison_report(url_content_map)
+# compareSourceFreshness removed per instructions
 
 
 async def tool_query_claims(args: dict[str, Any]) -> str:
@@ -1061,21 +1174,7 @@ AGENT_TOOLS: dict[str, dict[str, Any]] = {
             "required": [],
         },
     },
-    "compareSourceFreshness": {
-        "func": tool_compare_source_freshness,
-        "description": "Compare 2+ candidate URLs for the same subject and report which is actively maintained vs. stale/moved/archived, using HTTP headers, on-page 'last edited' text, and redirect/canonical signals. Use this whenever webSearch surfaces more than one plausible wiki for the same universe, BEFORE settling on a canonical domain. Shares the same per-run fetch budget/cache as fetchPage — comparing candidates you've already fetched costs nothing extra.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "urls": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "2 or more candidate URLs covering the same subject/universe.",
-                }
-            },
-            "required": ["urls"],
-        },
-    },
+# compareSourceFreshness removed
     "upsertArtifacts": {
         "func": tool_upsert_artifacts,
         "description": "Integrate validated polymorphic artifacts (Entity, Claim, Event, Specification) into the permanent records. Prefer batching via `items`.",

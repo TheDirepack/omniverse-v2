@@ -3,13 +3,11 @@ from unittest.mock import patch
 import pytest
 
 from app.core.tools import (
-    tool_add_timeline_detail,
     tool_load_notebook_entry,
     tool_manage_source,
-    tool_record_timeline_event,
     tool_save_notebook_entry,
 )
-from app.db.notebook_schema import NotebookEntry, ResearchSource, TimelineEntry
+from app.db.notebook_schema import NotebookEntry, ResearchSource
 
 
 @pytest.mark.asyncio
@@ -68,44 +66,4 @@ async def test_tool_manage_source():
         assert "updated/saved" in res
         mock_upsert.assert_called_once()
 
-@pytest.mark.asyncio
-async def test_tool_record_timeline_event():
-    with patch("app.core.tools._get_universe_uuid", return_value="test-uuid"), \
-         patch(
-             "app.services.research_workspace.WorkspaceService.create_timeline_event"
-         ) as mock_create:
 
-        mock_create.return_value = TimelineEntry(id=1, title="Event")
-
-        res = await tool_record_timeline_event({
-            "title": "Big Bang",
-            "date": "T=0"
-        })
-        assert "recorded" in res
-        mock_create.assert_called_once()
-
-@pytest.mark.asyncio
-async def test_tool_add_timeline_detail():
-    with patch(
-        "app.services.research_workspace.WorkspaceService.add_timeline_participant"
-    ) as mock_part, \
-         patch(
-             "app.services.research_workspace.WorkspaceService.add_timeline_location"
-         ) as mock_loc:
-
-        res = await tool_add_timeline_detail({
-            "timeline_id": 1,
-            "type": "participant",
-            "value_id": 10,
-            "role": "Leader"
-        })
-        assert "Added participant" in res
-        mock_part.assert_called_once_with(1, 10, "Leader")
-
-        res = await tool_add_timeline_detail({
-            "timeline_id": 1,
-            "type": "location",
-            "value_id": 20
-        })
-        assert "Added location" in res
-        mock_loc.assert_called_once_with(1, 20)

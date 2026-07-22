@@ -6,11 +6,8 @@ from sqlmodel import Session, select
 from app.db.notebook_schema import (
     NotebookEntry,
     ResearchSource,
-    TimelineClaim,
-    TimelineEntry,
-    TimelineLocation,
-    TimelineParticipant,
-    TimelineSource,
+    WorldDomainCache,
+    VisitedUrl,
 )
 from app.db.notebook_session import notebook_engine
 from app.services.universe_service import UniverseService
@@ -195,98 +192,35 @@ class WorkspaceService:
         self.session.refresh(source)
         return source
 
-    # --- Timeline Management ---
+    # --- Visited & Blocked URLs Tracking ---
 
-    def get_timeline(self, universe_uuid: str) -> list[TimelineEntry]:
-        """Returns the chronology of events for a world."""
-        statement = (
-            select(TimelineEntry)
-            .where(TimelineEntry.universe_uuid == universe_uuid)
-            .order_by(TimelineEntry.date)
-        )
-        return self.session.exec(statement).all()
-
-    def get_timeline_index_str(self, universe_uuid: str, limit: int = 50) -> str:
-        """Generates a concise list of timeline events for the agent's context."""
-        events = self.get_timeline(universe_uuid)
-        if not events:
-            return "No timeline events recorded."
-
-        display_events = events[:limit]
-        lines = [f"[{e.id}] {e.title} (Era: {e.era or 'Unknown'})" for e in display_events]
-
-        result = "TIMELINE EVENTS:\n" + "\n".join(lines)
-        if len(events) > limit:
-            result += f"\n(... and {len(events) - limit} more. Use addTimelineDetail to add more ...)"
-        return result
-
-    def get_domain_cache(self, universe_uuid: str) -> list[WorldDomainCache]:
-        """Returns cached domain preferences for a world."""
-        statement = (
-            select(WorldDomainCache)
-            .where(WorldDomainCache.universe_uuid == universe_uuid)
-            .order_by(WorldDomainCache.overall_score.desc())
-        )
-        return self.session.exec(statement).all()
-
-    def get_domain_cache_index_str(self, universe_uuid: str, limit: int = 5) -> str:
-        """Generates a concise list of cached canonical sources for prompt injection."""
-        caches = self.get_domain_cache(universe_uuid)
-        if not caches:
-            return "No cached domain preferences."
-
-        display_caches = caches[:limit]
-        lines = [
-            f"- {c.domain} (Score: {c.overall_score:.1f}, Confidence: {c.confidence:.2f}, URL: {c.url})"
-            for c in display_caches
-        ]
-        return "CACHED CANONICAL SOURCES & DOMAIN PREFERENCES:\n" + "\n".join(lines)
-
-    def create_timeline_event(
-        self,
-        universe_uuid: str,
-        title: str,
-        date: Optional[str] = None,
-        era: Optional[str] = None,
-        summary: Optional[str] = None,
-        description: Optional[str] = None,
-        importance: int = 1,
-        confidence: float = 1.0
-    ) -> TimelineEntry:
-        """Creates a new timeline event."""
-        event = TimelineEntry(
-            universe_uuid=universe_uuid,
-            title=title,
-            date=date,
-            era=era,
-            summary=summary,
-            description=description,
-            importance=importance,
-            confidence=confidence
-        )
-        self.session.add(event)
-        self.session.commit()
-        self.session.refresh(event)
-        return event
-
-    def add_timeline_participant(self, timeline_id: int, entity_id: int, role: Optional[str] = None):
-        participant = TimelineParticipant(
-            timeline_id=timeline_id, entity_id=entity_id, role=role
-        )
-        self.session.add(participant)
+    def log_visited_url(self, universe_uuid: str, url: str, status: str = "VISITED", error_message: Optional[str] = None):
+        existing = self.session.exec(
+            select(VisitedUrl).where(
+                VisitedUrl.universe_uuid == universe_uuid,
+                VisitedUrl.url == url
+            )
+        ).first()
+        if existing:
+            existing.status = status
+            existing.error_message = error_message
+            self.session.add(existing)
+        else:
+            vu = VisitedUrl(universe_uuid=universe_uuid, url=url, status=status, error_message=error_message)
+            self.session.add(vu)
         self.session.commit()
 
-    def add_timeline_location(self, timeline_id: int, location_id: int):
-        location = TimelineLocation(timeline_id=timeline_id, location_id=location_id)
-        self.session.add(location)
-        self.session.commit()
+    def get_visited_urls(self, universe_uuid: str) -> list[VisitedUrl]:
+        return self.session.exec(
+            select(VisitedUrl).where(VisitedUrl.universe_uuid == universe_uuid)
+        ).all()
 
-    def add_timeline_source(self, timeline_id: int, source_id: int):
-        tsource = TimelineSource(timeline_id=timeline_id, source_id=source_id)
-        self.session.add(tsource)
-        self.session.commit()
+    def get_visited_urls_index_str(self, universe_uuid: str, limit: int = 30) -> str:
+        items = self.get_visited_urls(universe_uuid)
+        if not items:
+            return "No URLs visited yet."
+        display = items[-limit:]
+        lines = [f"- [{v.status}] {v.url}" + (f" ({v.error_message})" if v.error_message else "") for v in display]
+        return "VISITED & BLOCKED URLS:\n" + "\n".join(lines)
 
-    def add_timeline_claim(self, timeline_id: int, claim_id: int):
-        tclaim = TimelineClaim(timeline_id=timeline_id, claim_id=claim_id)
-        self.session.add(tclaim)
-        self.session.commit()
+

@@ -121,59 +121,7 @@ async def tool_manage_source(args: dict[str, Any]) -> str:
     return f"Source {source.id} updated/saved: {source.url}"
 
 
-async def tool_record_timeline_event(args: dict[str, Any]) -> str:
-    universe_uuid = _get_universe_uuid()
-    if not universe_uuid:
-        return "Error: No active universe context."
-
-    title = args.get("title")
-    if not title:
-        return "Error: Missing title."
-
-    date = args.get("date")
-    era = args.get("era")
-    summary = args.get("summary")
-    description = args.get("description")
-    importance = args.get("importance", 1)
-    confidence = args.get("confidence", 1.0)
-
-    service = WorkspaceService()
-    event = service.create_timeline_event(
-        universe_uuid=universe_uuid,
-        title=title,
-        date=date,
-        era=era,
-        summary=summary,
-        description=description,
-        importance=importance,
-        confidence=confidence
-    )
-    return f"Timeline event {event.id} recorded: {title}"
-
-
-async def tool_add_timeline_detail(args: dict[str, Any]) -> str:
-    timeline_id = args.get("timeline_id")
-    if not timeline_id:
-        return "Error: Missing timeline_id."
-
-    detail_type = args.get("type") # 'participant', 'location', 'source', 'claim'
-    value_id = args.get("value_id")
-    role = args.get("role") # for participants
-
-    if not value_id:
-        return "Error: Missing value_id."
-
-    service = WorkspaceService()
-    if detail_type == "participant":
-        service.add_timeline_participant(timeline_id, value_id, role)
-    elif detail_type == "location":
-        service.add_timeline_location(timeline_id, value_id)
-    elif detail_type == "source":
-        service.add_timeline_source(timeline_id, value_id)
-    else:
-        return f"Error: Invalid detail type '{detail_type}'."
-
-    return f"Added {detail_type} {value_id} to timeline event {timeline_id}."
+# Timeline tools removed per instructions
 
 
 async def tool_query_notebook_claims(args: dict[str, Any]) -> str:
@@ -501,7 +449,9 @@ async def tool_fetch_page(args: dict[str, Any]) -> str:
         else:
             return "Error: Missing or invalid urls argument (expected list)."
 
-    max_links = args.get("max_links", 20)
+    max_links = args.get("max_links", 25)
+    universe_uuid = _get_universe_uuid()
+    workspace_service = WorkspaceService() if universe_uuid else None
 
     async def run_fetch(url):
         async def do_fetch():
@@ -517,22 +467,31 @@ async def tool_fetch_page(args: dict[str, Any]) -> str:
         try:
             artifact, status = await acquisition_cache.get(url, do_fetch=do_fetch)
             if not artifact:
+                if universe_uuid and workspace_service:
+                    workspace_service.log_visited_url(universe_uuid, url, status="FAILED", error_message="Fetch failed")
                 return (f"Error fetching {url}: fetch failed", None, "fetch_failed", None)
 
             res = json.loads(artifact.extracted_text)
 
-            if isinstance(res, str): # Should not happen with current web_fetcher
-                 return (f"--- Content from {url} ---\n{res}", res, "fetch_failed", None)
+            if isinstance(res, str):
+                if universe_uuid and workspace_service:
+                    workspace_service.log_visited_url(universe_uuid, url, status="VISITED")
+                return (f"--- Content from {url} ---\n{res}", res, "fetch_failed", None)
 
             if "error" in res:
-                return (f"Error fetching {url}: {res['error']}", res, "fetch_failed", artifact)
+                err_msg = res['error']
+                if universe_uuid and workspace_service:
+                    workspace_service.log_visited_url(universe_uuid, url, status="BLOCKED", error_message=err_msg)
+                return (f"Error fetching {url}: {err_msg}", res, "fetch_failed", artifact)
+
+            if universe_uuid and workspace_service:
+                workspace_service.log_visited_url(universe_uuid, url, status="VISITED")
 
             meta = res["metadata"]
             output = [
                 f"--- Content from {url} (Artifact ID: {artifact.id}) ---",
                 f"[EXTRACTION REPORT]\nWords: {meta['word_count']} | Type: {meta['page_type']}",
             ]
-
 
             if res.get("freshness"):
                 output.append(res["freshness"])
@@ -546,30 +505,32 @@ async def tool_fetch_page(args: dict[str, Any]) -> str:
 
                 links_output = []
                 if recommended:
-                    links_output.append("### RECOMMENDED NEXT STEPS (High Value)")
+                    links_output.append("### NAVIGATION & HIGH-VALUE REFS (Wiki Traversal)")
                     links_output.extend(
                         [
-                            f"- {link['title']} [{link['tier']} | {link['score']}x | {', '.join(link['sections']) or 'General'}]({link['url']})"
+                            f"- [{link['title']}]({link['url']}) (Tier: {link['tier']} | Score: {link['score']}x | Sections: {', '.join(link['sections']) or 'General'})"
                             for link in recommended
                         ]
                     )
 
                 if others:
-                    links_output.append("\n### OTHER INTERNAL LINKS")
+                    links_output.append("\n### OTHER OUTGOING LINKS")
                     links_output.extend(
                         [
-                            f"- {link['title']} [{link['tier']} | {link['score']}x | {', '.join(link['sections']) or 'General'}]({link['url']})"
-                            for link in others
+                            f"- [{link['title']}]({link['url']}) (Tier: {link['tier']} | Score: {link['score']}x)"
+                            for link in others[:15]
                         ]
                     )
 
-                output.append("[INTERNAL LINKS]\n" + "\n".join(links_output))
+                output.append("[NAVIGATION & OUTGOING LINKS]\n" + "\n".join(links_output))
 
             if res.get("research_signals"):
                 output.append("[RESEARCH SIGNALS]\n" + res["research_signals"])
 
             return ("\n\n".join(output), res, status, artifact)
         except (ValueError, TypeError, KeyError, AttributeError) as e:
+            if universe_uuid and workspace_service:
+                workspace_service.log_visited_url(universe_uuid, url, status="FAILED", error_message=str(e))
             return (f"Error fetching {url}: {e!s}", None, "fetch_failed", None)
 
     fetch_results = await asyncio.gather(*[run_fetch(url) for url in urls], return_exceptions=True)
@@ -1363,42 +1324,7 @@ AGENT_TOOLS: dict[str, dict[str, Any]] = {
             "required": ["url"],
         },
     },
-    "recordTimelineEvent": {
-        "func": tool_record_timeline_event,
-        "description": "Record a structured historical event in the world's timeline. This is for factual occurrences, not interpretations.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "title": {"type": "string", "description": "Name of the event."},
-                "date": {"type": "string", "description": "Date of the event (e.g. '2183 CE')."},
-                "era": {"type": "string", "description": "The era or period."},
-                "summary": {"type": "string", "description": "Brief summary of the event."},
-                "description": {"type": "string", "description": "Detailed account of what happened."},
-                "importance": {"type": "integer", "description": "Impact level (1-10)."},
-                "confidence": {"type": "number", "description": "Confidence in the event's occurrence (0.0-1.0)."},
-            },
-            "required": ["title"],
-        },
-    },
-    "addTimelineDetail": {
-        "func": tool_add_timeline_detail,
-        "description": "Add a participant, location, source, or supporting claim to a timeline event.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "timeline_id": {"type": "integer", "description": "ID of the timeline event."},
-                "type": {
-                    "type": "string",
-                                    "enum": ["participant", "location", "source"],
-
-                    "description": "The type of detail to add."
-                },
-                "value_id": {"type": "integer", "description": "The ID of the entity, source, or claim."},
-                "role": {"type": "string", "description": "Role of the participant (e.g. 'Commander')."},
-            },
-            "required": ["timeline_id", "type", "value_id"],
-        },
-    },
+# recordTimelineEvent and addTimelineDetail removed
     "executePlan": {
         "func": None,
         "description": "Execute a sequence of deterministic tool calls in a single turn to avoid redundant thinking loops. Use this for common patterns like Search -> Fetch first results -> Compare freshness. The plan should be a list of tool calls. You can reference results of previous steps using placeholders like $result_0, $result_1, etc.",

@@ -80,44 +80,18 @@ async def test_workspace_source_management(_clean_db):
     assert updated.id == source.id
     assert updated.title == "Title 2"
 
-@pytest.mark.asyncio
-async def test_workspace_timeline_events(_clean_db):
-    service = WorkspaceService()
-    universe_uuid = "uni-123"
 
-    event = service.create_timeline_event(universe_uuid, "The Big Bang", date="0")
-    assert event.id is not None
-
-    service.add_timeline_participant(event.id, 101, role="Creator")
-    service.add_timeline_location(event.id, 201)
-
-    # Verify they exist in DB
-    from app.db.notebook_session import get_notebook_session
-    with get_notebook_session() as session:
-        from app.db.notebook_schema import TimelineLocation, TimelineParticipant
-        p = session.exec(
-            select(TimelineParticipant).where(
-                TimelineParticipant.timeline_id == event.id
-            )
-        ).first()
-        location = session.exec(
-            select(TimelineLocation).where(TimelineLocation.timeline_id == event.id)
-        ).first()
-        assert p is not None
-        assert p.role == "Creator"
-        assert location is not None
 
 @pytest.mark.asyncio
 async def test_workspace_indexing(_clean_db):
     service = WorkspaceService()
     universe_uuid = "uni-idx"
 
-    # Setup: Notebook, Source, Timeline
+    # Setup: Notebook, Source
     service.upsert_notebook_entry(universe_uuid, "Note A", "Sum A", priority=10)
     service.upsert_source(
         universe_uuid, "http://src.com", title="Src A", reliability="High"
     )
-    service.create_timeline_event(universe_uuid, "Event A", era="Era 1")
 
     # Test notebook index
     n_idx = service.get_notebook_index_str(universe_uuid)
@@ -131,14 +105,7 @@ async def test_workspace_indexing(_clean_db):
     assert "Src A" in s_idx
     assert "Reliability: High" in s_idx
 
-    # Test timeline index
-    t_idx = service.get_timeline_index_str(universe_uuid)
-    assert "TIMELINE EVENTS:" in t_idx
-    assert "Event A" in t_idx
-    assert "Era: Era 1" in t_idx
-
     # Test full index
     full_idx = service.get_full_workspace_index(universe_uuid)
     assert "RESEARCH NOTES:" in full_idx
     assert "USEFUL SOURCES:" in full_idx
-    assert "TIMELINE EVENTS:" in full_idx

@@ -11,47 +11,7 @@ class NotebookModel(SQLModel):
     metadata = notebook_metadata
 
 
-class TimelineEntry(NotebookModel, table=True):
-    __tablename__ = "timeline_entry"
-    id: int | None = Field(default=None, primary_key=True)
-    universe_uuid: str = Field(index=True)
-    title: str
-    date: str | None = None
-    era: str | None = None
-    summary: str | None = None
-    description: str | None = None
-    importance: int = Field(default=1)
-    confidence: float = Field(default=1.0)
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-
-class TimelineParticipant(NotebookModel, table=True):
-    __tablename__ = "timeline_participant"
-    id: int | None = Field(default=None, primary_key=True)
-    timeline_id: int = Field(foreign_key="timeline_entry.id", ondelete="CASCADE")
-    entity_id: int
-    role: str | None = None
-
-class TimelineLocation(NotebookModel, table=True):
-    __tablename__ = "timeline_location"
-    id: int | None = Field(default=None, primary_key=True)
-    timeline_id: int = Field(foreign_key="timeline_entry.id", ondelete="CASCADE")
-    location_id: int
-
-class TimelineSource(NotebookModel, table=True):
-    __tablename__ = "timeline_source"
-    id: int | None = Field(default=None, primary_key=True)
-    timeline_id: int = Field(foreign_key="timeline_entry.id", ondelete="CASCADE")
-    source_id: int
-
-class TimelineClaim(NotebookModel, table=True):
-    __tablename__ = "timeline_claim"
-    id: int | None = Field(default=None, primary_key=True)
-    timeline_id: int = Field(foreign_key="timeline_entry.id", ondelete="CASCADE")
-    claim_id: int
-
-
 class NotebookUniverse(NotebookModel, table=True):
-
     __tablename__ = "notebook_universe"
 
     id: int | None = Field(default=None, primary_key=True)
@@ -64,9 +24,6 @@ class NotebookUniverse(NotebookModel, table=True):
     is_explored: bool = Field(default=False)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-
-
-
 
 
 class AcquisitionArtifact(NotebookModel, table=True):
@@ -121,6 +78,20 @@ class ProvenanceEdge(NotebookModel, table=True):
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
+class ResearchSource(NotebookModel, table=True):
+    __tablename__ = "research_source"
+
+    id: int | None = Field(default=None, primary_key=True)
+    universe_uuid: str = Field(index=True)
+    url: str = Field(index=True)
+    title: str | None = None
+    reason_saved: str | None = None
+    coverage: str | None = None
+    reliability: str | None = None
+    extraction_status: str = Field(default="UNREAD")
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
 class WorldDomainCache(NotebookModel, table=True):
     __tablename__ = "world_domain_cache"
     __table_args__ = (
@@ -139,20 +110,18 @@ class WorldDomainCache(NotebookModel, table=True):
     verified_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
-class ResearchSource(NotebookModel, table=True):
-    __tablename__ = "research_source"
+class VisitedUrl(NotebookModel, table=True):
+    __tablename__ = "visited_url"
+    __table_args__ = (
+        UniqueConstraint("universe_uuid", "url"),
+    )
 
     id: int | None = Field(default=None, primary_key=True)
     universe_uuid: str = Field(index=True)
     url: str = Field(index=True)
-    title: str | None = None
-    reason_saved: str | None = None
-    coverage: str | None = None
-    reliability: str | None = None
-    extraction_status: str = Field(default="UNREAD")
+    status: str = Field(default="VISITED")  # VISITED, BLOCKED, FAILED
+    error_message: str | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-
-
 
 
 class NotebookClaim(NotebookModel, table=True):
@@ -187,14 +156,13 @@ class NotebookEntry(NotebookModel, table=True):
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
-
-
 class Snapshot(NotebookModel, table=True):
     __tablename__ = "snapshot"
 
     id: int | None = Field(default=None, primary_key=True)
     name: str = Field(index=True)
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    file_path: str
     snapshot_type: str = Field(default="FULL")  # FULL, UNVERIFIED
     data_blob: bytes | None = Field(sa_column=Column(LargeBinary, nullable=True))
     snapshot_metadata: str | None = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

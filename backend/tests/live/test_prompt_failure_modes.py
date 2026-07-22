@@ -67,7 +67,7 @@ async def test_json_syntax_recovery(test_universe):
             step="test",
             run_id="test-json-recover",
             tools_names=[
-                "webSearch", "fetchPage", "compareSourceFreshness", "queryClaims",
+                "webSearch", "fetchPage", "queryClaims",
                 "upsertClaims", "queryNotebookClaims", "saveNotebookClaim",
                 "deleteNotebookClaim"
             ],
@@ -98,7 +98,7 @@ async def test_schema_violation_recovery(_test_universe):
         step="test-schema",
         run_id="test-schema-violation",
         tools_names=[
-            "fetchPage", "compareSourceFreshness", "queryClaims",
+            "fetchPage", "queryClaims",
             "queryNotebookClaims"
         ],
         submit_tool_name="submit_audit",
@@ -141,7 +141,7 @@ async def test_headcanon_rejection(_test_universe):
         step="test-headcanon",
         run_id="test-headcanon",
         tools_names=[
-            "fetchPage", "compareSourceFreshness", "queryClaims",
+            "fetchPage", "queryClaims",
             "queryNotebookClaims"
         ],
         submit_tool_name="submit_audit",
@@ -181,7 +181,7 @@ async def test_power_scaling_rejection(_test_universe):
         step="test-scaling",
         run_id="test-scaling",
         tools_names=[
-            "fetchPage", "compareSourceFreshness", "queryClaims",
+            "fetchPage", "queryClaims",
             "queryNotebookClaims"
         ],
         submit_tool_name="submit_audit",
@@ -229,7 +229,7 @@ async def test_premature_submission_blocking(test_universe):
             step="test",
             run_id="test-premature",
             tools_names=[
-                "webSearch", "fetchPage", "compareSourceFreshness", "queryClaims",
+                "webSearch", "fetchPage", "queryClaims",
                 "upsertClaims", "queryNotebookClaims", "saveNotebookClaim",
                 "deleteNotebookClaim"
             ],

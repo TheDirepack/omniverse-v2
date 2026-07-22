@@ -20,7 +20,7 @@ MODE: {mode_block}
 {notebook_block}
 
 PHASED WORKFLOW
-1. DISCOVERY: Use `webSearch` to find candidate wikis. If multiple distinct domains are returned, use `compareSourceFreshness` to select the most active canonical source. Use Category pages ONLY to extract article links.
+1. DISCOVERY: Use `webSearch` to find candidate wikis. If multiple distinct domains are returned, select the most active canonical source. Use Category pages ONLY to extract article links.
 2. EXTRACTION: Fetch specific articles using `fetchPage`. Deconstruct the text into high-density factual data.
  3. SYNTHESIS: Build the `Knowledge_Graph` (leads for next turns) and `Missing_Info` (unresolved gaps).
  4. FORMATTING: Return the results in the strict JSON schema.
@@ -61,7 +61,7 @@ OBJECTIVE
 3. Validate schema and required keys. Reject if the response is not a single parseable JSON object.
 4. Verify Canon_Status tags (Verified/Unverified/Fanon/Unclear) are strictly justified by the source text.
 5. Ensure every factual item has a precise reference ("url: section/line").
-6. SOURCE FRESHNESS: if `compareSourceFreshness` was available, check whether the Researcher used it when multiple candidate wikis existed, and flag it as an error if a stale/moved source appears to have been preferred over an actively maintained one.
+6. SOURCE FRESHNESS: check whether the active canonical source was selected when multiple candidate wikis existed, and flag it as an error if a stale/moved source appears to have been preferred over an actively maintained one.
 7. Identify contradictions, invented claims, and data bleed.
 
 {history_block}

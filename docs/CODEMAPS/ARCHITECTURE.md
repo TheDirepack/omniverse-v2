@@ -68,7 +68,7 @@ graph TD
 | Component | Purpose |
 | :--- | :--- |
 | `agents/nodes.py` | LangGraph node implementations |
-| `agents/prompts.py` | Agent system prompts |
+| `agents/prompts/` | Modular agent system prompts |
 | `agents/prompt_templates.py` | Prompt template variables |
 | `agents/workflow.py` | State machine definition |
 | `agents/workflow_state.py` | Shared state schema |

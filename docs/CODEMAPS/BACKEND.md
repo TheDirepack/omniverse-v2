@@ -93,7 +93,7 @@ app.mount("/research", ...)
 | File | Purpose | Key Content |
 | :--- | :--- | :--- |
 | `nodes.py` | Node implementations | `research_node`, `db_integrator_node`, `summary_node`, `mark_explored_node`, `manager_node`, `architecture_node`, `extrapolation_node` |
-| `prompts.py` | System prompts | All agent system prompts, tool descriptions |
+| `prompts/` | System prompts directory | Modular agent system prompts, tool descriptions |
 | `prompt_templates.py` | Template variables | Dynamic prompt content |
 | `workflow.py` | Workflow config | State machine definition |
 | `workflow_state.py` | State schema | `OmniverseState` definition |

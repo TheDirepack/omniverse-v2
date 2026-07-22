@@ -1155,7 +1155,7 @@ AGENT_TOOLS: dict[str, dict[str, Any]] = {
     },
     "fetchPage": {
         "func": tool_fetch_page,
-        "description": "Fetch and read the full text of a specific URL. Reads are cached and count against a shared per-run fetch budget (also shared with compareSourceFreshness). Returns structured content including the main article, a scored list of internal research leads (links), and metadata. You can specify `max_links` to get more or fewer internal links.",
+        "description": "Fetch and read the full text of a specific URL. Reads are cached and count against a shared per-run fetch budget. Returns structured content including the main article, a scored list of internal research leads (links), and metadata. You can specify `max_links` to get more or fewer internal links.",
         "parameters": {
             "type": "object",
             "properties": {

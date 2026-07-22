@@ -68,7 +68,7 @@ omniverse-v2/
 | File | Purpose |
 | :--- | :--- |
 | `backend/app/agents/nodes.py` | LangGraph node definitions |
-| `backend/app/agents/prompts.py` | System prompts for all agents |
+| `backend/app/agents/prompts/` | Modular system prompts for all agents |
 | `backend/app/agents/prompt_templates.py` | Prompt template variables |
 | `backend/app/agents/workflow.py` | Workflow configuration |
 | `backend/app/agents/workflow_state.py` | OmniverseState schema |

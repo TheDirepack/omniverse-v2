@@ -525,32 +525,6 @@ class TestExecuteTool:
             result = await _execute_tool("fetchPage", {"url": "http://bad.com"})
             assert "Error fetching" in result
 
-    async def test_compare_source_freshness_empty_urls(self):
-        from app.core.agent_engine import _execute_tool
-        result = await _execute_tool("compareSourceFreshness", {})
-        assert "Missing or invalid urls" in result
-
-    async def test_compare_source_freshness_success(self):
-        from app.core.agent_engine import _execute_tool
-
-        async def mock_read(url, _run_id=None):
-            return (f"content from {url}", "fetched")
-
-        with (
-            patch(
-                "app.core.agent_engine._read_page_cached",
-                new=mock_read,
-            ),
-            patch(
-                "app.core.tools.build_freshness_comparison_report",
-                return_value="freshness report",
-            ),
-        ):
-            result = await _execute_tool(
-                "compareSourceFreshness", {"urls": ["http://a.com", "http://b.com"]}
-            )
-            assert "freshness report" in result
-
     async def test_ocr_image_missing_args(self):
         from app.core.agent_engine import _execute_tool
         result = await _execute_tool("ocrImage", {})

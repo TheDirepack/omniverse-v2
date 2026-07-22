@@ -11,29 +11,21 @@ from cloakbrowser import launch_async
 
 logger = logging.getLogger(__name__)
 
-# Load ad/tracker blacklist from Anudeep's Blacklist mirror
-BLOCKED_DOMAINS: set[str] = set()
+BLOCKED_RESOURCE_TYPES = {"image", "media", "font", "stylesheet"}
 
 
-def _load_blacklist():
-    global BLOCKED_DOMAINS
-    try:
-        url = "https://raw.githubusercontent.com/anudeepND/blacklist/master/adservers.txt"
-        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-        with urllib.request.urlopen(req, timeout=5) as resp:
-            lines = resp.read().decode("utf-8").splitlines()
-            for l in lines:
-                l = l.strip()
-                if l and not l.startswith("#"):
-                    parts = l.split()
-                    if len(parts) >= 2:
-                        BLOCKED_DOMAINS.add(parts[1].lower())
-        logger.info("Loaded %d ad/tracker domains into Playwright blocker", len(BLOCKED_DOMAINS))
-    except Exception as e:
-        logger.warning("Failed to load adserver blacklist, falling back to empty set: %s", e)
+def intercept_route(route):
+    request = route.request
+    # 1. Block heavy non-text resources (optional/configurable)
+    # if request.resource_type in BLOCKED_RESOURCE_TYPES:
+    #     return route.abort()
 
+    # 2. Block ad and tracking URL keywords efficiently
+    url = request.url
+    if any(domain in url for domain in BLOCKED_DOMAINS):
+        return route.abort()
 
-_load_blacklist()
+    return route.continue_()
 
 # Number of independent browser processes in the pool. Each process gets its
 # own concurrency semaphore, so load spreads across real OS processes instead
@@ -144,33 +136,9 @@ class BrowserManager:
 
             page = await context.new_page()
 
-            # Native Playwright Route Interception to block ads/trackers using BLOCKED_DOMAINS
+            # Native Playwright Route Interception using optimized intercept_route
             if BLOCKED_DOMAINS:
-                async def _route_handler(route):
-                    try:
-                        parsed_url = urlparse(route.request.url)
-                        hostname = parsed_url.hostname
-                        if hostname:
-                            hostname = hostname.lower()
-                            # Check exact match or parent domain match
-                            blocked = False
-                            h = hostname
-                            while True:
-                                if h in BLOCKED_DOMAINS:
-                                    blocked = True
-                                    break
-                                idx = h.find(".")
-                                if idx == -1:
-                                    break
-                                h = h[idx + 1:]
-                            if blocked:
-                                await route.abort()
-                                return
-                    except Exception:
-                        pass
-                    await route.continue_()
-
-                await page.route("**/*", _route_handler)
+                await page.route("**/*", intercept_route)
 
             async with self._context_slot_lock:
                 self._context_slot[id(context)] = slot.index

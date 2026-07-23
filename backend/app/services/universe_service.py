@@ -243,6 +243,10 @@ class UniverseService:
                     parent_id=parent_id,
                     summary=None,
                     is_explored=False,
+                    franchise=match.get("franchise"),
+                    continuity=match.get("continuity"),
+                    era=match.get("era"),
+                    category=match.get("category"),
                 )
                 res = repo.create(universe)
 
@@ -299,6 +303,10 @@ class UniverseService:
                         parent_id=parent_id,
                         summary=None,
                         is_explored=False,
+                        franchise=entry.get("franchise"),
+                        continuity=entry.get("continuity"),
+                        era=entry.get("era"),
+                        category=entry.get("category"),
                     )
                     session.add(universe)
                     session.flush()

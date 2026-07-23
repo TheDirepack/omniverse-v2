@@ -227,7 +227,7 @@ class ModelRouter:
                             )
                             log_session.commit()
 
-            # Collect all candidate configurations first
+            # Build Model candidates with key+provider interleaving
             candidates = []
             for route in routes:
                 provider = (
@@ -252,8 +252,10 @@ class ModelRouter:
                     if m.strip()
                 ]
 
-                for key in keys:
-                    for model in models:
+                # Interleave: try different keys for each model to avoid
+                # exhausting all models on a single key before trying alternatives
+                for model in models:
+                    for key in keys:
                         model_prefix = (
                             "openai"
                             if provider.provider_type == "custom"
@@ -268,7 +270,18 @@ class ModelRouter:
                             }
                         )
 
+            # Track failures per provider+key pair to skip problematic keys
+            key_failures: dict[tuple[int, int], int] = {}
+
             for candidate in candidates:
+                provider_id = candidate["provider"].id
+                key_id = candidate["key"].id if candidate["key"].id != -1 else -1
+                fail_key = (provider_id, key_id)
+
+                # Skip key if too many consecutive failures
+                if key_failures.get(fail_key, 0) >= 3:
+                    continue
+
                 # Check if candidate is disabled
                 with Session(operational_engine) as health_session:
                     health = self._get_health(
@@ -325,7 +338,6 @@ class ModelRouter:
                         with Session(engine) as exec_session:
                             exec_service = ExecutionService(session=exec_session)
 
-                            # Calculate usage
                             usage = (
                                 response.usage.total_tokens
                                 if hasattr(response, "usage") and response.usage
@@ -342,10 +354,6 @@ class ModelRouter:
                             )
                     return response, candidate["full_model"], str(candidate["key"].id)
                 except Exception as e:
-                    # Programming/logic errors should be raised, not circuit-broken.
-                    # But BadRequestError (e.g. "function calling not enabled") is a
-                    # model capability issue — fall through to the next candidate
-                    # without circuit-breaking (the model isn't transiently down).
                     is_capability_issue = isinstance(e, (litellm.BadRequestError, litellm.NotFoundError))
                     is_transient_error = isinstance(
                         e,
@@ -368,7 +376,6 @@ class ModelRouter:
                         )
                         raise
 
-                    # Report failure for transient errors only
                     if is_transient_error:
                         with Session(operational_engine) as health_session:
                             self._report_failure(
@@ -378,15 +385,29 @@ class ModelRouter:
                                 candidate["model"],
                             )
 
+                    # Track per-key failures to skip problematic keys
+                    key_failures[fail_key] = key_failures.get(fail_key, 0) + 1
+
                     clean_e = _clean_error(e)
                     fallback_type = "Model capability" if is_capability_issue else "Transient error"
-                    agent_logger.log(
-                        agent="ModelRouter",
-                        event_type=AgentEventType.ERROR,
-                        content=f"{fallback_type}: {candidate['full_model']} failed due to {clean_e}. Trying next candidate.",
-                        model=candidate["full_model"],
-                        key_id=str(candidate["key"].id),
-                    )
+
+                    # If this key keeps failing, try other keys
+                    if key_failures[fail_key] >= 3:
+                        agent_logger.log(
+                            agent="ModelRouter",
+                            event_type=AgentEventType.ERROR,
+                            content=f"{fallback_type}: Key {key_id} for Provider {provider_id} failed {key_failures[fail_key]} times. Skipping remaining candidates for this key.",
+                            model=candidate["full_model"],
+                            key_id=str(candidate["key"].id),
+                        )
+                    else:
+                        agent_logger.log(
+                            agent="ModelRouter",
+                            event_type=AgentEventType.ERROR,
+                            content=f"{fallback_type}: {candidate['full_model']} failed due to {clean_e}. Trying next candidate.",
+                            model=candidate["full_model"],
+                            key_id=str(candidate["key"].id),
+                        )
 
                     if run_id:
                         with Session(engine) as log_session:

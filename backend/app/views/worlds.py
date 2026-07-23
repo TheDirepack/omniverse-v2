@@ -350,8 +350,12 @@ async def worlds_import_fragment(request: Request, q: str = Query(default="")):
 
 @router.post("/import/{world_id}", response_class=HTMLResponse)
 async def worlds_import_action(request: Request, world_id: str):
-    service = UniverseService()
-    world = service.import_from_registry(world_id)
+    from sqlmodel import Session
+    from app.db.session import engine
+    with Session(engine) as session:
+        service = UniverseService(session=session)
+        world = service.import_from_registry(world_id)
+        imported_name = world.name if world else None
     json_path = Path(__file__).parent.parent / "db" / "default_worlds.json"
     entries = []
     if json_path.exists():
@@ -363,7 +367,7 @@ async def worlds_import_action(request: Request, world_id: str):
     response = HTMLResponse(
         content=template.render(
             request=request, entries=entries[:50],
-            imported=world.name if world else None
+            imported=imported_name
         )
     )
     response.headers["HX-Trigger"] = (

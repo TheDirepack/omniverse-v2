@@ -44,7 +44,7 @@ async def save_audit_artifacts(
         universe_uuid=universe_uuid,
         title="Final Knowledge Graph",
         summary="The verified consolidated data from the research cycle.",
-        details=final_result,
+        details=json.dumps(final_result, default=str) if isinstance(final_result, dict) else final_result,
         kind="Observation"
     )
 
@@ -133,7 +133,10 @@ class WorldResearcher:
 
                 # Deterministic JSON Validation
                 try:
-                    parsed_result = json.loads(result)
+                    if isinstance(result, dict):
+                        parsed_result = result
+                    else:
+                        parsed_result = json.loads(result)
                     is_valid, val_errors = validate_research_json(parsed_result)
                     if not is_valid:
                         deterministic_critique = json.dumps({
@@ -356,7 +359,10 @@ class WorldResearcher:
 
     def _handle_audit_failure(self, critique: str) -> str:
         try:
-            critique_json = json.loads(critique)
+            if isinstance(critique, dict):
+                critique_json = critique
+            else:
+                critique_json = json.loads(critique)
             corrections = critique_json.get("Correction_Queue", [])
             feedback = "\n".join(
                 [f"[{c.get('Error_Type')}] {c.get('Issue')} -> Fix: {c.get('Required_Fix')}" for c in corrections]

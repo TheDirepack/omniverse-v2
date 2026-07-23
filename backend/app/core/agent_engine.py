@@ -569,12 +569,14 @@ async def run_agent(
                                     else:
                                         observation = f"Tool {name} has failed {count} times consecutively. It may be fundamentally broken or the requested operation is impossible. Please attempt a different approach or use an alternative tool."
 
+                        raw_tools = {"fetchPage", "webSearch", "ocrImage"}
+                        truncated_obs = context_manager.truncate_observation(observation) if name in raw_tools else observation
                         messages.append(
                             {
                                 "role": "tool",
                                 "tool_call_id": tool_call.id,
                                 "name": name,
-                                "content": observation,
+                                "content": truncated_obs,
                             }
                         )
 

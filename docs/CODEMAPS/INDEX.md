@@ -1,6 +1,6 @@
 # Omniverse V2 Codemaps Index
 
-**Last Updated:** 2026-07-21
+**Last Updated:** 2026-07-22
 
 This directory contains the architectural and structural maps of the Omniverse V2 codebase. These maps are designed to provide a high-level understanding of the system's organization and data flow.
 

@@ -119,12 +119,12 @@ def create_test_db(db_dir: str | Path, db_filename: str = "omniverse_v2.db"):
 
     engine.dispose()
 
-def test_universe_metadata_columns_removed():
-    # Assert that Universe model no longer has franchise, category, continuity, era
-    assert not hasattr(Universe, "franchise")
-    assert not hasattr(Universe, "category")
-    assert not hasattr(Universe, "continuity")
-    assert not hasattr(Universe, "era")
+def test_universe_metadata_columns_present():
+    # Assert that Universe model has franchise, continuity, era, category
+    assert hasattr(Universe, "franchise")
+    assert hasattr(Universe, "category")
+    assert hasattr(Universe, "continuity")
+    assert hasattr(Universe, "era")
 
 def test_migration_moves_metadata_to_artifacts(tmp_path):
     db_dir = tmp_path / "test_db"

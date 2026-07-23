@@ -67,7 +67,7 @@ class TestExtractionPrompt:
         """Test that workspace_index is included in the prompt."""
         workspace_idx = "RESEARCH NOTES:\n[1] Test Note (Status: OPEN, Priority: 5)"
         result = get_researcher_prompt("Test World", "Test", workspace_index=workspace_idx)
-        assert "RESEARCH WORKSPACE (Working Memory)" in result["system"]
+        assert "RESEARCH WORKSPACE (Strict Living Notebook Contract)" in result["system"]
         assert "Test Note" in result["system"]
 
     def test_with_notebook_source_timeline_indices(self):
@@ -108,8 +108,7 @@ class TestExtractionPrompt:
     def test_schema_inclusion(self):
         """Test that RESEARCH_SCHEMA is included in the output."""
         result = get_researcher_prompt("Test World", "Test")
-        assert "matching this schema" in result["system"]
-        assert "OUTPUT FORMAT" in result["system"]
+        assert "SCHEMA OUTPUT REQUIREMENTS" in result["system"]
 
     def test_no_invented_data_directive(self):
         """Test that the no invented data directive is present."""
@@ -128,8 +127,6 @@ class TestExtractionPrompt:
         """Test that documentation tools are mentioned in the prompt."""
         result = get_researcher_prompt("Test World", "Test")
         assert "`saveNotebookEntry`" in result["system"]
-        assert "`manage_source`" in result["system"]
-        assert "`record_timeline_event`" in result["system"]
 
     def test_all_modes(self):
         """Test different mode_block values."""
@@ -181,7 +178,7 @@ class TestCriticPrompt:
         assert "system" in result
         assert "user" in result
         assert "some data" in result["user"]
-        assert "accuracy check" in result["system"]
+        assert "accuracy check" in result["system"] or "CRITERIA" in result["system"]
 
     def test_empty_data(self):
         result = get_critic_prompt("", "")

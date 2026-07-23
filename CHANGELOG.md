@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Living Notebook**: Fully implemented staging notebook with real-time artifact inspection, claim editing, and seamless DB promotion
+- **Knowledge Graph Research Frontier Refactor**: Enhanced knowledge graph exploration, frontier tracking, and neighborhood query optimization
+- **Source Annotations**: Grounded provenance linking with support counts, evidence references, and URI traceability
+- **Best-of-Both-Worlds Researcher Prompt**: Unified agent prompt combining deep exploratory reasoning with structured schema extraction and verification
 - **New API Structure**: All API endpoints now organized under `/api/v1/` prefix for versioned API support
 - **API Documentation**: Comprehensive API documentation in `docs/CODEMAPS/API_DOCS.md` with examples for all endpoints
 - **Settings UI tests**: 12 settings UI tests covering provider CRUD, sync, keys, routes, health, and general settings

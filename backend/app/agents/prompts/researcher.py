@@ -32,9 +32,11 @@ The following facts are already confirmed in the main database. Use them as anch
 
     graph_block = ""
     if knowledge_graph and knowledge_graph.strip():
-        graph_block = f"""EXISTING KNOWLEDGE GRAPH:
+        graph_block = f"""EXISTING KNOWLEDGE GRAPH (FRONTIER USAGE):
 Current semantic mapping of the universe:
-{knowledge_graph}"""
+{knowledge_graph}
+
+INSTRUCTION: Treat the Knowledge Graph as your frontier. Identify unexplored nodes, disconnected subgraphs, and hanging relations. Your research actions must actively expand the frontier by exploring unmapped entities and resolving dangling references."""
 
     multiverse_block = ""
     if multiverse_leads or multiverse_kg:
@@ -53,27 +55,34 @@ IMPORTANT: This data is NOT necessarily true for the current universe/timeline. 
     workspace_block = ""
     if workspace_index or notebook_index or source_index or timeline_index:
         if workspace_index:
-            workspace_block = f"""RESEARCH WORKSPACE (Working Memory)
+            workspace_block = f"""RESEARCH WORKSPACE (Strict Living Notebook Contract)
 {workspace_index}
 
-The workspace is your living workspace. You are expected to discover entirely new entities, relationships, and research directions that are absent from the notebook. Use it as prior work, not as a task list."""
+STRICT LIVING NOTEBOOK CONTRACT:
+- The notebook is a live operational scratchpad, NOT a static task list.
+- You MUST update, resolve, invalidate, or spawn notebook entries during every iteration using `loadNotebookEntry`.
+- Never treat notebook items as completed checklists to ignore; treat them as active hypotheses subject to continuous falsification or refinement."""
         else:
             n_idx = notebook_index or "No active notes."
             s_idx = source_index or "No curated sources."
             t_idx = timeline_index or "No timeline events recorded."
-            workspace_block = f"""RESEARCH WORKSPACE (Working Memory)
+            workspace_block = f"""RESEARCH WORKSPACE (Strict Living Notebook Contract)
 The following indices represent your persistent research state. Use `loadNotebookEntry`, `manageSource`, and `recordTimelineEvent` to interact with them.
 
 NOTEBOOK INDEX (Active Leads & Hypotheses):
 {n_idx}
 
-SOURCE LIBRARY INDEX (Evidence Base):
+SOURCE LIBRARY INDEX (Evidence Base - Source Hierarchy):
 {s_idx}
 
 TIMELINE INDEX (Chronology):
 {t_idx}
 
-The workspace is your living workspace. You are expected to discover entirely new entities, relationships, and research directions that are absent from the notebook. Use it as prior work, not as a task list."""
+STRICT LIVING NOTEBOOK CONTRACT:
+- The notebook is a live operational scratchpad, NOT a static task list.
+- You MUST update, resolve, invalidate, or spawn notebook entries during every iteration using `loadNotebookEntry`.
+- Never treat notebook items as completed checklists to ignore; treat them as active hypotheses subject to continuous falsification or refinement.
+- SOURCE HIERARCHY: Prioritize primary canon text over secondary compilations, developer commentary, or derivative lore summaries when evaluating evidence."""
 
     mode_block = "INITIAL RESEARCH"
     if previous_dataset:
@@ -102,7 +111,7 @@ The workspace is your living workspace. You are expected to discover entirely ne
             ITERATIVE_RESEARCH_PHILOSOPHY,
             """CORE DIRECTIVES
             - NO HEADCANON: Do not invent missing lore or reconcile contradictions through speculation. When evidence is incomplete or conflicting, document the uncertainty in the notebook and continue gathering evidence.
-            - TECHNICAL RIGOR: Explicitly avoid general descriptive summaries (e.g., 'highly powerful'); instead, extract the specific evidence and parameters.
+            - TECHNICAL RIGOR: Explicitly avoid general descriptive summaries (e.g., 'highly powerful'); instead, extract the specific evidence, exact parameters, operational mechanisms, and strict boundary conditions.
             - PRECISE GROUNDING: Every claim MUST have a Reference as 'url: section/L#'.
             - NO EXTERNAL KNOWLEDGE: If evidence is missing from source text, mark it in `Missing_Info`.
             - NOVELTY & INFO GAIN: Proactively identify coverage gaps (e.g., missing years in a timeline). Prefer actions with maximum expected information gain.
@@ -110,7 +119,7 @@ The workspace is your living workspace. You are expected to discover entirely ne
             - NO THEORY: Do not construct high-level explanatory theories or causal mechanisms unless directly supported by evidence. Leave interpretation to downstream Theory Agents.""",
             C_STAGING_DB,
             focus_block,
-            f"OUTPUT FORMAT\nReturn strict JSON only, matching this schema exactly:\n{RESEARCH_SCHEMA}",
+            f"SCHEMA OUTPUT REQUIREMENTS\nYour final response JSON must strictly adhere to the schema below, ensuring all required fields, nested objects, and types are correct:\n{RESEARCH_SCHEMA}",
         ]
         return {
             "system": "\n\n".join([p for p in system_parts if p.strip()]),
@@ -129,7 +138,7 @@ The workspace is your living workspace. You are expected to discover entirely ne
         ITERATIVE_RESEARCH_PHILOSOPHY,
         """CORE DIRECTIVES
         - NO HEADCANON: Do not invent missing lore or reconcile contradictions through speculation. When evidence is incomplete or conflicting, document the uncertainty in the notebook and continue gathering evidence.
-        - TECHNICAL RIGOR: Explicitly avoid general descriptive summaries (e.g., 'highly powerful'); instead, extract the specific evidence and parameters.
+        - TECHNICAL RIGOR: Explicitly avoid general descriptive summaries (e.g., 'highly powerful'); instead, extract the specific evidence, exact parameters, operational mechanisms, and strict boundary conditions.
         - PRECISE GROUNDING: Every claim MUST have a Reference as 'url: section/L#'.
         - NO EXTERNAL KNOWLEDGE: If evidence is missing from source text, mark it in `Missing_Info`.
         - NOVELTY & INFO GAIN: Proactively identify coverage gaps (e.g., missing years in a timeline). Prefer actions with maximum expected information gain.
@@ -137,7 +146,7 @@ The workspace is your living workspace. You are expected to discover entirely ne
         - NO THEORY: Do not construct high-level explanatory theories or causal mechanisms unless directly supported by evidence. Leave interpretation to downstream Theory Agents.""",
         C_STAGING_DB,
         focus_block,
-        f"OUTPUT FORMAT\nReturn strict JSON only, matching this schema exactly:\n{RESEARCH_SCHEMA}",
+        f"SCHEMA OUTPUT REQUIREMENTS\nYour final response JSON must strictly adhere to the schema below, ensuring all required fields, nested objects, and types are correct:\n{RESEARCH_SCHEMA}",
         f"CONSTRAINTS\n- No markdown formatting, no code fences (no ```), no commentary.\n- Single parseable JSON object.\n- No invented data.\n- PROHIBITED: No power-scaling, feat analysis, or relative strength comparisons.\nRequirements: {requirements}"
     ]
     return {

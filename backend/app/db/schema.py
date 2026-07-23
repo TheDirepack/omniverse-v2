@@ -62,7 +62,7 @@ class Universe(SQLModel, table=True):
         default_factory=lambda: str(uuid4()), index=True, unique=True
     )
     slug: str | None = Field(default=None, index=True, unique=True)
-    name: str = Field(index=True, unique=True)
+    name: str = Field(index=True)
     parent_id: int | None = Field(default=None, foreign_key="universe.id")
     summary: str | None = None
     raw_data: str | None = None

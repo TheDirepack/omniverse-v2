@@ -4,9 +4,9 @@ from typing import Optional
 from sqlmodel import Session, select
 
 from app.db.notebook_schema import (
+    NotebookClaim,
     NotebookEntry,
     ResearchSource,
-    WorldDomainCache,
     VisitedUrl,
 )
 from app.db.notebook_session import notebook_engine
@@ -67,9 +67,44 @@ class WorkspaceService:
         summaries = self.session.exec(statement).all()
         return "\n".join(filter(None, summaries))
 
-    def get_notebook_entry(self, entry_id: int) -> Optional[NotebookEntry]:
-        """Returns a full notebook entry."""
-        return self.session.get(NotebookEntry, entry_id)
+    def get_notebook_entry(self, entry_id: Optional[int] = None, key: Optional[str] = None, universe_uuid: Optional[str] = None) -> Optional[NotebookEntry]:
+        """Returns a full notebook entry by ID or by (universe_uuid, key) latest version."""
+        if entry_id is not None:
+            return self.session.get(NotebookEntry, entry_id)
+        if key is not None and universe_uuid is not None:
+            statement = (
+                select(NotebookEntry)
+                .where(NotebookEntry.universe_uuid == universe_uuid, NotebookEntry.key == key)
+                .order_by(NotebookEntry.version.desc())
+            )
+            return self.session.exec(statement).first()
+        return None
+
+    def search_notebook_entries(
+        self,
+        universe_uuid: str,
+        query: Optional[str] = None,
+        kind: Optional[str] = None,
+        status: Optional[str] = None,
+        key: Optional[str] = None,
+    ) -> list[NotebookEntry]:
+        """Searches notebook entries with filters."""
+        statement = select(NotebookEntry).where(NotebookEntry.universe_uuid == universe_uuid)
+        if kind:
+            statement = statement.where(NotebookEntry.kind == kind)
+        if status:
+            statement = statement.where(NotebookEntry.status == status)
+        if key:
+            statement = statement.where(NotebookEntry.key == key)
+        if query:
+            q_pattern = f"%{query}%"
+            statement = statement.where(
+                (NotebookEntry.title.ilike(q_pattern)) |
+                (NotebookEntry.summary.ilike(q_pattern)) |
+                (NotebookEntry.details.ilike(q_pattern))
+            )
+        statement = statement.order_by(NotebookEntry.priority.desc(), NotebookEntry.updated_at.desc())
+        return self.session.exec(statement).all()
 
     def delete_notebook_entry(self, entry_id: int) -> bool:
         """Deletes a notebook entry."""
@@ -90,10 +125,16 @@ class WorkspaceService:
         details: Optional[str] = None,
         status: str = "OPEN",
         priority: int = 0,
-        entry_id: Optional[int] = None
+        entry_id: Optional[int] = None,
+        key: Optional[str] = None,
+        confidence: Optional[float] = None,
+        expected_information: Optional[str] = None,
+        discovered_from: Optional[str] = None,
+        relationship_type: Optional[str] = None,
     ) -> NotebookEntry:
-        """Creates or updates a notebook entry."""
-        if entry_id:
+        """Creates or updates a notebook entry, supporting key-based versioning."""
+        # 1. If entry_id is explicitly provided, update that entry
+        if entry_id is not None:
             entry = self.session.get(NotebookEntry, entry_id)
             if entry:
                 entry.title = title
@@ -103,20 +144,67 @@ class WorkspaceService:
                 entry.status = status
                 entry.priority = priority
                 entry.run_id = run_id
+                if key is not None:
+                    entry.key = key
+                if confidence is not None:
+                    entry.confidence = confidence
+                if expected_information is not None:
+                    entry.expected_information = expected_information
+                if discovered_from is not None:
+                    entry.discovered_from = discovered_from
+                if relationship_type is not None:
+                    entry.relationship_type = relationship_type
                 entry.updated_at = datetime.now(timezone.utc)
                 self.session.add(entry)
                 self.session.commit()
                 self.session.refresh(entry)
                 return entry
 
+        # 2. If key is provided, look up the latest version for this universe and key
+        if key is not None:
+            existing = self.session.exec(
+                select(NotebookEntry)
+                .where(NotebookEntry.universe_uuid == universe_uuid, NotebookEntry.key == key)
+                .order_by(NotebookEntry.version.desc())
+            ).first()
+            if existing:
+                new_version = existing.version + 1
+                entry = NotebookEntry(
+                    universe_uuid=universe_uuid,
+                    key=key,
+                    version=new_version,
+                    title=title,
+                    summary=summary,
+                    details=details,
+                    kind=kind,
+                    confidence=confidence,
+                    expected_information=expected_information,
+                    priority=priority,
+                    status=status,
+                    discovered_from=discovered_from,
+                    relationship_type=relationship_type,
+                    run_id=run_id
+                )
+                self.session.add(entry)
+                self.session.commit()
+                self.session.refresh(entry)
+                return entry
+
+        # 3. Otherwise, create a brand new entry
         entry = NotebookEntry(
             universe_uuid=universe_uuid,
+            key=key,
+            version=1,
             title=title,
             summary=summary,
             details=details,
             kind=kind,
-            status=status,
+            confidence=confidence,
+            expected_information=expected_information,
             priority=priority,
+            status=status,
+            discovered_from=discovered_from,
+            relationship_type=relationship_type,
             run_id=run_id
         )
         self.session.add(entry)
@@ -162,9 +250,11 @@ class WorkspaceService:
         coverage: Optional[str] = None,
         reliability: Optional[str] = None,
         extraction_status: str = "UNREAD",
+        strengths: Optional[str] = None,
+        weaknesses: Optional[str] = None,
         source_id: Optional[int] = None
     ) -> ResearchSource:
-        """Creates or updates a research source."""
+        """Creates or updates a research source with strengths, weaknesses, and relationship metadata."""
         if source_id:
             source = self.session.get(ResearchSource, source_id)
             if source:
@@ -173,6 +263,10 @@ class WorkspaceService:
                 source.coverage = coverage
                 source.reliability = reliability
                 source.extraction_status = extraction_status
+                if strengths is not None:
+                    source.strengths = strengths
+                if weaknesses is not None:
+                    source.weaknesses = weaknesses
                 self.session.add(source)
                 self.session.commit()
                 self.session.refresh(source)
@@ -185,12 +279,57 @@ class WorkspaceService:
             reason_saved=reason_saved,
             coverage=coverage,
             reliability=reliability,
-            extraction_status=extraction_status
+            extraction_status=extraction_status,
+            strengths=strengths,
+            weaknesses=weaknesses
         )
         self.session.add(source)
         self.session.commit()
         self.session.refresh(source)
         return source
+
+    def upsert_workspace_claim(self, run_id: str, universe_id: int, claim_data: dict) -> NotebookClaim:
+        """Upserts a working knowledge claim for a run."""
+        from app.db.notebook_schema import NotebookClaim
+        statement = select(NotebookClaim).where(
+            NotebookClaim.universe_id == universe_id,
+            NotebookClaim.subject == claim_data.get("subject"),
+            NotebookClaim.predicate == claim_data.get("predicate"),
+            NotebookClaim.object_val == claim_data.get("object_val")
+        )
+        existing = self.session.exec(statement).first()
+        if existing:
+            existing.context = claim_data.get("context", existing.context)
+            self.session.add(existing)
+            self.session.commit()
+            self.session.refresh(existing)
+            return existing
+
+        claim = NotebookClaim(
+            universe_uuid=claim_data.get("universe_uuid", ""),
+            universe_id=universe_id,
+            subject=claim_data.get("subject", ""),
+            predicate=claim_data.get("predicate", ""),
+            object_val=claim_data.get("object_val", ""),
+            context=claim_data.get("context")
+        )
+        self.session.add(claim)
+        self.session.commit()
+        self.session.refresh(claim)
+        return claim
+
+    def get_working_kg(self, run_id: str, universe_id: int) -> list[NotebookClaim]:
+        """Returns working claims for a universe."""
+        from app.db.notebook_schema import NotebookClaim
+        statement = select(NotebookClaim).where(NotebookClaim.universe_id == universe_id)
+        return self.session.exec(statement).all()
+
+    def get_full_workspace_index(self, universe_uuid: str, limit: int = 50) -> str:
+        """Returns full workspace index including notebook notes and useful sources."""
+        n_idx = self.get_notebook_index_str(universe_uuid, limit=limit)
+        s_idx = self.get_sources_index_str(universe_uuid, limit=limit)
+        v_idx = self.get_visited_urls_index_str(universe_uuid, limit=limit)
+        return f"{n_idx}\n\n{s_idx}\n\n{v_idx}"
 
     # --- Visited & Blocked URLs Tracking ---
 

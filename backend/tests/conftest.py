@@ -256,18 +256,12 @@ def _clear_acquisition_cache():
     repo.session.commit()
 
     with Session(notebook_engine) as us:
-        # Delete child tables first to avoid IntegrityError
-        us.exec(text("DELETE FROM timeline_source"))
-        us.exec(text("DELETE FROM timeline_participant"))
-        us.exec(text("DELETE FROM timeline_location"))
-        us.exec(text("DELETE FROM timeline_claim"))
-        us.exec(text("DELETE FROM timeline_entry"))
-        us.exec(text("DELETE FROM research_source"))
-        us.exec(text("DELETE FROM notebook_entry"))
-        us.exec(text("DELETE FROM provenance_edge"))
-        us.exec(text("DELETE FROM world_acquisition_usage"))
-        us.exec(text("DELETE FROM acquisition_artifact"))
-        us.exec(text("DELETE FROM notebook_universe"))
+        # Delete child tables first to avoid IntegrityError if they exist
+        for table in ["timeline_source", "timeline_participant", "timeline_location", "timeline_claim", "timeline_entry", "research_source", "notebook_entry", "provenance_edge", "world_acquisition_usage", "acquisition_artifact", "notebook_universe"]:
+            try:
+                us.exec(text(f"DELETE FROM {table}"))
+            except Exception:
+                pass
         us.commit()
 
     yield

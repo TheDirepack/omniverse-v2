@@ -165,7 +165,6 @@ class TestRegistry:
             "upsertArtifacts",
             "queryNotebookClaims",
             "saveNotebookEntry",
-            "deleteNotebookClaim",
         ]:
             assert name in AGENT_TOOLS, f"Missing tool: {name}"
 

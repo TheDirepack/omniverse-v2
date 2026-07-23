@@ -89,6 +89,8 @@ class ResearchSource(NotebookModel, table=True):
     coverage: str | None = None
     reliability: str | None = None
     extraction_status: str = Field(default="UNREAD")
+    strengths: str | None = None
+    weaknesses: str | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
@@ -146,12 +148,18 @@ class NotebookEntry(NotebookModel, table=True):
 
     id: int | None = Field(default=None, primary_key=True)
     universe_uuid: str = Field(index=True)
+    key: str | None = Field(default=None, index=True)
+    version: int = Field(default=1)
     title: str
     summary: str
     details: str | None = None
     kind: str = Field(index=True)
-    status: str = Field(default="OPEN")
+    confidence: float | None = None
+    expected_information: str | None = None
     priority: int = Field(default=0)
+    status: str = Field(default="OPEN")
+    discovered_from: str | None = None
+    relationship_type: str | None = None
     run_id: str | None = Field(default=None, index=True)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

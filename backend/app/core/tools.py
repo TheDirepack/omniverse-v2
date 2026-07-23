@@ -34,21 +34,56 @@ from app.services.universe_service import UniverseService
 
 async def tool_load_notebook_entry(args: dict[str, Any]) -> str:
     entry_id = args.get("entry_id")
-    if not entry_id:
-        return "Error: Missing entry_id."
+    key = args.get("key")
+    if not entry_id and not key:
+        return "Error: Missing entry_id or key."
+
+    universe_uuid = _get_universe_uuid() if key else None
+    if key and not universe_uuid:
+        return "Error: No active universe context required for key lookup."
 
     service = WorkspaceService()
-    entry = service.get_notebook_entry(entry_id)
+    entry = service.get_notebook_entry(entry_id=entry_id, key=key, universe_uuid=universe_uuid)
     if not entry:
-        return f"Notebook entry {entry_id} not found."
+        return f"Notebook entry not found (entry_id={entry_id}, key={key})."
 
     return (
-        f"--- Notebook Entry {entry.id} ---\n"
+        f"--- Notebook Entry {entry.id} (Key: {entry.key or 'N/A'}, Version: {entry.version}) ---\n"
         f"Title: {entry.title}\n"
-        f"Kind: {entry.kind} | Status: {entry.status} | Priority: {entry.priority}\n"
+        f"Kind: {entry.kind} | Status: {entry.status} | Priority: {entry.priority} | Confidence: {entry.confidence}\n"
         f"Summary: {entry.summary}\n"
-        f"Details: {entry.details or 'No detailed notes provided.'}"
+        f"Details: {entry.details or 'No detailed notes provided.'}\n"
+        f"Expected Info: {entry.expected_information or 'N/A'} | Discovered From: {entry.discovered_from or 'N/A'} | Relationship: {entry.relationship_type or 'N/A'}"
     )
+
+
+async def tool_search_notebook(args: dict[str, Any]) -> str:
+    universe_uuid = _get_universe_uuid()
+    if not universe_uuid:
+        return "Error: No active universe context."
+
+    query = args.get("query")
+    kind = args.get("kind")
+    status = args.get("status")
+    key = args.get("key")
+
+    service = WorkspaceService()
+    entries = service.search_notebook_entries(
+        universe_uuid=universe_uuid,
+        query=query,
+        kind=kind,
+        status=status,
+        key=key
+    )
+
+    if not entries:
+        return "No matching notebook entries found."
+
+    lines = [
+        f"[{e.id}] (Key: {e.key or 'N/A'}, v{e.version}) {e.title} (Kind: {e.kind}, Status: {e.status}, Priority: {e.priority})\n  Summary: {e.summary}"
+        for e in entries
+    ]
+    return f"SEARCH RESULTS ({len(entries)}):\n" + "\n".join(lines)
 
 
 async def tool_delete_notebook_entry(args: dict[str, Any]) -> str:
@@ -67,12 +102,17 @@ async def tool_save_notebook_entry(args: dict[str, Any]) -> str:
         return "Error: No active universe context."
 
     entry_id = args.get("entry_id")
+    key = args.get("key")
     title = args.get("title")
     summary = args.get("summary")
     kind = args.get("kind", "Observation")
     details = args.get("details")
     status = args.get("status", "OPEN")
     priority = args.get("priority", 0)
+    confidence = args.get("confidence")
+    expected_information = args.get("expected_information")
+    discovered_from = args.get("discovered_from")
+    relationship_type = args.get("relationship_type")
 
     if not title or not summary:
         return "Error: Missing title or summary."
@@ -86,9 +126,14 @@ async def tool_save_notebook_entry(args: dict[str, Any]) -> str:
         details=details,
         status=status,
         priority=priority,
-        entry_id=entry_id
+        entry_id=entry_id,
+        key=key,
+        confidence=confidence,
+        expected_information=expected_information,
+        discovered_from=discovered_from,
+        relationship_type=relationship_type
     )
-    return f"Notebook entry {entry.id} saved successfully."
+    return f"Notebook entry {entry.id} (Key: {entry.key or 'N/A'}, v{entry.version}) saved successfully."
 
 
 async def tool_manage_source(args: dict[str, Any]) -> str:
@@ -105,6 +150,8 @@ async def tool_manage_source(args: dict[str, Any]) -> str:
     coverage = args.get("coverage")
     reliability = args.get("reliability")
     status = args.get("extraction_status", "UNREAD")
+    strengths = args.get("strengths")
+    weaknesses = args.get("weaknesses")
     source_id = args.get("source_id")
 
     service = WorkspaceService()
@@ -116,9 +163,51 @@ async def tool_manage_source(args: dict[str, Any]) -> str:
         coverage=coverage,
         reliability=reliability,
         extraction_status=status,
+        strengths=strengths,
+        weaknesses=weaknesses,
         source_id=source_id
     )
-    return f"Source {source.id} updated/saved: {source.url}"
+    return f"Source {source.id} updated/saved: {source.url} (Strengths: {source.strengths or 'None'}, Weaknesses: {source.weaknesses or 'None'})"
+
+
+async def tool_expand_knowledge_node(args: dict[str, Any]) -> str:
+    """Expands a knowledge node or explores related concepts via graph & search."""
+    universe_uuid = _get_universe_uuid()
+    if not universe_uuid:
+        return "Error: No active universe context."
+
+    node_name = args.get("node_name")
+    if not node_name:
+        return "Error: Missing node_name."
+
+    universe_name = get_current_universe()
+    with Session(engine) as session:
+        universe = session.exec(select(Universe).where(Universe.name == universe_name)).first()
+        if not universe:
+            return f"Universe {universe_name} not found."
+
+        retriever = KnowledgeRetrieverService(session)
+        graph = retriever.get_universe_knowledge_graph(universe.id)
+
+        node_data = graph.get(node_name)
+        if not node_data:
+            # Fallback search in notebook or web search if node not in graph
+            return f"Node '{node_name}' not found in verified knowledge graph. Try running web search or checking notebook entries."
+
+        facts = node_data.get("facts", [])
+        related = node_data.get("related_entities", [])
+
+        output = [
+            f"=== Knowledge Expansion for Node: {node_name} ===",
+            f"Verified Facts ({len(facts)}):"
+        ]
+        for f in facts:
+            output.append(f"  - {f['predicate']}: {f['object']} (Support: {f['support']}, Ref: {f['reference'] or 'N/A'})")
+
+        if related:
+            output.append(f"Related Entities: {', '.join(related)}")
+
+        return "\n".join(output)
 
 
 # Timeline tools removed per instructions
@@ -957,7 +1046,7 @@ async def tool_ocr_image(args: dict[str, Any]) -> str:
                 parts.append(f"Structured data: {doc.structured_data}")
             return "\n\n".join(parts)
         return f"OCR returned no text. Status: {doc.content_type}. Engine: {doc.engine_name or 'none'}."
-    except (ValueError, TypeError, AttributeError) as e:
+    except Exception as e:
         return f"OCR failed: {e!s}"
 
 
@@ -1258,36 +1347,54 @@ AGENT_TOOLS: dict[str, dict[str, Any]] = {
     },
     "loadNotebookEntry": {
         "func": tool_load_notebook_entry,
-        "description": "Fetch the full details of a specific research notebook entry by ID.",
+        "description": "Fetch the full details of a specific research notebook entry by ID or by unique key.",
         "parameters": {
             "type": "object",
             "properties": {
                 "entry_id": {"type": "integer", "description": "The ID of the notebook entry to load."},
+                "key": {"type": "string", "description": "The unique key of the notebook entry to load (latest version)."},
             },
-            "required": ["entry_id"],
+            "required": [],
+        },
+    },
+    "searchNotebook": {
+        "func": tool_search_notebook,
+        "description": "Search notebook entries by query text, kind, status, or key.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Keyword search across title, summary, and details."},
+                "kind": {"type": "string", "description": "Filter by kind (Lead, Hypothesis, Contradiction, Question, Observation, etc.)."},
+                "status": {"type": "string", "description": "Filter by status (OPEN, RESOLVED, SUPERSEDED, DISCARDED)."},
+                "key": {"type": "string", "description": "Filter by specific entry key."},
+            },
+            "required": [],
         },
     },
     "saveNotebookEntry": {
         "func": tool_save_notebook_entry,
-        "description": "Create or update a research notebook entry (lead, hypothesis, etc.). Use this to record your current thinking, future tasks, and unresolved questions. Prefer updating existing entries via `entry_id` when refining a thought.",
+        "description": "Create or update a research notebook entry (lead, hypothesis, etc.), supporting key-based versioning and metadata like confidence and expected information.",
         "parameters": {
             "type": "object",
             "properties": {
-                "entry_id": {"type": "integer", "description": "ID of entry to update. Omit to create new."},
+                "entry_id": {"type": "integer", "description": "ID of entry to update. Omit to create/version by key."},
+                "key": {"type": "string", "description": "Unique key for versioning this entry across updates."},
                 "title": {"type": "string", "description": "Concise title for the entry."},
                 "summary": {"type": "string", "description": "One-sentence summary of the core point."},
                 "details": {"type": "string", "description": "Full detailed notes and reasoning."},
                 "kind": {
                     "type": "string",
-                    "enum": ["Lead", "Hypothesis", "Contradiction", "Question", "Observation"],
                     "description": "The nature of the entry."
                 },
                 "status": {
                     "type": "string",
-                    "enum": ["OPEN", "RESOLVED", "SUPERSEDED", "DISCARDED"],
                     "description": "Current status of the investigation."
                 },
                 "priority": {"type": "integer", "description": "Priority level (0=Low, 10=Critical)."},
+                "confidence": {"type": "number", "description": "Confidence score (0.0 to 1.0)."},
+                "expected_information": {"type": "string", "description": "What information is expected next."},
+                "discovered_from": {"type": "string", "description": "Source or lead this was discovered from."},
+                "relationship_type": {"type": "string", "description": "Type of relationship or link."},
             },
             "required": ["title", "summary"],
         },
@@ -1305,7 +1412,7 @@ AGENT_TOOLS: dict[str, dict[str, Any]] = {
     },
     "manageSource": {
         "func": tool_manage_source,
-        "description": "Curate the research source library. Mark sources as useful, track their extraction status, and record why they are valuable.",
+        "description": "Curate the research source library. Track extraction status, strengths, weaknesses, and reliability.",
         "parameters": {
             "type": "object",
             "properties": {
@@ -1317,11 +1424,23 @@ AGENT_TOOLS: dict[str, dict[str, Any]] = {
                 "reliability": {"type": "string", "description": "Assessment of source reliability."},
                 "extraction_status": {
                     "type": "string",
-                    "enum": ["UNREAD", "PARTIAL", "COMPLETE"],
                     "description": "How much of the source has been mined."
                 },
+                "strengths": {"type": "string", "description": "Strengths of the source."},
+                "weaknesses": {"type": "string", "description": "Weaknesses or biases of the source."},
             },
             "required": ["url"],
+        },
+    },
+    "expandKnowledgeNode": {
+        "func": tool_expand_knowledge_node,
+        "description": "Expand a knowledge node in the verified knowledge graph to inspect its verified facts and related entities.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "node_name": {"type": "string", "description": "Name of the entity or node to expand."},
+            },
+            "required": ["node_name"],
         },
     },
 # recordTimelineEvent and addTimelineDetail removed

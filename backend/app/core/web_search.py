@@ -57,6 +57,9 @@ class WebSearcher:
         if site_filter:
             query = f"site:{site_filter} {query}"
 
+        if engine == "google":
+            engine = "duckduckgo"
+
         url_template = SEARCH_URLS.get(engine)
         if not url_template:
             return {

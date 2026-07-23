@@ -168,7 +168,20 @@ class WorldResearcher:
 
                 if audit_success(critique):
                     await save_audit_artifacts(self.target.uuid, retry_handler, result, self.workspace_service)
-                    return {"uuid": self.target.uuid, "name": world_name, "summary": result, "status": "VERIFIED"}
+                    parsed_artifacts = []
+                    try:
+                        parsed_res = json.loads(result) if isinstance(result, str) else result
+                        if isinstance(parsed_res, dict):
+                            parsed_artifacts = parsed_res.get("Knowledge_Graph", []) or parsed_res.get("Verified_Claims", [])
+                    except Exception:
+                        parsed_artifacts = [result]
+                    return {
+                        "uuid": self.target.uuid,
+                        "name": world_name,
+                        "summary": result,
+                        "status": "VERIFIED",
+                        "artifacts": parsed_artifacts
+                    }
 
                 # Feedback Generation
                 feedback = self._handle_audit_failure(critique)

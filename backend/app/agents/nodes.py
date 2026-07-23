@@ -130,12 +130,22 @@ async def db_integrator_node(state: OmniverseState) -> dict[str, Any]:
 
     for result in research_results:
         world_name = result["name"]
-        artifacts = result.get("artifacts", [])
-        if not artifacts:
+        status = result.get("status", "VERIFIED")
+        if status != "VERIFIED":
+            exec_service.log_transition(
+                run_id,
+                "DB Integrator",
+                f"Skipping integration for {world_name} because status is {status} (not VERIFIED).",
+                RunStatus.FAILED,
+                state,
+            )
             continue
 
-        verified_data = json.dumps(artifacts)
-        status = result.get("status", "VERIFIED")
+        artifacts = result.get("artifacts", [])
+        if not artifacts:
+            artifacts = [{"Verified_Claim": result.get("summary", "")}]
+
+        verified_data = json.dumps(artifacts, default=str)
 
         from app.agents.prompts import get_db_agent_prompt
 
@@ -174,7 +184,7 @@ async def db_integrator_node(state: OmniverseState) -> dict[str, Any]:
     exec_service.log_transition(
         run_id,
         "DB Integrator",
-        "All research integrated.",
+        "All verified research integrated into database.",
         RunStatus.COMPLETED,
         state,
     )

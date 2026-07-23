@@ -1205,7 +1205,7 @@ AGENT_TOOLS: dict[str, dict[str, Any]] = {
     },
     "fetchPage": {
         "func": tool_fetch_page,
-        "description": "Fetch and read the full text of a specific URL. Reads are cached and count against a shared per-run fetch budget. Returns structured content including the main article, a scored list of internal research leads (links), and metadata. You can specify `max_links` to get more or fewer internal links.",
+        "description": "Fetch and read text content from a URL. Supports pagination via start_at/max_length. Reads are cached and count against a shared per-run fetch budget. Returns the main article text and a scored list of internal research links.",
         "parameters": {
             "type": "object",
             "properties": {
@@ -1219,6 +1219,16 @@ AGENT_TOOLS: dict[str, dict[str, Any]] = {
                     "type": "integer",
                     "description": "Maximum number of internal research links to return. Default is 20.",
                     "default": 20,
+                },
+                "start_at": {
+                    "type": "integer",
+                    "description": "Character offset to start reading from (0 = beginning). Use this to paginate through long pages.",
+                    "default": 0,
+                },
+                "max_length": {
+                    "type": "integer",
+                    "description": "Maximum characters to return (0 = return full page). Use this to limit response size.",
+                    "default": 0,
                 },
             },
             "required": [],

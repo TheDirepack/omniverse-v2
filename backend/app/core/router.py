@@ -1,10 +1,10 @@
-import asyncio
 import hashlib
 import re
 import time
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+import httpx
 import litellm
 from sqlalchemy import update as sa_update
 from sqlmodel import Session, select
@@ -16,6 +16,7 @@ from app.db.schema import (
     AgentRouteFallback,
     CandidateHealth,
     ExecutionState,
+    ModelCapability,
     ProviderConfig,
     ProviderKey,
 )
@@ -97,6 +98,8 @@ class ModelRouter:
         # 4. Threshold check
         if health.failure_count >= 5:
             if not health.disabled_until or now > _ensure_aware(health.disabled_until):
+                new_disabled = now + timedelta(hours=4)
+                health.disabled_until = new_disabled
                 # Use atomic update to avoid race conditions when checking vs. setting
                 session.execute(
                     sa_update(CandidateHealth)
@@ -105,10 +108,9 @@ class ModelRouter:
                         CandidateHealth.disabled_until.is_(None) |
                         (CandidateHealth.disabled_until <= now)
                     )
-                    .values(disabled_until=now + timedelta(hours=4))
+                    .values(disabled_until=new_disabled)
                 )
                 session.flush()
-                # Refresh health object to get updated timestamp
                 session.refresh(health)
 
         session.add(health)
@@ -252,9 +254,27 @@ class ModelRouter:
                     if m.strip()
                 ]
 
+                if not models:
+                    continue
+
+                caps_for_provider = {}
+                try:
+                    caps_for_provider = {
+                        mc.model_name: mc
+                        for mc in session.exec(
+                            select(ModelCapability).where(ModelCapability.provider_id == provider.id)
+                        ).all()
+                    }
+                except Exception:
+                    pass
+
                 # Interleave: try different keys for each model to avoid
                 # exhausting all models on a single key before trying alternatives
                 for model in models:
+                    cap = caps_for_provider.get(model)
+                    if cap and not cap.is_active:
+                        continue
+
                     for key in keys:
                         model_prefix = (
                             "openai"
@@ -426,6 +446,191 @@ class ModelRouter:
                     continue
 
             raise RuntimeError(f"All fallback options exhausted for task '{task}'.")
+
+    @staticmethod
+    def _get_context_window(provider_type: str, model_name: str) -> int:
+        known_prefixes: dict[str, list[tuple[str, int]]] = {
+            "openai": [("gpt-4.1", 1_000_000), ("gpt-4", 128_000), ("gpt-3.5", 16_385), ("o1", 200_000), ("o3", 200_000)],
+            "anthropic": [("claude-3", 200_000), ("claude-2", 100_000)],
+        }
+        known_defaults: dict[str, int] = {
+            "openai": 128_000,
+            "anthropic": 200_000,
+            "groq": 131_072,
+            "openrouter": 128_000,
+        }
+        for prefix, ctx in known_prefixes.get(provider_type, []):
+            if model_name.startswith(prefix):
+                return ctx
+        return known_defaults.get(provider_type, 40_000)
+
+    @staticmethod
+    def _supports_function_calling(provider_type: str, model_name: str) -> bool:
+        known_non_fc_prefixes = {"text-embedding", "embedding", "moderation", "tts", "dall-e", "whisper"}
+        if any(model_name.lower().startswith(p) for p in known_non_fc_prefixes):
+            return False
+        if provider_type == "gemini":
+            return bool(re.search(r"(pro|flash)", model_name, re.IGNORECASE))
+        return True
+
+    @staticmethod
+    def _supports_text_output(model_name: str) -> bool:
+        known_non_text_prefixes = {"text-embedding", "embedding", "moderation", "tts-1", "whisper"}
+        return not any(model_name.lower().startswith(p) for p in known_non_text_prefixes)
+
+    async def sync_provider_models(self, provider_id: int) -> dict[str, Any]:
+        with Session(settings_engine) as session:
+            provider = session.get(ProviderConfig, provider_id)
+            if not provider:
+                return {"total": 0, "active": 0, "blacklisted": 0, "errors": ["Provider not found"], "models": []}
+
+            keys = session.exec(
+                select(ProviderKey)
+                .where(ProviderKey.provider_id == provider_id)
+                .order_by(ProviderKey.priority)
+            ).all()
+            api_key = keys[0].api_key if keys else None
+            base_url = (provider.base_url or "").rstrip("/")
+            ptype = (provider.provider_type or "").lower()
+
+            raw_models: list[dict[str, Any]] = []
+            errors: list[str] = []
+
+            async with httpx.AsyncClient(timeout=15) as client:
+                if ptype == "gemini":
+                    if not api_key:
+                        errors.append("No API key configured for Gemini provider")
+                    else:
+                        try:
+                            resp = await client.get(f"{base_url}/models", params={"key": api_key})
+                            resp.raise_for_status()
+                            data = resp.json()
+                            for m in data.get("models", []):
+                                name = m.get("name", "").replace("models/", "")
+                                if not name:
+                                    continue
+                                gen_methods = m.get("supportedGenerationMethods", [])
+                                raw_models.append({
+                                    "name": name,
+                                    "context_window": m.get("inputTokenLimit", 40_000),
+                                    "supports_text": "generateContent" in gen_methods,
+                                    "supports_fc": self._supports_function_calling(ptype, name),
+                                })
+                        except Exception as e:
+                            errors.append(f"Gemini API error: {_clean_error(e)}")
+
+                elif ptype in ("openai", "groq", "openrouter"):
+                    if not api_key and ptype != "custom":
+                        errors.append(f"No API key configured for {ptype} provider")
+                    else:
+                        try:
+                            headers = {}
+                            if api_key:
+                                headers["Authorization"] = f"Bearer {api_key}"
+                            resp = await client.get(f"{base_url}/models", headers=headers)
+                            resp.raise_for_status()
+                            data = resp.json()
+                            for m in data.get("data", []):
+                                mid = m.get("id")
+                                if mid:
+                                    raw_models.append({
+                                        "name": mid,
+                                        "context_window": self._get_context_window(ptype, mid),
+                                        "supports_text": self._supports_text_output(mid),
+                                        "supports_fc": self._supports_function_calling(ptype, mid),
+                                    })
+                        except Exception as e:
+                            errors.append(f"API error: {_clean_error(e)}")
+
+                elif ptype == "anthropic":
+                    if not api_key:
+                        errors.append("No API key configured for Anthropic provider")
+                    else:
+                        try:
+                            resp = await client.get(
+                                "https://api.anthropic.com/v1/models",
+                                headers={"x-api-key": api_key, "anthropic-version": "2023-06-01"},
+                            )
+                            resp.raise_for_status()
+                            data = resp.json()
+                            for m in data.get("data", []):
+                                mid = m.get("id") or m.get("name")
+                                if mid:
+                                    raw_models.append({
+                                        "name": mid,
+                                        "context_window": self._get_context_window(ptype, mid),
+                                        "supports_text": self._supports_text_output(mid),
+                                        "supports_fc": self._supports_function_calling(ptype, mid),
+                                    })
+                        except Exception as e:
+                            errors.append(f"Anthropic API error: {_clean_error(e)}")
+
+                else:
+                    # Generic / custom / ollama
+                    try:
+                        headers = {}
+                        if api_key:
+                            headers["Authorization"] = f"Bearer {api_key}"
+                        api_url = f"{base_url}/v1/models"
+                        if base_url.endswith("/v1") or base_url.endswith("/v1beta"):
+                            api_url = f"{base_url}/models"
+                        resp = await client.get(api_url, headers=headers)
+                        resp.raise_for_status()
+                        data = resp.json()
+                        for m in data.get("data", []):
+                            mid = m.get("id") or m.get("name")
+                            if mid:
+                                raw_models.append({
+                                    "name": mid,
+                                    "context_window": self._get_context_window(ptype, mid),
+                                    "supports_text": self._supports_text_output(mid),
+                                    "supports_fc": self._supports_function_calling(ptype, mid),
+                                })
+                    except Exception as e:
+                        errors.append(f"API error: {_clean_error(e)}")
+
+            active_count = 0
+            blacklisted_count = 0
+            saved_names: set[str] = set()
+
+            for model_info in raw_models:
+                saved_names.add(model_info["name"])
+                is_active = model_info["supports_text"]
+                if is_active:
+                    active_count += 1
+                else:
+                    blacklisted_count += 1
+
+                cap = session.get(ModelCapability, (provider_id, model_info["name"]))
+                if not cap:
+                    cap = ModelCapability(provider_id=provider_id, model_name=model_info["name"])
+                cap.context_window = model_info["context_window"]
+                cap.supports_function_calling = model_info["supports_fc"]
+                cap.supports_text_output = model_info["supports_text"]
+                cap.is_active = is_active
+                cap.last_verified = datetime.now(timezone.utc)
+                cap.error_message = None if is_active else "Model does not support text output"
+                session.add(cap)
+
+            existing_caps = session.exec(
+                select(ModelCapability).where(ModelCapability.provider_id == provider_id)
+            ).all()
+            for cap in existing_caps:
+                if cap.model_name not in saved_names:
+                    cap.is_active = False
+                    cap.last_verified = datetime.now(timezone.utc)
+                    cap.error_message = "Model no longer available from provider"
+                    session.add(cap)
+
+            session.commit()
+
+            return {
+                "total": len(raw_models),
+                "active": active_count,
+                "blacklisted": blacklisted_count,
+                "errors": errors,
+                "models": sorted(model_info["name"] for model_info in raw_models if model_info["supports_text"]),
+            }
 
     def list_provider_models(self, provider_id: int) -> list[str]:
         with Session(settings_engine) as session:

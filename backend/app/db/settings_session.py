@@ -4,7 +4,12 @@ from pathlib import Path
 from sqlalchemy import event, text
 from sqlmodel import Session, SQLModel, create_engine, select
 
-from app.db.schema import AgentRouteFallback, ProviderConfig, Setting
+from app.db.schema import (  # noqa: F401 — needed for create_all
+    AgentRouteFallback,
+    ModelCapability,
+    ProviderConfig,
+    Setting,
+)
 from app.repositories.settings import SettingsRepository
 
 _DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data"

@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 import os
 import time
@@ -14,6 +15,7 @@ from cloakbrowser import launch_async
 logger = logging.getLogger(__name__)
 
 BLOCKED_RESOURCE_TYPES = {"image", "media", "font", "stylesheet"}
+COOKIE_FILE = Path(__file__).parent.parent.parent / "data" / "browser_cookies.json"
 
 
 def intercept_route(route):
@@ -147,6 +149,24 @@ class BrowserManager:
         self._initialized = False
         self._initialize_pool(BROWSER_POOL_SIZE, BROWSER_MAX_CONCURRENCY_PER_INSTANCE)
 
+    def _load_cookies(self) -> list[dict]:
+        if COOKIE_FILE.exists():
+            try:
+                data = COOKIE_FILE.read_text("utf-8")
+                return json.loads(data) if data else []
+            except Exception:
+                return []
+        return []
+
+    def _save_cookies(self, cookies: list[dict]):
+        if not cookies:
+            return
+        try:
+            COOKIE_FILE.parent.mkdir(parents=True, exist_ok=True)
+            COOKIE_FILE.write_text(json.dumps(cookies, indent=2), "utf-8")
+        except Exception as e:
+            logger.debug("Failed to save cookies: %s", e)
+
     @property
     def browser(self):
         """Back-compat accessor: returns the first slot's browser handle
@@ -176,7 +196,6 @@ class BrowserManager:
 
     async def get_page(self):
         if not self._initialized:
-            # Fallback lazy init if for some reason pool wasn't initialized.
             self._initialize_pool(
                 BROWSER_POOL_SIZE, BROWSER_MAX_CONCURRENCY_PER_INSTANCE
             )
@@ -191,16 +210,66 @@ class BrowserManager:
             try:
                 context = await slot.browser.new_context()
             except (TimeoutError, ConnectionError, OSError):
-                # One retry: assume the process died, relaunch this slot only.
                 logger.warning(
                     "Browser slot %d appears dead, relaunching", slot.index
                 )
                 await slot.relaunch()
                 context = await slot.browser.new_context()
 
+            saved_cookies = self._load_cookies()
+            if saved_cookies:
+                try:
+                    await context.add_cookies(saved_cookies)
+                except Exception as e:
+                    logger.debug("Failed to load cookies: %s", e)
+
             page = await context.new_page()
 
-            # Native Playwright Route Interception using optimized intercept_route
+            await page.add_init_script("""
+                Object.defineProperty(navigator, 'cookieEnabled', { get: () => true });
+                const _origCreate = document.createElement.bind(document);
+                document.createElement = function(tag, opts) {
+                    const el = _origCreate(tag, opts);
+                    if (tag.toLowerCase() === 'script') {
+                        const _origSetAttr = el.setAttribute.bind(el);
+                        el.setAttribute = function(name, value) {
+                            const src = name === 'src' ? value : (el.src || '');
+                            if (typeof src === 'string' && /cookie|consent|gdpr|cmp|onetrust|trustarc|usercentrics|didomi/i.test(src)) return;
+                            return _origSetAttr(name, value);
+                        };
+                    }
+                    return el;
+                };
+            """)
+
+            async def _dismiss_banners(response):
+                if not response.url.startswith("http"):
+                    return
+                try:
+                    await asyncio.sleep(0.3)
+                    await page.evaluate("""
+                        (() => {
+                            const btns = [
+                                'button:has-text("Accept All")', 'button:has-text("Accept all")',
+                                'button:has-text("Accept")', 'button:has-text("Agree")',
+                                'button:has-text("Continue")', 'button:has-text("Got it")',
+                                'button:has-text("I agree")', 'button:has-text("Allow all")',
+                                'button:has-text("Allow All")', 'button:has-text("Reject All")',
+                                '[aria-label*="cookie"i]', '[aria-label*="consent"i]',
+                                '.cookie-accept', '#onetrust-accept-btn-handler',
+                                '.cc-btn', '.accept-cookies',
+                            ];
+                            for (const s of btns) {
+                                const b = document.querySelector(s);
+                                if (b) { b.click(); return; }
+                            }
+                        })();
+                    """)
+                except Exception:
+                    pass
+
+            page.on("response", _dismiss_banners)
+
             if BLOCKED_DOMAINS:
                 await page.route("**/*", intercept_route)
 
@@ -234,11 +303,17 @@ class BrowserManager:
     async def page(self) -> AsyncGenerator[Any, None]:
         """
         Async context manager that provides a page and handles cleanup automatically.
+        Cookies are saved on cleanup for persistence.
         """
         page, context = await self.get_page()
         try:
             yield page
         finally:
+            try:
+                cookies = await context.cookies()
+                await asyncio.to_thread(self._save_cookies, cookies)
+            except Exception as e:
+                logger.debug("Failed to save cookies on page close: %s", e)
             await page.close()
             await context.close()
             self.release_page(context)

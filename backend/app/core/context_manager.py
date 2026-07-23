@@ -75,15 +75,23 @@ class ContextManager:
 
         # 2. Request summary from the model
         summary_prompt = (
-            "You are a context compression engine. Summarize the following conversation history "
-            "into a concise 'Current State Summary'. Preserve all key facts, verified claims, "
-            "and the current progress of the research. Do not lose specific identifiers or "
-            "crucial evidence. Output only the summary text."
+            "You are a context compression engine. Produce a structured summary "
+            "of the research conversation.\n\n"
+            "## Objective\nWhat is the current research goal?\n\n"
+            "## Completed Work\n- List verified claims, discovered facts, "
+            "and what has been accomplished.\n\n"
+            "## Active Leads\n- List pending investigations, unresolved "
+            "questions, and their priority.\n\n"
+            "## Key Sources\n- List important URLs and sources found.\n\n"
+            "## Blockers\n- What is preventing progress?\n\n"
+            "## Next Steps\n- What should the agent do next?\n\n"
+            "Output ONLY the summary sections, no preamble."
         )
 
+        serialized = json.dumps(to_summarize, indent=2)
         summary_messages = [
             {"role": "system", "content": summary_prompt},
-            {"role": "user", "content": f"History to summarize:\n{json.dumps(to_summarize, indent=2)}"}
+            {"role": "user", "content": f"History to summarize:\n{serialized}"}
         ]
 
         try:
@@ -104,18 +112,68 @@ class ContextManager:
         compressed_history = [
             system_msg,
             original_goal,
-            {"role": "system", "content": f"Context Summary of previous turns:\n{summary_text}"},
+            {"role": "system", "content": (
+                f"Context Summary of previous turns:\n{summary_text}"
+            )},
             *filtered_recent
         ]
 
         return compressed_history, summary_text
 
 
-    def truncate_observation(self, content: str, max_length: int = 10000) -> str:
-        """Truncate long tool observations to prevent context blowup."""
-        if not content or not isinstance(content, str) or len(content) <= max_length:
-            return content
-        return content[:max_length] + "... [Content truncated for brevity]"
+    def prune_old_observations(
+        self, messages: list[dict[str, Any]]
+    ) -> tuple[list[dict[str, Any]], int]:
+        """
+        Prune old tool outputs (not full messages) to free context space
+        without an LLM call.
+
+        Strategy (inspired by opencode):
+        1. Walk backward through messages
+        2. Protect the last 2 conversation turns
+        3. Protect tool outputs within the last 40K tokens
+        4. Replace old tool outputs with short markers
+        5. Only prune if >20K tokens can be freed
+
+        Returns: (pruned_messages, tokens_freed)
+        """
+        minimum_prune = 20000
+        protect_tokens = 40000
+        protect_turns = 2
+
+        tokens_freed = 0
+        accumulated = 0
+        turn_count = 0
+
+        writing_tools = {"saveNotebookEntry", "upsertArtifacts", "updateArtifact"}
+
+        prunable_indices = []
+        for i in range(len(messages) - 1, -1, -1):
+            msg = messages[i]
+            if msg.get("role") == "user":
+                turn_count += 1
+            if turn_count < protect_turns:
+                continue
+            if msg.get("role") == "tool" and msg.get("name") not in writing_tools:
+                content = msg.get("content", "")
+                estimated = len(content) // 4
+                if accumulated + estimated > protect_tokens:
+                    prunable_indices.append(i)
+                    tokens_freed += estimated
+                else:
+                    accumulated += estimated
+
+        if tokens_freed < minimum_prune:
+            return messages, 0
+
+        new_messages = list(messages)
+        for i in prunable_indices:
+            content = new_messages[i].get("content", "")
+            original_len = len(content)
+            marker = f"[Pruned: original {original_len} chars]"
+            new_messages[i] = {**new_messages[i], "content": marker}
+
+        return new_messages, tokens_freed
 
     def prune_raw_observations(self, messages: list[dict[str, Any]], tool_name: str) -> list[dict[str, Any]]:
         """

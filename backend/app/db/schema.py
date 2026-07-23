@@ -267,3 +267,16 @@ class CandidateHealth(SQLModel, table=True):
     failure_count: int = Field(default=0)
     last_failure_at: datetime | None = Field(default=None)
     disabled_until: datetime | None = Field(default=None)
+
+
+class ModelCapability(SQLModel, table=True):
+    provider_id: int = Field(
+        sa_column=Column(ForeignKey("providerconfig.id", ondelete="CASCADE"), nullable=False, primary_key=True)
+    )
+    model_name: str = Field(primary_key=True)
+    context_window: int = Field(default=40000)
+    supports_function_calling: bool = Field(default=False)
+    supports_text_output: bool = Field(default=True)
+    is_active: bool = Field(default=True)
+    last_verified: datetime | None = Field(default=None)
+    error_message: str | None = Field(default=None)

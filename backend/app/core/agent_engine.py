@@ -116,10 +116,23 @@ async def _execute_tool(
             else [args.get("url")]
         )
         urls = [u for u in urls if u]
+        start_at = args.get("start_at", 0) or 0
+        max_length = args.get("max_length", 0) or 0
         results = []
         for url in urls:
             content, status = await _read_page_cached(url)
             if status in ("fetched", "cached"):
+                total_len = len(content)
+                if start_at > 0 or max_length > 0:
+                    if start_at > 0 and start_at >= total_len:
+                        content = f"[Page content is {total_len} characters. You have reached the end. Use start_at=0 to read from the beginning.]"
+                    else:
+                        end = start_at + max_length if max_length > 0 else total_len
+                        content = content[start_at:end]
+                        header = f"[Showing characters {start_at}-{min(end, total_len)} of {total_len}]"
+                        if end < total_len:
+                            header += f" Use fetchPage with start_at={end} to continue reading."
+                        content = f"{header}\n\n{content}"
                 results.append(f"Fetched content for {url}:\n{content}")
             else:
                 results.append(f"Error fetching {url}: {content}")
@@ -162,6 +175,24 @@ async def _execute_tool(
         return await func(args)
 
     return f"Error: Tool {name} not found."
+
+
+def _get_model_context_window(model: str) -> int:
+    """Look up the context window for a model from the capability cache."""
+    from app.db.settings_session import settings_engine
+    from sqlmodel import Session, select
+    from app.db.schema import ModelCapability
+    try:
+        model_name = model.split("/", 1)[1] if "/" in model else model
+        with Session(settings_engine) as session:
+            cap = session.exec(
+                select(ModelCapability).where(ModelCapability.model_name == model_name)
+            ).first()
+            if cap and cap.context_window:
+                return cap.context_window
+    except Exception:
+        pass
+    return 40000
 
 
 async def run_agent(
@@ -209,10 +240,15 @@ async def run_agent(
 
     # Append context pruning notice to system prompt
     system_prompt += (
-        "\n\n[CONTEXT MANAGEMENT NOTICE]: Raw observations from fetchPage, webSearch, and ocrImage "
-        "are automatically pruned from your history once you use a writing tool (upsertArtifacts, "
-        "updateArtifact, or saveNotebookEntry). Ensure you have extracted all necessary information "
-        "from your sources before committing it to the database."
+        "\n\n[CONTEXT PROTOCOL]\n"
+        "1. After every webSearch or fetchPage call, extract all important findings "
+        "and save them to the notebook using saveNotebookEntry.\n"
+        "2. Raw search/page results are automatically pruned from context once you "
+        "use a writing tool (saveNotebookEntry, upsertArtifacts).\n"
+        "3. Older tool outputs may also be replaced with short markers during "
+        "context compression to free space.\n"
+        "4. If you need to re-read raw source text, re-fetch the URL with an "
+        "optional start_at parameter."
     )
 
 
@@ -304,17 +340,31 @@ async def run_agent(
 
             # Context Management: Compress history if token budget is exceeded
             if model:
-                current_tokens = context_manager.count_tokens(messages, model)
-                if current_tokens > context_manager.max_tokens * context_manager.summary_threshold:
-                    messages, summary = await context_manager.compress_context(
-                        messages=messages,
-                        model=model,
-                        router_instance=router,
-                        system_prompt=system_prompt,
-                        user_goal=user_prompt
+                current_tokens = context_manager.count_tokens(
+                    messages, model
+                )
+                model_window = _get_model_context_window(model)
+                threshold_tokens = int(
+                    model_window * context_manager.summary_threshold
+                )
+                if current_tokens > threshold_tokens:
+                    messages, freed = context_manager.prune_old_observations(
+                        messages
                     )
-                    if summary:
-                        set_current_summary(summary)
+                    if freed > 0:
+                        current_tokens = context_manager.count_tokens(
+                            messages, model
+                        )
+                    if current_tokens > threshold_tokens:
+                        messages, summary = await context_manager.compress_context(
+                            messages=messages,
+                            model=model,
+                            router_instance=router,
+                            system_prompt=system_prompt,
+                            user_goal=user_prompt
+                        )
+                        if summary:
+                            set_current_summary(summary)
 
 
             # Re-filter tools based on the current disabled set
@@ -569,14 +619,12 @@ async def run_agent(
                                     else:
                                         observation = f"Tool {name} has failed {count} times consecutively. It may be fundamentally broken or the requested operation is impossible. Please attempt a different approach or use an alternative tool."
 
-                        raw_tools = {"fetchPage", "webSearch", "ocrImage"}
-                        truncated_obs = context_manager.truncate_observation(observation) if name in raw_tools else observation
                         messages.append(
                             {
                                 "role": "tool",
                                 "tool_call_id": tool_call.id,
                                 "name": name,
-                                "content": truncated_obs,
+                                "content": observation,
                             }
                         )
 
@@ -603,17 +651,31 @@ async def run_agent(
 
                     # If it's a notebook writing tool, also trigger compression
                     if name == "saveNotebookEntry" and model:
-                        current_tokens = context_manager.count_tokens(messages, model)
-                        if current_tokens > context_manager.max_tokens * context_manager.summary_threshold:
-                            messages, summary = await context_manager.compress_context(
-                                messages=messages,
-                                model=model,
-                                router_instance=router,
-                                system_prompt=system_prompt,
-                                user_goal=user_prompt
+                        current_tokens = context_manager.count_tokens(
+                            messages, model
+                        )
+                        model_window = _get_model_context_window(model)
+                        threshold_tokens = int(
+                            model_window * context_manager.summary_threshold
+                        )
+                        if current_tokens > threshold_tokens:
+                            messages, freed = context_manager.prune_old_observations(
+                                messages
                             )
-                            if summary:
-                                set_current_summary(summary)
+                            if freed > 0:
+                                current_tokens = context_manager.count_tokens(
+                                    messages, model
+                                )
+                            if current_tokens > threshold_tokens:
+                                messages, summary = await context_manager.compress_context(
+                                    messages=messages,
+                                    model=model,
+                                    router_instance=router,
+                                    system_prompt=system_prompt,
+                                    user_goal=user_prompt
+                                )
+                                if summary:
+                                    set_current_summary(summary)
 
                 if not content:
                     messages.append(

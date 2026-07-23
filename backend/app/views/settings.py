@@ -8,6 +8,7 @@ from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse
 from sqlmodel import Session, select
 
+from app.core.router import router as model_router
 from app.core.templates import templates
 from app.db.notebook_schema import Snapshot
 from app.db.notebook_session import notebook_engine
@@ -243,13 +244,45 @@ async def settings_provider_delete(request: Request, provider_id: int):
 
 
 @router.post("/providers/{provider_id}/sync", response_class=HTMLResponse)
-async def settings_provider_sync(request: Request, provider_id: int):
+async def settings_provider_sync(_request: Request, provider_id: int):
     service = SettingsService()
     try:
         models = service.sync_provider_models(provider_id)
         return HTMLResponse(content=models)
     except (ValueError, TypeError, KeyError, ConnectionError, OSError, httpx.HTTPStatusError, httpx.RequestError) as e:
         return HTMLResponse(f"Sync failed: {e!s}", status_code=500)
+
+
+@router.post("/providers/{provider_id}/sync-models", response_class=HTMLResponse)
+async def settings_provider_sync_models(_request: Request, provider_id: int):
+    try:
+        result = await model_router.sync_provider_models(provider_id)
+        if result["errors"]:
+            summary = (
+                f"Sync: {result['total']} found, {result['active']} active, "
+                f"{result['blacklisted']} blacklisted. Errors: {'; '.join(result['errors'][:3])}"
+            )
+        else:
+            summary = (
+                f"Sync: {result['total']} models found, "
+                f"{result['active']} active, {result['blacklisted']} blacklisted"
+            )
+        import json
+        return HTMLResponse(
+            content="",
+            headers={
+                "HX-Trigger": json.dumps({"showToast": {"value": summary, "type": "info"}})
+            },
+        )
+    except Exception as e:
+        import json
+        return HTMLResponse(
+            content="",
+            status_code=500,
+            headers={
+                "HX-Trigger": json.dumps({"showToast": {"value": f"Sync failed: {e!s}", "type": "error"}})
+            },
+        )
 
 
 @router.get("/tab/routes", response_class=HTMLResponse)

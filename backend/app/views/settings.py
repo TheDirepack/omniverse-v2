@@ -433,11 +433,20 @@ def _get_model_status():
         return {"initialized": True, "routes": route_status}
 
 
+def _ensure_utc(dt: datetime | None) -> datetime | None:
+    if dt is not None and dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
 def _get_circuit_breakers():
     with Session(operational_engine) as session:
-        return session.exec(
+        breakers = session.exec(
             select(CandidateHealth).order_by(CandidateHealth.failure_count.desc())
         ).all()
+        for b in breakers:
+            b.disabled_until = _ensure_utc(b.disabled_until)
+        return breakers
 
 
 @router.get("/tab/health", response_class=HTMLResponse)

@@ -170,6 +170,8 @@ async def tool_manage_source(args: dict[str, Any]) -> str:
     return f"Source {source.id} updated/saved: {source.url} (Strengths: {source.strengths or 'None'}, Weaknesses: {source.weaknesses or 'None'})"
 
 
+
+
 async def tool_expand_knowledge_node(args: dict[str, Any]) -> str:
     """Expands a knowledge node or explores related concepts via graph & search."""
     universe_uuid = _get_universe_uuid()

@@ -1,0 +1,167 @@
+[
+  {
+    "loop": 1,
+    "world": "System",
+    "timestamp": "2026-07-23T19:08:08.664218",
+    "change_type": "bugfix",
+    "description": "Fix DetachedInstanceError in worlds_import_action by accessing world.name within session scope",
+    "files_changed": [
+      "backend/app/views/worlds.py"
+    ],
+    "metrics_before": {
+      "error": "500 on import"
+    },
+    "metrics_after": {
+      "fix": "session-scoped attribute access"
+    }
+  },
+  {
+    "loop": 1,
+    "world": "System",
+    "timestamp": "2026-07-23T19:08:08.664374",
+    "change_type": "performance",
+    "description": "Skip provider after 3 consecutive failures in router to avoid exhausting all model variants",
+    "files_changed": [
+      "backend/app/core/router.py"
+    ],
+    "metrics_before": {
+      "models_tried": "25+"
+    },
+    "metrics_after": {
+      "models_tried": "\u22643 per provider"
+    }
+  },
+  {
+    "loop": 1,
+    "world": "System",
+    "timestamp": "2026-07-23T19:08:08.664527",
+    "change_type": "bugfix",
+    "description": "Handle dict results from submit_research in researcher JSON validation and audit paths",
+    "files_changed": [
+      "backend/app/research/researcher.py",
+      "backend/app/core/validation.py"
+    ],
+    "metrics_before": {
+      "error": "the JSON object must be str, bytes or bytearray, not dict"
+    },
+    "metrics_after": {
+      "fix": "accept both str and dict"
+    }
+  },
+  {
+    "loop": 1,
+    "world": "System",
+    "timestamp": "2026-07-23T19:08:08.664654",
+    "change_type": "infra",
+    "description": "Fix local LLM provider_type from None to custom for litellm compatibility",
+    "files_changed": [
+      "N/A (DB config)"
+    ],
+    "metrics_before": {
+      "provider_type": "None"
+    },
+    "metrics_after": {
+      "provider_type": "custom"
+    }
+  },
+  {
+    "loop": 2,
+    "world": "System",
+    "timestamp": "2026-07-23T19:14:37.927469",
+    "change_type": "performance",
+    "description": "Interleave API keys with models in router to try different keys before exhausting all models",
+    "files_changed": [
+      "backend/app/core/router.py"
+    ],
+    "metrics_before": {
+      "missed key 2": "all models exhausted on key 1 first"
+    },
+    "metrics_after": {
+      "fix": "per-key interleaving and failure tracking"
+    }
+  },
+  {
+    "loop": 2,
+    "world": "System",
+    "timestamp": "2026-07-23T19:14:37.927744",
+    "change_type": "tuning",
+    "description": "Reduce MAX_TOKENS to 32000 and COMPRESSION_THRESHOLD to 0.5 for aggressive context management",
+    "files_changed": [
+      "backend/data/settings.db (DB)"
+    ],
+    "metrics_before": {
+      "MAX_TOKENS": "75000",
+      "COMPRESSION_THRESHOLD": "0.8"
+    },
+    "metrics_after": {
+      "MAX_TOKENS": "32000",
+      "COMPRESSION_THRESHOLD": "0.5"
+    }
+  },
+  {
+    "loop": 2,
+    "world": "System",
+    "timestamp": "2026-07-23T19:14:37.927912",
+    "change_type": "tuning",
+    "description": "Reduce MIN_RESEARCH_TURNS from 6 to 4 to reduce context accumulation",
+    "files_changed": [
+      "backend/data/settings.db (DB)"
+    ],
+    "metrics_before": {
+      "MIN_RESEARCH_TURNS": "6"
+    },
+    "metrics_after": {
+      "MIN_RESEARCH_TURNS": "4"
+    }
+  },
+  {
+    "loop": 2,
+    "world": "System",
+    "timestamp": "2026-07-23T19:24:17.353561",
+    "change_type": "performance",
+    "description": "Add observation truncation (10K char limit) for fetchPage/webSearch/ocrImage tool results",
+    "files_changed": [
+      "backend/app/core/agent_engine.py"
+    ],
+    "metrics_before": {
+      "raw observations": "unbounded"
+    },
+    "metrics_after": {
+      "raw observations": "truncated to 10K chars"
+    }
+  },
+  {
+    "loop": 2,
+    "world": "System",
+    "timestamp": "2026-07-23T19:24:21.313155",
+    "change_type": "performance",
+    "description": "Add observation truncation (10K char limit) for fetchPage/webSearch/ocrImage tool results",
+    "files_changed": [
+      "backend/app/core/agent_engine.py"
+    ],
+    "metrics_before": {
+      "raw observations": "unbounded"
+    },
+    "metrics_after": {
+      "raw observations": "truncated to 10K chars"
+    }
+  },
+  {
+    "loop": 99,
+    "world": "global_system",
+    "timestamp": "2026-07-23T20:37:00.926840",
+    "change_type": "comprehensive_agent_analysis",
+    "description": "Analyzed all logs, optimized prompt templates, refined error handling and token filtering.",
+    "files_changed": [
+      "backend/app/agents/prompt_templates.py",
+      "backend/app/core/tools.py"
+    ],
+    "metrics_before": {
+      "log_length": 0
+    },
+    "metrics_after": {
+      "optimized": true,
+      "findings": 1
+    }
+  }
+]

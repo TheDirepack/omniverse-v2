@@ -8,6 +8,7 @@ from app.v2.contracts import (
     AuditVerdict,
     CanonNodeContract,
     CanonNodeKind,
+    CreateResearchRun,
     CursorPage,
     ErrorEnvelope,
     EvidenceFragmentContract,
@@ -24,7 +25,9 @@ from app.v2.contracts import (
     ResearchOutcome,
     ResearchOutcomeStatus,
     ResearchPlan,
+    ResearchRunTargetInput,
     ResearchScope,
+    RunTargetProjection,
     SourceRevisionContract,
     TimelineBranchContract,
     TimelineEventContract,
@@ -40,6 +43,65 @@ def scope() -> ResearchScope:
         era_or_timepoint="3025",
         conditions=("operational",),
     )
+
+
+@pytest.mark.unit
+def test_research_run_accepts_empty_focus_and_inherits_global_targeting() -> None:
+    command = CreateResearchRun(
+        objective="   ",
+        scope={"continuity": "Prime"},
+        keywords=["  Atlas  ", "atlas", "Heat sinks"],
+        phrases=(" exact phrase ", "EXACT PHRASE", "second phrase"),
+        section_hints=["Capabilities, Limits", " capabilities, limits ", "History"],
+        targets=[{"world_id": "bt"}],
+    )
+
+    assert command.objective == ""
+    assert command.keywords == ("Atlas", "Heat sinks")
+    assert command.phrases == ("exact phrase", "second phrase")
+    assert command.section_hints == ("Capabilities, Limits", "History")
+    assert command.targets[0].model_dump() == {"world_id": "bt"}
+    assert command.targets[0].objective == ""
+    assert command.targets[0].scope == {
+        "continuity": "Prime",
+        "keywords": ["Atlas", "Heat sinks"],
+        "phrases": ["exact phrase", "second phrase"],
+        "section_hints": ["Capabilities, Limits", "History"],
+    }
+
+
+@pytest.mark.unit
+def test_research_run_target_and_projection_remove_legacy_public_fields() -> None:
+    assert set(ResearchRunTargetInput.model_fields) == {"world_id"}
+    assert "objective" not in RunTargetProjection.model_fields
+    assert "scope" not in RunTargetProjection.model_fields
+    with pytest.raises(ValidationError):
+        ResearchRunTargetInput(world_id="bt", objective="legacy")  # type: ignore[call-arg]
+    with pytest.raises(ValidationError):
+        CreateResearchRun(
+            scope={"domains": ["mechanisms"]},
+            targets=({"world_id": "bt"},),
+        )
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("field", "values"),
+    [
+        ("keywords", [f"keyword-{index}" for index in range(51)]),
+        ("keywords", ["x" * 101]),
+        ("phrases", [f"phrase-{index}" for index in range(31)]),
+        ("phrases", ["x" * 301]),
+        ("section_hints", [f"section-{index}" for index in range(31)]),
+        ("section_hints", ["x" * 201]),
+    ],
+)
+def test_research_targeting_limits(field: str, values: list[str]) -> None:
+    with pytest.raises(ValidationError):
+        CreateResearchRun(**{field: values, "targets": [{"world_id": "bt"}]})
+
+    with pytest.raises(ValidationError):
+        CreateResearchRun(objective="x" * 2001, targets=[{"world_id": "bt"}])
 
 
 @pytest.mark.unit

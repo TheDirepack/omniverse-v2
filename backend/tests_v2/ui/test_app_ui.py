@@ -130,8 +130,13 @@ def test_research_world_search_uses_string_ids_and_escapes_html(
     assert 'hx-target="#world-results"' in page.text
     assert 'hx-trigger="keyup changed delay:300ms, search"' in page.text
     assert 'hx-swap="innerHTML"' in page.text
-    assert 'value="identity_scope" checked' in page.text
-    assert 'value="counters_limits" checked' in page.text
+    assert "Focus (optional)" in page.text
+    assert 'name="keywords"' in page.text
+    assert 'name="phrases"' in page.text
+    assert 'name="section_hints"' in page.text
+    assert 'name="domains"' not in page.text
+    assert ">Domains<" not in page.text
+    assert 'name="objective" required' not in page.text
     response = client.get(
         "/research/worlds", params={"q": "Alpha"}, headers={"HX-Request": "true"}
     )
@@ -144,9 +149,11 @@ def test_research_world_search_uses_string_ids_and_escapes_html(
 def test_multiselect_run_create_is_202_html_and_idempotent(client: TestClient) -> None:
     form = {
         "world_ids": ["world-alpha", "world-beta"],
-        "objective": "Map canon",
+        "objective": "  Map canon  ",
         "continuity": "Prime",
-        "domains": ["mechanisms", "constraints"],
+        "keywords": "Atlas, atlas\nHeat sinks",
+        "phrases": "exact wording\nsecond phrase",
+        "section_hints": "Capabilities, Limits\nHistory",
         "idempotency_key": "ui-create-1",
     }
     created = client.post("/research/runs", data=form, headers={"HX-Request": "true"})
@@ -156,9 +163,39 @@ def test_multiselect_run_create_is_202_html_and_idempotent(client: TestClient) -
     assert "world-alpha" in created.text
     assert "world-beta" in created.text
     assert "PENDING" in created.text
+    assert "Map canon" in created.text
+    run_id = created.headers["X-Run-ID"]
+    projection = client.get(f"/api/v2/runs/{run_id}").json()
+    assert projection["scope"] == {"continuity": "Prime"}
+    assert "objective" not in projection["targets"][0]
+    assert "scope" not in projection["targets"][0]
+    with Session(client.app.state.runtime.engine) as session:
+        target = session.query(RunTarget).filter(RunTarget.run_id == run_id).first()
+        assert target is not None
+        assert target.objective == "Map canon"
+        assert target.scope_json == {
+            "continuity": "Prime",
+            "keywords": ["Atlas", "Heat sinks"],
+            "phrases": ["exact wording", "second phrase"],
+            "section_hints": ["Capabilities", "Limits", "History"],
+        }
     repeated = client.post("/research/runs", data=form, headers={"HX-Request": "true"})
     assert repeated.status_code == 202
     assert repeated.text == created.text
+
+
+def test_research_form_rejects_targeting_over_contract_limits(
+    client: TestClient,
+) -> None:
+    response = client.post(
+        "/research/runs",
+        data={
+            "world_ids": "world-alpha",
+            "keywords": "x" * 101,
+            "idempotency_key": "invalid-targeting",
+        },
+    )
+    assert response.status_code == 422
 
 
 def test_run_queue_polling_cancel_and_terminal_poll_stop(client: TestClient) -> None:
@@ -166,14 +203,14 @@ def test_run_queue_polling_cancel_and_terminal_poll_stop(client: TestClient) -> 
         "/research/runs",
         data={
             "world_ids": "world-alpha",
-            "objective": "Map canon",
+            "objective": "   ",
             "continuity": "Prime",
-            "domains": "mechanisms",
             "idempotency_key": "cancel-me",
         },
     )
     run_id = created.headers["X-Run-ID"]
     detail = client.get(f"/research/runs/{run_id}")
+    assert "General world research" in detail.text
     assert 'hx-trigger="every 2s"' in detail.text
     cancelled = client.post(
         f"/research/runs/{run_id}/cancel", headers={"HX-Request": "true"}
@@ -390,6 +427,30 @@ def test_knowledge_tabs_accepted_canon_gaps_conflicts(
     gaps = projected_client.get("/knowledge/world-alpha/gaps")
     assert "What is the limit?" in gaps.text
     assert "conflict-1" in gaps.text
+    assert ">limits<" not in gaps.text
+    evidence = projected_client.get("/knowledge/world-alpha/evidence")
+    assert "Exact canon excerpt" in evidence.text
+    assert ">mechanisms<" not in evidence.text
+    overview = projected_client.get("/knowledge/world-alpha/overview")
+    assert ">mechanisms<" not in overview.text
+
+
+def test_user_facing_query_projections_omit_domains(
+    projected_client: TestClient,
+) -> None:
+    evidence = projected_client.get(
+        "/api/v2/evidence", params={"world_id": "world-alpha"}
+    ).json()["items"][0]
+    gaps = projected_client.get(
+        "/api/v2/research/run-text-001/gaps-conflicts"
+    ).json()["gaps"][0]
+    coverage = projected_client.get(
+        "/api/v2/coverage",
+        params={"world_id": "world-alpha", "continuity": "Prime"},
+    ).json()["items"][0]
+    assert "domain" not in evidence
+    assert "domain" not in gaps
+    assert "domain" not in coverage
 
 
 def test_complete_provenance_chain(projected_client: TestClient) -> None:

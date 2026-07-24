@@ -14,17 +14,23 @@
       {% with worlds=worlds %}{% include "v2/research_worlds.html" %}{% endwith %}
     </section>
     <aside class="p-4 space-y-4 overflow-y-auto bg-gray-50 dark:bg-gray-900">
-      <label class="block text-[10px] font-bold uppercase tracking-widest">Objective
-        <textarea name="objective" required class="mt-1 w-full h-20 p-2 text-xs border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 rounded-sm"></textarea>
+      <label class="block text-[10px] font-bold uppercase tracking-widest">Focus (optional)
+        <textarea name="objective" maxlength="2000" placeholder="Leave blank for general world research" class="mt-1 w-full h-20 p-2 text-xs font-normal normal-case tracking-normal border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 rounded-sm"></textarea>
       </label>
       <label class="block text-[10px] font-bold uppercase tracking-widest">Continuity
         <input name="continuity" value="primary" required class="mt-1 h-8 w-full px-2 text-xs border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 rounded-sm">
       </label>
-      <fieldset class="space-y-1"><legend class="text-[10px] font-bold uppercase tracking-widest">Domains</legend>
-        <div class="grid grid-cols-1 gap-1">
-          {% for domain in research_domains %}<label class="block text-xs"><input type="checkbox" name="domains" value="{{ domain }}" checked> {{ domain|replace('_', ' ')|title }}</label>{% endfor %}
-        </div>
-      </fieldset>
+      <div class="grid grid-cols-1 gap-3">
+        <label class="block text-[10px] font-bold uppercase tracking-widest">Keywords (optional)
+          <input name="keywords" placeholder="One per line or comma-separated" class="mt-1 h-8 w-full px-2 text-xs font-normal normal-case tracking-normal border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 rounded-sm">
+        </label>
+        <label class="block text-[10px] font-bold uppercase tracking-widest">Phrases (optional)
+          <textarea name="phrases" placeholder="Exact phrases; one per line or comma-separated" class="mt-1 h-14 w-full p-2 text-xs font-normal normal-case tracking-normal border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 rounded-sm"></textarea>
+        </label>
+        <label class="block text-[10px] font-bold uppercase tracking-widest">Section hints (optional)
+          <textarea name="section_hints" placeholder="Page sections; one per line or comma-separated" class="mt-1 h-14 w-full p-2 text-xs font-normal normal-case tracking-normal border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-950 rounded-sm"></textarea>
+        </label>
+      </div>
       <input type="hidden" name="idempotency_key" value="research-{{ range(1000000, 9999999)|random }}">
       <button class="h-8 w-full bg-blue-600 text-white text-xs font-semibold rounded-sm">Start research</button>
       <div id="run-queue" hx-get="/research/runs" hx-trigger="load" hx-swap="innerHTML" class="space-y-2" aria-live="polite"><p class="text-xs text-gray-500">Loading run queue...</p></div>

@@ -139,9 +139,10 @@ def test_research_create_is_accepted(client: TestClient) -> None:
         "/api/v2/research-runs",
         headers={"Idempotency-Key": "accepted"},
         json={
-            "objective": "Research",
+            "objective": "   ",
             "scope": {},
-            "targets": [{"world_id": "alpha", "objective": "Research"}],
+            "targets": [{"world_id": "alpha"}],
         },
     )
     assert response.status_code == 202
+    assert response.json()["objective"] == ""

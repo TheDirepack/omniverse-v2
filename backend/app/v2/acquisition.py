@@ -22,6 +22,7 @@ from sqlalchemy.orm import Session
 
 from app.v2.blobs import BlobStore
 from app.v2.models import AcquisitionCache, Source, SourceRevision, ToolEvent
+from app.v2.preprocessing import preprocess_document
 
 
 class UrlPolicyError(ValueError):
@@ -514,17 +515,20 @@ class AcquisitionService:
         if normalized == "application/pdf":
             if self.pdf is None:
                 raise UnsupportedExtractionError("PDF extraction unavailable")
-            return await asyncio.to_thread(self.pdf.extract, body)
+            extracted = await asyncio.to_thread(self.pdf.extract, body)
+            return preprocess_document(extracted, "text/plain").cleaned_text
         if normalized.startswith("image/"):
             if self.ocr is None:
                 raise UnsupportedExtractionError("image OCR unavailable")
-            return await self.ocr.extract(body, normalized)
+            extracted = await self.ocr.extract(body, normalized)
+            return preprocess_document(extracted, "text/plain").cleaned_text
         return self._extract(body, normalized)
 
     @staticmethod
     def _extract(body: bytes, content_type: str) -> str:
         if content_type.startswith("text/") or content_type == "application/json":
-            return body.decode("utf-8", errors="replace")[:4_000]
+            source = body.decode("utf-8", errors="replace")
+            return preprocess_document(source, content_type).cleaned_text[:4_000]
         return ""
 
     @staticmethod

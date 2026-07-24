@@ -22,6 +22,7 @@ from app.v2.config import V2Config
 from app.v2.credentials import CredentialService, JsonCredentialStore
 from app.v2.db import create_sqlite_engine, validate_initialized_schema
 from app.v2.models import Run
+from app.v2.preprocessing import MiniCPMPreprocessor
 from app.v2.projections import ResearchQueryService
 from app.v2.research_runs import ResearchRunKernel
 from app.v2.routing import ProviderRouter
@@ -40,6 +41,7 @@ class V2Runtime:
     research_kernel: ResearchRunKernel
     query_service: ResearchQueryService
     acquisition: AcquisitionService
+    preprocessor: object | None
     workflow: ResearchWorkflow
     worker: ResearchWorker
     http_client: httpx.AsyncClient
@@ -66,6 +68,7 @@ class V2Runtime:
         browser=None,
         pdf=None,
         ocr=None,
+        preprocessor=None,
         workflow=None,
     ) -> V2Runtime:
         config.validate()
@@ -109,6 +112,19 @@ class V2Runtime:
         )
         adapter_status["pdf"] = pdf.status()
         adapter_status["ocr"] = ocr.status()
+        if preprocessor is None and config.preprocessor_enabled:
+            preprocessor = MiniCPMPreprocessor(
+                base_url=config.preprocessor_base_url,
+                model=config.preprocessor_model,
+                timeout_seconds=config.preprocessor_timeout_seconds,
+                concurrency=config.preprocessor_concurrency,
+                client=client,
+            )
+        adapter_status["preprocessor"] = (
+            preprocessor.status()
+            if preprocessor is not None
+            else {"available": False, "detail": "disabled by configuration"}
+        )
         acquisition = AcquisitionService(
             engine,
             blobs,
@@ -168,13 +184,14 @@ class V2Runtime:
             kernel,
             ResearchQueryService(engine),
             acquisition,
+            preprocessor,
             research_workflow,
             worker,
             client,
             adapter_status,
             tuple(
                 adapter
-                for adapter in (browser, pdf, ocr)
+                for adapter in (browser, pdf, ocr, preprocessor)
                 if adapter is not None and hasattr(adapter, "close")
             ),
         )

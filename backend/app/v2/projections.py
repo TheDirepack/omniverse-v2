@@ -181,7 +181,14 @@ class ResearchQueryService:
                 )
             ).all()
             return {
-                "gaps": tuple(dict(row.gap_json) for row in gaps),
+                "gaps": tuple(
+                    {
+                        key: value
+                        for key, value in dict(row.gap_json).items()
+                        if key != "domain"
+                    }
+                    for row in gaps
+                ),
                 "conflicts": tuple(
                     {
                         "id": row.id,
@@ -202,7 +209,6 @@ class ResearchQueryService:
             ).all()
             return tuple(
                 {
-                    "domain": row.domain,
                     "status": row.status,
                     "indicators": tuple(row.indicators_json),
                 }

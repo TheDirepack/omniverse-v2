@@ -9,6 +9,7 @@ from urllib.parse import urlencode
 from fastapi import APIRouter, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
+from pydantic import ValidationError
 from sqlalchemy import and_, delete, or_, select
 from sqlalchemy.orm import Session
 
@@ -48,7 +49,6 @@ from app.v2.research_runs import (
     IllegalTransitionError,
     RunNotFoundError,
 )
-from app.v2.workflow import policy_obligations
 
 router = APIRouter()
 templates = Jinja2Templates(directory=Path(__file__).resolve().parents[1] / "templates")
@@ -100,6 +100,15 @@ def _run_projection(request: Request, run_id: str) -> dict[str, object]:
     return projection.model_dump(mode="json")
 
 
+def _parse_targeting(value: str) -> tuple[str, ...]:
+    return tuple(
+        part.strip()
+        for line in value.splitlines()
+        for part in line.split(",")
+        if part.strip()
+    )
+
+
 @router.get("/", response_class=HTMLResponse)
 def home(request: Request):
     return templates.TemplateResponse(request, "pages/index.html", _context(request))
@@ -113,7 +122,6 @@ def research(request: Request):
         _context(
             request,
             worlds=_worlds(request),
-            research_domains=tuple(policy_obligations(())),
         ),
     )
 
@@ -136,26 +144,36 @@ def research_worlds(
 def create_run(
     request: Request,
     world_ids: Annotated[list[str], Form()],
-    objective: Annotated[str, Form(min_length=1)],
     idempotency_key: Annotated[str, Form(min_length=1)],
+    objective: Annotated[str, Form(max_length=2000)] = "",
     continuity: Annotated[str, Form()] = "primary",
-    domains: Annotated[list[str] | None, Form()] = None,
+    keywords: Annotated[str, Form()] = "",
+    phrases: Annotated[str, Form()] = "",
+    section_hints: Annotated[str, Form()] = "",
 ):
     unique_world_ids = tuple(dict.fromkeys(world_ids))
     if not unique_world_ids:
         raise HTTPException(status_code=422, detail="select at least one world")
-    scope = {
-        "continuity": continuity,
-        "domains": domains or list(policy_obligations(())),
-    }
-    command = CreateResearchRun(
-        objective=objective,
-        scope=scope,
-        targets=tuple(
-            ResearchRunTargetInput(world_id=world_id, objective=objective, scope=scope)
-            for world_id in unique_world_ids
-        ),
-    )
+    scope = {"continuity": continuity}
+    try:
+        command = CreateResearchRun(
+            objective=objective,
+            scope=scope,
+            keywords=_parse_targeting(keywords),
+            phrases=_parse_targeting(phrases),
+            section_hints=_parse_targeting(section_hints),
+            targets=tuple(
+                ResearchRunTargetInput(world_id=world_id)
+                for world_id in unique_world_ids
+            ),
+        )
+    except ValidationError as error:
+        raise HTTPException(
+            status_code=422,
+            detail=error.errors(
+                include_url=False, include_context=False, include_input=False
+            ),
+        ) from error
     try:
         projection = _runtime(request).research_kernel.create(command, idempotency_key)
     except IdempotencyConflictError as error:
@@ -283,7 +301,14 @@ def knowledge_tab(request: Request, world_id: str, tab: str):
         )
         gaps = (
             [
-                {"id": row.id, **dict(row.gap_json)}
+                {
+                    "id": row.id,
+                    **{
+                        key: value
+                        for key, value in dict(row.gap_json).items()
+                        if key != "domain"
+                    },
+                }
                 for row in session.scalars(
                     select(ResearchGapRecord).where(
                         ResearchGapRecord.workspace_id.in_(workspace_ids)
@@ -309,7 +334,6 @@ def knowledge_tab(request: Request, world_id: str, tab: str):
             {
                 "id": row.id,
                 "exact_excerpt": row.exact_excerpt,
-                "domain": row.domain,
                 "source_revision_id": row.source_revision_id,
             }
             for row in session.scalars(
@@ -476,8 +500,6 @@ def validation_follow_up(request: Request, audit_id: str):
         targets=(
             ResearchRunTargetInput(
                 world_id=workspace.world_id,
-                objective=objective,
-                scope=scope,
             ),
         ),
     )

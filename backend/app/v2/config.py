@@ -41,6 +41,11 @@ class V2Config:
     ocr_max_bytes: int = 10_000_000
     ocr_max_pixels: int = 25_000_000
     ocr_timeout_seconds: float = 15.0
+    preprocessor_enabled: bool = False
+    preprocessor_base_url: str = "http://192.168.1.30:8080"
+    preprocessor_model: str = "MiniCPM5-1B"
+    preprocessor_timeout_seconds: float = 10.0
+    preprocessor_concurrency: int = 2
 
     @classmethod
     def from_env(cls) -> V2Config:
@@ -92,6 +97,19 @@ class V2Config:
             ocr_timeout_seconds=float(
                 os.environ.get("OMNIVERSE_V2_OCR_TIMEOUT_SECONDS", "15")
             ),
+            preprocessor_enabled=_bool("OMNIVERSE_V2_PREPROCESSOR_ENABLED", False),
+            preprocessor_base_url=os.environ.get(
+                "OMNIVERSE_V2_PREPROCESSOR_BASE_URL", "http://192.168.1.30:8080"
+            ),
+            preprocessor_model=os.environ.get(
+                "OMNIVERSE_V2_PREPROCESSOR_MODEL", "MiniCPM5-1B"
+            ),
+            preprocessor_timeout_seconds=float(
+                os.environ.get("OMNIVERSE_V2_PREPROCESSOR_TIMEOUT_SECONDS", "10")
+            ),
+            preprocessor_concurrency=int(
+                os.environ.get("OMNIVERSE_V2_PREPROCESSOR_CONCURRENCY", "2")
+            ),
         )
 
     def validate(self) -> None:
@@ -99,6 +117,10 @@ class V2Config:
             raise ValueError("worker concurrency must be positive")
         if self.browser_concurrency < 1:
             raise ValueError("browser concurrency must be positive")
+        if self.preprocessor_concurrency < 1:
+            raise ValueError("preprocessor concurrency must be positive")
+        if self.preprocessor_timeout_seconds <= 0:
+            raise ValueError("preprocessor timeout must be positive")
         if self.require_loopback and self.bind_host not in {
             "127.0.0.1",
             "::1",

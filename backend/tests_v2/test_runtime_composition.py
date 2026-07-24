@@ -53,6 +53,29 @@ def test_config_from_environment_has_no_import_time_side_effects(
     assert config.require_loopback is True
 
 
+def test_preprocessor_config_defaults_and_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    defaults = V2Config.from_env()
+    assert defaults.preprocessor_enabled is False
+    assert defaults.preprocessor_base_url == "http://192.168.1.30:8080"
+    assert defaults.preprocessor_model == "MiniCPM5-1B"
+    assert defaults.preprocessor_timeout_seconds == 10
+    assert defaults.preprocessor_concurrency == 2
+
+    monkeypatch.setenv("OMNIVERSE_V2_PREPROCESSOR_ENABLED", "true")
+    monkeypatch.setenv("OMNIVERSE_V2_PREPROCESSOR_BASE_URL", "http://model.test:9000/")
+    monkeypatch.setenv("OMNIVERSE_V2_PREPROCESSOR_MODEL", "test-model")
+    monkeypatch.setenv("OMNIVERSE_V2_PREPROCESSOR_TIMEOUT_SECONDS", "4.5")
+    monkeypatch.setenv("OMNIVERSE_V2_PREPROCESSOR_CONCURRENCY", "3")
+    configured = V2Config.from_env()
+    assert configured.preprocessor_enabled is True
+    assert configured.preprocessor_base_url == "http://model.test:9000/"
+    assert configured.preprocessor_model == "test-model"
+    assert configured.preprocessor_timeout_seconds == 4.5
+    assert configured.preprocessor_concurrency == 3
+
+
 def test_config_anchors_relative_runtime_paths_to_backend(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -84,6 +107,55 @@ def test_runtime_exposes_explicit_adapter_capabilities(
     assert runtime.adapter_status["pdf"]["available"] is True
     assert "available" in runtime.adapter_status["ocr"]
     assert runtime.workflow.acquisition_policy.max_body_bytes == 1234
+
+
+@pytest.mark.asyncio
+async def test_runtime_composes_preprocessor_status_and_closes_injected_adapter(
+    tmp_path: Path,
+) -> None:
+    class Preprocessor:
+        closed = False
+
+        def status(self):
+            return {"available": True, "detail": "fake MiniCPM"}
+
+        async def close(self):
+            self.closed = True
+
+    preprocessor = Preprocessor()
+    config = V2Config(
+        database_path=tmp_path / "v2.db",
+        blob_path=tmp_path / "blobs",
+        credentials_path=tmp_path / "credentials.json",
+        seed_path=_seed(tmp_path / "seed.json"),
+        browser_enabled=False,
+        preprocessor_enabled=True,
+    )
+    runtime = V2Runtime.build(config, preprocessor=preprocessor)
+    assert runtime.preprocessor is preprocessor
+    assert runtime.adapter_status["preprocessor"] == {
+        "available": True,
+        "detail": "fake MiniCPM",
+    }
+    await runtime.shutdown()
+    assert preprocessor.closed is True
+
+
+def test_runtime_reports_disabled_preprocessor(tmp_path: Path) -> None:
+    config = V2Config(
+        database_path=tmp_path / "v2.db",
+        blob_path=tmp_path / "blobs",
+        credentials_path=tmp_path / "credentials.json",
+        seed_path=_seed(tmp_path / "seed.json"),
+        browser_enabled=False,
+        preprocessor_enabled=False,
+    )
+    runtime = V2Runtime.build(config)
+    assert runtime.preprocessor is None
+    assert runtime.adapter_status["preprocessor"] == {
+        "available": False,
+        "detail": "disabled by configuration",
+    }
 
 
 @pytest.mark.integration

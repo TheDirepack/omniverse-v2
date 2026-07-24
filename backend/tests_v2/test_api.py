@@ -73,9 +73,12 @@ def test_research_run_api_contract(
     )
     app = create_app(config)
     payload = {
-        "objective": "Research the world",
+        "objective": "  Research the world  ",
         "scope": {"continuity": "primary"},
-        "targets": [{"world_id": "w", "objective": "Inventory canon"}],
+        "keywords": ["Canon", "canon", "technology"],
+        "phrases": ["exact wording"],
+        "section_hints": ["History"],
+        "targets": [{"world_id": "w"}],
         "max_attempts": 3,
     }
     with TestClient(app) as client:
@@ -105,6 +108,13 @@ def test_research_run_api_contract(
 
         detail = client.get(f"/api/v2/runs/{run_id}")
         assert detail.status_code == 200
+        assert detail.json()["objective"] == "Research the world"
+        assert detail.json()["targets"][0].keys() == {
+            "id",
+            "world_id",
+            "outcome",
+            "error",
+        }
         assert len(detail.json()["steps"]) == 10
         events = client.get(f"/api/v2/runs/{run_id}/events")
         assert events.status_code == 200
@@ -114,6 +124,39 @@ def test_research_run_api_contract(
         assert cancelled.json()["status"] == "CANCELLED"
         assert client.post(f"/api/v2/runs/{run_id}/resume").status_code == 409
         assert client.post(f"/api/v2/runs/{run_id}/retry").status_code == 409
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"scope": {}, "targets": [{"world_id": "w", "objective": "legacy"}]},
+        {"scope": {"domains": ["mechanisms"]}, "targets": [{"world_id": "w"}]},
+    ],
+)
+def test_research_run_api_rejects_legacy_target_and_domain_selectors(
+    isolated_paths: dict[str, Path], tmp_path: Path, payload: dict[str, object]
+) -> None:
+    seed = tmp_path / "seed.json"
+    seed.write_text(
+        '[{"id":"w","name":"World","franchise":"F","category":"SF",'
+        '"continuity":null,"era":null,"parent":null,"aliases":[],"tags":[]}]',
+        encoding="utf-8",
+    )
+    config = AppConfig(
+        database_path=isolated_paths["database"],
+        blob_path=isolated_paths["blobs"],
+        credentials_path=isolated_paths["credentials"],
+        seed_path=seed,
+    )
+    initialize(config.runtime_config())
+    with TestClient(create_app(config)) as client:
+        response = client.post(
+            "/api/v2/research-runs",
+            headers={"Idempotency-Key": "reject-legacy"},
+            json=payload,
+        )
+    assert response.status_code == 422
 
 
 @pytest.mark.integration

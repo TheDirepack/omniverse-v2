@@ -581,7 +581,6 @@ def build_router(engine: Engine | object, credentials_path=None) -> APIRouter:
                     "source_revision_id": row.source_revision_id,
                     "locator": row.locator,
                     "exact_excerpt": row.exact_excerpt,
-                    "domain": row.domain,
                     "support_role": row.support_role,
                 }
                 for row in rows[:limit]

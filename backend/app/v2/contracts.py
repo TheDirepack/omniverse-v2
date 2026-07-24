@@ -2,11 +2,20 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import Enum
-from typing import Any, Generic, Literal, TypeVar
+from typing import Annotated, Any, Generic, Literal, TypeVar
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    PrivateAttr,
+    field_validator,
+    model_validator,
+)
 
 from app.v2.domain import RunOutcome, RunStatus, StepKind
+
+_DOMAINS_ERROR = "scope.domains is not user-selectable"
 
 
 class Contract(BaseModel):
@@ -312,24 +321,87 @@ class CursorPage(Contract, Generic[T]):
 
 class ResearchRunTargetInput(Contract):
     world_id: str = Field(min_length=1)
-    objective: str = Field(min_length=1)
-    scope: dict[str, Any] = Field(default_factory=dict)
+    _objective: str = PrivateAttr(default="")
+    _scope: dict[str, Any] = PrivateAttr(default_factory=dict)
+
+    @property
+    def objective(self) -> str:
+        return self._objective
+
+    @property
+    def scope(self) -> dict[str, Any]:
+        return self._scope
 
 
 class CreateResearchRun(Contract):
-    objective: str = Field(min_length=1)
-    scope: dict[str, Any]
+    objective: str = Field(default="", max_length=2000)
+    scope: dict[str, Any] = Field(default_factory=dict)
+    keywords: tuple[Annotated[str, Field(max_length=100)], ...] = Field(
+        default=(), max_length=50, strict=False
+    )
+    phrases: tuple[Annotated[str, Field(max_length=300)], ...] = Field(
+        default=(), max_length=30, strict=False
+    )
+    section_hints: tuple[Annotated[str, Field(max_length=200)], ...] = Field(
+        default=(), max_length=30, strict=False
+    )
     targets: tuple[ResearchRunTargetInput, ...] = Field(min_length=1, strict=False)
     max_attempts: int = Field(default=3, ge=1, le=20)
+
+    @field_validator("objective", mode="before")
+    @classmethod
+    def normalize_objective(cls, value: object) -> object:
+        if value is None:
+            return ""
+        return value.strip() if isinstance(value, str) else value
+
+    @field_validator("keywords", "phrases", "section_hints", mode="before")
+    @classmethod
+    def normalize_targeting(cls, value: object) -> object:
+        if value is None:
+            return ()
+        if not isinstance(value, (list, tuple)):
+            return value
+        normalized: list[object] = []
+        seen: set[str] = set()
+        for item in value:
+            if not isinstance(item, str):
+                normalized.append(item)
+                continue
+            stripped = item.strip()
+            folded = stripped.casefold()
+            if stripped and folded not in seen:
+                seen.add(folded)
+                normalized.append(stripped)
+        return normalized
+
+    @model_validator(mode="after")
+    def inherit_global_targeting(self) -> CreateResearchRun:
+        if "domains" in self.scope:
+            raise ValueError(_DOMAINS_ERROR)
+        target_scope = {
+            **self.scope,
+            "keywords": list(self.keywords),
+            "phrases": list(self.phrases),
+            "section_hints": list(self.section_hints),
+        }
+        for target in self.targets:
+            object.__setattr__(target, "_objective", self.objective)
+            object.__setattr__(target, "_scope", target_scope.copy())
+        return self
 
 
 class RunTargetProjection(Contract):
     id: str
     world_id: str
-    objective: str
-    scope: dict[str, Any]
     outcome: RunOutcome | None
     error: str | None
+
+    def __init__(self, **data: Any) -> None:
+        # The unchanged run kernel still supplies persisted legacy target fields.
+        data.pop("objective", None)
+        data.pop("scope", None)
+        super().__init__(**data)
 
 
 class StepAttemptProjection(Contract):

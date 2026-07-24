@@ -1,17 +1,3 @@
 {% extends "base.html" %}
-
-{% block title %}Theories - Omniverse{% endblock %}
-
-{% block content %}
-<div class="space-y-8">
-    <h1 class="text-3xl font-bold">Theories</h1>
-
-    <div class="grid grid-cols-1 gap-6">
-        {% for theory in theories %}
-            {% include "components/theory_card.html" %}
-        {% else %}
-            <p class="text-gray-500 italic">No theories found.</p>
-        {% endfor %}
-    </div>
-</div>
-{% endblock %}
+{% block title %}Theory - Deferred{% endblock %}
+{% block content %}<section class="h-full flex items-center justify-center p-6"><div class="max-w-xl border border-gray-200 dark:border-gray-800 p-6 bg-gray-50 dark:bg-gray-900"><p class="text-[10px] font-bold uppercase tracking-widest text-amber-600">Deferred</p><h1 class="mt-2 text-xl font-bold">Theory is a non-canon feature</h1><p class="mt-2 text-sm text-gray-500">Speculative extrapolation is intentionally disabled until it can remain isolated from accepted canon and evidence.</p></div></section>{% endblock %}

@@ -1,6 +1,8 @@
 fastapi
 uvicorn
 sqlmodel
+sqlalchemy>=2,<3
+alembic>=1.13,<2
 pydantic
 langchain
 langgraph
@@ -17,6 +19,7 @@ trafilatura
 jinja2
 python-multipart
 pillow
+pypdf>=5,<7
 pytesseract
 easyocr
 docling

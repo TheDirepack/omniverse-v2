@@ -11,6 +11,7 @@ NC='\033[0m'
 err()  { echo -e "${RED}[ERROR]${NC} $*" >&2; }
 info() { echo -e "${CYAN}[INFO]${NC} $*"; }
 ok()   { echo -e "${GREEN}[OK]${NC} $*"; }
+warn() { echo -e "${CYAN}[WARN]${NC} $*" >&2; }
 
 VENV_DIR=""
 if [ -d "$BASE_DIR/backend/.venv" ]; then
@@ -33,27 +34,27 @@ if [ ! -f "$RUFF" ]; then
     exit 1
 fi
 
-info "Ruff: checking backend/app backend/tests..."
-"$RUFF" check "$BASE_DIR/backend/app" "$BASE_DIR/backend/tests"
+info "Ruff: checking the V2 release target..."
+"$RUFF" check "$BASE_DIR/backend/app/v2" "$BASE_DIR/backend/tests_v2"
 
 if [[ "$*" == *"--strict"* ]]; then
     echo ""
     info "Strict mode: running additional checks..."
 
     if [ -f "${VENV_DIR}/mypy" ]; then
-        "${VENV_DIR}/mypy" "$BASE_DIR/backend/app" || warn "mypy found issues"
+        "${VENV_DIR}/mypy" "$BASE_DIR/backend/app/v2" || warn "mypy found issues"
     else
         warn "mypy not installed, skipping"
     fi
 
     if [ -f "$BANDIT" ]; then
-        "$BANDIT" -r "$BASE_DIR/backend/app" || warn "bandit found issues"
+        "$BANDIT" -r "$BASE_DIR/backend/app/v2" || warn "bandit found issues"
     else
         warn "bandit not installed, skipping"
     fi
 
     if [ -f "$PYLINT" ]; then
-        "$PYLINT" "$BASE_DIR/backend/app" || warn "pylint found issues"
+        "$PYLINT" "$BASE_DIR/backend/app/v2" || warn "pylint found issues"
     else
         warn "pylint not installed, skipping"
     fi

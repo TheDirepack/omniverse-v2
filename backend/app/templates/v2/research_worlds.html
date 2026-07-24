@@ -1,0 +1,11 @@
+<table class="w-full text-xs">
+  <thead class="sticky top-0 bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800"><tr><th class="p-2 w-10"><span class="sr-only">Select</span></th><th class="p-2 text-left">World</th><th class="p-2 text-left hidden md:table-cell">Franchise</th><th class="p-2 text-left hidden lg:table-cell">Category</th></tr></thead>
+  <tbody>
+  {% for world in worlds["items"] %}<tr class="border-b border-gray-100 dark:border-gray-800 hover:bg-blue-50 dark:hover:bg-blue-950/20">
+    <td class="p-2 text-center"><input type="checkbox" name="world_ids" value="{{ world.id }}" form="research-form" aria-label="Select {{ world.name }}"></td>
+    <td class="p-2"><div class="font-semibold">{{ world.name }}</div><code class="text-[10px] text-gray-500">{{ world.id }}</code></td>
+    <td class="p-2 hidden md:table-cell">{{ world.franchise }}</td><td class="p-2 hidden lg:table-cell">{{ world.category }}</td>
+  </tr>{% else %}<tr><td colspan="4" class="p-8 text-center text-gray-500">No worlds match this search.</td></tr>{% endfor %}
+  </tbody>
+</table>
+{% if worlds.next_cursor %}<button class="m-3 px-3 h-7 text-xs border border-gray-300 dark:border-gray-700" hx-get="/research/worlds?q={{ worlds.q|urlencode }}&cursor={{ worlds.next_cursor|urlencode }}" hx-target="#world-results">Next page</button>{% endif %}

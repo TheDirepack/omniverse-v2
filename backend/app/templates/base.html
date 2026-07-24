@@ -53,6 +53,17 @@
     <link rel="stylesheet" href="/static/css/main.css">
 </head>
 <body class="h-full overflow-hidden text-gray-900 dark:text-gray-100">
+    <button id="mobile-menu-toggle"
+            type="button"
+            onclick="toggleMobileSidebar()"
+            class="fixed left-3 top-3 z-[60] hidden rounded-sm border border-gray-200 bg-white p-2 text-gray-700 shadow-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
+            aria-label="Open navigation menu"
+            aria-expanded="false"
+            aria-controls="sidebar">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16m-7 6h7" />
+        </svg>
+    </button>
     <!-- Mobile Overlay for sidebar -->
     <div id="mobile-overlay" class="overlay" onclick="closeMobileDrawer()"></div>
 
@@ -109,7 +120,7 @@
                 
                 <!-- Research -->
                 <li>
-                    <a href="/research" 
+                    <a href="/research/"
                        class="flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-sm transition-colors group"
                        id="nav-research"
                        {% if current_path.startswith('/research') %}aria-current="page" class="bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-semibold"{% endif %}
@@ -124,7 +135,7 @@
                 
                 <!-- Validation -->
                 <li>
-                    <a href="/validation" 
+                    <a href="/validation/"
                        class="flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-sm transition-colors group"
                        id="nav-validation"
                        {% if current_path.startswith('/validation') %}aria-current="page" class="bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-semibold"{% endif %}
@@ -139,7 +150,7 @@
                 
                 <!-- Knowledge -->
                 <li>
-                    <a href="/knowledge" 
+                    <a href="/knowledge/"
                        class="flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-sm transition-colors group"
                        id="nav-knowledge"
                        {% if current_path.startswith('/knowledge') %}aria-current="page" class="bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-semibold"{% endif %}
@@ -154,7 +165,7 @@
                 
                 <!-- Theory -->
                 <li>
-                    <a href="/theory" 
+                    <a href="/theory/"
                        class="flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-sm transition-colors group"
                        id="nav-theory"
                        {% if current_path.startswith('/theory') %}aria-current="page" class="bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-semibold"{% endif %}
@@ -169,7 +180,7 @@
                 
                 <!-- Flow -->
                 <li>
-                    <a href="/flow" 
+                    <a href="/flow/"
                        class="flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-sm transition-colors group"
                        id="nav-flow"
                        {% if current_path.startswith('/flow') %}aria-current="page" class="bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-semibold"{% endif %}
@@ -184,7 +195,7 @@
                 
                 <!-- Logs -->
                 <li>
-                    <a href="/logs" 
+                    <a href="/logs/"
                        class="flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-sm transition-colors group"
                        id="nav-logs"
                        {% if current_path.startswith('/logs') %}aria-current="page" class="bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-semibold"{% endif %}
@@ -203,7 +214,7 @@
                 <ul class="space-y-1">
                     <!-- Settings -->
                     <li>
-                        <a href="/settings" 
+                        <a href="/settings/"
                            class="flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-sm transition-colors group"
                            id="nav-settings"
                            {% if current_path.startswith('/settings') %}aria-current="page" class="bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-semibold"{% endif %}
@@ -252,15 +263,14 @@
     function toggleMobileSidebar() {
         const sidebar = document.getElementById('sidebar');
         const overlay = document.getElementById('mobile-overlay');
-        const hamburger = document.querySelector('#sidebar [aria-label="Toggle navigation menu"]');
+        const toggles = document.querySelectorAll('[aria-controls="sidebar"]');
         
         // Toggle drawer
-        sidebar.classList.toggle('mobile-drawer');
         sidebar.classList.toggle('open');
         
         // Update aria-expanded states
-        const isExpanded = !sidebar.classList.contains('open');
-        hamburger.setAttribute('aria-expanded', String(isExpanded));
+        const isExpanded = sidebar.classList.contains('open');
+        toggles.forEach(toggle => toggle.setAttribute('aria-expanded', String(isExpanded)));
         sidebar.setAttribute('aria-expanded', String(isExpanded));
         
         // Toggle overlay
@@ -286,12 +296,12 @@
     function closeMobileDrawer() {
         const sidebar = document.getElementById('sidebar');
         const overlay = document.getElementById('mobile-overlay');
-        const hamburger = document.querySelector('#sidebar [aria-label="Toggle navigation menu"]');
+        const toggles = document.querySelectorAll('[aria-controls="sidebar"]');
         
         // Close drawer
         sidebar.classList.remove('open');
         sidebar.removeAttribute('aria-expanded');
-        hamburger.setAttribute('aria-expanded', 'false');
+        toggles.forEach(toggle => toggle.setAttribute('aria-expanded', 'false'));
         
         // Remove overlay
         overlay.classList.remove('active');

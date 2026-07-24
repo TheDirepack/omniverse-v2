@@ -30,9 +30,12 @@ check_python() {
         err "python3 not found. Install Python 3.10 or later."
         exit 1
     fi
-    version=$(python3 --version 2>&1 | grep -oP '\d+\.\d+')
-    if awk "BEGIN {exit !($version < 3.10)}"; then
-        err "Python 3.10+ required, found $version"
+    if ! python3 -c 'import sys; raise SystemExit(sys.version_info < (3, 10))'; then
+        err "Python 3.10+ required, found $(python3 --version 2>&1)"
+        exit 1
+    fi
+    if [ -n "$VENV_DIR" ] && ! "$VENV_DIR/bin/python" -c 'import sys; raise SystemExit(sys.version_info < (3, 10))'; then
+        err "Existing virtual environment requires Python 3.10 or later. Remove it and rerun setup."
         exit 1
     fi
     ok "Python $(python3 --version | cut -d' ' -f2)"
@@ -61,16 +64,16 @@ install_deps() {
 }
 
 setup_env() {
+    mkdir -p "$BASE_DIR/backend/data/v2-blobs" "$BASE_DIR/backend/data/v2-secrets"
     if [ ! -f "$BASE_DIR/backend/.env.local" ]; then
         warn "No .env.local found. Creating minimal configuration..."
         cat > "$BASE_DIR/backend/.env.local" << 'EOF'
 # Omniverse V2 - Local Development Settings
-DATABASE_URL=sqlite:///./data/omniverse_v2.db
-SETTINGS_DB_URL=sqlite:///./data/settings.db
-OPERATIONAL_DB_URL=sqlite:///./data/operational.db
-NOTEBOOK_DB_URL=sqlite:///./data/notebook.db
-EXTRAPOLATION_DB_URL=sqlite:///./data/extrapolation.db
-LOG_DIR=./logs
+OMNIVERSE_V2_DATABASE_PATH=./data/omniverse-v2.db
+OMNIVERSE_V2_BLOB_PATH=./data/v2-blobs
+OMNIVERSE_V2_CREDENTIALS_PATH=./data/v2-secrets/credentials.json
+OMNIVERSE_V2_BIND_HOST=127.0.0.1
+OMNIVERSE_V2_REQUIRE_LOOPBACK=true
 EOF
         ok "Created backend/.env.local with defaults"
     else

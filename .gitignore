@@ -45,3 +45,6 @@ backend/tests/provider_config.py
 # Project Specific
 skills-lock.json
 Opencode.yaml
+backend/data/v2-blobs/
+backend/data/v2-credentials.json
+backend/data/v2-secrets/

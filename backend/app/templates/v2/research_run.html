@@ -1,0 +1,6 @@
+<article id="run-{{ run.id }}" class="p-3 border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-950 text-xs" {% if run.status not in ["CANCELLED", "FAILED", "SUCCEEDED"] %}hx-get="/research/runs/{{ run.id }}" hx-trigger="every 2s" hx-swap="outerHTML"{% endif %}>
+  <div class="flex items-center justify-between gap-2"><a class="font-mono text-blue-600 truncate" href="/flow/{{ run.id }}">{{ run.id }}</a><span class="font-bold">{{ run.status }}</span></div>
+  <p class="mt-1 text-gray-500 truncate">{{ run.objective }}</p>
+  <div class="mt-1 flex flex-wrap gap-1">{% for target in run.targets %}<code class="px-1 bg-gray-100 dark:bg-gray-800">{{ target.world_id }}</code>{% endfor %}</div>
+  {% if run.status not in ["CANCELLED", "FAILED", "SUCCEEDED", "CANCELLING"] %}<button class="mt-2 text-red-600" hx-post="/research/runs/{{ run.id }}/cancel" hx-target="#run-{{ run.id }}" hx-swap="outerHTML">Cancel</button>{% elif run.status == "FAILED" or run.outcome == "PARTIAL" %}<button class="mt-2 text-blue-600" hx-post="/research/runs/{{ run.id }}/retry" hx-target="#run-{{ run.id }}" hx-swap="outerHTML">Retry</button>{% endif %}
+</article>

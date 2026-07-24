@@ -3,7 +3,7 @@
 name = "omniverse-v2-backend"
 version = "2.0.0"
 description = "Asynchronous multi-agent LangGraph platform for fictional power tiering"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 dependencies = [
     "fastapi",
     "uvicorn",
@@ -21,6 +21,10 @@ dependencies = [
     "trafilatura",
     "jinja2",
     "python-multipart",
+    "alembic>=1.13,<2",
+    "pypdf>=5,<7",
+    "pillow",
+    "pytesseract",
 ]
 
 [project.optional-dependencies]
@@ -29,8 +33,8 @@ dev = [
     "pytest-asyncio",
 ]
 
-[tool.setuptools]
-packages = ["app"]
+[tool.setuptools.packages.find]
+include = ["app*"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
@@ -75,5 +79,5 @@ select = [
 parametrize-names-type = "list"
 
 [tool.mypy]
-python_version = "3.9"
+python_version = "3.10"
 ignore_missing_imports = true

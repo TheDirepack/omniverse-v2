@@ -26,7 +26,22 @@ fi
 source "$VENV_DIR/bin/activate"
 export PYTHONPATH="$BASE_DIR/backend:$PYTHONPATH"
 
-HOST="${HOST:-0.0.0.0}"
+if [ -f "$BASE_DIR/backend/.env.local" ]; then
+    set -a
+    # shellcheck disable=SC1091
+    source "$BASE_DIR/backend/.env.local"
+    set +a
+fi
+
+for path_var in OMNIVERSE_V2_DATABASE_PATH OMNIVERSE_V2_BLOB_PATH OMNIVERSE_V2_CREDENTIALS_PATH; do
+    path_value="${!path_var:-}"
+    if [ -n "$path_value" ] && [[ "$path_value" != /* ]]; then
+        printf -v "$path_var" '%s/%s' "$BASE_DIR/backend" "${path_value#./}"
+        export "$path_var"
+    fi
+done
+
+HOST="${OMNIVERSE_V2_BIND_HOST:-${HOST:-127.0.0.1}}"
 PORT="${PORT:-8000}"
 RELOAD="--reload"
 MODE="dev"
@@ -46,7 +61,7 @@ for arg in "$@"; do
             echo "Usage: ./run.sh [OPTIONS]"
             echo ""
             echo "  --prod              Disable hot reload (production mode)"
-            echo "  --host=HOST         Bind address (default: 0.0.0.0)"
+            echo "  --host=HOST         Bind address (default: 127.0.0.1)"
             echo "  --port=PORT         Port (default: 8000)"
             echo "  --log-level=LEVEL   Log level: DEBUG, INFO, WARNING, ERROR (default: INFO)"
             echo "  --log-dir=DIR       Directory for agent log file (default: backend/logs)"
@@ -55,6 +70,16 @@ for arg in "$@"; do
             ;;
     esac
 done
+
+export OMNIVERSE_V2_BIND_HOST="$HOST"
+case "${OMNIVERSE_V2_REQUIRE_LOOPBACK:-true}" in
+    1|true|TRUE|yes|YES|on|ON)
+        case "$HOST" in
+            127.0.0.1|::1|localhost) ;;
+            *) err "Loopback-only mode rejects public bind host: $HOST"; exit 1 ;;
+        esac
+        ;;
+esac
 
 export APP_LOG_LEVEL APP_LOG_DIR APP_LOG_FILE
 
@@ -70,4 +95,5 @@ elif command -v lsof &>/dev/null; then
 fi
 
 info "Starting Omniverse V2 Backend (mode: $MODE, $HOST:$PORT)..."
+python -m app.v2.initialize
 uvicorn app.main:app --app-dir "$BASE_DIR/backend" --host "$HOST" --port "$PORT" $RELOAD

@@ -15,6 +15,7 @@ class AdapterKind(str, Enum):
     GEMINI = "GEMINI"
     OPENAI = "OPENAI"
     OPENAI_COMPATIBLE = "OPENAI_COMPATIBLE"
+    OPENROUTER = "OPENROUTER"
 
 
 class ErrorClass(str, Enum):
@@ -183,6 +184,11 @@ class OpenAIAdapter:
         self.base_url = base_url.rstrip("/")
         self.timeout_seconds = timeout_seconds
 
+    def _url(self) -> str:
+        if self.base_url.endswith("/v1"):
+            return f"{self.base_url}/chat/completions"
+        return f"{self.base_url}/v1/chat/completions"
+
     async def complete(self, request: ModelRequest, credential: str) -> ModelResponse:
         if self._call is not None:
             return _openai_response(
@@ -219,11 +225,43 @@ class OpenAIAdapter:
         )
         return _openai_response(raw)
 
-    def _url(self) -> str:
-        suffix = "/chat/completions"
-        if self.kind is AdapterKind.OPENAI and not self.base_url.endswith("/v1"):
-            suffix = "/v1/chat/completions"
-        return f"{self.base_url}{suffix}"
+    async def sync_models(self, credential: str) -> list[dict[str, Any]]:
+        if self.client is None:
+            return []
+        url = f"{self.base_url}/v1/models" if not self.base_url.endswith("/v1") else f"{self.base_url}/models"
+        try:
+            response = await self.client.get(
+                url,
+                headers={"Authorization": f"Bearer {credential}"},
+                timeout=self.timeout_seconds,
+            )
+            if response.status_code == 200:
+                data = response.json()
+                models = data.get("data", [])
+                result = []
+                for m in models:
+                    mid = m.get("id")
+                    if mid:
+                        lowered = mid.lower()
+                        is_text = not any(
+                            p in lowered for p in ("embedding", "tts", "whisper", "moderation", "dall-e")
+                        )
+                        supports_tools = not any(
+                            p in lowered for p in ("embedding", "tts", "whisper", "moderation", "dall-e", "imagen")
+                        )
+                        result.append({
+                            "id": mid,
+                            "name": m.get("name", mid),
+                            "context_window": m.get("context_window", 128_000),
+                            "output_limit": m.get("max_tokens", 4_000),
+                            "supports_text": is_text,
+                            "supports_tools": supports_tools,
+                            "supports_structured": supports_tools,
+                        })
+                return result
+        except Exception:
+            pass
+        return []
 
 
 class GenericOpenAIAdapter(OpenAIAdapter):
@@ -321,3 +359,156 @@ class GeminiAdapter:
             provider_id="gemini",
             model_id=raw.get("modelVersion"),
         )
+
+    async def sync_models(self, credential: str) -> list[dict[str, Any]]:
+        if self.client is None:
+            return []
+        url = f"{self.base_url}/models"
+        try:
+            response = await self.client.get(
+                url,
+                params={"key": credential},
+                timeout=self.timeout_seconds,
+            )
+            if response.status_code == 200:
+                data = response.json()
+                models = data.get("models", [])
+                result = []
+                for m in models:
+                    name = m.get("name", "")
+                    mid = name.replace("models/", "")
+                    if mid:
+                        lowered = mid.lower()
+                        is_text = not any(
+                            p in lowered for p in ("embedding", "tts", "whisper", "moderation", "dall-e")
+                        )
+                        supports_tools = not any(
+                            p in lowered for p in ("embedding", "tts", "whisper", "moderation", "dall-e", "imagen")
+                        )
+                        result.append({
+                            "id": mid,
+                            "name": m.get("displayName", mid),
+                            "context_window": m.get("inputTokenLimit", 128_000),
+                            "output_limit": m.get("outputTokenLimit", 8_192),
+                            "supports_text": is_text,
+                            "supports_tools": supports_tools,
+                            "supports_structured": supports_tools,
+                        })
+                return result
+        except Exception:
+            pass
+        return []
+
+
+class AnthropicAdapter:
+    kind = AdapterKind.OPENAI_COMPATIBLE
+
+    def __init__(
+        self,
+        call: InjectedCall | None = None,
+        *,
+        client: httpx.AsyncClient | None = None,
+        base_url: str = "https://api.anthropic.com",
+        timeout_seconds: float = 60.0,
+    ) -> None:
+        self._call = call
+        self.client = client
+        self.base_url = base_url.rstrip("/")
+        self.timeout_seconds = timeout_seconds
+
+    async def complete(self, request: ModelRequest, credential: str) -> ModelResponse:
+        if self._call is not None:
+            raw = await self._call(request.model_dump(exclude_none=True), credential)
+        else:
+            if self.client is None:
+                raise ProviderError(ErrorClass.INTERNAL, "HTTP client is not configured")
+            system_text = ""
+            messages = []
+            for msg in request.messages:
+                if msg.get("role") == "system":
+                    system_text = str(msg.get("content", ""))
+                else:
+                    messages.append(msg)
+            payload: dict[str, Any] = {
+                "model": request.model,
+                "messages": messages,
+                "max_tokens": request.max_output_tokens or 4000,
+            }
+            if system_text:
+                payload["system"] = system_text
+            raw = await _post_json(
+                self.client,
+                f"{self.base_url}/v1/messages",
+                payload,
+                {
+                    "x-api-key": credential,
+                    "anthropic-version": "2023-06-01",
+                    "Content-Type": "application/json",
+                },
+                self.timeout_seconds,
+            )
+        content_blocks = raw.get("content", [])
+        text = "".join(b.get("text", "") for b in content_blocks if b.get("type") == "text")
+        usage = raw.get("usage", {})
+        input_tokens = int(usage.get("input_tokens", 0))
+        output_tokens = int(usage.get("output_tokens", 0))
+        return ModelResponse(
+            text=text,
+            tool_calls=(),
+            usage=Usage(
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                total_tokens=input_tokens + output_tokens,
+            ),
+            finish_reason=raw.get("stop_reason"),
+            response_id=raw.get("id"),
+            provider_id="anthropic",
+            model_id=raw.get("model"),
+        )
+
+    async def sync_models(self, credential: str) -> list[dict[str, Any]]:
+        if self.client is None:
+            return []
+        try:
+            response = await self.client.get(
+                f"{self.base_url}/v1/models",
+                headers={
+                    "x-api-key": credential,
+                    "anthropic-version": "2023-06-01",
+                },
+                timeout=self.timeout_seconds,
+            )
+            if response.status_code == 200:
+                data = response.json()
+                models = data.get("data", [])
+                result = []
+                for m in models:
+                    mid = m.get("id")
+                    if mid:
+                        result.append({
+                            "id": mid,
+                            "name": m.get("display_name", mid),
+                            "context_window": 200_000,
+                            "output_limit": 8_192,
+                            "supports_text": True,
+                            "supports_tools": True,
+                            "supports_structured": False,
+                        })
+                return result
+        except Exception:
+            pass
+        return []
+
+
+class GroqAdapter(OpenAIAdapter):
+    kind = AdapterKind.OPENAI_COMPATIBLE
+
+    def __init__(
+        self,
+        call: InjectedCall | None = None,
+        *,
+        client: httpx.AsyncClient | None = None,
+        base_url: str = "https://api.groq.com/openai",
+        timeout_seconds: float = 60.0,
+    ) -> None:
+        super().__init__(call, client=client, base_url=base_url, timeout_seconds=timeout_seconds)

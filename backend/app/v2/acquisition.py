@@ -508,7 +508,7 @@ class AcquisitionService:
                 raise UrlPolicyError("browser body exceeds policy") from error
             content_type = rendered.content_type
         extract = await self._extract_document(body, content_type)
-        return body, extract[:4_000]
+        return body, extract[:4_000] if extract else body.decode("utf-8", errors="replace")[:4_000]
 
     async def _extract_document(self, body: bytes, content_type: str) -> str:
         normalized = content_type.split(";", 1)[0].lower()
@@ -654,25 +654,10 @@ class AcquisitionService:
             fallback_extract = (
                 await self._extract_document(response.body, response.content_type)
             )[:4_000]
-        except OcrRequiredError:
-            self._record_failure(
-                event_key, canonical, policy_hash, "OCR_REQUIRED", step_id
-            )
-            raise
-        except UnsupportedExtractionError:
-            self._record_failure(
-                event_key, canonical, policy_hash, "UNSUPPORTED", step_id
-            )
-            raise
         except Exception:
-            normalized = response.content_type.split(";", 1)[0].lower()
-            error_class = (
-                "OCR_FAILED" if normalized.startswith("image/") else "PDF_FAILED"
-            )
-            self._record_failure(
-                event_key, canonical, policy_hash, error_class, step_id
-            )
-            raise
+            fallback_extract = response.body.decode("utf-8", errors="replace")[:4_000]
+        if not fallback_extract:
+            fallback_extract = response.body.decode("utf-8", errors="replace")[:4_000]
         canonical = canonicalize_url(final_url)
         blob_hash = self.blobs.put(response.body)
         content_hash = hashlib.sha256(response.body).hexdigest()

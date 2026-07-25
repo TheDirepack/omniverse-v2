@@ -43,7 +43,7 @@ def effective_input_window(
 ) -> int:
     # Gemini and OpenAI both advertise combined input/output windows. Keeping this
     # branch explicit prevents compatible providers from silently changing semantics.
-    if provider_kind in {"GEMINI", "OPENAI", "OPENAI_COMPATIBLE"}:
+    if provider_kind in {"GEMINI", "OPENAI", "OPENAI_COMPATIBLE", "OPENROUTER"}:
         return max(0, context_window - output_tokens)
     return context_window
 
@@ -69,6 +69,7 @@ class ProviderRouter:
             AdapterKind.OPENAI.value: OpenAIAdapter,
             AdapterKind.GEMINI.value: GeminiAdapter,
             AdapterKind.OPENAI_COMPATIBLE.value: GenericOpenAIAdapter,
+            AdapterKind.OPENROUTER.value: GenericOpenAIAdapter,
         }
         self.adapters = {
             provider.id: factories[provider.kind](

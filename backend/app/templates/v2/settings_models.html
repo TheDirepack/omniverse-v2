@@ -1,1 +1,61 @@
-<h2 class="text-xs font-bold uppercase tracking-widest mb-2">Models and capabilities</h2>{% for provider in settings.providers %}<section class="mb-4"><h3 class="font-mono text-xs">{{ provider.id }}</h3><table class="w-full text-xs">{% for model in provider.models %}<tr class="border-b"><td class="p-2"><code>{{ model.id }}</code></td><td>{{ model.name }}</td><td>Tools: {{ model.supports_tools }}</td><td>Structured: {{ model.supports_structured }}</td></tr>{% else %}<tr><td class="p-2 text-gray-500">No models.</td></tr>{% endfor %}</table><form class="mt-2 grid grid-cols-2 lg:grid-cols-4 gap-2 text-xs border border-gray-200 dark:border-gray-800 p-2" hx-post="/settings/providers/{{ provider.id }}/models" hx-target="#settings-content"><input name="model_id" required placeholder="String model ID" class="h-7 px-2 border bg-transparent"><input name="model_name" required placeholder="Provider model name" class="h-7 px-2 border bg-transparent"><input name="context_window" type="number" min="1" placeholder="Context window" class="h-7 px-2 border bg-transparent"><input name="output_limit" type="number" min="1" placeholder="Output limit" class="h-7 px-2 border bg-transparent"><label><input name="supports_text" type="checkbox" value="true" checked> Text</label><label><input name="supports_tools" type="checkbox" value="true"> Tools</label><label><input name="supports_structured" type="checkbox" value="true"> Structured</label><label><input name="active" type="checkbox" value="true" checked> Active</label><button class="h-7 px-3 bg-blue-600 text-white">Save model</button></form></section>{% endfor %}
+<h2 class="text-xs font-bold uppercase tracking-widest mb-2">Models and capabilities</h2>
+{% for provider in settings.providers %}
+<section class="mb-4 border border-gray-200 dark:border-gray-800 p-3 text-xs">
+    <h3 class="font-mono font-bold text-xs mb-2">{{ provider.id }} ({{ provider.kind }})</h3>
+    <table class="w-full text-xs">
+        <thead>
+            <tr class="border-b text-gray-500 text-left">
+                <th class="p-1">Model ID</th>
+                <th class="p-1">Name</th>
+                <th class="p-1">Context Window</th>
+                <th class="p-1">Output Limit</th>
+                <th class="p-1">Text Support</th>
+                <th class="p-1">Capabilities</th>
+                <th class="p-1">Status</th>
+                <th class="p-1">Action</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for model in provider.models %}
+            <tr class="border-b">
+                <td class="p-2 font-mono font-bold"><code>{{ model.id }}</code></td>
+                <td>{{ model.name }}</td>
+                <td>{{ model.context_window or 'Default' }}</td>
+                <td>{{ model.output_limit or 'Default' }}</td>
+                <td>
+                    {% if model.supports_text %}
+                    <span class="px-1.5 py-0.5 bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200 font-bold rounded">Text Supported</span>
+                    {% else %}
+                    <span class="px-1.5 py-0.5 bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300 rounded">No Text</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if model.supports_tools %}<span class="mr-2 text-blue-600">Tools</span>{% endif %}
+                    {% if model.supports_structured %}<span class="text-purple-600">Structured</span>{% endif %}
+                </td>
+                <td>{{ "Active" if model.active else "Inactive" }}</td>
+                <td>
+                    <button class="text-red-600 hover:underline" hx-delete="/settings/models/{{ model.id }}" hx-target="#settings-content">Delete</button>
+                </td>
+            </tr>
+            {% else %}
+            <tr><td colspan="8" class="p-4 text-center text-gray-500">No models configured for this provider.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <form class="mt-3 grid grid-cols-2 lg:grid-cols-4 gap-2 text-xs border border-gray-200 dark:border-gray-800 p-2 bg-gray-50 dark:bg-gray-900" hx-post="/settings/providers/{{ provider.id }}/models" hx-target="#settings-content">
+        <input name="model_id" required placeholder="String model ID" class="h-7 px-2 border bg-transparent">
+        <input name="model_name" required placeholder="Provider model name" class="h-7 px-2 border bg-transparent">
+        <input name="context_window" type="number" min="1" placeholder="Context window" class="h-7 px-2 border bg-transparent">
+        <input name="output_limit" type="number" min="1" placeholder="Output limit" class="h-7 px-2 border bg-transparent">
+        <div class="col-span-2 lg:col-span-4 flex gap-4 items-center mt-1">
+            <label class="flex items-center gap-1"><input name="supports_text" type="checkbox" value="true" checked> Supports Text</label>
+            <label class="flex items-center gap-1"><input name="supports_tools" type="checkbox" value="true"> Supports Tools</label>
+            <label class="flex items-center gap-1"><input name="supports_structured" type="checkbox" value="true"> Supports Structured</label>
+            <label class="flex items-center gap-1"><input name="active" type="checkbox" value="true" checked> Active</label>
+            <button class="ml-auto h-7 px-3 bg-blue-600 text-white font-bold">Save Model</button>
+        </div>
+    </form>
+</section>
+{% endfor %}

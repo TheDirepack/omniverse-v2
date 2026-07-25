@@ -39,7 +39,7 @@ class CredentialCreate(BaseModel):
 
 class ProviderCreate(BaseModel):
     id: str = Field(min_length=1)
-    kind: str = Field(pattern="^(OPENAI|GEMINI|OPENAI_COMPATIBLE)$")
+    kind: str = Field(pattern="^(OPENAI|GEMINI|OPENAI_COMPATIBLE|OPENROUTER)$")
     base_url: str | None = None
     active: bool = True
 

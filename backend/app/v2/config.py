@@ -3,11 +3,28 @@
 
 from __future__ import annotations
 
+import json
 import os
 from dataclasses import dataclass
 from pathlib import Path
 
 _BACKEND = Path(__file__).resolve().parents[2]
+
+# Persistence file for UI-controlled settings
+_PERSISTENCE_FILE = _BACKEND / "data" / "ui_persistence.json"
+
+
+def _load_persistence() -> dict:
+    if _PERSISTENCE_FILE.exists():
+        try:
+            with open(_PERSISTENCE_FILE) as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {}
+
+
+_PERSISTENCE = _load_persistence()
 
 
 def _path(name: str, default: Path) -> Path:
@@ -17,7 +34,16 @@ def _path(name: str, default: Path) -> Path:
 
 def _bool(name: str, default: bool) -> bool:
     value = os.environ.get(name)
+    if value is None:
+        value = _PERSISTENCE.get(name)
     return default if value is None else value.casefold() in {"1", "true", "yes", "on"}
+
+
+def _str(name: str, default: str | None = None) -> str | None:
+    value = os.environ.get(name)
+    if value is None:
+        value = _PERSISTENCE.get(name)
+    return default if value is None else value
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,9 +72,18 @@ class V2Config:
     preprocessor_model: str = "MiniCPM5-1B"
     preprocessor_timeout_seconds: float = 10.0
     preprocessor_concurrency: int = 2
+    preprocessor_ssh_host: str = "192.168.1.30"
+    preprocessor_ssh_user: str = "max"
+    preprocessor_ssh_port: int = 22
+    preprocessor_ssh_key_path: str = ""
+    preprocessor_ssh_credential_id: str = ""
+    preprocessor_config_path: str = "/home/max/minicpm5_config.json"
+    preprocessor_remote_script: str = "/home/max/start-minicpm.sh"
+    preprocessor_pgrep_pattern: str = "llama-server"
     log_path: str | None = None
-    log_max_bytes: int = 10_000_000
-    log_backup_count: int = 5
+    access_log_path: str = "logs/access.log"
+    error_log_path: str = "logs/error.log"
+    client_log_path: str = "logs/client.log"
 
     @classmethod
     def from_env(cls) -> V2Config:
@@ -113,9 +148,42 @@ class V2Config:
             preprocessor_concurrency=int(
                 os.environ.get("OMNIVERSE_V2_PREPROCESSOR_CONCURRENCY", "2")
             ),
-            log_path=os.environ.get("OMNIVERSE_V2_LOG_PATH"),
-            log_max_bytes=int(os.environ.get("OMNIVERSE_V2_LOG_MAX_BYTES", "10000000")),
-            log_backup_count=int(os.environ.get("OMNIVERSE_V2_LOG_BACKUP_COUNT", "5")),
+            preprocessor_ssh_host=os.environ.get(
+                "OMNIVERSE_V2_PREPROCESSOR_SSH_HOST", "192.168.1.30"
+            ),
+            preprocessor_ssh_user=os.environ.get(
+                "OMNIVERSE_V2_PREPROCESSOR_SSH_USER", "max"
+            ),
+            preprocessor_ssh_port=int(
+                os.environ.get("OMNIVERSE_V2_PREPROCESSOR_SSH_PORT", "22")
+            ),
+            preprocessor_ssh_key_path=os.environ.get(
+                "OMNIVERSE_V2_PREPROCESSOR_SSH_KEY_PATH", ""
+            ),
+            preprocessor_ssh_credential_id=os.environ.get(
+                "OMNIVERSE_V2_PREPROCESSOR_SSH_CREDENTIAL_ID", ""
+            ),
+            preprocessor_config_path=os.environ.get(
+                "OMNIVERSE_V2_PREPROCESSOR_CONFIG_PATH",
+                "/home/max/minicpm5_config.json",
+            ),
+            preprocessor_remote_script=os.environ.get(
+                "OMNIVERSE_V2_PREPROCESSOR_REMOTE_SCRIPT",
+                "/home/max/start-minicpm.sh",
+            ),
+            preprocessor_pgrep_pattern=os.environ.get(
+                "OMNIVERSE_V2_PREPROCESSOR_PGREP_PATTERN", "minicpm"
+            ),
+            log_path=_str("OMNIVERSE_V2_LOG_PATH"),
+            access_log_path=os.environ.get(
+                "OMNIVERSE_V2_ACCESS_LOG_PATH", "logs/access.log"
+            ),
+            error_log_path=os.environ.get(
+                "OMNIVERSE_V2_ERROR_LOG_PATH", "logs/error.log"
+            ),
+            client_log_path=os.environ.get(
+                "OMNIVERSE_V2_CLIENT_LOG_PATH", "logs/client.log"
+            ),
         )
 
     def validate(self) -> None:

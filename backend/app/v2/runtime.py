@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from importlib.util import find_spec
+from logging import Logger
 
 import httpx
 from sqlalchemy import select
@@ -21,7 +22,8 @@ from app.v2.blobs import BlobStore
 from app.v2.config import V2Config
 from app.v2.credentials import CredentialService, JsonCredentialStore
 from app.v2.db import create_sqlite_engine, validate_initialized_schema
-from app.v2.models import Run
+from app.v2.logging import V2ServerLogger
+from app.v2.models import CandidateHealth, CredentialHealth, Run
 from app.v2.preprocessing import MiniCPMPreprocessor
 from app.v2.projections import ResearchQueryService
 from app.v2.research_runs import ResearchRunKernel
@@ -48,6 +50,7 @@ class V2Runtime:
     adapter_status: dict[str, dict[str, object]]
     closeable_adapters: tuple[object, ...] = field(default=(), repr=False)
     _worker_task: object | None = field(default=None, repr=False)
+    server_logger: V2ServerLogger = field(default_factory=V2ServerLogger, repr=False)
 
     @staticmethod
     def engine_for(config: V2Config):
@@ -70,6 +73,7 @@ class V2Runtime:
         ocr=None,
         preprocessor=None,
         workflow=None,
+        server_logger: V2ServerLogger | None = None,
     ) -> V2Runtime:
         config.validate()
         engine = cls.engine_for(config)
@@ -194,6 +198,7 @@ class V2Runtime:
                 for adapter in (browser, pdf, ocr, preprocessor)
                 if adapter is not None and hasattr(adapter, "close")
             ),
+            server_logger=server_logger or V2ServerLogger(),
         )
 
     async def startup(self, *, start_worker: bool = True) -> None:
@@ -202,8 +207,29 @@ class V2Runtime:
         self.provider_router.refresh_adapters(
             self.http_client, timeout_seconds=self.config.http_timeout_seconds
         )
+        self.refresh_adapter_status()
         if start_worker:
             self.worker.start()
+
+    def refresh_adapter_status(self) -> None:
+        status = (
+            self.preprocessor.status()
+            if self.preprocessor is not None
+            else {"available": False, "detail": "disabled by configuration"}
+        )
+        if self.preprocessor is not None and self.config.preprocessor_enabled:
+            try:
+                from app.v2.preprocessing import PreprocessorSSH
+                ssh = PreprocessorSSH(self.config, self.credentials)
+                if ssh.check_running():
+                    status["detail"] += " — server running"
+                else:
+                    status["detail"] += " — server not running (click Start)"
+            except Exception:
+                status["detail"] += " — unreachable"
+        elif not self.config.preprocessor_enabled:
+            status["detail"] = "disabled by configuration"
+        self.adapter_status["preprocessor"] = status
 
     async def shutdown(self) -> None:
         await self.worker.stop()

@@ -46,6 +46,9 @@ class V2Config:
     preprocessor_model: str = "MiniCPM5-1B"
     preprocessor_timeout_seconds: float = 10.0
     preprocessor_concurrency: int = 2
+    log_path: str | None = None
+    log_max_bytes: int = 10_000_000
+    log_backup_count: int = 5
 
     @classmethod
     def from_env(cls) -> V2Config:
@@ -110,6 +113,9 @@ class V2Config:
             preprocessor_concurrency=int(
                 os.environ.get("OMNIVERSE_V2_PREPROCESSOR_CONCURRENCY", "2")
             ),
+            log_path=os.environ.get("OMNIVERSE_V2_LOG_PATH"),
+            log_max_bytes=int(os.environ.get("OMNIVERSE_V2_LOG_MAX_BYTES", "10000000")),
+            log_backup_count=int(os.environ.get("OMNIVERSE_V2_LOG_BACKUP_COUNT", "5")),
         )
 
     def validate(self) -> None:

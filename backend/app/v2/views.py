@@ -917,9 +917,20 @@ def settings_put_route(
     model_ids: Annotated[list[str], Form()],
     weights: Annotated[list[int] | None, Form()] = None,
 ):
-    unique_model_ids = tuple(dict.fromkeys(model_ids))
+    valid_pairs = []
+    if weights is None:
+        weights = [1] * len(model_ids)
+    for idx, mid in enumerate(model_ids):
+        if mid and mid.strip():
+            w = weights[idx] if idx < len(weights) else 1
+            valid_pairs.append((mid.strip(), w))
+
+    unique_model_ids = [pair[0] for pair in valid_pairs]
+    unique_weights = [pair[1] for pair in valid_pairs]
+
     if not unique_model_ids:
-        raise HTTPException(status_code=422, detail="route requires a model")
+        raise HTTPException(status_code=422, detail="route requires at least one model")
+
     route_id = f"route:{task}"
     with Session(_runtime(request).engine) as session, session.begin():
         for model_id in unique_model_ids:
@@ -949,7 +960,7 @@ def settings_put_route(
                 delete(RouteCandidate).where(RouteCandidate.route_id == route.id)
             )
         for position, model_id in enumerate(unique_model_ids):
-            weight = weights[position] if weights and position < len(weights) else 1
+            weight = unique_weights[position] if position < len(unique_weights) else 1
             session.add(
                 RouteCandidate(
                     id=f"candidate:{route_id}:{position}",

@@ -40,17 +40,20 @@
     <div id="route-candidates-container" class="grid gap-2 mb-3">
         <div class="flex gap-2 items-center candidate-row">
             <span class="font-bold w-24">Primary:</span>
-            <select name="model_ids" class="h-7 px-2 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 flex-1">
-                <option value="">-- Select Model or Provider (Just a Provider) --</option>
+            <select name="provider_ids" onchange="onProviderChange(this)" class="h-7 px-2 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 w-48">
+                <option value="">-- Select Provider --</option>
                 {% for provider in settings.providers %}
-                <optgroup label="Provider: {{ provider.id }}">
-                    <option value="{{ provider.id }}">🌟 Just a Provider (All active models for {{ provider.id }})</option>
-                    {% for model in provider.models %}
-                    {% if model.supports_text %}
-                    <option value="{{ model.id }}">{{ model.id }} ({{ model.name }})</option>
-                    {% endif %}
-                    {% endfor %}
-                </optgroup>
+                <option value="{{ provider.id }}">{{ provider.id }}</option>
+                {% endfor %}
+            </select>
+            <select name="model_ids" class="h-7 px-2 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 flex-1">
+                <option value="">-- Select Model (Leave empty for Just a Provider) --</option>
+                {% for provider in settings.providers %}
+                {% for model in provider.models %}
+                {% if model.supports_text %}
+                <option value="{{ model.id }}" data-provider="{{ provider.id }}">{{ model.id }} ({{ model.name }})</option>
+                {% endif %}
+                {% endfor %}
                 {% endfor %}
             </select>
             <input name="weights" type="number" min="1" value="1" placeholder="Weight" class="h-7 w-20 px-2 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100" title="Candidate Weight">
@@ -58,17 +61,20 @@
 
         <div class="flex gap-2 items-center candidate-row">
             <span class="font-bold w-24">Fallback 1:</span>
-            <select name="model_ids" class="h-7 px-2 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 flex-1">
-                <option value="">-- Select Model or Provider (Optional) --</option>
+            <select name="provider_ids" onchange="onProviderChange(this)" class="h-7 px-2 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 w-48">
+                <option value="">-- Select Provider --</option>
                 {% for provider in settings.providers %}
-                <optgroup label="Provider: {{ provider.id }}">
-                    <option value="{{ provider.id }}">🌟 Just a Provider (All active models for {{ provider.id }})</option>
-                    {% for model in provider.models %}
-                    {% if model.supports_text %}
-                    <option value="{{ model.id }}">{{ model.id }} ({{ model.name }})</option>
-                    {% endif %}
-                    {% endfor %}
-                </optgroup>
+                <option value="{{ provider.id }}">{{ provider.id }}</option>
+                {% endfor %}
+            </select>
+            <select name="model_ids" class="h-7 px-2 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 flex-1">
+                <option value="">-- Select Model (Leave empty for Just a Provider) --</option>
+                {% for provider in settings.providers %}
+                {% for model in provider.models %}
+                {% if model.supports_text %}
+                <option value="{{ model.id }}" data-provider="{{ provider.id }}">{{ model.id }} ({{ model.name }})</option>
+                {% endif %}
+                {% endfor %}
                 {% endfor %}
             </select>
             <input name="weights" type="number" min="1" value="1" placeholder="Weight" class="h-7 w-20 px-2 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100" title="Candidate Weight">
@@ -83,26 +89,76 @@
 </form>
 
 <script>
+const providerModels = {
+    {% for provider in settings.providers %}
+    "{{ provider.id }}": [
+        {% for model in provider.models %}
+        {% if model.supports_text %}
+        { id: "{{ model.id }}", name: "{{ model.name }}" },
+        {% endif %}
+        {% endfor %}
+    ],
+    {% endfor %}
+};
+
+function onProviderChange(providerSelect) {
+    const row = providerSelect.closest('.candidate-row');
+    const modelSelect = row.querySelector('select[name="model_ids"]');
+    const selectedProviderId = providerSelect.value;
+    
+    modelSelect.innerHTML = '<option value="">-- Select Model (Leave empty for Just a Provider) --</option>';
+    
+    if (selectedProviderId && providerModels[selectedProviderId]) {
+        providerModels[selectedProviderId].forEach(model => {
+            const opt = document.createElement('option');
+            opt.value = model.id;
+            opt.textContent = `${model.id} (${model.name})`;
+            modelSelect.appendChild(opt);
+        });
+    } else {
+        {% for provider in settings.providers %}
+        {% for model in provider.models %}
+        {% if model.supports_text %}
+        {
+            const opt = document.createElement('option');
+            opt.value = "{{ model.id }}";
+            opt.textContent = "{{ model.id }} ({{ model.name }})";
+            modelSelect.appendChild(opt);
+        }
+        {% endif %}
+        {% endfor %}
+        {% endfor %}
+    }
+}
+
 let fallbackIndex = 1;
 function addFallbackRow() {
     fallbackIndex++;
     const container = document.getElementById('route-candidates-container');
     const row = document.createElement('div');
     row.className = 'flex gap-2 items-center candidate-row';
+    
+    let providerOptions = '<option value="">-- Select Provider --</option>';
+    {% for provider in settings.providers %}
+    providerOptions += '<option value="{{ provider.id }}">{{ provider.id }}</option>';
+    {% endfor %}
+    
+    let modelOptions = '<option value="">-- Select Model (Leave empty for Just a Provider) --</option>';
+    {% for provider in settings.providers %}
+    {% for model in provider.models %}
+    {% if model.supports_text %}
+    modelOptions += '<option value="{{ model.id }}" data-provider="{{ provider.id }}">{{ model.id }} ({{ model.name }})</option>';
+    {% endif %}
+    {% endfor %}
+    {% endfor %}
+    
     row.innerHTML = `
         <span class="font-bold w-24">Fallback ${fallbackIndex}:</span>
+        <select name="provider_ids" onchange="onProviderChange(this)" class="h-7 px-2 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 w-48">
+            ${providerOptions}
+        </select>
         <select name="model_ids" class="h-7 px-2 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 flex-1">
-            <option value="">-- Select Model or Provider (Just a Provider) --</option>
-            {% for provider in settings.providers %}
-            <optgroup label="Provider: {{ provider.id }}">
-                <option value="{{ provider.id }}">🌟 Just a Provider (All active models for {{ provider.id }})</option>
-                {% for model in provider.models %}
-                {% if model.supports_text %}
-                <option value="{{ model.id }}">{{ model.id }} ({{ model.name }})</option>
-                {% endif %}
-                {% endfor %}
-            </optgroup>
-            {% endfor %}
+            ${modelOptions}
         </select>
         <input name="weights" type="number" min="1" value="1" placeholder="Weight" class="h-7 w-20 px-2 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100" title="Candidate Weight">
         <button type="button" onclick="this.parentElement.remove()" class="h-7 px-2 bg-red-600 text-white font-bold rounded-sm">✕</button>

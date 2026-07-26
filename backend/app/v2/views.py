@@ -784,7 +784,7 @@ def settings(request: Request):
 
 @router.get("/settings/tab/{tab}", response_class=HTMLResponse)
 def settings_tab(request: Request, tab: str):
-    if tab not in {"general", "providers", "models", "routes", "health"}:
+    if tab not in {"general", "providers", "models", "routes", "health", "logs"}:
         raise HTTPException(status_code=404, detail="settings tab not found")
     data = _settings_projection(request)
     return templates.TemplateResponse(
@@ -989,34 +989,65 @@ def settings_put_model_form(
 def settings_put_route(
     request: Request,
     task: str,
-    model_ids: Annotated[list[str], Form()],
+    provider_ids: Annotated[list[str] | None, Form()] = None,
+    model_ids: Annotated[list[str] | None, Form()] = None,
     weights: Annotated[list[int] | None, Form()] = None,
 ):
     valid_pairs = []
+    if model_ids is None:
+        model_ids = []
+    if provider_ids is None:
+        provider_ids = []
+
+    max_len = max(len(model_ids), len(provider_ids), 1)
     if weights is None:
-        weights = [1] * len(model_ids)
+        weights = [1] * max_len
+
     with Session(_runtime(request).engine) as session:
-        for idx, mid in enumerate(model_ids):
-            if mid and mid.strip():
-                w = weights[idx] if idx < len(weights) else 1
-                val_str = mid.strip()
-                provider = session.get(Provider, val_str)
+        for idx in range(max_len):
+            p_val = provider_ids[idx] if idx < len(provider_ids) else ""
+            m_val = model_ids[idx] if idx < len(model_ids) else ""
+            p_id = p_val.strip() if p_val else ""
+            m_id = m_val.strip() if m_val else ""
+            w = weights[idx] if idx < len(weights) else 1
+
+            if m_id:
+                provider = session.get(Provider, m_id)
                 if provider is not None:
                     active_models = session.scalars(
                         select(ProviderModel.id)
-                        .where(ProviderModel.provider_id == provider.id, ProviderModel.active == True)
+                        .where(
+                            ProviderModel.provider_id == provider.id,
+                            ProviderModel.active,
+                        )
                         .order_by(ProviderModel.id)
                     ).all()
-                    for m_id in active_models:
-                        valid_pairs.append((m_id, w))
+                    valid_pairs.extend((am_id, w) for am_id in active_models)
                 else:
-                    valid_pairs.append((val_str, w))
+                    valid_pairs.append((m_id, w))
+            elif p_id:
+                provider = session.get(Provider, p_id)
+                if provider is not None:
+                    active_models = session.scalars(
+                        select(ProviderModel.id)
+                        .where(
+                            ProviderModel.provider_id == provider.id,
+                            ProviderModel.active,
+                        )
+                        .order_by(ProviderModel.id)
+                    ).all()
+                    valid_pairs.extend((am_id, w) for am_id in active_models)
+                else:
+                    valid_pairs.append((p_id, w))
 
     unique_model_ids = [pair[0] for pair in valid_pairs]
     unique_weights = [pair[1] for pair in valid_pairs]
 
     if not unique_model_ids:
-        raise HTTPException(status_code=422, detail="route requires at least one model or provider")
+        raise HTTPException(
+            status_code=422,
+            detail="route requires at least one model or provider",
+        )
 
     route_id = f"route:{task}"
     with Session(_runtime(request).engine) as session, session.begin():
@@ -1064,10 +1095,11 @@ def settings_put_route(
 def settings_put_route_form(
     request: Request,
     task: Annotated[str, Form()],
-    model_ids: Annotated[list[str], Form()],
+    provider_ids: Annotated[list[str] | None, Form()] = None,
+    model_ids: Annotated[list[str] | None, Form()] = None,
     weights: Annotated[list[int] | None, Form()] = None,
 ):
-    return settings_put_route(request, task, model_ids, weights)
+    return settings_put_route(request, task, provider_ids, model_ids, weights)
 
 
 @router.post(
@@ -1149,6 +1181,281 @@ def settings_reset_candidate(request: Request, candidate_id: str):
             delete(CandidateHealth).where(CandidateHealth.candidate_id == candidate_id)
         )
     return HTMLResponse('<span class="text-green-600">Healthy</span>')
+
+
+@router.get("/settings/logs/view", response_class=HTMLResponse)
+def settings_logs_view(
+    request: Request,
+    log_type: str = "access",
+    cursor: int = 0,
+    limit: int = 100,
+    level: str = "",
+    search: str = "",
+):
+    logger = _runtime(request).server_logger
+    try:
+        data = logger.read_log(log_type, cursor=cursor, limit=limit, level_filter=level, search=search)
+    except ValueError:
+        data = {"lines": [], "next_cursor": 0, "total_lines": 0}
+    return templates.TemplateResponse(
+        request,
+        "v2/logs_viewer_content.html",
+        _context(
+            request,
+            log_type=log_type,
+            level=level,
+            search=search,
+            **data,
+        ),
+    )
+
+
+@router.post("/settings/logs/clear", response_class=HTMLResponse)
+def settings_logs_clear(request: Request):
+    logger = _runtime(request).server_logger
+    logger.clear_logs()
+    return settings_tab(request, "logs")
+
+
+@router.post("/settings/providers/{provider_id}/sync", response_class=HTMLResponse)
+@router.post("/settings/providers/{provider_id}/sync-models", response_class=HTMLResponse)
+async def settings_provider_sync(request: Request, provider_id: str):
+    runtime = _runtime(request)
+    with Session(runtime.engine) as session, session.begin():
+        provider = session.get(Provider, provider_id)
+        if provider is None:
+            raise HTTPException(status_code=404, detail="provider not found")
+        synced_models = []
+        if provider.base_url:
+            try:
+                headers = {}
+                creds = session.scalars(select(CredentialRef).where(CredentialRef.provider_id == provider_id)).all()
+                if creds and runtime.credentials:
+                    secret = runtime.credentials.resolve(creds[0].opaque_ref)
+                    if secret:
+                        if provider.kind in {"OPENAI", "OPENROUTER"}:
+                            headers["Authorization"] = f"Bearer {secret}"
+                        elif provider.kind == "GEMINI":
+                            headers["x-goog-api-key"] = secret
+                url = provider.base_url.rstrip("/")
+                if not url.endswith("/models"):
+                    if "api.openai.com" in url and not url.endswith("/v1"):
+                        url = f"{url}/v1"
+                    url = f"{url}/models"
+                resp = await runtime.http_client.get(url, headers=headers, timeout=5.0)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    items = data.get("data", data.get("models", []))
+                    for item in items:
+                        m_id = item.get("id") or item.get("name")
+                        if m_id:
+                            synced_models.append(str(m_id))
+            except Exception:
+                pass
+
+        if not synced_models:
+            if provider.kind == "OPENAI":
+                synced_models = ["gpt-4o", "gpt-4-turbo", "gpt-3.5-turbo"]
+            elif provider.kind == "GEMINI":
+                synced_models = ["gemini-1.5-pro", "gemini-1.5-flash"]
+            elif provider.kind == "OPENROUTER":
+                synced_models = ["anthropic/claude-3.5-sonnet", "openai/gpt-4o"]
+            else:
+                synced_models = ["default-model"]
+
+        for m_id in synced_models:
+            existing = session.get(ProviderModel, m_id)
+            if existing is None:
+                session.add(
+                    ProviderModel(
+                        id=m_id,
+                        provider_id=provider_id,
+                        model_name=m_id,
+                        supports_tools=True,
+                        supports_structured=True,
+                        supports_text=True,
+                        active=True,
+                    )
+                )
+            elif existing.provider_id == provider_id:
+                existing.active = True
+
+    runtime.provider_router.refresh_adapters(
+        runtime.http_client,
+        timeout_seconds=runtime.config.http_timeout_seconds,
+    )
+    return settings_tab(request, "providers")
+
+
+@router.get("/settings/preprocessor/status", response_class=HTMLResponse)
+def settings_preprocessor_status(request: Request):
+    runtime = _runtime(request)
+    runtime.refresh_adapter_status()
+    status = runtime.adapter_status.get("preprocessor", {"available": False, "detail": "disabled"})
+    enabled = runtime.config.preprocessor_enabled
+    if not enabled:
+        return HTMLResponse('<span class="text-gray-500">Disabled</span>')
+    if status.get("available"):
+        return HTMLResponse(f'<span class="text-green-600 font-bold">Available: {status.get("detail")}</span>')
+    else:
+        return HTMLResponse(f'<span class="text-amber-600 font-bold">Unavailable: {status.get("detail")}</span>')
+
+
+@router.post("/settings/preprocessor/start", response_class=HTMLResponse)
+def settings_preprocessor_start(request: Request):
+    runtime = _runtime(request)
+    if not runtime.config.preprocessor_enabled:
+        return HTMLResponse('<span class="text-red-600">Preprocessor is disabled</span>')
+    try:
+        from app.v2.preprocessor_ssh import PreprocessorSSH
+        ssh = PreprocessorSSH(runtime.config, runtime.credentials)
+        success, msg = ssh.start_server()
+        runtime.refresh_adapter_status()
+        if success:
+            return HTMLResponse(f'<span class="text-green-600">{msg}</span>')
+        return HTMLResponse(f'<span class="text-red-600">{msg}</span>')
+    except Exception as e:
+        return HTMLResponse(f'<span class="text-red-600">Error: {e!s}</span>')
+
+
+@router.post("/settings/preprocessor/stop", response_class=HTMLResponse)
+def settings_preprocessor_stop(request: Request):
+    runtime = _runtime(request)
+    try:
+        from app.v2.preprocessor_ssh import PreprocessorSSH
+        ssh = PreprocessorSSH(runtime.config, runtime.credentials)
+        success, msg = ssh.stop_server()
+        runtime.refresh_adapter_status()
+        if success:
+            return HTMLResponse(f'<span class="text-green-600">{msg}</span>')
+        return HTMLResponse(f'<span class="text-red-600">{msg}</span>')
+    except Exception as e:
+        return HTMLResponse(f'<span class="text-red-600">Error: {e!s}</span>')
+
+
+@router.get("/settings/preprocessor/modal", response_class=HTMLResponse)
+def settings_preprocessor_modal(request: Request):
+    return templates.TemplateResponse(
+        request,
+        "v2/settings_preprocessor_modal.html",
+        _context(request, config=_runtime(request).config),
+    )
+
+
+@router.post("/settings/preprocessor/save-config", response_class=HTMLResponse)
+def settings_preprocessor_save_config(
+    request: Request,
+    preprocessor_ssh_host: Annotated[str, Form()] = "",
+    preprocessor_ssh_user: Annotated[str, Form()] = "",
+    preprocessor_ssh_port: Annotated[int, Form()] = 22,
+    preprocessor_ssh_key_path: Annotated[str, Form()] = "",
+    preprocessor_ssh_credential_id: Annotated[str, Form()] = "",
+    preprocessor_config_path: Annotated[str, Form()] = "",
+    preprocessor_remote_script: Annotated[str, Form()] = "",
+    preprocessor_pgrep_pattern: Annotated[str, Form()] = "",
+    preprocessor_base_url: Annotated[str, Form()] = "",
+    preprocessor_model: Annotated[str, Form()] = "",
+    preprocessor_timeout_seconds: Annotated[float, Form()] = 10.0,
+    preprocessor_concurrency: Annotated[int, Form()] = 2,
+):
+    config = _runtime(request).config
+    if preprocessor_ssh_host:
+        config.preprocessor_ssh_host = preprocessor_ssh_host
+    if preprocessor_ssh_user:
+        config.preprocessor_ssh_user = preprocessor_ssh_user
+    config.preprocessor_ssh_port = preprocessor_ssh_port
+    config.preprocessor_ssh_key_path = preprocessor_ssh_key_path
+    config.preprocessor_ssh_credential_id = preprocessor_ssh_credential_id
+    if preprocessor_config_path:
+        config.preprocessor_config_path = preprocessor_config_path
+    if preprocessor_remote_script:
+        config.preprocessor_remote_script = preprocessor_remote_script
+    if preprocessor_pgrep_pattern:
+        config.preprocessor_pgrep_pattern = preprocessor_pgrep_pattern
+    if preprocessor_base_url:
+        config.preprocessor_base_url = preprocessor_base_url
+    if preprocessor_model:
+        config.preprocessor_model = preprocessor_model
+    config.preprocessor_timeout_seconds = preprocessor_timeout_seconds
+    config.preprocessor_concurrency = preprocessor_concurrency
+    config.validate()
+    return settings_tab(request, "general")
+
+
+@router.post("/settings/preprocessor/fetch-model", response_class=HTMLResponse)
+def settings_preprocessor_fetch_model(request: Request):
+    runtime = _runtime(request)
+    try:
+        from app.v2.preprocessor_ssh import PreprocessorSSH
+        ssh = PreprocessorSSH(runtime.config, runtime.credentials)
+        model = ssh.fetch_model_name()
+        return HTMLResponse(model or runtime.config.preprocessor_model)
+    except Exception:
+        return HTMLResponse(runtime.config.preprocessor_model)
+
+
+@router.delete("/settings/models/{model_id}", response_class=HTMLResponse)
+@router.post("/settings/models/{model_id}/delete", response_class=HTMLResponse)
+def settings_delete_model(request: Request, model_id: str):
+    runtime = _runtime(request)
+    with Session(runtime.engine) as session, session.begin():
+        model = session.get(ProviderModel, model_id)
+        if model is None:
+            raise HTTPException(status_code=404, detail="model not found")
+        candidate_ids = list(
+            session.scalars(
+                select(RouteCandidate.id).where(RouteCandidate.model_id == model_id)
+            )
+        )
+        if candidate_ids:
+            session.execute(
+                delete(CandidateHealth).where(
+                    CandidateHealth.candidate_id.in_(candidate_ids)
+                )
+            )
+            session.execute(
+                delete(RouteCandidate).where(RouteCandidate.id.in_(candidate_ids))
+            )
+        session.delete(model)
+    runtime.provider_router.refresh_adapters(
+        runtime.http_client,
+        timeout_seconds=runtime.config.http_timeout_seconds,
+    )
+    return settings_tab(request, "models")
+
+
+@router.post("/settings/general", response_class=HTMLResponse)
+def settings_update_general(
+    request: Request,
+    preprocessor_enabled: Annotated[bool | None, Form()] = None,
+    log_enabled: Annotated[bool | None, Form()] = None,
+    log_path: Annotated[str | None, Form()] = None,
+):
+    config = _runtime(request).config
+    if preprocessor_enabled is not None:
+        config.preprocessor_enabled = preprocessor_enabled
+    if log_path is not None:
+        config.log_path = log_path
+    _runtime(request).refresh_adapter_status()
+    return settings_tab(request, "general")
+
+
+@router.get("/settings/health/credentials/{credential_id}", response_class=HTMLResponse)
+def settings_credential_health_status(request: Request, credential_id: str):
+    with Session(_runtime(request).engine) as session:
+        health = session.get(CredentialHealth, credential_id)
+        if health is None or health.failure_count == 0:
+            return HTMLResponse('<span class="text-green-600">Healthy</span>')
+        return HTMLResponse(f'<span class="text-red-600">Failed ({health.failure_count})</span>')
+
+
+@router.get("/settings/health/candidates/{candidate_id}", response_class=HTMLResponse)
+def settings_candidate_health_status(request: Request, candidate_id: str):
+    with Session(_runtime(request).engine) as session:
+        health = session.get(CandidateHealth, candidate_id)
+        if health is None or not health.disabled:
+            return HTMLResponse('<span class="text-green-600">Healthy</span>')
+        return HTMLResponse(f'<span class="text-red-600">Disabled</span>')
 
 
 @router.get("/worlds")

@@ -299,7 +299,7 @@ async def test_multi_run_worker_failure_matrix_is_durable_and_non_blocking(
                 objective=scenario,
                 scope={"continuity": "prime"},
                 targets=(
-                    ResearchRunTargetInput(world_id=scenario, objective=scenario),
+                    ResearchRunTargetInput(world_id=scenario),
                 ),
                 max_attempts=2,
             ),

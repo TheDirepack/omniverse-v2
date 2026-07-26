@@ -1,1 +1,23 @@
-{% extends "base.html" %}{% block title %}Settings - Omniverse V2{% endblock %}{% block content %}<div class="flex flex-col h-full overflow-hidden"><nav class="h-11 border-b border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 flex items-center px-4 gap-1" role="tablist">{% for tab in ["General", "Providers", "Models", "Routes", "Health"] %}<button role="tab" class="h-8 px-3 text-xs border-b-2 border-transparent hover:border-blue-600" hx-get="/settings/tab/{{ tab|lower }}" hx-target="#settings-content">{{ tab }}</button>{% endfor %}</nav><section id="settings-content" class="flex-1 overflow-y-auto p-4" hx-get="/settings/tab/general" hx-trigger="load"><p class="text-xs text-gray-500">Loading v2 runtime settings...</p></section></div>{% endblock %}
+{% extends "base.html" %}{% block title %}Settings - Omniverse V2{% endblock %}{% block content %}
+<div class="flex flex-col h-full overflow-hidden">
+    <nav class="h-11 border-b border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 flex items-center px-4 gap-1" role="tablist">
+        {% for tab in ["General", "Providers", "Models", "Routes", "Health"] %}
+        <button role="tab" class="h-8 px-3 text-xs border-b-2 border-transparent hover:border-blue-600" hx-get="/settings/tab/{{ tab|lower }}" hx-target="#settings-content">{{ tab }}</button>
+        {% endfor %}
+    </nav>
+    <section id="settings-content" class="flex-1 overflow-y-auto p-4" hx-get="/settings/tab/general" hx-trigger="load">
+        <p class="text-xs text-gray-500">Loading v2 runtime settings...</p>
+    </section>
+</div>
+<script>
+window.selectProvider = function(providerId) {
+    htmx.ajax('GET', '/settings/providers/' + providerId, {target: '#provider-inspector'});
+};
+window.selectRoute = function(routeId) {
+    htmx.ajax('GET', '/settings/routes/' + routeId, {target: '#route-editor'});
+};
+window.syncModels = function(providerId) {
+    htmx.ajax('POST', '/settings/providers/' + providerId + '/sync-models', {target: '#settings-content'});
+};
+</script>
+{% endblock %}

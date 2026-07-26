@@ -181,7 +181,7 @@ def workflow_parts(isolated_paths: dict[str, Path]):
 def command() -> CreateResearchRun:
     return CreateResearchRun(
         objective="Document fusion engine",
-        scope={"continuity": "prime", "domains": ["mechanisms"]},
+        scope={"continuity": "prime"},
         targets=(
             ResearchRunTargetInput(
                 world_id="world-1", objective="Document fusion engine"
@@ -390,17 +390,17 @@ async def test_multi_target_handlers_use_each_lease_target_objective_and_scope(
     run = kernel.create(
         CreateResearchRun(
             objective="run objective",
-            scope={"continuity": "wrong-default", "domains": ["wrong"]},
+            scope={"continuity": "wrong-default"},
             targets=(
                 ResearchRunTargetInput(
                     world_id="world-1",
                     objective="objective one",
-                    scope={"continuity": "prime", "domains": ["mechanisms"]},
+                    scope={"continuity": "prime"},
                 ),
                 ResearchRunTargetInput(
                     world_id="world-2",
                     objective="objective two",
-                    scope={"continuity": "prime", "domains": ["mechanisms"]},
+                    scope={"continuity": "prime"},
                 ),
             ),
         ),
@@ -720,7 +720,7 @@ async def test_exotic_mechanism_requires_and_promotes_all_policy_fields(
     ]
     exotic = CreateResearchRun(
         objective="Document exotic mechanism",
-        scope={"continuity": "prime", "domains": ["exotic"]},
+        scope={"continuity": "prime"},
         targets=(
             ResearchRunTargetInput(
                 world_id="world-1", objective="Document exotic mechanism"
@@ -1450,7 +1450,6 @@ async def test_branch_workflows_isolate_revisions_edges_and_provenance(
                 "continuity": "prime",
                 "era_or_timepoint": "era-1",
                 "branch_id": branch,
-                "domains": ["mechanisms"],
             },
             targets=(
                 ResearchRunTargetInput(
@@ -1538,7 +1537,6 @@ async def _deterministic_fixture(root: Path, fixture: str) -> dict[str, object]:
                 "continuity": "prime",
                 "era_or_timepoint": "era-1",
                 "branch_id": "main",
-                "domains": ["mechanisms"],
             },
             targets=(
                 ResearchRunTargetInput(
@@ -1590,7 +1588,6 @@ async def _deterministic_fixture(root: Path, fixture: str) -> dict[str, object]:
                     "continuity": "prime",
                     "era_or_timepoint": "era-1",
                     "branch_id": branch,
-                    "domains": ["mechanisms"],
                 },
                 targets=(
                     ResearchRunTargetInput(

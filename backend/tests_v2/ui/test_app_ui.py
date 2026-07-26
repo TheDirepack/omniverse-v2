@@ -608,3 +608,26 @@ def test_settings_updates_provider_models_and_ordered_routes(
     assert route.text.index("model-b") < route.text.index("model-a")
     assert ">0<" in route.text
     assert ">1<" in route.text
+
+    # Test DEFAULT route configuration
+    default_route = projected_client.post(
+        "/settings/routes/DEFAULT",
+        data={"model_ids": ["model-a"], "weights": ["1"]},
+    )
+    assert default_route.status_code == 200
+    assert "DEFAULT" in default_route.text
+
+    # Test Just a Provider mode route configuration (passing provider_string instead of model_id)
+    just_prov = projected_client.post(
+        "/settings/routes/research.extract",
+        data={"model_ids": ["provider-string"], "weights": ["1"]},
+    )
+    assert just_prov.status_code == 200
+    assert "model-a" in just_prov.text
+    assert "model-b" in just_prov.text
+
+    # Test Provider deletion
+    deleted = projected_client.delete("/settings/providers/provider-string")
+    assert deleted.status_code == 200
+    providers_tab = projected_client.get("/settings/tab/providers")
+    assert "provider-string" not in providers_tab.text

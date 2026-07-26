@@ -250,9 +250,30 @@ class ModelRouter:
 
                 models = [
                     m.strip()
-                    for m in (route.models or provider.models or "").split(",")
+                    for m in (route.models or "").split(",")
                     if m.strip()
                 ]
+                if not models and route.provider_id:
+                    # Automatically query all active models for that provider from ModelCapability where is_active == True
+                    try:
+                        active_caps = session.exec(
+                            select(ModelCapability)
+                            .where(
+                                ModelCapability.provider_id == provider.id,
+                                ModelCapability.is_active == True,
+                            )
+                            .order_by(ModelCapability.model_name)
+                        ).all()
+                        models = [cap.model_name for cap in active_caps]
+                    except Exception:
+                        pass
+
+                    if not models and provider.models:
+                        models = [
+                            m.strip()
+                            for m in provider.models.split(",")
+                            if m.strip()
+                        ]
 
                 if not models:
                     continue
@@ -290,17 +311,10 @@ class ModelRouter:
                             }
                         )
 
-            # Track failures per provider+key pair to skip problematic keys
-            key_failures: dict[tuple[int, int], int] = {}
-
             for candidate in candidates:
                 provider_id = candidate["provider"].id
                 key_id = candidate["key"].id if candidate["key"].id != -1 else -1
                 fail_key = (provider_id, key_id)
-
-                # Skip key if too many consecutive failures
-                if key_failures.get(fail_key, 0) >= 3:
-                    continue
 
                 # Check if candidate is disabled
                 with Session(operational_engine) as health_session:
@@ -405,29 +419,16 @@ class ModelRouter:
                                 candidate["model"],
                             )
 
-                    # Track per-key failures to skip problematic keys
-                    key_failures[fail_key] = key_failures.get(fail_key, 0) + 1
-
                     clean_e = _clean_error(e)
                     fallback_type = "Model capability" if is_capability_issue else "Transient error"
 
-                    # If this key keeps failing, try other keys
-                    if key_failures[fail_key] >= 3:
-                        agent_logger.log(
-                            agent="ModelRouter",
-                            event_type=AgentEventType.ERROR,
-                            content=f"{fallback_type}: Key {key_id} for Provider {provider_id} failed {key_failures[fail_key]} times. Skipping remaining candidates for this key.",
-                            model=candidate["full_model"],
-                            key_id=str(candidate["key"].id),
-                        )
-                    else:
-                        agent_logger.log(
-                            agent="ModelRouter",
-                            event_type=AgentEventType.ERROR,
-                            content=f"{fallback_type}: {candidate['full_model']} failed due to {clean_e}. Trying next candidate.",
-                            model=candidate["full_model"],
-                            key_id=str(candidate["key"].id),
-                        )
+                    agent_logger.log(
+                        agent="ModelRouter",
+                        event_type=AgentEventType.ERROR,
+                        content=f"{fallback_type}: {candidate['full_model']} failed due to {clean_e}. Trying next candidate.",
+                        model=candidate["full_model"],
+                        key_id=str(candidate["key"].id),
+                    )
 
                     if run_id:
                         with Session(engine) as log_session:

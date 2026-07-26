@@ -24,9 +24,10 @@
 <section class="mb-4 border border-gray-200 dark:border-gray-800 p-3 text-xs">
     <h3 class="font-mono">{{ provider.id }}</h3>
     {% for credential in provider.credentials %}
-    <div class="mt-2">
+    <div class="mt-2 flex items-center gap-2">
         <code>{{ credential.credential_id }}</code>
-        <button class="ml-2 text-blue-600" hx-post="/settings/health/credentials/{{ credential.credential_id }}/reset" hx-target="this" hx-swap="outerHTML">Reset credential health</button>
+        <span class="text-green-600" hx-get="/settings/health/credentials/{{ credential.credential_id }}" hx-target="this" hx-swap="innerHTML">healthy</span>
+        <button class="text-red-600 hover:text-red-800" hx-post="/settings/health/credentials/{{ credential.credential_id }}/reset" hx-target="this" hx-swap="outerHTML">Reset</button>
     </div>
     {% endfor %}
 </section>
@@ -34,8 +35,9 @@
 <p class="text-xs text-gray-500">No health records.</p>
 {% endfor %}
 {% for route in settings.routes %}
-<div class="text-xs">
+<div class="flex items-center gap-2 text-xs">
     <code>{{ route.candidate_id }}</code>
-    <button class="ml-2 text-blue-600" hx-post="/settings/health/candidates/{{ route.candidate_id }}/reset" hx-target="this" hx-swap="outerHTML">Reset candidate health</button>
+    <span class="text-green-600" hx-get="/settings/health/candidates/{{ route.candidate_id }}" hx-target="this" hx-swap="innerHTML">healthy</span>
+    <button class="text-red-600 hover:text-red-800" hx-post="/settings/health/candidates/{{ route.candidate_id }}/reset" hx-target="this" hx-swap="outerHTML">Reset</button>
 </div>
 {% endfor %}

@@ -9,14 +9,14 @@ function renderProviderModels() {
     var providerId = parseInt(providerSelect.value);
     var provider = window.__providers ? window.__providers.find(function(p) { return p.id === providerId; }) : null;
     if (!provider || !provider.models) {
-        container.innerHTML = '<span class="text-xs text-gray-400 italic">No models configured for this provider</span>';
+        container.innerHTML = '<span class="text-xs text-gray-400 italic">No models configured for this provider (will use all active models via Just a Provider)</span>';
         return;
     }
 
     var selected = hidden.value ? hidden.value.split(',').map(function(s) { return s.trim(); }).filter(Boolean) : [];
     var allModels = provider.models.split(',').map(function(s) { return s.trim(); }).filter(Boolean);
 
-    container.innerHTML = allModels.map(function(m) {
+    var html = allModels.map(function(m) {
         var isSelected = selected.indexOf(m) >= 0;
         var cls = isSelected
             ? 'bg-blue-100 dark:bg-blue-900/30 border-blue-300 dark:border-blue-700 text-blue-700 dark:text-blue-300'
@@ -24,6 +24,11 @@ function renderProviderModels() {
         return '<button type="button" onclick="toggleRouteModel(\'' + m.replace(/'/g, "\\'") + '\')" class="px-2 py-0.5 text-xs rounded-sm border transition-colors ' + cls + '">'
             + (isSelected ? '✓ ' : '') + m + '</button>';
     }).join('');
+
+    if (selected.length === 0) {
+        html += '<span class="text-xs text-blue-600 dark:text-blue-400 self-center ml-1 italic">(Just a Provider mode active: all active models)</span>';
+    }
+    container.innerHTML = html;
 }
 
 function toggleRouteModel(modelName) {
@@ -37,6 +42,13 @@ function toggleRouteModel(modelName) {
         models.push(modelName);
     }
     hidden.value = models.join(', ');
+    renderProviderModels();
+}
+
+function clearRouteModels() {
+    var hidden = document.querySelector('input[name="models"]');
+    if (!hidden) return;
+    hidden.value = '';
     renderProviderModels();
 }
 </script>
@@ -75,16 +87,21 @@ function toggleRouteModel(modelName) {
         </div>
 
         <div class="flex flex-col gap-1">
-            <label class="text-[10px] font-bold text-gray-400 uppercase">Models</label>
+            <div class="flex justify-between items-center">
+                <label class="text-[10px] font-bold text-gray-400 uppercase">Models</label>
+                <button type="button" onclick="clearRouteModels()" class="text-[10px] text-blue-600 dark:text-blue-400 hover:underline">Clear (Just a Provider)</button>
+            </div>
             <div id="provider-models" class="flex flex-wrap gap-1.5 min-h-[24px]"></div>
             <input type="hidden" name="models" value="{{ active_route.models or '' }}">
             <script>renderProviderModels();</script>
+            <span class="text-[10px] text-gray-400 italic">Leave models empty to use "Just a Provider" (auto-cycles through all active models).</span>
         </div>
 
         <div class="flex flex-col gap-1">
-            <label class="text-[10px] font-bold text-gray-400 uppercase">Priority</label>
+            <label class="text-[10px] font-bold text-gray-400 uppercase">Priority (Fallback Order)</label>
             <input type="number" name="priority" value="{{ active_route.priority or 0 }}"
                     class="h-8 border border-gray-300 dark:border-gray-700 px-2 py-1 text-xs bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 rounded-sm">
+            <span class="text-[10px] text-gray-400 italic">Lower priority numbers are tried first in the fallback chain.</span>
         </div>
 
     </div>
@@ -118,15 +135,20 @@ function toggleRouteModel(modelName) {
             </select>
         </div>
         <div class="flex flex-col gap-1">
-            <label class="text-[10px] font-bold text-gray-400 uppercase">Models</label>
+            <div class="flex justify-between items-center">
+                <label class="text-[10px] font-bold text-gray-400 uppercase">Models</label>
+                <button type="button" onclick="clearRouteModels()" class="text-[10px] text-blue-600 dark:text-blue-400 hover:underline">Clear (Just a Provider)</button>
+            </div>
             <div id="provider-models" class="flex flex-wrap gap-1.5 min-h-[24px]"></div>
             <input type="hidden" name="models" value="">
             <script>renderProviderModels();</script>
+            <span class="text-[10px] text-gray-400 italic">Leave models empty to use "Just a Provider" (auto-cycles through all active models).</span>
         </div>
         <div class="flex flex-col gap-1">
-            <label class="text-[10px] font-bold text-gray-400 uppercase">Priority</label>
+            <label class="text-[10px] font-bold text-gray-400 uppercase">Priority (Fallback Order)</label>
             <input type="number" name="priority" value="0"
                     class="h-8 border border-gray-300 dark:border-gray-700 px-2 py-1 text-xs bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 rounded-sm">
+            <span class="text-[10px] text-gray-400 italic">Lower priority numbers are tried first in the fallback chain.</span>
         </div>
     </div>
 </form>

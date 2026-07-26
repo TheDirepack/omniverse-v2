@@ -837,6 +837,81 @@ def settings_update_provider(
     return settings_tab(request, "providers")
 
 
+@router.delete("/settings/providers/{provider_id}", response_class=HTMLResponse)
+def settings_delete_provider(request: Request, provider_id: str):
+    with Session(_runtime(request).engine) as session, session.begin():
+        provider = session.get(Provider, provider_id)
+        if provider is None:
+            raise HTTPException(status_code=404, detail="provider not found")
+        model_ids = list(
+            session.scalars(
+                select(ProviderModel.id).where(
+                    ProviderModel.provider_id == provider_id
+                )
+            )
+        )
+        candidate_ids = (
+            list(
+                session.scalars(
+                    select(RouteCandidate.id).where(
+                        RouteCandidate.model_id.in_(model_ids)
+                    )
+                )
+            )
+            if model_ids
+            else []
+        )
+        credential_ids = list(
+            session.scalars(
+                select(CredentialRef.id).where(
+                    CredentialRef.provider_id == provider_id
+                )
+            )
+        )
+        credential_refs = list(
+            session.scalars(
+                select(CredentialRef.opaque_ref).where(
+                    CredentialRef.provider_id == provider_id
+                )
+            )
+        )
+        if candidate_ids:
+            session.execute(
+                delete(CandidateHealth).where(
+                    CandidateHealth.candidate_id.in_(candidate_ids)
+                )
+            )
+            session.execute(
+                delete(RouteCandidate).where(RouteCandidate.id.in_(candidate_ids))
+            )
+        if credential_ids:
+            session.execute(
+                delete(CredentialHealth).where(
+                    CredentialHealth.credential_id.in_(credential_ids)
+                )
+            )
+            session.execute(
+                delete(CredentialRef).where(CredentialRef.id.in_(credential_ids))
+            )
+        session.execute(
+            delete(ProviderModel).where(ProviderModel.provider_id == provider_id)
+        )
+        session.delete(provider)
+    cred_service = _runtime(request).credentials
+    if cred_service is not None:
+        for opaque_ref in credential_refs:
+            if not opaque_ref.startswith("env:"):
+                try:
+                    cred_service.store.delete(opaque_ref)
+                except Exception:
+                    pass
+    _runtime(request).provider_router.refresh_adapters(
+        _runtime(request).http_client,
+        timeout_seconds=_runtime(request).config.http_timeout_seconds,
+    )
+    return settings_tab(request, "providers")
+
+
 @router.post(
     "/settings/providers/{provider_id}/models/{model_id}",
     response_class=HTMLResponse,
@@ -920,16 +995,28 @@ def settings_put_route(
     valid_pairs = []
     if weights is None:
         weights = [1] * len(model_ids)
-    for idx, mid in enumerate(model_ids):
-        if mid and mid.strip():
-            w = weights[idx] if idx < len(weights) else 1
-            valid_pairs.append((mid.strip(), w))
+    with Session(_runtime(request).engine) as session:
+        for idx, mid in enumerate(model_ids):
+            if mid and mid.strip():
+                w = weights[idx] if idx < len(weights) else 1
+                val_str = mid.strip()
+                provider = session.get(Provider, val_str)
+                if provider is not None:
+                    active_models = session.scalars(
+                        select(ProviderModel.id)
+                        .where(ProviderModel.provider_id == provider.id, ProviderModel.active == True)
+                        .order_by(ProviderModel.id)
+                    ).all()
+                    for m_id in active_models:
+                        valid_pairs.append((m_id, w))
+                else:
+                    valid_pairs.append((val_str, w))
 
     unique_model_ids = [pair[0] for pair in valid_pairs]
     unique_weights = [pair[1] for pair in valid_pairs]
 
     if not unique_model_ids:
-        raise HTTPException(status_code=422, detail="route requires at least one model")
+        raise HTTPException(status_code=422, detail="route requires at least one model or provider")
 
     route_id = f"route:{task}"
     with Session(_runtime(request).engine) as session, session.begin():

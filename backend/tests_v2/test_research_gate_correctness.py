@@ -191,7 +191,7 @@ def test_unrelated_world_conflict_isolated_by_workspace(engine: Engine) -> None:
         CreateResearchRun(
             objective="one",
             scope={},
-            targets=(ResearchRunTargetInput(world_id="w1", objective="one"),),
+            targets=(ResearchRunTargetInput(world_id="w1"),),
         ),
         "isolation-1",
     )
@@ -199,7 +199,7 @@ def test_unrelated_world_conflict_isolated_by_workspace(engine: Engine) -> None:
         CreateResearchRun(
             objective="two",
             scope={},
-            targets=(ResearchRunTargetInput(world_id="w2", objective="two"),),
+            targets=(ResearchRunTargetInput(world_id="w2"),),
         ),
         "isolation-2",
     )

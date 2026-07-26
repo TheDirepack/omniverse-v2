@@ -238,7 +238,7 @@ class TestKeyFallback:
             )
 
     @pytest.mark.asyncio
-    async def test_no_routes_for_task(self, _fake_llm_server):
+    async def test_no_routes_for_task(self):
         with pytest.raises(
             ValueError, match="No routing configured for task 'NONEXISTENT'"
         ):
@@ -248,7 +248,7 @@ class TestKeyFallback:
             )
 
     @pytest.mark.asyncio
-    async def test_provider_without_provider_type_skipped(self, _fake_llm_server):
+    async def test_provider_without_provider_type_skipped(self):
         with Session(settings_engine) as session:
             p = ProviderConfig(
                 name="no-type-provider",
@@ -520,6 +520,80 @@ class TestCandidateHealth:
             # Check that at least one candidate (the successful one)
             # has failure_count == 0
             assert any(h.failure_count == 0 for h in health)
+
+
+class TestRouterImprovements:
+    @pytest.mark.asyncio
+    async def test_just_a_provider_auto_expansion(self, fake_llm_server):
+        base_url = fake_llm_server
+        _set_bad_keys(base_url, [])
+
+        with Session(settings_engine) as session:
+            p = ProviderConfig(
+                name="just-provider",
+                provider_type="custom",
+                base_url=base_url,
+                models="gpt-4",
+            )
+            session.add(p)
+            session.flush()
+
+            session.add(
+                ProviderKey(provider_id=p.id, api_key="provider-key", priority=0)
+            )
+
+            # Route with empty models (Just a Provider)
+            session.add(
+                AgentRouteFallback(
+                    task_type="JUST_PROV",
+                    provider_id=p.id,
+                    models="",
+                    priority=0,
+                )
+            )
+            session.commit()
+
+        result = await router.run_model(
+            "JUST_PROV",
+            messages=[{"role": "user", "content": "hi"}],
+        )
+        content = result[0].choices[0].message.content
+        assert "provider-key" in content
+        assert "gpt-4" in result[1]
+
+    @pytest.mark.asyncio
+    async def test_exhaustive_fallback_no_premature_skip(self, fake_llm_server):
+        base_url = fake_llm_server
+        _set_bad_keys(base_url, [])
+
+        with Session(settings_engine) as session:
+            p = ProviderConfig(
+                name="exhaustive-provider",
+                provider_type="custom",
+                base_url=base_url,
+                models="gpt-4",
+            )
+            session.add(p)
+            session.flush()
+
+            session.add(
+                ProviderKey(provider_id=p.id, api_key="exhaustive-key", priority=0)
+            )
+            session.add(
+                AgentRouteFallback(
+                    task_type="EXHAUSTIVE",
+                    provider_id=p.id,
+                    models="gpt-4",
+                    priority=0,
+                )
+            )
+            session.commit()
+
+        result = await router.run_model(
+            "EXHAUSTIVE",
+            messages=[{"role": "user", "content": "hi"}],
+        )
+        assert "exhaustive-k" in result[0].choices[0].message.content
 
 
 # (Remove this redundant test function)

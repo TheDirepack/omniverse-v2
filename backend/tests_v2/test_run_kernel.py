@@ -50,7 +50,7 @@ def command(*world_ids: str) -> CreateResearchRun:
         objective="Map documented capabilities",
         scope={"continuity": "primary", "depth": "standard"},
         targets=tuple(
-            ResearchRunTargetInput(world_id=world_id, objective=f"Research {world_id}")
+            ResearchRunTargetInput(world_id=world_id)
             for world_id in world_ids
         ),
         max_attempts=2,

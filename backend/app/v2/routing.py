@@ -143,6 +143,20 @@ class ProviderRouter:
                 )
                 .order_by(Route.position, RouteCandidate.position, RouteCandidate.id)
             ).all()
+            if not rows and task not in {"DEFAULT", "default"}:
+                rows = session.execute(
+                    select(RouteCandidate, ProviderModel, Provider)
+                    .join(Route, Route.id == RouteCandidate.route_id)
+                    .join(ProviderModel, ProviderModel.id == RouteCandidate.model_id)
+                    .join(Provider, Provider.id == ProviderModel.provider_id)
+                    .where(
+                        Route.task.in_(("DEFAULT", "default")),
+                        Route.active.is_(True),
+                        Provider.active.is_(True),
+                        ProviderModel.active.is_(True),
+                    )
+                    .order_by(Route.position, RouteCandidate.position, RouteCandidate.id)
+                ).all()
             snapshots = []
             for candidate, model, provider in rows:
                 health = session.get(CandidateHealth, candidate.id)

@@ -1,11 +1,11 @@
 <h2 class="text-xs font-bold uppercase tracking-widest mb-2">Ordered routes</h2>
-<p class="text-xs text-gray-500 mb-2">Configure weighted candidate fallback chains using provider/model dropdown selectors below.</p>
+<p class="text-xs text-gray-500 mb-2">Configure weighted candidate fallback chains using provider/model dropdown selectors, supporting DEFAULT fallback, multi-provider selection, infinite fallback, and "Just a Provider" mode.</p>
 <table class="w-full text-xs mb-4">
     <thead>
         <tr class="border-b text-gray-500 text-left">
             <th class="p-2">Task</th>
             <th class="text-center">Position</th>
-            <th class="p-2">Model ID</th>
+            <th class="p-2">Model / Provider ID</th>
             <th class="text-center">Weight</th>
         </tr>
     </thead>
@@ -28,6 +28,7 @@
     <div class="mb-3">
         <label class="block font-bold mb-1">Task Name</label>
         <select name="task" required class="h-7 px-2 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 w-64">
+            <option value="DEFAULT">DEFAULT (Global Fallback)</option>
             <option value="research.plan">research.plan</option>
             <option value="research.extract">research.extract</option>
             <option value="research.synthesize">research.synthesize</option>
@@ -38,11 +39,12 @@
 
     <div id="route-candidates-container" class="grid gap-2 mb-3">
         <div class="flex gap-2 items-center candidate-row">
-            <span class="font-bold w-16">Primary:</span>
-            <select name="model_ids" required class="h-7 px-2 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 flex-1">
-                <option value="">-- Select Model --</option>
+            <span class="font-bold w-24">Primary:</span>
+            <select name="model_ids" class="h-7 px-2 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 flex-1">
+                <option value="">-- Select Model or Provider (Just a Provider) --</option>
                 {% for provider in settings.providers %}
-                <optgroup label="{{ provider.id }}">
+                <optgroup label="Provider: {{ provider.id }}">
+                    <option value="{{ provider.id }}">🌟 Just a Provider (All active models for {{ provider.id }})</option>
                     {% for model in provider.models %}
                     {% if model.supports_text %}
                     <option value="{{ model.id }}">{{ model.id }} ({{ model.name }})</option>
@@ -55,28 +57,12 @@
         </div>
 
         <div class="flex gap-2 items-center candidate-row">
-            <span class="font-bold w-16">Fallback 1:</span>
+            <span class="font-bold w-24">Fallback 1:</span>
             <select name="model_ids" class="h-7 px-2 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 flex-1">
-                <option value="">-- Select Model (Optional) --</option>
+                <option value="">-- Select Model or Provider (Optional) --</option>
                 {% for provider in settings.providers %}
-                <optgroup label="{{ provider.id }}">
-                    {% for model in provider.models %}
-                    {% if model.supports_text %}
-                    <option value="{{ model.id }}">{{ model.id }} ({{ model.name }})</option>
-                    {% endif %}
-                    {% endfor %}
-                </optgroup>
-                {% endfor %}
-            </select>
-            <input name="weights" type="number" min="1" value="1" placeholder="Weight" class="h-7 w-20 px-2 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100" title="Candidate Weight">
-        </div>
-
-        <div class="flex gap-2 items-center candidate-row">
-            <span class="font-bold w-16">Fallback 2:</span>
-            <select name="model_ids" class="h-7 px-2 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 flex-1">
-                <option value="">-- Select Model (Optional) --</option>
-                {% for provider in settings.providers %}
-                <optgroup label="{{ provider.id }}">
+                <optgroup label="Provider: {{ provider.id }}">
+                    <option value="{{ provider.id }}">🌟 Just a Provider (All active models for {{ provider.id }})</option>
                     {% for model in provider.models %}
                     {% if model.supports_text %}
                     <option value="{{ model.id }}">{{ model.id }} ({{ model.name }})</option>
@@ -89,5 +75,38 @@
         </div>
     </div>
 
+    <div class="flex gap-2 mb-3">
+        <button type="button" onclick="addFallbackRow()" class="h-7 px-3 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 font-bold rounded-sm">＋ Add Fallback Step</button>
+    </div>
+
     <button class="h-7 px-4 bg-blue-600 text-white font-bold">Save route configuration</button>
 </form>
+
+<script>
+let fallbackIndex = 1;
+function addFallbackRow() {
+    fallbackIndex++;
+    const container = document.getElementById('route-candidates-container');
+    const row = document.createElement('div');
+    row.className = 'flex gap-2 items-center candidate-row';
+    row.innerHTML = `
+        <span class="font-bold w-24">Fallback ${fallbackIndex}:</span>
+        <select name="model_ids" class="h-7 px-2 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 flex-1">
+            <option value="">-- Select Model or Provider (Just a Provider) --</option>
+            {% for provider in settings.providers %}
+            <optgroup label="Provider: {{ provider.id }}">
+                <option value="{{ provider.id }}">🌟 Just a Provider (All active models for {{ provider.id }})</option>
+                {% for model in provider.models %}
+                {% if model.supports_text %}
+                <option value="{{ model.id }}">{{ model.id }} ({{ model.name }})</option>
+                {% endif %}
+                {% endfor %}
+            </optgroup>
+            {% endfor %}
+        </select>
+        <input name="weights" type="number" min="1" value="1" placeholder="Weight" class="h-7 w-20 px-2 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100" title="Candidate Weight">
+        <button type="button" onclick="this.parentElement.remove()" class="h-7 px-2 bg-red-600 text-white font-bold rounded-sm">✕</button>
+    `;
+    container.appendChild(row);
+}
+</script>

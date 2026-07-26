@@ -35,17 +35,23 @@ async def set_bad_keys(body: ControlBody):
     return {"ok": True, "bad_keys": list(_bad_keys)}
 
 
+@app.post("/chat/completions")
 @app.post("/{path:path}")
-async def chat_completions(_path: str, request: Request):
-    auth = request.headers.get("authorization", "")
+async def chat_completions(_path: str = "", request: Request = None):
+    req = request or _path # type: ignore
+    auth = req.headers.get("authorization", "")
     key = auth.removeprefix("Bearer ").strip()
     if not key:
         return JSONResponse({"error": "missing api key"}, status_code=401)
 
     model_hint = ""
     try:
-        body = await request.json()
-        model_hint = body.get("model", "")
+        raw_body = await req.body()
+        if raw_body:
+            import json
+            body = json.loads(raw_body)
+            if isinstance(body, dict):
+                model_hint = body.get("model", "")
     except Exception:
         pass
 

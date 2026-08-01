@@ -5,6 +5,16 @@
 **Current status:** Phase 7 technical gate passed; representative-output review and user approval remain open
 **Excluded:** Phase 8 tiering and Phase 9 theory/final cutover
 
+## V2 codemap and cleanup initiative
+
+**Status as of 2026-08-01:** Cleanup has begun as a separate, staged maintenance initiative. Its purpose is to establish an accurate V2 codemap and remove repository residue without changing the approved research-first scope or bypassing the Phase 7 stop gate.
+
+1. **Hygiene artifacts — in progress.** Remove generated runtime files, local secrets, database sidecars, logs, snapshots, model binaries, obsolete worktree pointers, and other non-source artifacts from version control; retain only intentionally versioned fixtures and operational templates.
+2. **Documentation truth pass — next.** Reconcile the README, documentation index, rebuild records, and the new codemap with the repository's actual V2 entry points, runtime behavior, test commands, supported routes, and current stop gate. Remove or clearly label stale claims.
+3. **Dependency-verified legacy and template pruning — last.** Inventory old modules, templates, routes, API surfaces, and duplicate documentation; trace imports, router registration, template references, tests, scripts, and runtime dependencies before deleting anything. Prune only items proven unused, and preserve or replace any live dependency first.
+
+**Cleanup decision rule:** Do not combine these stages or treat an apparent stale file as removable without dependency verification. Any discovery that changes V2 behavior, expands scope, or affects the Phase 7 acceptance gate requires separate review and authorization.
+
 ## Phase status
 
 The sequence follows [07-implementation-plan.md](07-implementation-plan.md).

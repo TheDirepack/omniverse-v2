@@ -27,6 +27,9 @@ venv/
 .venv/
 *.db
 *.db-journal
+*.db-shm
+*.db-wal
+*.gguf
 
 # Frontend specific
 node_modules/
@@ -48,3 +51,8 @@ Opencode.yaml
 backend/data/v2-blobs/
 backend/data/v2-credentials.json
 backend/data/v2-secrets/
+backend/data/backup/
+backend/data/loop_snapshots/
+backend/logs/
+.worktrees/
+.superpowers/

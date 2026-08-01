@@ -387,11 +387,15 @@ def test_health_and_close_expose_stream_state(tmp_path: Path) -> None:
     assert logger.health() == {
         "enabled": True,
         "folder": str((tmp_path / "logs").resolve()),
-        "streams": {"server": True, "agent": True},
+        "streams": {"server": True, "agent": True, "remote-server": True},
         "last_error": None,
     }
     logger.close()
-    assert logger.health()["streams"] == {"server": False, "agent": False}
+    assert logger.health()["streams"] == {
+        "server": False,
+        "agent": False,
+        "remote-server": False,
+    }
 
 
 def test_config_reads_logging_root_without_creating_it(
@@ -441,4 +445,5 @@ async def test_runtime_owns_logging_lifecycle_update_and_shutdown(
     assert runtime.server_logger.health()["streams"] == {
         "server": False,
         "agent": False,
+        "remote-server": False,
     }

@@ -1,33 +1,23 @@
 # Omniverse V2 Documentation
 
-**Last Updated:** 2026-07-22
+**Current runtime:** V2 research system.
 
 ## Documentation Map
 
-### Architecture & Reference (CODEMAPS)
+### Current V2
 
-| Document | Description |
-| :--- | :--- |
-| [Codemaps Index](CODEMAPS/INDEX.md) | Table of contents for all codemaps |
-| [System Architecture](CODEMAPS/ARCHITECTURE.md) | Layered architecture, agents, database topology |
-| [Backend Module Map](CODEMAPS/BACKEND.md) | FastAPI modules, services, repositories, views |
-| [Database Schema](CODEMAPS/DATABASE.md) | All 6 SQLite databases and their tables |
-| [Frontend Structure](CODEMAPS/FRONTEND.md) | HTMX views, templates, JS architecture |
-| [File Registry](CODEMAPS/FILES.md) | Complete directory structure |
-| [API Documentation](CODEMAPS/API_DOCS.md) | REST API (`/api/v1/`) and HTMX view routes |
-
-### UI/UX Design
-
-| Document | Description |
-| :--- | :--- |
-| [Design System](UI/01_design_system.md) | Visual language, color, typography, UX principles |
-| [UI Architecture](UI/02_ui_architecture.md) | Shell, navigation, filters, HTMX strategy |
-| [Component Spec](UI/03_component_specification.md) | Exact Tailwind classes for all components |
-| [Workflow Spec](UI/04_workflow_specification.md) | Per-page compositions and interactions |
+- [V2 codemaps](CODEMAPS_V2/INDEX.md) — canonical source-backed runtime map
+- [Architecture](CODEMAPS_V2/ARCHITECTURE.md) — facade, factory, boundaries, and deferred scope
+- [Runtime and research](CODEMAPS_V2/RUNTIME_AND_RESEARCH.md) — workflow, routing, MiniCPM, and browsing
+- [Persistence](CODEMAPS_V2/PERSISTENCE.md) — SQLite, Alembic, blobs, credentials, and resets
+- [API and views](CODEMAPS_V2/API_AND_VIEWS.md) — `/api/v2` and unversioned HTMX routes
+- [Operations](CODEMAPS_V2/OPERATIONS.md) — lifecycle, JSONL logs, commands, and tests
+- [Research validation loop](RESEARCH_VALIDATION_LOOP_PROMPT.md)
+- [Progress record](rebuild/PROGRESS.md)
 
 ### Agent Documentation
 
-- [AGENTS.md](../AGENTS.md) — Agent engine, tool loop, LLM routing, pipeline, testing
+- [AGENTS.md](../AGENTS.md) — deployed V2 boundaries, runtime, operations, and conventions
 
 ### Historical Archive
 
@@ -38,6 +28,7 @@
 | [Implementation Summary](archive/IMPLEMENTATION_SUMMARY.md) | 2026-07-16 |
 | [Changes Made](archive/CHANGES_MADE.md) | 2026-07-16 |
 | [Final Implementation Report](archive/FINAL_IMPLEMENTATION_REPORT.md) | 2026-07-16 |
+| [HTMX-to-API Contract Analysis](archive/audits/OMNIVERSE-V2-HTMX-API-CONTRACT-FINAL.md) | 2026-07-27 |
 | [ADR-0001: Research Results Viewer](archive/adr/ADR-0001-research-results-viewer.md) | 2026-07-16 |
 | [Superpower Plans](archive/superpowers/) | 2026-07-12 |
 

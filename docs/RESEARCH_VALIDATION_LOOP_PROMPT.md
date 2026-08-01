@@ -1,102 +1,219 @@
-# Omniverse V2 Research Validation and Development Loop
+# Omniverse V2 Autonomous Research Validation Loop
 
-Use this prompt to run a bounded research-validation pass and make only evidence-backed fixes.
+Use this prompt to operate the research pipeline as a continuing validation and repair loop. It is for an agent that can inspect code, run the application, execute tests, make scoped fixes, and retain a findings backlog.
 
-```text
-You are validating the Omniverse V2 research pipeline. Work in a tight
-research → inspect → diagnose → test → fix → re-run loop. Preserve unrelated
-work and do not broaden the task.
+````text
+You own the Omniverse V2 research-validation loop. Continue through this loop:
 
-Repository and commands
-- Repository root: /home/max/Projects/omniverse-v2
-- Backend: /home/max/Projects/omniverse-v2/backend
-- Start local app: ./run.sh --prod
-- Default test suite: ./test.sh
-- UI suite: ./test.sh --ui
-- Lint: ./lint.sh
-- Test logs: backend/tests/logs/run_<timestamp>/
-- Runtime agent log: backend/logs/agent.jsonl
-- Runtime server log: backend/logs/server.jsonl
-- Remote lifecycle log: backend/logs/remote-server.jsonl
-- Detached startup log: /tmp/opencode/omniverse-v2-research-loop.log
-- Validation views: /validation and /logs/
+  establish baseline → run research → inspect results and logs → reproduce
+  findings → test first → fix → validate → rerun affected baselines → repeat
 
-Fixed broad baselines
-1. Fallout: New Vegas
-2. A Song of Ice and Fire (ASOIAF)
+Do not end the loop because a pass count, report, or checklist is complete. Keep
+working while reproducible defects, quality problems, efficiency waste,
+observability gaps, or unvalidated fixes remain. A final report records the
+current state; it does not end the loop.
 
-Run these baselines first using broad research with no objective, keywords,
-phrases, or section hints. They are general regression fixtures, not targets
-for world-specific prompt logic. Use the intended canonical continuity and do
-not substitute a related franchise, adaptation, or crossover continuity.
+Repository and required commands
 
-Cycle A: clean baseline
-1. Start from the project-approved clean state. Record the exact reset or seed
-   action, configuration, commit, command, and timestamp.
-2. Run Fallout: New Vegas, then ASOIAF, through the normal research workflow.
-3. Capture each run ID, status, sources, accepted evidence, claims, failures,
-   provider/model attempts, elapsed time, and log locations.
-4. Inspect the resulting canon, provenance, validation, and agent-log views.
+- Repository root: `/home/max/Projects/omniverse-v2`
+- Backend: `/home/max/Projects/omniverse-v2/backend`
+- Start the runtime from the repository root:
 
-Cycle B: continuity baseline
-1. Without changing provider configuration or baseline inputs, repeat the same
-   two runs against the persisted state.
-2. Compare cycle results for duplicated material, stale state, cross-world or
-   cross-continuity leakage, idempotency, provenance links, and output drift.
-3. Treat unexplained differences as defects until evidence proves an intended
-   nondeterministic boundary.
+  ```sh
+  ./run.sh --prod > /tmp/opencode/omniverse-v2-research-loop.log 2>&1 &
+  ```
 
-Notebook and canon boundary
-- Notebook entries are leads, drafts, or unconfirmed extraction. They cannot
-  satisfy a canon claim, validation result, completion condition, or quality
-  metric.
-- Canon claims require accepted, scoped evidence and working provenance.
-- Reject or repair any case where notebook content becomes canon without the
-  required acceptance and provenance path.
+- Run the targeted test for the change first, then use these exact commands as
+  applicable:
 
-Log analysis
-For every baseline run, analyze the direct JSONL files above, not only errors
-or database state. Report all reproducible findings under these headings:
-- Quality: source relevance, evidence acceptance, claim support, scope and
-  continuity correctness, provenance, duplication, and canon/notebook leaks.
-- Efficiency: elapsed time, retries, failed calls, duplicate acquisition or
-  extraction, unnecessary model fallbacks, and avoidable work.
-- Observability: run correlation, world and model attribution, event coverage,
-  useful failure reasons, log completeness, and ability to reconstruct the run.
-- Classify findings as BUG, QUALITY, EFFICIENCY, or OBSERVABILITY. Include run
-  IDs, direct file/line references, frequency, impact, likely root cause, and
-  the smallest safe remediation. Keep every finding in a backlog; independent
-  high-impact fixes may be implemented together.
+  ```sh
+  ./test.sh
+  ./test.sh --ui
+  ./test.sh --slow
+  ./lint.sh
+  ./lint.sh --strict
+  ```
 
-Development rules
-1. Reproduce a significant defect with a focused failing test before changing
-   production code.
-2. Make the smallest scoped fix. Run the focused test, then ./test.sh and
-   ./lint.sh. Run ./test.sh --ui when the defect touches an HTMX workflow.
-3. Re-run both fixed baselines after each fix. Do not call a fix complete from
-   unit tests alone.
-4. Record a concise defect report: expected behavior, observed behavior,
-   evidence, root cause, changed paths, test command and result, and rerun IDs.
+- Direct runtime logs, which you must inspect rather than infer from UI state:
+  - `backend/logs/agent.jsonl`
+  - `backend/logs/server.jsonl`
+  - `backend/logs/remote-server.jsonl`
+  - `/tmp/opencode/omniverse-v2-research-loop.log`
+- Test logs: `backend/tests/logs/run_<timestamp>/`
+- Useful views: `/validation` and `/logs/`
 
-Hard blockers
-- Stop before random-world validation if either fixed baseline has a significant
-  quality, efficiency, observability, continuity, provenance, or
-  notebook-to-canon defect.
-- Stop if a run cannot be correlated across its persisted result and logs.
-- Stop if canon relies on notebook-only material or lacks accepted provenance.
-- Stop if tests, lint, migrations, configuration, or provider health prevent a
-  trustworthy baseline run. Report the blocker; do not mask it with manual DB
-  edits, fabricated evidence, or skipped checks.
+Runtime and endpoint discipline
 
-Final gate
-Only after both clean and continuity cycles have no significant baseline
-defects, select five random worlds. Record the selection method and seed,
-then run the same clean/continuity checks and log analysis for all five. A
-failure returns the loop to diagnosis and repair; it does not waive the gate.
+1. Before each research batch, verify the server has started and the research,
+   validation, logs, and relevant API endpoints respond through their intended
+   lifecycle. Inspect the implemented routes instead of inventing an endpoint.
+2. Exercise the normal UI/API workflow. Do not bypass lifecycle, acceptance,
+   provenance, storage, or validation code with direct database writes.
+3. Restart the runtime whenever a changed component, configuration, worker,
+   connection, route registration, or stale process requires it. After a
+   restart, verify endpoint availability and inspect all four direct log paths.
+4. Record every terminal research run, including successful, failed, cancelled,
+   and aborted runs. Record its run ID, world ID, input shape, status, provider
+   and model attempts, accepted and rejected evidence, claims, persisted
+   artifacts, endpoint checks, timestamps, and log file locations.
+5. Preserve unrelated work. Never add fixture-name branches, prompt exceptions,
+   or test-only behavior to production logic.
 
-Final report
-Return the fixed-baseline results, comparison, quality/efficiency/observability
-findings, defects and fixes, commands run, artifacts and log paths, remaining
-risks, and the five-world gate decision. State "gate blocked" unless every
-hard blocker is cleared.
-```
+Fixed broad baseline fixtures
+
+Use these exact baseline fixtures:
+
+| World | World ID |
+| --- | --- |
+| Fallout: New Vegas | `fallout_nv` |
+| A Song of Ice and Fire / Game of Thrones | `a_song_of_ice_and_fire_game_of_thrones` |
+
+They are broad regression fixtures. Research each selected world with no
+objective, keywords, phrases, section hints, or equivalent narrowing input.
+Use its intended canonical continuity. Do not substitute a franchise-relative
+continuity, adaptation, crossover, or related world. The fixture names and IDs
+must never drive special-case logic.
+
+For every fresh baseline, reset the Worlds DB using the project-approved reset
+path. Record the exact reset/seed action, configuration, commit, command, and
+timestamp. Never use manual database edits to hide a symptom.
+
+Baseline protocol
+
+Run the following pair until it has no significant reproducible defect:
+
+1. **Fallout fresh/continuity pair.** Reset the Worlds DB. Run `fallout_nv`
+   using broad selected-world research. Inspect persisted canon, provenance,
+   validation state, notebook/workspace state, UI results, endpoint behavior,
+   and direct logs. Without resetting data or changing inputs/provider
+   configuration, run `fallout_nv` again and compare continuity behavior.
+2. **ASOIAF fresh/continuity pair.** Reset the Worlds DB again. Run
+   `a_song_of_ice_and_fire_game_of_thrones` using the same broad input shape.
+   Inspect the same artifacts. Without resetting data or changing inputs/provider
+   configuration, run ASOIAF again and compare continuity behavior.
+3. Compare each fixture's fresh/continuity pair for idempotency, duplicate
+   material, stale state, source and claim drift, cache behavior,
+   cross-continuity leakage, provenance links, and persistence correctness.
+4. Treat an unexplained difference as a defect until you identify and validate
+   an intended nondeterministic boundary.
+5. When you fix a finding, rerun the affected fixture. Rerun both complete
+   fresh and unchanged-continuity fixture pairs before declaring baselines healthy.
+
+Evidence and context boundary
+
+Keep these data classes separate in code, prompts, reports, and validation:
+
+- **Verified accepted canon context** (`accepted_canon_context`): bounded,
+  database-persisted, accepted content with scoped provenance that resolves to
+  supporting evidence. Only this class may support a canon claim, validation
+  result, completion decision, or evidence-backed statement.
+- **Unverified research context** (`unverified_research_context`): explicitly
+  labelled notebook/workspace leads, extraction candidates, gaps, questions,
+  and proposals. It may guide research planning only. It is not evidence and
+  cannot become canon, validate a claim, or be represented as verified.
+
+Continuity planning must consume bounded `accepted_canon_context` and the
+explicitly labelled `unverified_research_context`. Ensure planning does not
+treat workspace content as evidence, merge the classes, or permit unverified
+material to enter canon without the normal acceptance and provenance path.
+
+Provider, acquisition, and cache checks
+
+1. Exercise normal routing and verify provider lifecycle, health, request,
+   response, failure, and fallback events in persisted state and logs.
+2. Qwen is the normal final-provider fallback. Verify that routing reaches it
+   when the configured chain requires a final fallback and records the reason.
+3. MiniCPM is for fetch/readability work only. Use it only with an
+   authoritative fallback path. It must not become final research authority or
+   silently replace the final-provider route.
+4. Inspect search, acquisition, readability, extraction, cache hit/miss,
+   invalidation, duplicate work, retry, timeout, provider fallback, and source
+   attribution behavior. Verify retries have a reason and avoid repeating
+   successful or permanently failing work without new input.
+
+Log-led analysis and backlog
+
+For every terminal run, analyze all four direct log paths. Correlate their
+events with persisted run state, sources, artifacts, claims, provenance, and
+the displayed UI. Do not limit analysis to error events.
+
+Find and backlog every reproducible symptom in these categories:
+
+- **BUG:** correctness, crashes, lifecycle, endpoint, routing, search,
+  acquisition, cache, MiniCPM, provider fallback, storage, persistence, schema,
+  cross-world, or continuity defects.
+- **QUALITY:** source relevance and authority, evidence acceptance, claim
+  support, scope, canon correctness, provenance, duplication, hallucinated
+  certainty, and canon/notebook boundary leaks.
+- **EFFICIENCY:** unnecessary calls, retries, fallback attempts, duplicate
+  acquisition, extraction, cache misses, stale cache use, slow paths, and
+  avoidable work.
+- **OBSERVABILITY:** missing or misleading correlation, run/world/model/source
+  attribution, lifecycle events, error reasons, terminal status, structured
+  fields, log coverage, or reconstruction ability.
+- **CONFUSION/REDUNDANCY:** ambiguous UI or workflow state, conflicting labels,
+  repeated content, redundant prompts or requests, and behavior that makes the
+  pipeline difficult to operate correctly.
+
+Each backlog entry must include: category, severity and impact, exact
+reproduction steps, affected run IDs, direct log path and line/event references,
+frequency, observed and expected behavior, evidence, likely root cause, smallest
+safe remediation, test plan, validation status, and any dependency. Retain
+remaining findings in the backlog. Implement independent high-impact fixes
+together when their tests and validation do not interfere.
+
+Repair and validation rules
+
+1. Reproduce each significant defect before changing production code. Write a
+   focused failing test first. Do not change production code before the failure
+   demonstrates the defect.
+2. Make the smallest safe, general fix. A baseline fixture may expose a defect;
+   it may not determine production behavior.
+3. Run the focused test after the fix. Then run `./test.sh` and `./lint.sh`.
+   Run `./test.sh --ui` for any HTMX, route, rendered state, or user workflow
+   change. Run `./test.sh --slow` when the affected provider, acquisition, or
+   network integration needs end-to-end verification. Run `./lint.sh --strict`
+   when available for the changed code.
+4. Restart the runtime where required, verify endpoints and lifecycle, and
+   capture the direct logs for the rerun.
+5. Validate fixes with affected runs and then the complete fresh and continuity
+   baseline pairs. Unit tests alone never close a research-pipeline finding.
+6. Keep a concise repair record: expected behavior, observed behavior, root
+   cause, changed paths, test commands and results, rerun IDs, direct log
+   evidence, and backlog disposition.
+
+Hard blockers: ask before proceeding only for these
+
+- Missing, expired, inaccessible, or unapproved credentials required to run the
+  normal workflow.
+- Unsafe or destructive ambiguity beyond the approved Worlds DB reset.
+- A recurring failure that remains unfixable after disciplined diagnosis,
+  reproduction, and safe remediation attempts.
+- A security, privacy, legal, or policy ambiguity.
+
+For a hard blocker, preserve evidence, state the exact decision needed, and ask
+for it. Do not fabricate credentials or evidence, weaken safeguards, alter
+unrelated data, suppress failures, or claim validation. All other failures are
+inputs to diagnosis, repair, and another loop iteration.
+
+Random-world final gate
+
+Run this gate only after both baseline fresh-and-continuity pairs have no
+significant reproducible defects. Select five worlds randomly from the eligible
+world population, record the population query, selection method, seed, selected
+IDs, and exclusions. Use the same broad selected-world input shape and the same
+fresh/continuity discipline for each selection.
+
+Analyze the random runs with the same provenance boundary, provider/acquisition,
+cache, persistence, endpoint/lifecycle, and direct-log requirements. A
+significant reproducible random-world failure returns the loop to diagnosis and
+repair. After its fix, rerun and revalidate both baseline fresh-and-continuity
+pairs before attempting the random-world gate again.
+
+Status reporting
+
+At each stable checkpoint, report baseline and random-gate status, terminal run
+records, pair comparisons, direct log paths and evidence, findings backlog,
+fixes, tests, lint, endpoint/lifecycle checks, remaining risks, and hard-blocker
+questions. Mark a gate blocked whenever a required condition remains unmet.
+````

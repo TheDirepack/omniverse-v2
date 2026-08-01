@@ -22,6 +22,7 @@ from app.v2.acquisition import (
 from app.v2.blobs import BlobIntegrityError, BlobStore
 from app.v2.db import bootstrap_schema, create_sqlite_engine
 from app.v2.models import Source, SourceRevision, ToolEvent
+from app.v2.preprocessing import ModelPreprocessResult, PreprocessingStatus
 
 
 def test_blob_deduplication_and_integrity(isolated_paths: dict[str, Path]) -> None:
@@ -296,9 +297,11 @@ def test_search_snippet_is_lead_only() -> None:
 
 @pytest.mark.asyncio
 async def test_direct_failure_uses_injected_browser_html(tmp_path: Path) -> None:
+    raw = b"<html><body>rendered<script>ignored</script></body></html>"
+
     class Browser:
         async def acquire(self, url: str, policy: AcquisitionPolicy) -> BrowserResult:
-            return BrowserResult(b"rendered", url, "text/html")
+            return BrowserResult(raw, url, "text/html")
 
     service = AcquisitionService(
         None,
@@ -310,7 +313,7 @@ async def test_direct_failure_uses_injected_browser_html(tmp_path: Path) -> None
     body, extract = await service.acquire_with_fallback(
         "https://example.test/a", AcquisitionPolicy()
     )
-    assert body == b"rendered"
+    assert body == raw
     assert extract == "rendered"
 
 
@@ -372,9 +375,14 @@ async def test_unavailable_browser_is_a_durable_failure_class(isolated_paths) ->
 @pytest.mark.asyncio
 @pytest.mark.integration
 async def test_persistent_acquisition_uses_injected_browser(isolated_paths) -> None:
+    raw = (
+        b"<html><body><main>rendered <div>fallback</div>"
+        b"<nav>ignored</nav></main></body></html>"
+    )
+
     class Browser:
         async def acquire(self, url: str, policy: AcquisitionPolicy) -> BrowserResult:
-            return BrowserResult(b"rendered fallback", url, "text/html")
+            return BrowserResult(raw, url, "text/html")
 
     engine = create_sqlite_engine(isolated_paths["database"])
     bootstrap_schema(engine)
@@ -390,5 +398,289 @@ async def test_persistent_acquisition_uses_injected_browser(isolated_paths) -> N
         AcquisitionPolicy(),
         idempotency_key="fallback",
     )
-    assert result.extract == "rendered fallback"
-    assert service.blobs.get(result.blob_hash) == b"rendered fallback"
+    assert result.extract == "rendered\n\nfallback"
+    assert service.blobs.get(result.blob_hash) == raw
+
+
+class RecordingPreprocessor:
+    def __init__(
+        self,
+        *,
+        output: str | None = None,
+        status: PreprocessingStatus = PreprocessingStatus.APPLIED,
+        events: list[str] | None = None,
+    ) -> None:
+        self.output = output
+        self.status = status
+        self.events = events
+        self.calls: list[str] = []
+
+    async def reformat(self, text: str) -> ModelPreprocessResult:
+        self.calls.append(text)
+        if self.events is not None:
+            self.events.append("minicpm")
+        fallback = self.status is not PreprocessingStatus.APPLIED
+        return ModelPreprocessResult(
+            text if fallback or self.output is None else self.output,
+            self.status,
+            "fake preprocessor",
+            fallback,
+        )
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_targeting_selects_only_matching_historical_section(
+    isolated_paths,
+) -> None:
+    raw = (
+        b"<html><body><h1>Overview</h1><p>Current fleet details.</p>"
+        b"<h2>Historical record</h2><p>The old gate opened in 1897.</p>"
+        b"<h2>Modern era</h2><p>The replacement opened in 2020.</p></body></html>"
+    )
+    engine = create_sqlite_engine(isolated_paths["database"])
+    bootstrap_schema(engine)
+    preprocessor = RecordingPreprocessor(output="Historical record: old gate, 1897.")
+    service = AcquisitionService(
+        engine,
+        BlobStore(isolated_paths["blobs"]),
+        Resolver({"example.test": ("93.184.216.34",)}),
+        Transport([HttpResponse(200, {}, raw, "text/html", "https://example.test/")]),
+        preprocessor=preprocessor,
+    )
+
+    result = await service.acquire(
+        "https://example.test/",
+        AcquisitionPolicy(),
+        idempotency_key="historical-target",
+        exact_phrases=("old gate opened",),
+        section_hints=("Historical record",),
+    )
+
+    assert result.targeting_status == "MATCHED"
+    assert [item["text"] for item in result.authoritative_passages] == [
+        "Historical record",
+        "The old gate opened in 1897.",
+    ]
+    assert "Modern era" not in result.extract
+    assert preprocessor.calls == [result.extract]
+    with Session(engine) as session:
+        revision = session.get(SourceRevision, result.revision_id)
+        metadata = revision.extraction_metadata_json
+    assert metadata["deterministic"]["selected_locators"] == [
+        item["locator"] for item in result.authoritative_passages
+    ]
+    assert metadata["minicpm"]["status"] == "APPLIED"
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_targeting_no_match_never_broadens_or_calls_minicpm(
+    isolated_paths,
+) -> None:
+    raw = b"<html><body><h1>Modern era</h1><p>Only current facts.</p></body></html>"
+    engine = create_sqlite_engine(isolated_paths["database"])
+    bootstrap_schema(engine)
+    preprocessor = RecordingPreprocessor(output="should not run")
+    service = AcquisitionService(
+        engine,
+        BlobStore(isolated_paths["blobs"]),
+        Resolver({"example.test": ("93.184.216.34",)}),
+        Transport([HttpResponse(200, {}, raw, "text/html", "https://example.test/")]),
+        preprocessor=preprocessor,
+    )
+
+    result = await service.acquire(
+        "https://example.test/",
+        AcquisitionPolicy(),
+        idempotency_key="missing-target",
+        exact_phrases=("ancient collapse",),
+    )
+
+    assert result.targeting_status == "NO_RELEVANT_PASSAGE"
+    assert result.authoritative_passages == ()
+    assert result.extract == ""
+    assert result.readability_text == ""
+    assert result.preprocessing_status == "NOT_RUN"
+    assert preprocessor.calls == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_xhtml_preserves_unknown_wrapper_text_before_minicpm(
+    isolated_paths,
+) -> None:
+    raw = (
+        b'<?xml version="1.0"?><html xmlns="http://www.w3.org/1999/xhtml">'
+        b"<body><custom-wiki-tag>Preserved wiki fact.</custom-wiki-tag></body></html>"
+    )
+    engine = create_sqlite_engine(isolated_paths["database"])
+    bootstrap_schema(engine)
+    preprocessor = RecordingPreprocessor()
+    service = AcquisitionService(
+        engine,
+        BlobStore(isolated_paths["blobs"]),
+        Resolver({"example.test": ("93.184.216.34",)}),
+        Transport(
+            [
+                HttpResponse(
+                    200,
+                    {},
+                    raw,
+                    "application/xhtml+xml",
+                    "https://example.test/wiki",
+                )
+            ]
+        ),
+        preprocessor=preprocessor,
+    )
+
+    result = await service.acquire(
+        "https://example.test/wiki", AcquisitionPolicy(), idempotency_key="xhtml"
+    )
+
+    assert result.extract == "Preserved wiki fact."
+    assert preprocessor.calls == ["Preserved wiki fact."]
+    assert service.blobs.get(result.blob_hash) == raw
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_targeted_derivatives_are_not_reused_for_different_hints(
+    isolated_paths,
+) -> None:
+    raw = b"<h1>History</h1><p>Old gate opened.</p><h1>Fleet</h1><p>Nova has ships.</p>"
+    engine = create_sqlite_engine(isolated_paths["database"])
+    bootstrap_schema(engine)
+    transport = Transport(
+        [
+            HttpResponse(200, {}, raw, "text/html", "https://example.test/"),
+            HttpResponse(200, {}, raw, "text/html", "https://example.test/"),
+        ]
+    )
+    service = AcquisitionService(
+        engine,
+        BlobStore(isolated_paths["blobs"]),
+        Resolver({"example.test": ("93.184.216.34",)}),
+        transport,
+    )
+
+    history = await service.acquire(
+        "https://example.test/",
+        AcquisitionPolicy(),
+        idempotency_key="history",
+        section_hints=("History",),
+    )
+    fleet = await service.acquire(
+        "https://example.test/",
+        AcquisitionPolicy(),
+        idempotency_key="fleet",
+        section_hints=("Fleet",),
+    )
+    replayed_fleet = await service.acquire(
+        "https://example.test/",
+        AcquisitionPolicy(),
+        idempotency_key="fleet",
+        section_hints=("Fleet",),
+    )
+
+    assert "Old gate" in history.extract
+    assert "Nova has ships" not in history.extract
+    assert "Nova has ships" in fleet.extract
+    assert "Old gate" not in fleet.extract
+    assert replayed_fleet.extract == fleet.extract
+    assert replayed_fleet.deterministic_blob_hash == fleet.deterministic_blob_hash
+    assert transport.calls == 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_minicpm_failure_falls_back_and_cached_result_reuses_derivatives(
+    isolated_paths,
+) -> None:
+    raw = b"<html><body><h1>Facts</h1><p>Captain Nova has 20 ships.</p></body></html>"
+    engine = create_sqlite_engine(isolated_paths["database"])
+    bootstrap_schema(engine)
+    preprocessor = RecordingPreprocessor(status=PreprocessingStatus.UNGROUNDED_OUTPUT)
+    transport = Transport(
+        [HttpResponse(200, {}, raw, "text/html", "https://example.test/")]
+    )
+    service = AcquisitionService(
+        engine,
+        BlobStore(isolated_paths["blobs"]),
+        Resolver({"example.test": ("93.184.216.34",)}),
+        transport,
+        preprocessor=preprocessor,
+    )
+
+    first = await service.acquire(
+        "https://example.test/", AcquisitionPolicy(), idempotency_key="first"
+    )
+    cached = await service.acquire(
+        "https://example.test/", AcquisitionPolicy(), idempotency_key="cached"
+    )
+
+    assert first.preprocessing_status == "UNGROUNDED_OUTPUT"
+    assert first.readability_text == first.extract
+    assert first.deterministic_blob_hash
+    assert first.readability_blob_hash
+    assert cached.cached is True
+    assert cached.authoritative_passages == first.authoritative_passages
+    assert cached.deterministic_blob_hash == first.deterministic_blob_hash
+    assert cached.readability_blob_hash == first.readability_blob_hash
+    assert cached.preprocessing_status == first.preprocessing_status
+    assert transport.calls == 1
+    assert len(preprocessor.calls) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_production_acquisition_orders_raw_deterministic_and_minicpm(
+    isolated_paths, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import app.v2.acquisition as acquisition_module
+
+    events: list[str] = []
+    raw = b"<html><body><p>Target fact.</p></body></html>"
+
+    class OrderedTransport(Transport):
+        async def get(self, url: str, *, timeout_seconds: float, max_bytes: int):
+            events.append("fetch")
+            return await super().get(
+                url, timeout_seconds=timeout_seconds, max_bytes=max_bytes
+            )
+
+    class OrderedBlobs(BlobStore):
+        def put(self, body: bytes) -> str:
+            events.append("blob:raw" if body == raw else "blob:derivative")
+            return super().put(body)
+
+    original = acquisition_module.preprocess_document
+
+    def ordered_preprocess(*args, **kwargs):
+        events.append("deterministic")
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(acquisition_module, "preprocess_document", ordered_preprocess)
+    engine = create_sqlite_engine(isolated_paths["database"])
+    bootstrap_schema(engine)
+    service = AcquisitionService(
+        engine,
+        OrderedBlobs(isolated_paths["blobs"]),
+        Resolver({"example.test": ("93.184.216.34",)}),
+        OrderedTransport(
+            [HttpResponse(200, {}, raw, "text/html", "https://example.test/")]
+        ),
+        preprocessor=RecordingPreprocessor(events=events),
+    )
+
+    await service.acquire(
+        "https://example.test/",
+        AcquisitionPolicy(),
+        idempotency_key="ordered",
+        exact_phrases=("Target fact",),
+    )
+
+    assert events[0:3] == ["fetch", "blob:raw", "deterministic"]
+    assert events.index("deterministic") < events.index("minicpm")
+    assert events.index("minicpm") < len(events) - 1

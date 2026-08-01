@@ -105,10 +105,9 @@ class ResearchPlan(Contract):
 
 class PlanQuestion(Contract):
     id: str = Field(min_length=1)
-    domain: str = Field(min_length=1)
+    priority: int = Field(ge=0)
     question: str = Field(min_length=1)
     queries: tuple[str, ...] = Field(min_length=1)
-    required_indicators: tuple[str, ...] = Field(min_length=1)
     source_budget: int = Field(gt=0, le=100)
     stop_conditions: tuple[str, ...] = Field(min_length=1)
 
@@ -120,9 +119,8 @@ class PlannerOutput(Contract):
 class ResearchGap(Contract):
     gap_id: str
     scope: ResearchScope
-    domain: str
+    question_id: str
     question: str
-    missing_indicator: str
     attempted_leads: tuple[str, ...]
     next_query: str | None
     priority: int = Field(ge=0)
@@ -162,7 +160,6 @@ class EvidenceFragmentContract(Contract):
     locator: str
     exact_excerpt: str
     normalized_statement: str
-    domain: str
     subject_ids: tuple[str, ...] = Field(min_length=1)
     continuity: str
     temporal_scope: TimelineScope

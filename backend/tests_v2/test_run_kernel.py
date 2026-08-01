@@ -13,6 +13,8 @@ from app.v2.domain import RunOutcome, RunStatus, StepKind, legal_transition
 from app.v2.models import (
     Checkpoint,
     OutboxEvent,
+    ResearchGapRecord,
+    ResearchWorkspace,
     Run,
     RunStep,
     RunTarget,
@@ -50,8 +52,7 @@ def command(*world_ids: str) -> CreateResearchRun:
         objective="Map documented capabilities",
         scope={"continuity": "primary", "depth": "standard"},
         targets=tuple(
-            ResearchRunTargetInput(world_id=world_id)
-            for world_id in world_ids
+            ResearchRunTargetInput(world_id=world_id) for world_id in world_ids
         ),
         max_attempts=2,
     )
@@ -339,6 +340,60 @@ def test_retry_has_due_time_bound_and_inspectable_terminal_failure(
             select(StepAttempt).where(StepAttempt.step_id == second.step_id)
         ).all()
     assert [attempt.status for attempt in attempts] == ["FAILED", "FAILED"]
+
+
+@pytest.mark.integration
+def test_partial_checkpoint_persists_gap_and_cancels_target_work(
+    engine: Engine,
+) -> None:
+    kernel = ResearchRunKernel(engine)
+    run = kernel.create(command("w1"), "partial-plan")
+    inventory = kernel.lease_next("worker", NOW, timedelta(minutes=5), run_id=run.id)
+    assert inventory is not None
+    kernel.checkpoint_success(
+        inventory,
+        effect_key=f"ok:{inventory.step_id}",
+        output_refs=(),
+        state={},
+        now=NOW,
+    )
+    plan = kernel.lease_next("worker", NOW, timedelta(minutes=5), run_id=run.id)
+    assert plan is not None and plan.kind is StepKind.PLAN
+    with Session(engine) as session, session.begin():
+        session.add(
+            ResearchWorkspace(
+                id=f"workspace:{plan.target_id}",
+                run_id=run.id,
+                target_id=plan.target_id,
+                world_id="w1",
+                continuity="primary",
+                era_or_timepoint="unspecified",
+                branch_id="main",
+                conditions_key="[]",
+                brief_json={},
+                status="ACTIVE",
+            )
+        )
+
+    kernel.checkpoint_partial(
+        plan,
+        "ProviderError: all agent routes exhausted",
+        workspace_id=f"workspace:{plan.target_id}",
+        gap={"reason": "PLANNING_UNAVAILABLE", "step_kind": "PLAN"},
+        now=NOW,
+    )
+
+    projection = kernel.get(run.id)
+    assert projection.status is RunStatus.SUCCEEDED
+    assert projection.outcome is RunOutcome.PARTIAL
+    assert projection.targets[0].outcome is RunOutcome.PARTIAL
+    assert projection.steps[1].status is RunStatus.FAILED
+    assert all(step.status is RunStatus.CANCELLED for step in projection.steps[2:])
+    with Session(engine) as session:
+        gap = session.scalar(select(ResearchGapRecord))
+        workspace = session.get(ResearchWorkspace, f"workspace:{plan.target_id}")
+    assert gap is not None and gap.gap_json["reason"] == "PLANNING_UNAVAILABLE"
+    assert workspace is not None and workspace.status == "PARTIAL"
 
 
 @pytest.mark.integration

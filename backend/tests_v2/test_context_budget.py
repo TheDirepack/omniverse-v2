@@ -142,7 +142,7 @@ async def test_gateway_accounts_for_entire_serialized_request(isolated_paths) ->
             self.request = request
             self.requirements = requirements
             return ModelResponse(
-                text='{"questions":[{"id":"q","domain":"d","question":"q","queries":["x"],"required_indicators":["i"],"source_budget":1,"stop_conditions":["s"]}]}',
+                text='{"questions":[{"id":"q","priority":1,"question":"q","queries":["x"],"source_budget":1,"stop_conditions":["s"]}]}',
                 tool_calls=(),
                 usage=Usage(input_tokens=1, output_tokens=1, total_tokens=2),
             )

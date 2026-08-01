@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
+from typing import Literal
 
 from fastapi import APIRouter, Header, HTTPException, Query, Response
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlalchemy import Engine, delete, or_, select
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
@@ -23,6 +25,11 @@ from app.v2.models import (
     World,
 )
 from app.v2.projections import ResearchQueryService
+from app.v2.provider_models import (
+    ProviderModelNameConflictError,
+    ProviderModelOwnershipConflictError,
+    upsert_provider_model,
+)
 from app.v2.research_runs import (
     IdempotencyConflictError,
     IllegalTransitionError,
@@ -60,13 +67,115 @@ class ModelUpdate(BaseModel):
 
 
 class RouteCandidateInput(BaseModel):
-    model_id: str = Field(min_length=1)
-    weight: int = Field(default=1, ge=1)
+    model_config = ConfigDict(extra="forbid")
+
+    provider_id: str | None = Field(default=None, min_length=1)
+    model_id: str | None = Field(default=None, min_length=1)
+
+    @model_validator(mode="after")
+    def exactly_one_target(self):
+        if (self.provider_id is None) == (self.model_id is None):
+            raise CandidateTargetError
+        return self
 
 
 class RouteUpdate(BaseModel):
-    candidates: list[RouteCandidateInput]
+    candidates: list[RouteCandidateInput] = Field(min_length=1)
     active: bool = True
+
+
+class CandidateTargetError(ValueError):
+    def __init__(self) -> None:
+        super().__init__("candidate requires exactly one provider or model")
+
+
+class LoggingSettingsUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    enabled: bool
+    folder: str = Field(min_length=1, max_length=255)
+    server_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
+    agent_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
+    server_max_bytes: int = Field(ge=1024, le=100_000_000)
+    agent_max_bytes: int = Field(ge=1024, le=100_000_000)
+    server_backup_count: int = Field(ge=0, le=100)
+    agent_backup_count: int = Field(ge=0, le=100)
+
+
+class ClientErrorReport(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    event_class: Literal[
+        "javascript", "unhandledrejection", "htmx.response", "htmx.transport"
+    ]
+    message: str = Field(min_length=1, max_length=1_000)
+    path: str = Field(pattern=r"^/[^?#]*$", max_length=500)
+    stack: str = Field(default="", max_length=4_000)
+
+
+def logging_status(runtime: object) -> dict[str, object]:
+    settings = runtime.logging_settings.settings
+    health = runtime.server_logger.health()
+    return {
+        "config": settings.to_dict(),
+        "effective_folder": health["folder"],
+        "health": health,
+    }
+
+
+def read_log_page(
+    logger: object,
+    stream: Literal["server", "agent"],
+    *,
+    cursor: str | int = "0",
+    limit: int = 100,
+    level: str = "",
+    search: str = "",
+) -> dict[str, object]:
+    cursor_value = str(cursor)
+    consumed_text, separator, snapshot_text = cursor_value.partition(":")
+    consumed = int(consumed_text)
+    summary = logger.read_log(
+        stream, cursor=0, limit=1, level_filter=level, search=search
+    )
+    current_total = int(summary["total_lines"])
+    snapshot_total = int(snapshot_text) if separator else current_total
+    total = min(current_total, snapshot_total)
+    count = min(limit, max(total - consumed, 0))
+    start = max(total - consumed - count, 0)
+    raw = logger.read_log(
+        stream,
+        cursor=start,
+        limit=count,
+        level_filter=level,
+        search=search,
+    )
+    items: list[dict[str, object]] = []
+    for line in raw["lines"]:
+        try:
+            parsed = json.loads(line)
+        except (json.JSONDecodeError, TypeError):
+            parsed = None
+        if isinstance(parsed, dict):
+            item = parsed
+            item["malformed"] = False
+        else:
+            item = {
+                "stream": stream,
+                "level": "ERROR",
+                "event_type": "logging.malformed_entry",
+                "component": "logger",
+                "message": "Malformed JSONL entry",
+                "malformed": True,
+            }
+        items.append(item)
+    items.reverse()
+    consumed += len(items)
+    return {
+        "items": items,
+        "next_cursor": f"{consumed}:{snapshot_total}" if consumed < total else None,
+        "total_items": total,
+    }
 
 
 def build_router(engine: Engine | object, credentials_path=None) -> APIRouter:
@@ -90,6 +199,54 @@ def build_router(engine: Engine | object, credentials_path=None) -> APIRouter:
     @router.get("/health")
     def health() -> dict[str, str]:
         return {"status": "ok"}
+
+    @router.get("/settings/logging")
+    def get_logging_settings() -> dict[str, object]:
+        if runtime is None:
+            raise HTTPException(status_code=503, detail="runtime is not configured")
+        return logging_status(runtime)
+
+    @router.put("/settings/logging")
+    def put_logging_settings(command: LoggingSettingsUpdate) -> dict[str, object]:
+        if runtime is None:
+            raise HTTPException(status_code=503, detail="runtime is not configured")
+        try:
+            runtime.update_logging_settings(command.model_dump())
+        except (TypeError, ValueError, OSError) as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+        return logging_status(runtime)
+
+    @router.post("/logs/client-errors", status_code=204)
+    def report_client_error(command: ClientErrorReport) -> Response:
+        if runtime is None:
+            raise HTTPException(status_code=503, detail="runtime is not configured")
+        runtime.server_logger.log_client(
+            "WARNING",
+            command.event_class,
+            command.message,
+            url=command.path,
+            stack=command.stack,
+        )
+        return Response(status_code=204)
+
+    @router.get("/logs/{stream}")
+    def logs(
+        stream: Literal["server", "agent"],
+        level: Literal["", "DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "",
+        search: str = Query(default="", max_length=200),
+        cursor: str = Query(default="0", pattern=r"^\d+(?::\d+)?$"),
+        limit: int = Query(default=100, ge=1, le=200),
+    ) -> dict[str, object]:
+        if runtime is None:
+            raise HTTPException(status_code=503, detail="runtime is not configured")
+        return read_log_page(
+            runtime.server_logger,
+            stream,
+            cursor=cursor,
+            limit=limit,
+            level=level,
+            search=search,
+        )
 
     @router.get("/worlds")
     def worlds(
@@ -173,16 +330,15 @@ def build_router(engine: Engine | object, credentials_path=None) -> APIRouter:
                     )
                 )
             )
-            candidate_ids = (
-                list(
-                    session.scalars(
-                        select(RouteCandidate.id).where(
-                            RouteCandidate.model_id.in_(model_ids)
+            candidate_ids = list(
+                session.scalars(
+                    select(RouteCandidate.id).where(
+                        or_(
+                            RouteCandidate.provider_id == provider_id,
+                            RouteCandidate.model_id.in_(model_ids),
                         )
                     )
                 )
-                if model_ids
-                else []
             )
             credential_ids = list(
                 session.scalars(
@@ -231,21 +387,25 @@ def build_router(engine: Engine | object, credentials_path=None) -> APIRouter:
     def put_model(
         provider_id: str, model_id: str, command: ModelUpdate
     ) -> dict[str, object]:
-        with Session(engine) as session, session.begin():
-            if session.get(Provider, provider_id) is None:
-                raise HTTPException(status_code=404, detail="provider not found")
-            row = session.get(ProviderModel, model_id)
-            values = command.model_dump()
-            if row is None:
-                row = ProviderModel(id=model_id, provider_id=provider_id, **values)
-                session.add(row)
-            elif row.provider_id != provider_id:
-                raise HTTPException(
-                    status_code=409, detail="model belongs to another provider"
+        values = command.model_dump()
+        try:
+            with Session(engine) as session, session.begin():
+                if session.get(Provider, provider_id) is None:
+                    raise HTTPException(status_code=404, detail="provider not found")
+                upsert_provider_model(
+                    session,
+                    provider_id=provider_id,
+                    model_id=model_id,
+                    values=values,
                 )
-            else:
-                for key, value in values.items():
-                    setattr(row, key, value)
+        except ProviderModelNameConflictError as error:
+            raise HTTPException(
+                status_code=409, detail="provider model name already exists"
+            ) from error
+        except ProviderModelOwnershipConflictError as error:
+            raise HTTPException(
+                status_code=409, detail="model belongs to another provider"
+            ) from error
         return {"id": model_id, "provider_id": provider_id, **values}
 
     @router.put("/routes/{task}")
@@ -253,7 +413,16 @@ def build_router(engine: Engine | object, credentials_path=None) -> APIRouter:
         route_id = f"route:{task}"
         with Session(engine) as session, session.begin():
             for candidate in command.candidates:
-                if session.get(ProviderModel, candidate.model_id) is None:
+                if candidate.provider_id is not None and session.get(
+                    Provider, candidate.provider_id
+                ) is None:
+                    raise HTTPException(
+                        status_code=404,
+                        detail=f"provider {candidate.provider_id} not found",
+                    )
+                if candidate.model_id is not None and session.get(
+                    ProviderModel, candidate.model_id
+                ) is None:
                     raise HTTPException(
                         status_code=404, detail=f"model {candidate.model_id} not found"
                     )
@@ -288,17 +457,17 @@ def build_router(engine: Engine | object, credentials_path=None) -> APIRouter:
                     RouteCandidate(
                         id=candidate_id,
                         route_id=route.id,
+                        provider_id=candidate.provider_id,
                         model_id=candidate.model_id,
                         position=position,
-                        weight=candidate.weight,
                     )
                 )
                 values.append(
                     {
                         "id": candidate_id,
+                        "provider_id": candidate.provider_id,
                         "model_id": candidate.model_id,
                         "position": position,
-                        "weight": candidate.weight,
                     }
                 )
         return {
@@ -307,6 +476,35 @@ def build_router(engine: Engine | object, credentials_path=None) -> APIRouter:
             "active": command.active,
             "candidates": values,
         }
+
+    @router.delete("/routes/{task}", status_code=204)
+    def delete_route(task: str) -> Response:
+        if task == "DEFAULT":
+            raise HTTPException(
+                status_code=409, detail="DEFAULT route cannot be removed"
+            )
+        with Session(engine) as session, session.begin():
+            route = session.scalar(select(Route).where(Route.task == task))
+            if route is None:
+                raise HTTPException(status_code=404, detail="route override not found")
+            candidate_ids = list(
+                session.scalars(
+                    select(RouteCandidate.id).where(
+                        RouteCandidate.route_id == route.id
+                    )
+                )
+            )
+            if candidate_ids:
+                session.execute(
+                    delete(CandidateHealth).where(
+                        CandidateHealth.candidate_id.in_(candidate_ids)
+                    )
+                )
+                session.execute(
+                    delete(RouteCandidate).where(RouteCandidate.id.in_(candidate_ids))
+                )
+            session.delete(route)
+        return Response(status_code=204)
 
     @router.post("/health/candidates/{candidate_id}/reset", status_code=204)
     def reset_candidate_health(candidate_id: str) -> Response:
@@ -440,9 +638,9 @@ def build_router(engine: Engine | object, credentials_path=None) -> APIRouter:
                     "route_id": route.id,
                     "task": route.task,
                     "candidate_id": candidate.id,
+                    "provider_id": candidate.provider_id,
                     "model_id": candidate.model_id,
                     "position": candidate.position,
-                    "weight": candidate.weight,
                     "health": {
                         "failure_count": (
                             candidate_health.get(candidate.id).failure_count

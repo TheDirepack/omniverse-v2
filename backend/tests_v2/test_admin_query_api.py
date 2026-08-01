@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from app.v2 import AppConfig, create_app
+from app.v2 import create_app
 from app.v2.config import V2Config
 from app.v2.initialize import initialize
 
@@ -29,22 +29,15 @@ def client(isolated_paths: dict[str, Path], tmp_path: Path) -> TestClient:
         for world_id, name in (("alpha", "Alpha World"), ("beta", "Beta"))
     ]
     seed.write_text(json.dumps(worlds), encoding="utf-8")
-    initialize(
-        V2Config(
-            database_path=isolated_paths["database"],
-            blob_path=isolated_paths["blobs"],
-            credentials_path=isolated_paths["credentials"],
-            seed_path=seed,
-        )
+    config = V2Config(
+        database_path=isolated_paths["database"],
+        blob_path=isolated_paths["blobs"],
+        credentials_path=isolated_paths["credentials"],
+        seed_path=seed,
+        logging_root=tmp_path,
     )
-    app = create_app(
-        AppConfig(
-            database_path=isolated_paths["database"],
-            blob_path=isolated_paths["blobs"],
-            credentials_path=isolated_paths["credentials"],
-            seed_path=seed,
-        )
-    )
+    initialize(config)
+    app = create_app(config)
     with TestClient(app) as value:
         yield value
 
@@ -80,9 +73,17 @@ def test_provider_model_route_crud_health_and_secret_omission(
     assert model.status_code == 200
     route = client.put(
         "/api/v2/routes/research.plan",
-        json={"candidates": [{"model_id": "m", "weight": 2}]},
+        json={"candidates": [{"provider_id": "p"}]},
     )
     assert route.status_code == 200
+    assert route.json()["candidates"] == [
+        {
+            "id": "candidate:route:research.plan:0",
+            "provider_id": "p",
+            "model_id": None,
+            "position": 0,
+        }
+    ]
     credential = client.post(
         "/api/v2/providers/p/credentials", json={"label": "main", "secret": "secret"}
     )
@@ -93,6 +94,7 @@ def test_provider_model_route_crud_health_and_secret_omission(
         client.post(f"/api/v2/health/candidates/{candidate_id}/reset").status_code
         == 204
     )
+    assert client.delete("/api/v2/routes/research.plan").status_code == 204
     credential_id = credential.json()["credential_id"]
     assert (
         client.post(f"/api/v2/health/credentials/{credential_id}/reset").status_code
@@ -101,8 +103,52 @@ def test_provider_model_route_crud_health_and_secret_omission(
     settings = client.get("/api/v2/providers").json()
     assert settings["model_discovery"] == "MANUAL_ONLY"
     assert settings["items"][0]["credentials"][0]["health"]["failure_count"] == 0
-    assert settings["routes"][0]["health"]["failure_count"] == 0
+    assert all(route["task"] != "research.plan" for route in settings["routes"])
     assert client.delete("/api/v2/providers/p").status_code == 204
+
+
+def test_provider_model_duplicate_name_is_a_sanitized_conflict(
+    client: TestClient,
+) -> None:
+    assert client.post(
+        "/api/v2/providers",
+        json={"id": "p", "kind": "OPENAI_COMPATIBLE"},
+    ).status_code == 201
+    payload = {"model_name": "duplicate", "supports_structured": True}
+    assert (
+        client.put("/api/v2/providers/p/models/first", json=payload).status_code == 200
+    )
+
+    response = client.put("/api/v2/providers/p/models/second", json=payload)
+
+    assert response.status_code == 409
+    assert response.json() == {"detail": "provider model name already exists"}
+    assert "UNIQUE constraint" not in response.text
+
+
+def test_client_error_report_is_bounded_sanitized_and_logged(
+    client: TestClient,
+) -> None:
+    response = client.post(
+        "/api/v2/logs/client-errors",
+        headers={"X-Request-ID": "client-report-123"},
+        json={
+            "event_class": "unhandledrejection",
+            "message": "Bearer browser-secret failed",
+            "path": "/research/",
+            "stack": "at render (/static/app.js:10:2)",
+        },
+    )
+
+    assert response.status_code == 204
+    events = client.get(
+        "/api/v2/logs/server", params={"search": "client.event"}
+    ).json()["items"]
+    report = next(item for item in events if item["event_type"] == "client.event")
+    assert report["request_id"] == "client-report-123"
+    assert report["component"] == "unhandledrejection"
+    assert report["data"]["url"] == "/research/"
+    assert "browser-secret" not in json.dumps(report)
 
 
 def test_world_search_pagination_run_list_and_projection_endpoints(

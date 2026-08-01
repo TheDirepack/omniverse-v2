@@ -6,6 +6,7 @@ from typing import Any, ClassVar
 from sqlalchemy import (
     JSON,
     Boolean,
+    CheckConstraint,
     DateTime,
     ForeignKey,
     Index,
@@ -45,6 +46,15 @@ class UTCDateTime(TypeDecorator[datetime]):
 
 class Base(DeclarativeBase):
     pass
+
+
+class RuntimeSetting(Base):
+    __tablename__ = "runtime_setting"
+    key: Mapped[str] = mapped_column(String, primary_key=True)
+    value_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        UTCDateTime(), default=utcnow, onupdate=utcnow, nullable=False
+    )
 
 
 class World(Base):
@@ -209,7 +219,14 @@ class SearchLead(Base):
     )
     publisher: Mapped[str | None] = mapped_column(String)
     lineage_id: Mapped[str | None] = mapped_column(String)
-    __table_args__ = (UniqueConstraint("workspace_id", "canonical_url"),)
+    __table_args__ = (
+        UniqueConstraint(
+            "workspace_id",
+            "question_id",
+            "canonical_url",
+            name="uq_search_lead_workspace_question_url",
+        ),
+    )
 
 
 class CoverageRecord(Base):
@@ -556,12 +573,16 @@ class RouteCandidate(Base):
     route_id: Mapped[str] = mapped_column(
         ForeignKey("provider_route.id"), nullable=False
     )
-    model_id: Mapped[str] = mapped_column(
-        ForeignKey("provider_model.id"), nullable=False
-    )
+    provider_id: Mapped[str | None] = mapped_column(ForeignKey("provider.id"))
+    model_id: Mapped[str | None] = mapped_column(ForeignKey("provider_model.id"))
     position: Mapped[int] = mapped_column(Integer, nullable=False)
-    weight: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
-    __table_args__ = (UniqueConstraint("route_id", "position"),)
+    __table_args__ = (
+        CheckConstraint(
+            "(provider_id IS NULL) != (model_id IS NULL)",
+            name="ck_provider_route_candidate_exactly_one_target",
+        ),
+        UniqueConstraint("route_id", "position"),
+    )
 
 
 class CandidateHealth(Base):
@@ -606,6 +627,7 @@ class AcquisitionCache(Base):
     source_revision_id: Mapped[str] = mapped_column(
         ForeignKey("source_revision.id"), nullable=False
     )
+    result_json: Mapped[dict[str, Any] | None] = mapped_column(JSON)
     fetched_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False)
 
 

@@ -64,13 +64,16 @@ async def test_browser_result_final_url_is_revalidated(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_browser_adapter_is_lazy_bounded_and_closes_request_context() -> None:
+async def test_browser_adapter_reuses_profile_backed_context_and_closes_pages(
+    tmp_path: Path,
+) -> None:
     active = 0
     maximum = 0
-    contexts = []
+    pages = []
 
     class Page:
         url = "https://safe.test/final"
+        closed = False
 
         async def route(self, pattern, handler):
             class Request:
@@ -98,45 +101,96 @@ async def test_browser_adapter_is_lazy_bounded_and_closes_request_context() -> N
             active -= 1
             return "<html>safe</html>"
 
+        async def close(self):
+            self.closed = True
+
     class Context:
         closed = False
 
         async def new_page(self):
-            return Page()
-
-        async def close(self):
-            self.closed = True
-
-    class Browser:
-        closed = False
-
-        async def new_context(self):
-            value = Context()
-            contexts.append(value)
-            return value
+            page = Page()
+            pages.append(page)
+            return page
 
         async def close(self):
             self.closed = True
 
     launches = []
-    browser = Browser()
+    context = Context()
 
-    async def launch(**kwargs):
-        launches.append(kwargs)
-        return browser
+    async def launch(profile_path, **kwargs):
+        launches.append((profile_path, kwargs))
+        return context
 
-    adapter = BrowserAcquisition(launcher=launch, resolver=Resolver(), concurrency=1)
+    profile_path = tmp_path / "profile"
+    adapter = BrowserAcquisition(
+        launcher=launch,
+        resolver=Resolver(),
+        concurrency=1,
+        profile_path=profile_path,
+    )
     policy = AcquisitionPolicy(max_body_bytes=100, timeout_seconds=1)
     results = await asyncio.gather(
         adapter.acquire("https://start.test/a", policy),
         adapter.acquire("https://start.test/b", policy),
     )
     assert len(launches) == 1
+    assert launches[0][0] == str(profile_path)
+    assert profile_path.is_dir()
     assert maximum == 1
     assert all(result.final_url == "https://safe.test/final" for result in results)
-    assert all(context.closed for context in contexts)
+    assert all(page.closed for page in pages)
+    assert not context.closed
     await adapter.close()
-    assert browser.closed
+    assert context.closed
+
+
+@pytest.mark.asyncio
+async def test_browser_adapter_reuses_profile_path_after_restart(
+    tmp_path: Path,
+) -> None:
+    profile_path = tmp_path / "profile"
+    launches = []
+
+    class Page:
+        url = "https://safe.test/final"
+
+        async def route(self, _pattern, _handler):
+            pass
+
+        async def goto(self, _url, *, wait_until, timeout):
+            pass
+
+        async def content(self):
+            return "<html>safe</html>"
+
+        async def close(self):
+            pass
+
+    class Context:
+        async def new_page(self):
+            return Page()
+
+        async def close(self):
+            pass
+
+    async def launch(profile, **_kwargs):
+        launches.append(profile)
+        return Context()
+
+    policy = AcquisitionPolicy(max_body_bytes=100, timeout_seconds=1)
+    first = BrowserAcquisition(
+        launcher=launch, resolver=Resolver(), profile_path=profile_path
+    )
+    await first.acquire("https://safe.test/a", policy)
+    await first.close()
+    second = BrowserAcquisition(
+        launcher=launch, resolver=Resolver(), profile_path=profile_path
+    )
+    await second.acquire("https://safe.test/b", policy)
+    await second.close()
+
+    assert launches == [str(profile_path), str(profile_path)]
 
 
 @pytest.mark.asyncio
@@ -178,14 +232,12 @@ async def test_browser_adapter_blocks_private_requests_before_dispatch() -> None
         async def close(self):
             pass
 
-    class Browser:
-        async def new_context(self):
-            return Context()
+    async def launch(_profile_path, **_kwargs):
+        return Context()
 
-    async def launch(**_kwargs):
-        return Browser()
-
-    adapter = BrowserAcquisition(launcher=launch, resolver=Resolver())
+    adapter = BrowserAcquisition(
+        launcher=launch, resolver=Resolver(), profile_path=Path("/tmp/profile")
+    )
     with pytest.raises(UrlPolicyError, match="blocked"):
         await adapter.acquire("https://safe.test/start", AcquisitionPolicy())
     assert blocked
@@ -204,14 +256,12 @@ async def test_browser_adapter_fails_closed_without_request_interception() -> No
         async def close(self):
             pass
 
-    class Browser:
-        async def new_context(self):
-            return Context()
+    async def launch(_profile_path, **_kwargs):
+        return Context()
 
-    async def launch(**_kwargs):
-        return Browser()
-
-    adapter = BrowserAcquisition(launcher=launch, resolver=Resolver())
+    adapter = BrowserAcquisition(
+        launcher=launch, resolver=Resolver(), profile_path=Path("/tmp/profile")
+    )
     with pytest.raises(UrlPolicyError, match="interception"):
         await adapter.acquire("https://safe.test/start", AcquisitionPolicy())
 
@@ -294,6 +344,42 @@ def test_document_preprocessing_is_deterministic_structured_and_removes_chrome()
     assert "Secret" not in first.cleaned_text
 
 
+@pytest.mark.parametrize(
+    ("source", "expected"),
+    [
+        (
+            "<html><body>Body facts<script>bad</script>"
+            "<span hidden>secret</span></body></html>",
+            "Body facts",
+        ),
+        (
+            "<main>Main facts<div>Div facts <strong>stay</strong></div>"
+            "<h1>Heading</h1><p>Known paragraph.</p>Tail facts</main>",
+            "Main facts\n\nDiv facts stay\n\nHeading\n\nKnown paragraph.\n\nTail facts",
+        ),
+        (
+            "<section>Section fact</section><details>Details fact</details>"
+            "<figure><figcaption>Caption fact</figcaption></figure>"
+            "<dl><dt>Mass</dt><dd>20 tons</dd></dl>"
+            "<blockquote>Quoted fact</blockquote><pre>Technical fact</pre>"
+            "<custom-wiki-tag>Extension fact</custom-wiki-tag>",
+            "Section fact\n\nDetails fact\n\nCaption fact\n\nMass\n\n20 tons\n\n"
+            "Quoted fact\n\nTechnical fact\n\nExtension fact",
+        ),
+    ],
+)
+def test_document_preprocessing_preserves_orphan_container_text(
+    source: str, expected: str
+) -> None:
+    result = preprocess_document(source, "text/html")
+
+    assert result.cleaned_text == expected
+    assert result.cleaned_text.count("Heading") <= 1
+    assert result.cleaned_text.count("Known paragraph.") <= 1
+    assert "bad" not in result.cleaned_text
+    assert "secret" not in result.cleaned_text
+
+
 def test_plain_text_normalization_and_targeting_are_bounded_and_do_not_broaden() -> (
     None
 ):
@@ -354,6 +440,7 @@ async def test_minicpm_request_is_locked_down_and_grounded() -> None:
     assert payload["temperature"] == 0
     assert payload["top_p"] == 0.1
     assert payload["seed"] == 0
+    assert payload["chat_template_kwargs"] == {"enable_thinking": False}
     assert "untrusted" in payload["messages"][0]["content"].lower()
     assert "no inference" in payload["messages"][0]["content"].lower()
     await client.aclose()
@@ -398,6 +485,20 @@ async def test_minicpm_request_is_locked_down_and_grounded() -> None:
             ),
             PreprocessingStatus.UNGROUNDED_OUTPUT,
         ),
+        (
+            httpx.Response(
+                200,
+                json={"choices": [{"message": {"content": "Captain Nova."}}]},
+            ),
+            PreprocessingStatus.UNGROUNDED_OUTPUT,
+        ),
+        (
+            httpx.Response(
+                200,
+                json={"choices": [{"message": {"content": "reactor"}}]},
+            ),
+            PreprocessingStatus.UNGROUNDED_OUTPUT,
+        ),
         (httpx.Response(200, json={"choices": []}), PreprocessingStatus.INVALID_OUTPUT),
     ],
 )
@@ -406,7 +507,11 @@ async def test_minicpm_falls_back_to_authoritative_input(
 ) -> None:
     client = httpx.AsyncClient(transport=httpx.MockTransport(lambda _request: response))
     adapter = MiniCPMPreprocessor(client=client)
-    original = "Captain Nova has 20 ships."
+    original = (
+        "reactor produces antimatter"
+        if b'"content":"reactor"' in response.content.replace(b" ", b"")
+        else "Captain Nova has 20 ships."
+    )
     result = await adapter.reformat(original)
     assert result.text == original
     assert result.status is expected_status

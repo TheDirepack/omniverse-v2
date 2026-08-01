@@ -1,5 +1,5 @@
 # Worker guard errors intentionally state the violated bounded-loop invariant.
-# ruff: noqa: TRY003
+# ruff: noqa: SIM105, TRY003
 
 from __future__ import annotations
 
@@ -7,6 +7,8 @@ import asyncio
 from collections.abc import Callable
 from contextlib import suppress
 from datetime import datetime, timezone
+
+from app.v2.logging import redact
 
 
 class ResearchWorker:
@@ -19,6 +21,7 @@ class ResearchWorker:
         poll_seconds: float = 1.0,
         reclaim_seconds: float = 30.0,
         concurrency: int = 1,
+        logger=None,
     ) -> None:
         self.kernel = kernel
         self.workflow = workflow
@@ -28,6 +31,29 @@ class ResearchWorker:
         self.concurrency = concurrency
         self.stop_event = asyncio.Event()
         self._tasks: list[asyncio.Task[None]] = []
+        self.logger = logger
+
+    def _log_crash(
+        self, run_id: str, error: Exception, *, critical: bool = False
+    ) -> None:
+        if self.logger is None:
+            return
+        try:
+            self.logger.log_agent(
+                "research-worker",
+                "worker.crashed",
+                message="Research worker encountered an unexpected exception",
+                level="CRITICAL" if critical else "ERROR",
+                run_id=run_id,
+                data=redact(
+                    {
+                        "error_class": type(error).__name__,
+                        "error_message": str(error),
+                    }
+                ),
+            )
+        except Exception:
+            pass
 
     def _next_run(self) -> str | None:
         try:
@@ -41,9 +67,10 @@ class ResearchWorker:
             return False
         try:
             return bool(await self.workflow.run_next(run_id))
-        except Exception:
+        except Exception as error:
             # ResearchWorkflow checkpoints ordinary failures before returning. A crash
             # leaves its lease durable for periodic/startup reclamation.
+            self._log_crash(run_id, error)
             return False
 
     async def run_until_idle(self, *, max_iterations: int = 10_000) -> int:
@@ -54,7 +81,8 @@ class ResearchWorker:
                 return completed
             try:
                 completed += bool(await self.workflow.run_next(run_id))
-            except Exception:
+            except Exception as error:
+                self._log_crash(run_id, error)
                 continue
         raise RuntimeError("worker did not become idle")
 

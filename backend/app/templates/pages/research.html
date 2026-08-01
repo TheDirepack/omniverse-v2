@@ -6,7 +6,7 @@
     <h1 class="text-xs font-bold uppercase tracking-widest">Research</h1>
     <form class="flex items-center gap-2 flex-1">
       <label for="world-search" class="sr-only">Search worlds</label>
-      <input id="world-search" name="q" type="search" hx-get="/research/worlds" hx-target="#world-results" hx-trigger="keyup changed delay:300ms, search" placeholder="Search worlds, franchises, categories..." class="h-7 w-full max-w-md px-3 text-xs bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-sm">
+      <input id="world-search" name="q" type="search" value="{{ worlds.q }}" hx-get="/research/worlds" hx-target="#world-results" hx-trigger="keyup changed delay:300ms, search" placeholder="Search worlds, franchises, categories..." class="h-7 w-full max-w-md px-3 text-xs bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-sm">
     </form>
   </header>
   <form id="research-form" class="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[1fr_22rem]" hx-post="/research/runs" hx-target="#run-queue" hx-swap="afterbegin">

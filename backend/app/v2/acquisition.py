@@ -1,5 +1,5 @@
 # Boundary errors intentionally carry stable policy diagnostics.
-# ruff: noqa: TRY003
+# ruff: noqa: SIM105, TRY003
 
 from __future__ import annotations
 
@@ -8,11 +8,14 @@ import hashlib
 import ipaddress
 import json
 import socket
+from contextlib import suppress
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta, timezone
 from io import BytesIO
+from pathlib import Path
 from shutil import which
-from typing import Protocol
+from time import monotonic
+from typing import Any, Protocol
 from urllib.parse import urljoin, urlsplit, urlunsplit
 from uuid import uuid4
 
@@ -21,8 +24,9 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.v2.blobs import BlobStore
+from app.v2.logging import redact
 from app.v2.models import AcquisitionCache, Source, SourceRevision, ToolEvent
-from app.v2.preprocessing import preprocess_document
+from app.v2.preprocessing import PreprocessingStatus, preprocess_document
 
 
 class UrlPolicyError(ValueError):
@@ -43,6 +47,7 @@ class AcquisitionPolicy:
     allowed_content_types: tuple[str, ...] = (
         "text/plain",
         "text/html",
+        "application/xhtml+xml",
         "application/json",
         "application/pdf",
         "image/jpeg",
@@ -80,6 +85,12 @@ class AcquisitionResult:
     extract: str
     cached: bool
     content_type: str = ""
+    deterministic_blob_hash: str | None = None
+    readability_blob_hash: str | None = None
+    targeting_status: str = "BROAD"
+    preprocessing_status: str = "DISABLED"
+    authoritative_passages: tuple[dict[str, str], ...] = ()
+    readability_text: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -142,34 +153,46 @@ class BrowserAcquisition:
         resolver: Resolver | None = None,
         concurrency: int = 2,
         headless: bool = True,
+        profile_path: Path | None = None,
     ) -> None:
         self._launcher = launcher
         self._resolver = resolver or ProductionResolver()
         self._headless = headless
+        self._profile_path = profile_path or (
+            Path(__file__).resolve().parents[2]
+            / "data"
+            / "v2-secrets"
+            / "browser-profile"
+        )
         self._semaphore = asyncio.Semaphore(concurrency)
         self._launch_lock = asyncio.Lock()
-        self._browser = None
+        self._context = None
 
     def status(self) -> dict[str, object]:
         return {"available": True, "detail": "lazy; not launched"}
 
-    async def _get_browser(self):
-        if self._browser is not None:
-            return self._browser
+    async def _get_context(self):
+        if self._context is not None:
+            return self._context
         async with self._launch_lock:
-            if self._browser is None:
+            if self._context is None:
+                await asyncio.to_thread(
+                    self._profile_path.mkdir, mode=0o700, parents=True, exist_ok=True
+                )
                 launcher = self._launcher
                 if launcher is None:
-                    from cloakbrowser import launch_async
+                    from cloakbrowser import launch_persistent_context_async
 
-                    launcher = launch_async
-                self._browser = await launcher(headless=self._headless)
-        return self._browser
+                    launcher = launch_persistent_context_async
+                self._context = await launcher(
+                    str(self._profile_path), headless=self._headless
+                )
+        return self._context
 
     async def acquire(self, url: str, policy: AcquisitionPolicy) -> BrowserResult:
         async with self._semaphore:
-            browser = await self._get_browser()
-            context = await browser.new_context()
+            context = await self._get_context()
+            page = None
             try:
                 page = await context.new_page()
                 blocked_error: UrlPolicyError | None = None
@@ -214,12 +237,14 @@ class BrowserAcquisition:
                     raise UrlPolicyError("browser body exceeds policy")
                 return BrowserResult(body, str(page.url), "text/html")
             finally:
-                await context.close()
+                if page is not None:
+                    with suppress(Exception):
+                        await page.close()
 
     async def close(self) -> None:
-        if self._browser is not None:
-            await self._browser.close()
-            self._browser = None
+        if self._context is not None:
+            await self._context.close()
+            self._context = None
 
 
 class PdfTextExtractor:
@@ -438,7 +463,9 @@ class AcquisitionService:
         browser: BrowserFallback | None = None,
         ocr: OcrFallback | None = None,
         pdf: PdfFallback | None = None,
+        preprocessor: Any | None = None,
         clock=None,
+        logger=None,
     ) -> None:
         self.engine = engine
         self.blobs = blobs
@@ -447,7 +474,35 @@ class AcquisitionService:
         self.browser = browser
         self.ocr = ocr
         self.pdf = pdf
+        self.preprocessor = preprocessor
         self.clock = clock or (lambda: datetime.now(timezone.utc))
+        self.logger = logger
+
+    def _log(
+        self, event_type: str, message: str, *, level="INFO", data=None, **correlation
+    ) -> None:
+        if self.logger is None:
+            return
+        try:
+            self.logger.log_agent(
+                "acquisition",
+                event_type,
+                message=message,
+                level=level,
+                data=redact(
+                    {
+                        **{
+                            name: correlation[name]
+                            for name in ("attempt_number", "step_kind")
+                            if correlation.get(name) is not None
+                        },
+                        **(data or {}),
+                    }
+                ),
+                **correlation,
+            )
+        except Exception:
+            pass
 
     async def validate_url(self, url: str, policy: AcquisitionPolicy) -> str:
         return await _validate_url(url, self.resolver, policy)
@@ -457,11 +512,44 @@ class AcquisitionService:
     ) -> tuple[str, HttpResponse]:
         current = await self.validate_url(url, policy)
         for redirect_count in range(policy.max_redirects + 1):
-            response = await self.transport.get(
-                current,
-                timeout_seconds=policy.timeout_seconds,
-                max_bytes=policy.max_body_bytes,
+            started = monotonic()
+            data = {
+                "url": current,
+                "redirect_count": redirect_count,
+                "max_bytes": policy.max_body_bytes,
+            }
+            self._log(
+                "acquisition.http.started",
+                "Acquisition HTTP request started",
+                data=data,
             )
+            try:
+                response = await self.transport.get(
+                    current,
+                    timeout_seconds=policy.timeout_seconds,
+                    max_bytes=policy.max_body_bytes,
+                )
+            except Exception as error:
+                self._log(
+                    "acquisition.http.failed",
+                    "Acquisition HTTP request failed",
+                    level="ERROR",
+                    data={
+                        **data,
+                        "duration_ms": (monotonic() - started) * 1000,
+                        "error_class": type(error).__name__,
+                        "error_message": str(error),
+                    },
+                )
+                raise
+            response_data = {
+                **data,
+                "duration_ms": (monotonic() - started) * 1000,
+                "status": response.status,
+                "content_type": response.content_type,
+                "body_length": len(response.body),
+                "body_sha256": hashlib.sha256(response.body).hexdigest(),
+            }
             if 300 <= response.status < 400:
                 location = response.headers.get("location") or response.headers.get(
                     "Location"
@@ -473,12 +561,23 @@ class AcquisitionService:
                 current = await self.validate_url(urljoin(current, location), policy)
                 continue
             if not 200 <= response.status < 300:
+                self._log(
+                    "acquisition.http.failed",
+                    "Acquisition HTTP response rejected",
+                    level="ERROR",
+                    data={**response_data, "error_class": "NonSuccessResponseError"},
+                )
                 raise NonSuccessResponseError(response.status)
             if len(response.body) > policy.max_body_bytes:
                 raise UrlPolicyError("response body exceeds policy")
             content_type = response.content_type.split(";", 1)[0].lower()
             if content_type not in policy.allowed_content_types:
                 raise UrlPolicyError("content type is not allowed")
+            self._log(
+                "acquisition.http.succeeded",
+                "Acquisition HTTP request succeeded",
+                data=response_data,
+            )
             return current, response
         raise UrlPolicyError("redirect limit exceeded")
 
@@ -508,7 +607,8 @@ class AcquisitionService:
                 raise UrlPolicyError("browser body exceeds policy") from error
             content_type = rendered.content_type
         extract = await self._extract_document(body, content_type)
-        return body, extract[:4_000] if extract else body.decode("utf-8", errors="replace")[:4_000]
+        fallback = body.decode("utf-8", errors="replace")[:4_000]
+        return body, extract[:4_000] if extract else fallback
 
     async def _extract_document(self, body: bytes, content_type: str) -> str:
         normalized = content_type.split(";", 1)[0].lower()
@@ -526,7 +626,10 @@ class AcquisitionService:
 
     @staticmethod
     def _extract(body: bytes, content_type: str) -> str:
-        if content_type.startswith("text/") or content_type == "application/json":
+        if content_type.startswith("text/") or content_type in {
+            "application/json",
+            "application/xhtml+xml",
+        }:
             source = body.decode("utf-8", errors="replace")
             return preprocess_document(source, content_type).cleaned_text[:4_000]
         return ""
@@ -540,12 +643,43 @@ class AcquisitionService:
     def _result_from_revision(
         self, revision: SourceRevision, source: Source, *, cached: bool
     ) -> AcquisitionResult:
+        metadata = revision.extraction_metadata_json
+        deterministic = metadata.get("deterministic", {})
+        minicpm = metadata.get("minicpm", {})
+        return self._result_from_derivatives(
+            revision,
+            source,
+            {
+                "deterministic_blob_hash": deterministic.get("blob_hash"),
+                "readability_blob_hash": minicpm.get("blob_hash"),
+                "targeting_status": deterministic.get("targeting_status", "BROAD"),
+                "preprocessing_status": minicpm.get("status", "DISABLED"),
+            },
+            cached=cached,
+        )
+
+    def _result_from_derivatives(
+        self,
+        revision: SourceRevision,
+        source: Source,
+        metadata: dict,
+        *,
+        cached: bool,
+    ) -> AcquisitionResult:
+        if not metadata.get("deterministic_blob_hash"):
+            return self._result_from_revision_legacy(revision, source, cached=cached)
         blob_hash = revision.blob_hash or revision.content_hash
-        extract = str(
-            revision.extraction_metadata_json.get("normalized_extract")
-            or self._extract(
-                self.blobs.get(blob_hash), revision.content_type or "text/plain"
-            )
+        authoritative_passages: tuple[dict[str, str], ...] = ()
+        derivative_hash = metadata.get("deterministic_blob_hash")
+        if derivative_hash:
+            derivative = json.loads(self.blobs.get(str(derivative_hash)))
+            authoritative_passages = tuple(derivative.get("selected_passages", ()))
+        extract = "\n\n".join(item["text"] for item in authoritative_passages)
+        readability_hash = metadata.get("readability_blob_hash")
+        readability_text = (
+            self.blobs.get(str(readability_hash)).decode("utf-8")
+            if readability_hash
+            else extract
         )
         return AcquisitionResult(
             source.id,
@@ -555,7 +689,115 @@ class AcquisitionService:
             extract,
             cached,
             revision.content_type or "",
+            str(derivative_hash) if derivative_hash else None,
+            str(readability_hash) if readability_hash else None,
+            str(metadata.get("targeting_status", "BROAD")),
+            str(metadata.get("preprocessing_status", "DISABLED")),
+            authoritative_passages,
+            readability_text,
         )
+
+    def _result_from_revision_legacy(
+        self, revision: SourceRevision, source: Source, *, cached: bool
+    ) -> AcquisitionResult:
+        blob_hash = revision.blob_hash or revision.content_hash
+        metadata = revision.extraction_metadata_json
+        extract = str(metadata.get("normalized_extract") or "")
+        return AcquisitionResult(
+            source.id,
+            revision.id,
+            source.canonical_url,
+            blob_hash,
+            extract,
+            cached,
+            revision.content_type or "",
+            None,
+            None,
+            "BROAD",
+            "DISABLED",
+            (),
+            extract,
+        )
+
+    async def _source_text(self, body: bytes, content_type: str) -> tuple[str, str]:
+        normalized = content_type.split(";", 1)[0].lower()
+        if normalized == "application/pdf":
+            if self.pdf is None:
+                raise UnsupportedExtractionError("PDF extraction unavailable")
+            started = monotonic()
+            self._log(
+                "acquisition.pdf.started",
+                "PDF extraction started",
+                data={
+                    "input_length": len(body),
+                    "input_sha256": hashlib.sha256(body).hexdigest(),
+                },
+            )
+            try:
+                text = await asyncio.to_thread(self.pdf.extract, body)
+            except Exception as error:
+                self._log(
+                    "acquisition.pdf.failed",
+                    "PDF extraction failed",
+                    level="ERROR",
+                    data={
+                        "duration_ms": (monotonic() - started) * 1000,
+                        "error_class": type(error).__name__,
+                    },
+                )
+                raise
+            self._log(
+                "acquisition.pdf.succeeded",
+                "PDF extraction succeeded",
+                data={
+                    "duration_ms": (monotonic() - started) * 1000,
+                    "output_length": len(text),
+                    "output_sha256": hashlib.sha256(text.encode()).hexdigest(),
+                },
+            )
+            return text, "text/plain"
+        if normalized.startswith("image/"):
+            if self.ocr is None:
+                raise UnsupportedExtractionError("image OCR unavailable")
+            started = monotonic()
+            self._log(
+                "acquisition.ocr.started",
+                "OCR extraction started",
+                data={
+                    "content_type": normalized,
+                    "input_length": len(body),
+                    "input_sha256": hashlib.sha256(body).hexdigest(),
+                },
+            )
+            try:
+                text = await self.ocr.extract(body, normalized)
+            except Exception as error:
+                self._log(
+                    "acquisition.ocr.failed",
+                    "OCR extraction failed",
+                    level="ERROR",
+                    data={
+                        "duration_ms": (monotonic() - started) * 1000,
+                        "error_class": type(error).__name__,
+                    },
+                )
+                raise
+            self._log(
+                "acquisition.ocr.succeeded",
+                "OCR extraction succeeded",
+                data={
+                    "duration_ms": (monotonic() - started) * 1000,
+                    "output_length": len(text),
+                    "output_sha256": hashlib.sha256(text.encode()).hexdigest(),
+                },
+            )
+            return text, "text/plain"
+        if normalized.startswith("text/") or normalized in {
+            "application/json",
+            "application/xhtml+xml",
+        }:
+            return body.decode("utf-8", errors="replace"), normalized
+        return "", "text/plain"
 
     async def acquire(
         self,
@@ -566,19 +808,64 @@ class AcquisitionService:
         idempotency_key: str,
         attempt_id: str | None = None,
         step_id: str | None = None,
+        run_id: str | None = None,
+        target_id: str | None = None,
+        world_id: str | None = None,
+        attempt_number: int | None = None,
+        step_kind: str | None = None,
         source_class: str = "SECONDARY",
         publisher: str | None = None,
         lineage_id: str | None = None,
+        keywords: tuple[str, ...] = (),
+        exact_phrases: tuple[str, ...] = (),
+        section_hints: tuple[str, ...] = (),
     ) -> AcquisitionResult:
         if self.engine is None:
             raise RuntimeError("acquisition persistence requires an engine")
         canonical = canonicalize_url(url)
+        correlation = {
+            "run_id": run_id,
+            "target_id": target_id,
+            "step_id": step_id,
+            "world_id": world_id,
+            "attempt_number": attempt_number,
+            "step_kind": step_kind,
+        }
+        self._log(
+            "acquisition.started",
+            "Source acquisition started",
+            data={
+                "url": canonical,
+                "force_refresh": force_refresh,
+                "attempt_id": attempt_id,
+            },
+            **correlation,
+        )
         event_key = (
             f"{idempotency_key}:attempt:{attempt_id}" if attempt_id else idempotency_key
         )
         policy_hash = _policy_hash(policy)
-        cache_key = hashlib.sha256(f"{canonical}\0{policy_hash}".encode()).hexdigest()
+        targeting_hash = hashlib.sha256(
+            json.dumps(
+                {
+                    "keywords": keywords,
+                    "exact_phrases": exact_phrases,
+                    "section_hints": section_hints,
+                },
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode()
+        ).hexdigest()
+        cache_key = hashlib.sha256(
+            f"{canonical}\0{policy_hash}\0{targeting_hash}".encode()
+        ).hexdigest()
         now = self.clock()
+        self._log(
+            "acquisition.cache.started",
+            "Acquisition cache lookup started",
+            data={"url": canonical, "cache_key": cache_key},
+            **correlation,
+        )
         with Session(self.engine) as session:
             prior_event = session.scalar(
                 select(ToolEvent).where(ToolEvent.idempotency_key == event_key)
@@ -586,8 +873,42 @@ class AcquisitionService:
             if prior_event is not None and prior_event.source_revision_id is not None:
                 revision = session.get(SourceRevision, prior_event.source_revision_id)
                 source = session.get(Source, revision.source_id)
-                return self._result_from_revision(revision, source, cached=True)
+                result = self._result_from_derivatives(
+                    revision,
+                    source,
+                    prior_event.extract_json or {},
+                    cached=True,
+                )
+                self._log(
+                    "acquisition.cache.succeeded",
+                    "Acquisition cache lookup succeeded",
+                    data={
+                        "url": canonical,
+                        "cache_key": cache_key,
+                        "hit": True,
+                        "revision_id": result.revision_id,
+                    },
+                    **correlation,
+                )
+                self._log(
+                    "acquisition.cache.hit",
+                    "Acquisition idempotency cache hit",
+                    data={"url": canonical, "revision_id": result.revision_id},
+                    **correlation,
+                )
+                return result
             if prior_event is not None and prior_event.status == "FAILED":
+                self._log(
+                    "acquisition.cache.failed",
+                    "Cached acquisition records a prior failure",
+                    level="ERROR",
+                    data={
+                        "url": canonical,
+                        "cache_key": cache_key,
+                        "error_class": prior_event.error_class,
+                    },
+                    **correlation,
+                )
                 raise UrlPolicyError("previous idempotent acquisition failed")
             cached = session.get(AcquisitionCache, cache_key)
             if (
@@ -597,14 +918,42 @@ class AcquisitionService:
             ):
                 revision = session.get(SourceRevision, cached.source_revision_id)
                 source = session.get(Source, revision.source_id)
-                result = self._result_from_revision(revision, source, cached=True)
+                result = self._result_from_derivatives(
+                    revision,
+                    source,
+                    cached.result_json or {},
+                    cached=True,
+                )
                 self._record_event(
                     session, event_key, canonical, policy_hash, result, step_id=step_id
                 )
                 session.commit()
+                self._log(
+                    "acquisition.cache.succeeded",
+                    "Acquisition cache lookup succeeded",
+                    data={
+                        "url": canonical,
+                        "cache_key": cache_key,
+                        "hit": True,
+                        "revision_id": result.revision_id,
+                    },
+                    **correlation,
+                )
+                self._log(
+                    "acquisition.cache.hit",
+                    "Acquisition freshness cache hit",
+                    data={"url": canonical, "revision_id": result.revision_id},
+                    **correlation,
+                )
                 return result
 
-        fallback_extract: str | None = None
+        self._log(
+            "acquisition.cache.succeeded",
+            "Acquisition cache lookup succeeded",
+            data={"url": canonical, "cache_key": cache_key, "hit": False},
+            **correlation,
+        )
+
         try:
             final_url, response = await self.fetch_http(canonical, policy)
         except UrlPolicyError:
@@ -629,15 +978,39 @@ class AcquisitionService:
                 )
                 raise
             final_url = await self.validate_url(canonical, policy)
+            self._log(
+                "acquisition.browser.started",
+                "Browser acquisition started",
+                data={"url": final_url},
+                **correlation,
+            )
             try:
                 rendered = await self.browser.acquire(final_url, policy)
                 final_url = await self.validate_url(rendered.final_url, policy)
                 body = rendered.body
             except Exception:
+                self._log(
+                    "acquisition.browser.failed",
+                    "Browser acquisition failed",
+                    level="ERROR",
+                    data={"url": final_url},
+                    **correlation,
+                )
                 self._record_failure(
                     event_key, canonical, policy_hash, "BROWSER_FAILED", step_id
                 )
                 raise
+            self._log(
+                "acquisition.browser.succeeded",
+                "Browser acquisition succeeded",
+                data={
+                    "url": final_url,
+                    "body_length": len(body),
+                    "body_sha256": hashlib.sha256(body).hexdigest(),
+                    "content_type": rendered.content_type,
+                },
+                **correlation,
+            )
             if len(body) > policy.max_body_bytes:
                 self._record_failure(
                     event_key, canonical, policy_hash, "BODY_LIMIT", step_id
@@ -650,17 +1023,120 @@ class AcquisitionService:
                 content_type=rendered.content_type,
                 final_url=final_url,
             )
-        try:
-            fallback_extract = (
-                await self._extract_document(response.body, response.content_type)
-            )[:4_000]
-        except Exception:
-            fallback_extract = response.body.decode("utf-8", errors="replace")[:4_000]
-        if not fallback_extract:
-            fallback_extract = response.body.decode("utf-8", errors="replace")[:4_000]
         canonical = canonicalize_url(final_url)
+        # The raw provenance parent is content-addressed before any transformation.
         blob_hash = self.blobs.put(response.body)
         content_hash = hashlib.sha256(response.body).hexdigest()
+        source_text, preprocessing_content_type = await self._source_text(
+            response.body, response.content_type
+        )
+        deterministic = preprocess_document(
+            source_text,
+            preprocessing_content_type,
+            keywords=keywords,
+            exact_phrases=exact_phrases,
+            section_hints=section_hints,
+        )
+        self._log(
+            "preprocessing.deterministic.completed",
+            "Deterministic preprocessing completed",
+            data={
+                "input_length": len(source_text),
+                "input_sha256": hashlib.sha256(source_text.encode()).hexdigest(),
+                "transform_hash": deterministic.transform_hash,
+                "targeting_status": deterministic.targeting_status.value,
+                "selected_locators": [
+                    item.locator for item in deterministic.selected_passages
+                ],
+                "selected_passage_disposition": "AUTHORITATIVE_SOURCE_EXCERPTS",
+            },
+            **correlation,
+        )
+        authoritative_passages = tuple(
+            {"locator": passage.locator, "text": passage.text}
+            for passage in deterministic.selected_passages
+        )
+        authoritative_text = "\n\n".join(
+            passage["text"] for passage in authoritative_passages
+        )
+        derivative_document = {
+            "cleaned_text": deterministic.cleaned_text,
+            "sections": [
+                {
+                    "locator": section.locator,
+                    "heading": section.heading,
+                    "passage_locators": list(section.passage_locators),
+                }
+                for section in deterministic.sections
+            ],
+            "passages": [
+                {
+                    "locator": passage.locator,
+                    "text": passage.text,
+                    "kind": passage.kind,
+                    "section_index": passage.section_index,
+                    "passage_index": passage.passage_index,
+                }
+                for passage in deterministic.passages
+            ],
+            "selected_passages": list(authoritative_passages),
+        }
+        derivative_bytes = json.dumps(
+            derivative_document,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+        ).encode("utf-8")
+        deterministic_blob_hash = self.blobs.put(derivative_bytes)
+
+        if not authoritative_passages:
+            readability_text = ""
+            readability_blob_hash = None
+            preprocessing_status = "NOT_RUN"
+            preprocessing_detail = "no relevant deterministic passage"
+            used_fallback = True
+        elif self.preprocessor is None:
+            readability_text = authoritative_text
+            readability_blob_hash = self.blobs.put(readability_text.encode("utf-8"))
+            preprocessing_status = PreprocessingStatus.DISABLED.value
+            preprocessing_detail = "preprocessor not configured"
+            used_fallback = True
+        else:
+            model_result = await self.preprocessor.reformat(authoritative_text)
+            readability_text = model_result.text
+            readability_blob_hash = self.blobs.put(readability_text.encode("utf-8"))
+            preprocessing_status = model_result.status.value
+            preprocessing_detail = model_result.detail
+            used_fallback = model_result.used_fallback
+
+        deterministic_metadata = {
+            **deterministic.metadata(),
+            "targeting": {
+                "keywords": list(keywords),
+                "exact_phrases": list(exact_phrases),
+                "section_hints": list(section_hints),
+            },
+            "blob_hash": deterministic_blob_hash,
+            "input_blob_hash": blob_hash,
+            "output_sha256": hashlib.sha256(derivative_bytes).hexdigest(),
+            "selected_passages": list(authoritative_passages),
+        }
+        minicpm_metadata = {
+            "transform": "readability-reformat-v1",
+            "model": getattr(self.preprocessor, "model", None),
+            "input_blob_hash": deterministic_blob_hash,
+            "input_sha256": hashlib.sha256(authoritative_text.encode()).hexdigest(),
+            "blob_hash": readability_blob_hash,
+            "output_sha256": (
+                hashlib.sha256(readability_text.encode()).hexdigest()
+                if readability_blob_hash
+                else None
+            ),
+            "status": preprocessing_status,
+            "detail": preprocessing_detail,
+            "used_fallback": used_fallback,
+            "trust": "UNTRUSTED_NON_EVIDENTIARY",
+        }
         with Session(self.engine) as session, session.begin():
             source = session.scalar(
                 select(Source).where(Source.canonical_url == canonical)
@@ -690,8 +1166,12 @@ class AcquisitionService:
                     retrieved_at=now,
                     status_code=response.status,
                     content_type=response.content_type.split(";", 1)[0].lower(),
+                    extractor_name="omniverse-deterministic-preprocessor",
+                    extractor_version=deterministic.transform_version,
                     extraction_metadata_json={
-                        "normalized_extract": fallback_extract,
+                        "raw_parent_blob_hash": blob_hash,
+                        "deterministic": deterministic_metadata,
+                        "minicpm": minicpm_metadata,
                         "http": {
                             "final_url": canonical,
                             "status": response.status,
@@ -711,6 +1191,7 @@ class AcquisitionService:
                     canonical_url=canonical,
                     policy_hash=policy_hash,
                     source_revision_id=revision.id,
+                    result_json={},
                     fetched_at=now,
                 )
                 session.add(cache)
@@ -722,12 +1203,36 @@ class AcquisitionService:
                 revision.id,
                 canonical,
                 blob_hash,
-                fallback_extract,
+                authoritative_text,
                 False,
                 response.content_type.split(";", 1)[0].lower(),
+                deterministic_blob_hash,
+                readability_blob_hash,
+                deterministic.targeting_status.value,
+                preprocessing_status,
+                authoritative_passages,
+                readability_text,
             )
+            cache.result_json = {
+                "deterministic_blob_hash": result.deterministic_blob_hash,
+                "readability_blob_hash": result.readability_blob_hash,
+                "targeting_status": result.targeting_status,
+                "preprocessing_status": result.preprocessing_status,
+            }
             self._record_event(
                 session, event_key, canonical, policy_hash, result, step_id=step_id
+            )
+            self._log(
+                "acquisition.succeeded",
+                "Source acquisition succeeded",
+                data={
+                    "url": canonical,
+                    "revision_id": result.revision_id,
+                    "blob_hash": result.blob_hash,
+                    "content_type": result.content_type,
+                    "cached": False,
+                },
+                **correlation,
             )
             return result
 
@@ -752,6 +1257,10 @@ class AcquisitionService:
                 extract_json={
                     "characters": len(result.extract),
                     "sha256": hashlib.sha256(result.extract.encode()).hexdigest(),
+                    "targeting_status": result.targeting_status,
+                    "preprocessing_status": result.preprocessing_status,
+                    "deterministic_blob_hash": result.deterministic_blob_hash,
+                    "readability_blob_hash": result.readability_blob_hash,
                 },
                 error_class=None,
                 idempotency_key=idempotency_key,

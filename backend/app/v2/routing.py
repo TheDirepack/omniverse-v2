@@ -1,12 +1,16 @@
+# ruff: noqa: SIM105
+
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta, timezone
+from time import monotonic
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.v2.credentials import CredentialService
+from app.v2.logging import redact
 from app.v2.models import (
     CandidateHealth,
     CredentialHealth,
@@ -24,6 +28,7 @@ from app.v2.providers import (
     ModelRequest,
     ModelResponse,
     OpenAIAdapter,
+    OpenRouterAdapter,
     ProviderAdapter,
     ProviderError,
 )
@@ -56,11 +61,39 @@ class ProviderRouter:
         adapters: dict[str, ProviderAdapter],
         *,
         clock=None,
+        logger=None,
     ) -> None:
         self.engine = engine
         self.credentials = credentials
         self.adapters = adapters
         self.clock = clock or (lambda: datetime.now(timezone.utc))
+        self.logger = logger
+
+    def _log(
+        self, event_type: str, message: str, *, level="INFO", data=None, **correlation
+    ) -> None:
+        if self.logger is None:
+            return
+        try:
+            self.logger.log_agent(
+                "provider-router",
+                event_type,
+                message=message,
+                level=level,
+                data=redact(
+                    {
+                        **{
+                            name: correlation[name]
+                            for name in ("attempt_number", "step_kind")
+                            if correlation.get(name) is not None
+                        },
+                        **(data or {}),
+                    }
+                ),
+                **correlation,
+            )
+        except Exception:
+            pass
 
     def refresh_adapters(self, client, *, timeout_seconds: float = 60.0) -> None:
         with Session(self.engine) as session:
@@ -69,7 +102,7 @@ class ProviderRouter:
             AdapterKind.OPENAI.value: OpenAIAdapter,
             AdapterKind.GEMINI.value: GeminiAdapter,
             AdapterKind.OPENAI_COMPATIBLE.value: GenericOpenAIAdapter,
-            AdapterKind.OPENROUTER.value: GenericOpenAIAdapter,
+            AdapterKind.OPENROUTER.value: OpenRouterAdapter,
         }
         self.adapters = {
             provider.id: factories[provider.kind](
@@ -122,60 +155,100 @@ class ProviderRouter:
         )
 
     async def complete(
-        self, task: str, request: ModelRequest, requirements: RoutingRequirements
+        self,
+        task: str,
+        request: ModelRequest,
+        requirements: RoutingRequirements,
+        *,
+        run_id: str | None = None,
+        target_id: str | None = None,
+        step_id: str | None = None,
+        world_id: str | None = None,
+        attempt_number: int | None = None,
+        step_kind: str | None = None,
     ) -> ModelResponse:
+        correlation = {
+            "run_id": run_id,
+            "target_id": target_id,
+            "step_id": step_id,
+            "world_id": world_id,
+            "attempt_number": attempt_number,
+            "step_kind": step_kind,
+        }
         now = self.clock()
         last_retryable: ProviderError | None = None
         terminal_error: ProviderError | None = None
         with Session(self.engine) as session, session.begin():
             self.credentials.ensure_persisted(session)
         with Session(self.engine) as session:
-            rows = session.execute(
-                select(RouteCandidate, ProviderModel, Provider)
-                .join(Route, Route.id == RouteCandidate.route_id)
-                .join(ProviderModel, ProviderModel.id == RouteCandidate.model_id)
-                .join(Provider, Provider.id == ProviderModel.provider_id)
-                .where(
-                    Route.task == task,
-                    Route.active.is_(True),
-                    Provider.active.is_(True),
-                    ProviderModel.active.is_(True),
-                )
-                .order_by(Route.position, RouteCandidate.position, RouteCandidate.id)
-            ).all()
-            if not rows and task not in {"DEFAULT", "default"}:
-                rows = session.execute(
-                    select(RouteCandidate, ProviderModel, Provider)
-                    .join(Route, Route.id == RouteCandidate.route_id)
-                    .join(ProviderModel, ProviderModel.id == RouteCandidate.model_id)
-                    .join(Provider, Provider.id == ProviderModel.provider_id)
-                    .where(
-                        Route.task.in_(("DEFAULT", "default")),
-                        Route.active.is_(True),
-                        Provider.active.is_(True),
-                        ProviderModel.active.is_(True),
+            route = session.scalar(
+                select(Route).where(Route.task == task, Route.active.is_(True))
+            )
+            if route is None and task != "DEFAULT":
+                route = session.scalar(
+                    select(Route).where(
+                        Route.task == "DEFAULT", Route.active.is_(True)
                     )
-                    .order_by(Route.position, RouteCandidate.position, RouteCandidate.id)
+                )
+            candidates = (
+                session.scalars(
+                    select(RouteCandidate)
+                    .where(RouteCandidate.route_id == route.id)
+                    .order_by(RouteCandidate.position, RouteCandidate.id)
                 ).all()
+                if route is not None
+                else []
+            )
             snapshots = []
-            for candidate, model, provider in rows:
-                health = session.get(CandidateHealth, candidate.id)
-                credentials = self._eligible_credentials(session, provider.id, now)
-                snapshots.append(
-                    (
-                        candidate.id,
-                        model.model_name,
-                        model.context_window,
-                        model.output_limit,
-                        model.supports_tools,
-                        model.supports_structured,
-                        model.supports_text,
-                        provider.id,
-                        provider.kind,
-                        health.cooldown_until if health else None,
-                        tuple((row.id, row.opaque_ref) for row, _ in credentials),
+            seen_models: set[str] = set()
+            for candidate in candidates:
+                if candidate.model_id is not None:
+                    models = [session.get(ProviderModel, candidate.model_id)]
+                else:
+                    models = list(
+                        session.scalars(
+                            select(ProviderModel)
+                            .where(
+                                ProviderModel.provider_id == candidate.provider_id,
+                                ProviderModel.active.is_(True),
+                            )
+                            .order_by(ProviderModel.id)
+                        )
                     )
-                )
+                health = session.get(CandidateHealth, candidate.id)
+                for model in models:
+                    if model is None or not model.active or model.id in seen_models:
+                        continue
+                    provider = session.get(Provider, model.provider_id)
+                    if provider is None or not provider.active:
+                        continue
+                    seen_models.add(model.id)
+                    credentials = self._eligible_credentials(session, provider.id, now)
+                    snapshots.append(
+                        (
+                            candidate.id,
+                            model.model_name,
+                            model.context_window,
+                            model.output_limit,
+                            model.supports_tools,
+                            model.supports_structured,
+                            model.supports_text,
+                            provider.id,
+                            provider.kind,
+                            health.cooldown_until if health else None,
+                            tuple((row.id, row.opaque_ref) for row, _ in credentials),
+                        )
+                    )
+        self._log(
+            "route.evaluated",
+            "Provider route evaluated",
+            data={
+                "task": task,
+                "candidate_count": len(snapshots),
+                "requirements": asdict(requirements),
+            },
+            **correlation,
+        )
         for (
             candidate_id,
             model_name,
@@ -191,10 +264,43 @@ class ProviderRouter:
         ) in snapshots:
             candidate_retryable: ProviderError | None = None
             if requirements.tools and not supports_tools:
+                self._log(
+                    "route.candidate.skipped",
+                    "Candidate skipped",
+                    data={
+                        "candidate_id": candidate_id,
+                        "provider_id": provider_id,
+                        "model_id": model_name,
+                        "reason": "TOOLS_UNSUPPORTED",
+                    },
+                    **correlation,
+                )
                 continue
             if requirements.structured and not supports_structured:
+                self._log(
+                    "route.candidate.skipped",
+                    "Candidate skipped",
+                    data={
+                        "candidate_id": candidate_id,
+                        "provider_id": provider_id,
+                        "model_id": model_name,
+                        "reason": "STRUCTURED_UNSUPPORTED",
+                    },
+                    **correlation,
+                )
                 continue
             if requirements.text and not supports_text:
+                self._log(
+                    "route.candidate.skipped",
+                    "Candidate skipped",
+                    data={
+                        "candidate_id": candidate_id,
+                        "provider_id": provider_id,
+                        "model_id": model_name,
+                        "reason": "TEXT_UNSUPPORTED",
+                    },
+                    **correlation,
+                )
                 continue
             output = (
                 requirements.output_tokens
@@ -207,22 +313,96 @@ class ProviderRouter:
                 or effective_input_window(provider_kind, context_window, output)
                 < requirements.input_tokens
             ):
+                self._log(
+                    "route.candidate.skipped",
+                    "Candidate skipped",
+                    data={
+                        "candidate_id": candidate_id,
+                        "provider_id": provider_id,
+                        "model_id": model_name,
+                        "reason": "CONTEXT_WINDOW",
+                    },
+                    **correlation,
+                )
                 continue
             if not self._active(candidate_cooldown, now):
+                self._log(
+                    "route.candidate.skipped",
+                    "Candidate skipped",
+                    data={
+                        "candidate_id": candidate_id,
+                        "provider_id": provider_id,
+                        "model_id": model_name,
+                        "reason": "CANDIDATE_COOLDOWN",
+                    },
+                    **correlation,
+                )
                 continue
             adapter = self.adapters.get(provider_id)
             if adapter is None:
+                self._log(
+                    "route.candidate.skipped",
+                    "Candidate skipped",
+                    data={
+                        "candidate_id": candidate_id,
+                        "provider_id": provider_id,
+                        "model_id": model_name,
+                        "reason": "ADAPTER_UNAVAILABLE",
+                    },
+                    **correlation,
+                )
                 continue
             for credential_id, opaque_ref in credential_refs:
                 with Session(self.engine) as session, session.begin():
                     health = self.credential_health(session, credential_id)
                     health.selection_count += 1
                 routed_request = request.model_copy(update={"model": model_name})
+                attempt_data = {
+                    "task": task,
+                    "candidate_id": candidate_id,
+                    "credential_id": credential_id,
+                    "provider_id": provider_id,
+                    "provider_kind": provider_kind,
+                    "model_id": model_name,
+                }
+                self._log(
+                    "provider.attempt.started",
+                    "Provider attempt started",
+                    data=attempt_data,
+                    provider_id=provider_id,
+                    model_id=model_name,
+                    **correlation,
+                )
+                started = monotonic()
                 try:
                     result = await adapter.complete(
                         routed_request, self.credentials.store.resolve(opaque_ref)
                     )
                 except ProviderError as error:
+                    retryable = error.error_class in {
+                        ErrorClass.AUTH,
+                        ErrorClass.RATE_LIMIT,
+                        ErrorClass.TRANSIENT,
+                    }
+                    failure_data = {
+                        **attempt_data,
+                        "duration_ms": (monotonic() - started) * 1000,
+                        "error_class": error.error_class.value,
+                        "error_type": type(error).__name__,
+                        "error_message": str(error),
+                        "status": getattr(error, "status", None),
+                        "retryable": retryable,
+                        "retry_after": error.retry_after,
+                    }
+                    self._log(
+                        "provider.attempt.failed",
+                        "Provider attempt failed",
+                        level="WARNING" if retryable else "ERROR",
+                        data=failure_data,
+                        provider_id=provider_id,
+                        model_id=model_name,
+                        **correlation,
+                    )
                     with Session(self.engine) as session, session.begin():
                         health = self.credential_health(session, credential_id)
                         if error.error_class is ErrorClass.AUTH:
@@ -239,13 +419,37 @@ class ProviderRouter:
                                 seconds=error.retry_after or 30
                             )
                     if error.error_class is ErrorClass.AUTH:
+                        self._log(
+                            "provider.fallback",
+                            "Falling back after provider failure",
+                            level="WARNING",
+                            data=failure_data,
+                            **correlation,
+                        )
                         continue
+                    if error.error_class is ErrorClass.CAPABILITY:
+                        last_retryable = error
+                        self._log(
+                            "provider.fallback",
+                            "Falling back after provider failure",
+                            level="WARNING",
+                            data=failure_data,
+                            **correlation,
+                        )
+                        break
                     if error.error_class in {
                         ErrorClass.RATE_LIMIT,
                         ErrorClass.TRANSIENT,
                     }:
                         last_retryable = error
                         candidate_retryable = error
+                        self._log(
+                            "provider.fallback",
+                            "Falling back after provider failure",
+                            level="WARNING",
+                            data=failure_data,
+                            **correlation,
+                        )
                         continue
                     terminal_error = error
                     break
@@ -254,6 +458,19 @@ class ProviderRouter:
                         health = self.credential_health(session, credential_id)
                         health.failure_count = 0
                         health.last_error_class = None
+                    self._log(
+                        "provider.attempt.succeeded",
+                        "Provider attempt succeeded",
+                        data={
+                            **attempt_data,
+                            "duration_ms": (monotonic() - started) * 1000,
+                            "usage": result.usage.model_dump(mode="json"),
+                            "response_id": result.response_id,
+                        },
+                        provider_id=provider_id,
+                        model_id=model_name,
+                        **correlation,
+                    )
                     return result
             if candidate_retryable is not None:
                 with Session(self.engine) as session, session.begin():
@@ -273,7 +490,28 @@ class ProviderRouter:
             if terminal_error is not None:
                 break
         if terminal_error is not None:
+            self._log(
+                "provider.exhausted",
+                "Provider routing exhausted",
+                level="ERROR",
+                data={"task": task, "error_class": terminal_error.error_class.value},
+                **correlation,
+            )
             raise terminal_error
         if last_retryable is not None:
+            self._log(
+                "provider.exhausted",
+                "Provider routing exhausted",
+                level="ERROR",
+                data={"task": task, "error_class": last_retryable.error_class.value},
+                **correlation,
+            )
             raise last_retryable
+        self._log(
+            "provider.exhausted",
+            "Provider routing exhausted",
+            level="ERROR",
+            data={"task": task, "error_class": ErrorClass.TRANSIENT.value},
+            **correlation,
+        )
         raise ProviderError(ErrorClass.TRANSIENT, "no healthy route")

@@ -201,7 +201,6 @@ def test_provider_metadata_and_write_only_credential_api(
                 route_id="research",
                 model_id="gpt",
                 position=0,
-                weight=1,
             )
         )
     app = create_app(

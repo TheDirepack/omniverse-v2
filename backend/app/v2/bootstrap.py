@@ -68,109 +68,11 @@ BUILTIN_POLICIES = (
         policy_type="RESEARCH_COMPLETION",
         version=1,
         definition_json={
-            "overall_threshold": 0.8,
-            "domain_threshold": 0.6,
-            "domains": {
-                "identity_scope": {
-                    "required_indicators": ["identity", "scope"],
-                    "critical_questions": ["What is the subject and applicable scope?"],
-                },
-                "mechanisms_capabilities": {
-                    "required_indicators": ["effect", "activation", "limits"],
-                    "critical_questions": [
-                        "What mechanism produces each capability and under what limits?"
-                    ],
-                },
-                "energy_resources": {
-                    "required_indicators": [
-                        "energy_source",
-                        "resource_cost",
-                        "sustainment",
-                    ],
-                    "critical_questions": ["What powers and sustains the subject?"],
-                },
-                "industry_logistics": {
-                    "required_indicators": [
-                        "production",
-                        "supply_chain",
-                        "maintenance",
-                    ],
-                    "critical_questions": [
-                        "How is capability produced, supplied, and maintained?"
-                    ],
-                },
-                "mobility": {
-                    "required_indicators": ["range", "speed", "access"],
-                    "critical_questions": [
-                        "Where and how quickly can the subject move?"
-                    ],
-                },
-                "offense": {
-                    "required_indicators": ["effect", "delivery", "constraints"],
-                    "critical_questions": [
-                        "What offensive effects are demonstrated and constrained?"
-                    ],
-                },
-                "defense": {
-                    "required_indicators": ["protection", "recovery", "failure_modes"],
-                    "critical_questions": [
-                        "What protection and recovery are evidenced?"
-                    ],
-                },
-                "information_control": {
-                    "required_indicators": ["sensing", "communications", "control"],
-                    "critical_questions": [
-                        "How is information sensed, communicated, and controlled?"
-                    ],
-                },
-                "biology": {
-                    "required_indicators": [
-                        "physiology",
-                        "adaptation",
-                        "vulnerabilities",
-                    ],
-                    "critical_questions": [
-                        "What biological traits and vulnerabilities matter?"
-                    ],
-                },
-                "exotic": {
-                    "required_indicators": [
-                        "modality",
-                        "effect",
-                        "activation",
-                        "cost",
-                        "control",
-                        "reliability",
-                        "limits",
-                        "counters",
-                        "causal_temporal_rules",
-                    ],
-                    "critical_questions": [
-                        "What non-conventional modality, effects, and "
-                        "constraints are evidenced?"
-                    ],
-                },
-                "deployment_scale": {
-                    "required_indicators": ["quantity", "distribution", "readiness"],
-                    "critical_questions": [
-                        "At what scale and readiness is capability deployed?"
-                    ],
-                },
-                "chronology": {
-                    "required_indicators": ["timepoint", "sequence", "branch"],
-                    "critical_questions": ["When and in which branch do claims apply?"],
-                },
-                "counters_limits": {
-                    "required_indicators": ["limits", "counters", "failure_modes"],
-                    "critical_questions": [
-                        "What limits, counters, and failures are documented?"
-                    ],
-                },
-            },
-            "aliases": {
-                "mechanisms": "mechanisms_capabilities",
-                "limits": "counters_limits",
-            },
+            "completion_basis": "PLANNED_QUESTION_RESOLUTION",
+            "requires_exact_provenance": True,
+            "blocks_on_invalidating_conflicts": True,
+            "blocks_on_unresolved_audits": True,
+            "blocks_on_duplicate_promotions": True,
         },
         active=True,
     ),
@@ -271,7 +173,8 @@ def import_world_seed(engine: Engine, seed_path: Path) -> SeedResult:
 def activate_builtin_policies(engine: Engine) -> None:
     with Session(engine) as session, session.begin():
         for definition in BUILTIN_POLICIES:
-            if session.get(PolicyDefinition, definition.id) is None:
+            existing = session.get(PolicyDefinition, definition.id)
+            if existing is None:
                 session.add(
                     PolicyDefinition(
                         id=definition.id,
@@ -281,6 +184,9 @@ def activate_builtin_policies(engine: Engine) -> None:
                         active=True,
                     )
                 )
+            elif definition.policy_type == "RESEARCH_COMPLETION":
+                existing.definition_json = dict(definition.definition_json)
+                existing.active = True
 
 
 def bootstrap_fresh_database(engine: Engine, seed_path: Path) -> SeedResult:

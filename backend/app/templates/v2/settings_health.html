@@ -11,12 +11,12 @@
 
 <h2 class="text-xs font-bold uppercase tracking-widest mb-2">Granular Database / Component Resets</h2>
 <div class="mb-6 grid grid-cols-2 lg:grid-cols-4 gap-2 text-xs">
-    <button class="p-2 border border-red-300 text-red-600 hover:bg-red-50 font-bold" hx-post="/settings/health/reset/providers" hx-target="#settings-content">Reset Providers DB</button>
-    <button class="p-2 border border-red-300 text-red-600 hover:bg-red-50 font-bold" hx-post="/settings/health/reset/models" hx-target="#settings-content">Reset Models DB</button>
-    <button class="p-2 border border-red-300 text-red-600 hover:bg-red-50 font-bold" hx-post="/settings/health/reset/routes" hx-target="#settings-content">Reset Routes DB</button>
-    <button class="p-2 border border-red-300 text-red-600 hover:bg-red-50 font-bold" hx-post="/settings/health/reset/notebook" hx-target="#settings-content">Reset Notebook DB</button>
-    <button class="p-2 border border-red-300 text-red-600 hover:bg-red-50 font-bold" hx-post="/settings/health/reset/knowledge" hx-target="#settings-content">Reset Knowledge DB</button>
-    <button class="p-2 border border-red-300 text-red-600 hover:bg-red-50 font-bold" hx-post="/settings/health/reset/worlds" hx-target="#settings-content">Reset Worlds DB</button>
+    <button class="p-2 border border-red-300 text-red-600 hover:bg-red-50 font-bold" hx-post="/settings/health/reset/providers" hx-target="#settings-content" hx-confirm="Delete all provider, model, credential, and provider-route target data, then restore the local Qwen default?">Reset Providers DB</button>
+    <button class="p-2 border border-red-300 text-red-600 hover:bg-red-50 font-bold" hx-post="/settings/health/reset/models" hx-target="#settings-content" hx-confirm="Delete all model records and explicit model route slots, then restore the local Qwen model?">Reset Models DB</button>
+    <button class="p-2 border border-red-300 text-red-600 hover:bg-red-50 font-bold" hx-post="/settings/health/reset/routes" hx-target="#settings-content" hx-confirm="Delete every route and fallback chain, then restore only DEFAULT with local Qwen?">Reset Routes DB</button>
+    <button class="p-2 border border-red-300 text-red-600 hover:bg-red-50 font-bold" hx-post="/settings/health/reset/notebook" hx-target="#settings-content" hx-confirm="Delete all research workspaces, proposals, run history, checkpoints, and model calls?">Reset Notebook DB</button>
+    <button class="p-2 border border-red-300 text-red-600 hover:bg-red-50 font-bold" hx-post="/settings/health/reset/knowledge" hx-target="#settings-content" hx-confirm="Delete notebook data plus all canon, evidence, sources, and provenance?">Reset Knowledge DB</button>
+    <button class="p-2 border border-red-300 text-red-600 hover:bg-red-50 font-bold" hx-post="/settings/health/reset/worlds" hx-target="#settings-content" hx-confirm="Delete all world-scoped research and knowledge, then reimport the configured world seed?">Reset Worlds DB</button>
 </div>
 
 <h2 class="text-xs font-bold uppercase tracking-widest mb-2">Candidate and credential health</h2>

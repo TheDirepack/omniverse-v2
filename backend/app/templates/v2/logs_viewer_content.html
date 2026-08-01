@@ -1,0 +1,12 @@
+<div id="log-viewer-content">
+    <p class="text-xs text-gray-500 mb-2">Showing {{ items|length }} of {{ total_items }} entries, newest first</p>
+    <div class="max-h-[65vh] overflow-y-auto border border-gray-200 dark:border-gray-800 divide-y divide-gray-200 dark:divide-gray-800">
+        {% for item in items %}
+        <article class="p-2 text-xs bg-gray-50 dark:bg-gray-900">
+            <div class="flex flex-wrap gap-x-3 text-gray-500"><time>{{ item.timestamp or "Unknown time" }}</time><strong>{{ item.level or "UNKNOWN" }}</strong><code>{{ item.component or "unknown" }}</code><span>{{ item.event_type or "unknown" }}</span></div>
+            <p class="mt-1 whitespace-pre-wrap break-words">{{ item.message or "No message" }}</p>
+        </article>
+        {% else %}<p class="p-3 text-xs text-gray-500">No log entries match your filters.</p>{% endfor %}
+    </div>
+    {% if next_cursor is not none %}<button class="mt-2 h-7 px-3 bg-blue-600 text-white text-xs font-bold" hx-get="/settings/logs/view?stream={{ stream }}&amp;cursor={{ next_cursor }}&amp;level={{ level }}&amp;search={{ search }}" hx-target="#log-viewer-content" hx-swap="outerHTML">Older entries</button>{% endif %}
+</div>

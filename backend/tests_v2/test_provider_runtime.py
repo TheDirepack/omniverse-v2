@@ -177,6 +177,63 @@ class FakeAdapter:
         return outcome
 
 
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_provider_candidate_expands_models_at_call_time_and_inherits_default(
+    isolated_paths: dict[str, Path],
+) -> None:
+    engine = create_sqlite_engine(isolated_paths["database"])
+    bootstrap_schema(engine)
+    credentials = CredentialService(JsonCredentialStore(isolated_paths["credentials"]))
+    credentials.add("p", "one", "key")
+    with Session(engine) as session, session.begin():
+        session.add(Provider(id="p", kind="OPENAI", base_url=None, active=True))
+        session.add(
+            ProviderModel(
+                id="later-model",
+                provider_id="p",
+                model_name="later-model",
+                context_window=50_000,
+                output_limit=2_000,
+                supports_text=True,
+                active=True,
+            )
+        )
+        session.add(Route(id="route:DEFAULT", task="DEFAULT", position=0, active=True))
+        session.add(
+            RouteCandidate(
+                id="provider-slot",
+                route_id="route:DEFAULT",
+                provider_id="p",
+                model_id=None,
+                position=0,
+            )
+        )
+
+    class RecordingAdapter:
+        kind = AdapterKind.OPENAI
+
+        def __init__(self) -> None:
+            self.models: list[str] = []
+
+        async def complete(self, request: ModelRequest, _credential: str):
+            self.models.append(request.model)
+            return ModelResponse(
+                text="ok",
+                tool_calls=(),
+                usage=Usage(input_tokens=1, output_tokens=1, total_tokens=2),
+            )
+
+    adapter = RecordingAdapter()
+    router = ProviderRouter(engine, credentials, {"p": adapter})
+
+    await router.complete(
+        "research.plan", ModelRequest(model="", messages=()), RoutingRequirements()
+    )
+
+    assert adapter.models == ["later-model"]
+
+
 def seed_route(engine, credential_service: CredentialService) -> tuple[str, str]:
     c1 = credential_service.add("p", "one", "key-one")
     c2 = credential_service.add("p", "two", "key-two")
@@ -197,9 +254,7 @@ def seed_route(engine, credential_service: CredentialService) -> tuple[str, str]
             )
         )
         session.add(Route(id="r", task="research", position=0, active=True))
-        session.add(
-            RouteCandidate(id="rc", route_id="r", model_id="pm", position=0, weight=1)
-        )
+        session.add(RouteCandidate(id="rc", route_id="r", model_id="pm", position=0))
     return c1.credential_id, c2.credential_id
 
 
@@ -281,10 +336,10 @@ async def test_router_filters_capabilities_and_does_not_fallback_on_input(
         session.add_all(
             [
                 RouteCandidate(
-                    id="c1", route_id="r", model_id="plain", position=0, weight=1
+                    id="c1", route_id="r", model_id="plain", position=0
                 ),
                 RouteCandidate(
-                    id="c2", route_id="r", model_id="tools", position=1, weight=1
+                    id="c2", route_id="r", model_id="tools", position=1
                 ),
             ]
         )
@@ -296,6 +351,84 @@ async def test_router_filters_capabilities_and_does_not_fallback_on_input(
         )
     assert caught.value.error_class is ErrorClass.INPUT
     assert len(adapter.calls) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_router_falls_back_after_capability_failure_without_health_penalty(
+    isolated_paths: dict[str, Path],
+) -> None:
+    engine = create_sqlite_engine(isolated_paths["database"])
+    bootstrap_schema(engine)
+    credentials = CredentialService(JsonCredentialStore(isolated_paths["credentials"]))
+    credentials.add("first", "primary", "first-key")
+    credentials.add("second", "primary", "second-key")
+    with Session(engine) as session, session.begin():
+        session.add_all(
+            [
+                Provider(id="first", kind="GEMINI", active=True),
+                Provider(id="second", kind="OPENAI", active=True),
+                ProviderModel(
+                    id="first-model",
+                    provider_id="first",
+                    model_name="first-model",
+                    context_window=50_000,
+                    output_limit=2_000,
+                    supports_structured=True,
+                    active=True,
+                ),
+                ProviderModel(
+                    id="second-model",
+                    provider_id="second",
+                    model_name="second-model",
+                    context_window=50_000,
+                    output_limit=2_000,
+                    supports_structured=True,
+                    active=True,
+                ),
+                Route(id="capability-route", task="plan", position=0, active=True),
+                RouteCandidate(
+                    id="first-candidate",
+                    route_id="capability-route",
+                    model_id="first-model",
+                    position=0,
+                ),
+                RouteCandidate(
+                    id="second-candidate",
+                    route_id="capability-route",
+                    model_id="second-model",
+                    position=1,
+                ),
+            ]
+        )
+    ok = ModelResponse(
+        text="ok",
+        tool_calls=(),
+        usage=Usage(input_tokens=1, output_tokens=1, total_tokens=2),
+    )
+    first = FakeAdapter(
+        {"first-key": ProviderError(ErrorClass.CAPABILITY, "schema unsupported")}
+    )
+    second = FakeAdapter({"second-key": ok})
+    router = ProviderRouter(
+        engine,
+        credentials,
+        {"first": first, "second": second},
+    )
+
+    response = await router.complete(
+        "plan",
+        ModelRequest(model="", messages=()),
+        RoutingRequirements(structured=True),
+    )
+
+    assert response.text == "ok"
+    assert first.calls == ["first-key"]
+    assert second.calls == ["second-key"]
+    with Session(engine) as session:
+        assert session.get(CandidateHealth, "first-candidate") is None
+        health = session.scalars(select(CredentialHealth)).all()
+        assert all(row.failure_count == 0 for row in health)
 
 
 @pytest.mark.asyncio
@@ -394,3 +527,66 @@ async def test_slow_provider_does_not_hold_sqlite_write_transaction(
     await asyncio.wait_for(asyncio.to_thread(write_during_call), timeout=0.5)
     release.set()
     assert (await pending).text == "ok"
+
+
+@pytest.mark.asyncio
+async def test_adapter_model_sync_and_filtering() -> None:
+    from unittest.mock import AsyncMock
+
+    import httpx
+
+    client = httpx.AsyncClient()
+    try:
+        openai_adapter = OpenAIAdapter(client=client)
+
+        class MockResponse:
+            status_code = 200
+
+            def json(self):
+                return {
+                    "data": [
+                        {"id": "gpt-4o", "name": "GPT-4o"},
+                        {"id": "text-embedding-3-small", "name": "Embedding"},
+                        {"id": "whisper-1", "name": "Whisper"},
+                        {"id": "dall-e-3", "name": "DALL-E"},
+                        {"id": "omni-moderation-latest", "name": "Moderation"},
+                    ]
+                }
+
+        client.get = AsyncMock(return_value=MockResponse())
+        models = await openai_adapter.sync_models("sk-test")
+        model_ids = [m["id"] for m in models]
+        assert model_ids == ["gpt-4o"]
+
+        gemini_adapter = GeminiAdapter(client=client)
+
+        class MockGeminiResponse:
+            status_code = 200
+
+            def json(self):
+                return {
+                    "models": [
+                        {
+                            "name": "models/gemini-pro",
+                            "displayName": "Gemini Pro",
+                        },
+                        {
+                            "name": "models/embedding-001",
+                            "displayName": "Embedding",
+                        },
+                        {
+                            "name": "models/imagen-3.0",
+                            "displayName": "Imagen",
+                        },
+                    ]
+                }
+
+        client.get = AsyncMock(return_value=MockGeminiResponse())
+        gemini_models = await gemini_adapter.sync_models("gem-key")
+        client.get.assert_called_once()
+        _, kwargs = client.get.call_args
+        assert kwargs.get("params") == {"key": "gem-key"}
+        gemini_ids = [m["id"] for m in gemini_models]
+        assert gemini_ids == ["gemini-pro"]
+    finally:
+        await client.aclose()

@@ -1,0 +1,43 @@
+<div class="grid grid-cols-1 xl:grid-cols-[24rem_1fr] gap-4">
+    <section>
+        <h2 class="text-xs font-bold uppercase tracking-widest mb-2">Logging configuration</h2>
+        {% if logging_error %}<p role="alert" class="mb-2 border border-red-300 bg-red-50 p-2 text-xs text-red-700 dark:bg-red-950 dark:text-red-200">{{ logging_error }}</p>{% endif %}
+        <form class="grid gap-3 border border-gray-200 dark:border-gray-800 p-3 bg-gray-50 dark:bg-gray-900 text-xs" hx-post="/settings/logging" hx-target="#settings-content">
+            <label class="flex items-center gap-2">
+                <input name="enabled" type="checkbox" value="true" {% if config.enabled %}checked{% endif %}>
+                <span class="font-bold">Enable file logging</span>
+            </label>
+            <label class="grid gap-1"><span>Relative folder</span><input name="folder" required maxlength="255" value="{{ config.folder }}" class="h-7 px-2 border bg-white dark:bg-gray-800"></label>
+            <div class="grid grid-cols-2 gap-2">
+                <label class="grid gap-1"><span>Server level</span><select name="server_level" class="h-7 border bg-white dark:bg-gray-800">{% for value in ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] %}<option value="{{ value }}" {% if config.server_level == value %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
+                <label class="grid gap-1"><span>Agent level</span><select name="agent_level" class="h-7 border bg-white dark:bg-gray-800">{% for value in ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] %}<option value="{{ value }}" {% if config.agent_level == value %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
+            </div>
+            <div class="grid grid-cols-2 gap-2">
+                <label class="grid gap-1"><span>Server max bytes</span><input name="server_max_bytes" type="number" min="1024" max="100000000" required value="{{ config.server_max_bytes }}" class="h-7 px-2 border bg-white dark:bg-gray-800"></label>
+                <label class="grid gap-1"><span>Agent max bytes</span><input name="agent_max_bytes" type="number" min="1024" max="100000000" required value="{{ config.agent_max_bytes }}" class="h-7 px-2 border bg-white dark:bg-gray-800"></label>
+            </div>
+            <div class="grid grid-cols-2 gap-2">
+                <label class="grid gap-1"><span>Server backups</span><input name="server_backup_count" type="number" min="0" max="100" required value="{{ config.server_backup_count }}" class="h-7 px-2 border bg-white dark:bg-gray-800"></label>
+                <label class="grid gap-1"><span>Agent backups</span><input name="agent_backup_count" type="number" min="0" max="100" required value="{{ config.agent_backup_count }}" class="h-7 px-2 border bg-white dark:bg-gray-800"></label>
+            </div>
+            <button class="h-7 px-3 bg-blue-600 text-white w-fit font-bold">Apply logging settings</button>
+        </form>
+        <dl class="mt-3 grid grid-cols-[7rem_1fr] gap-1 text-xs">
+            <dt>State</dt><dd>{{ "Logging enabled" if health.enabled else "Logging disabled" }}</dd>
+            <dt>Effective folder</dt><dd><code class="break-all">{{ effective_folder }}</code></dd>
+            <dt>Server logger</dt><dd>{{ "Healthy" if health.streams.server else "Inactive" }}</dd>
+            <dt>Agent logger</dt><dd>{{ "Healthy" if health.streams.agent else "Inactive" }}</dd>
+            <dt>Last error</dt><dd>{{ health.last_error or "None" }}</dd>
+        </dl>
+    </section>
+    <section>
+        <h2 class="text-xs font-bold uppercase tracking-widest mb-2">File diagnostics</h2>
+        <form hx-get="/settings/logs/view" hx-target="#log-viewer-content" class="flex flex-wrap gap-2 items-end mb-3">
+            <label class="grid gap-1 text-xs"><span>Stream</span><select name="stream" class="h-7 px-2 border bg-white dark:bg-gray-800"><option value="server">Server</option><option value="agent">Agent</option></select></label>
+            <label class="grid gap-1 text-xs"><span>Level</span><select name="level" class="h-7 px-2 border bg-white dark:bg-gray-800"><option value="">All levels</option>{% for value in ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] %}<option value="{{ value }}">{{ value }}</option>{% endfor %}</select></label>
+            <label class="grid gap-1 text-xs flex-1"><span>Text search</span><input name="search" maxlength="200" class="h-7 px-2 border bg-white dark:bg-gray-800"></label>
+            <button class="h-7 px-3 bg-blue-600 text-white text-xs font-bold">Filter</button>
+        </form>
+        <div id="log-viewer-content" hx-get="/settings/logs/view?stream=server&amp;cursor=0" hx-trigger="load"></div>
+    </section>
+</div>

@@ -1,11 +1,13 @@
 # Role contracts stay compact and validation errors are stable workflow diagnostics.
-# ruff: noqa: E501, TRY003
+# ruff: noqa: E501, SIM105, TRY003
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
+import inspect
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -25,13 +27,13 @@ from app.v2.contracts import (
     SynthesizerOutput,
 )
 from app.v2.domain import GraphEdge, RunOutcome, RunStatus, StepKind, ensure_valid_graph
-from app.v2.gateway import StructuredModelGateway
+from app.v2.gateway import StructuredModelGateway, StructuredOutputError
+from app.v2.logging import redact
 from app.v2.models import (
     AuditDecisionRecord,
     CanonNode,
     CanonNodeRevision,
     ClaimConflict,
-    CoverageRecord,
     EvidenceFragment,
     IntegrationEffect,
     MaterialProposalFieldRecord,
@@ -47,6 +49,8 @@ from app.v2.models import (
     RelationshipRevision,
     ResearchGapRecord,
     ResearchWorkspace,
+    Run,
+    RunTarget,
     SearchLead,
     Source,
     SourceRevision,
@@ -56,11 +60,11 @@ from app.v2.models import (
 )
 from app.v2.providers import ErrorClass, ProviderError
 from app.v2.research_runs import ResearchRunKernel
-from app.v2.search import normalize_candidates
+from app.v2.search import SearchError, normalize_candidates
 
 PROMPTS = {
-    StepKind.PLAN: "planner/v1: Produce scoped questions, queries, indicators, budgets, and stop conditions. Output only the schema. Do not provide hidden reasoning.",
-    StepKind.EXTRACT: "extractor/v1: Extract only exact source excerpts answering the supplied questions. Never use memory or snippets as evidence. Output only the schema.",
+    StepKind.PLAN: "planner/v2: Begin by considering identity and scope; entities and relationships; chronology and branches; mechanisms and capabilities; activation, costs, constraints, counters, and failures; resources, production, logistics, and deployment; movement and access; offense and defense; sensing, communications, and control; biology; unusual magical, psychic, dimensional, temporal, causal, conceptual, and ontological rules; and contradictions or disputed canon. These reminders are not labels or a taxonomy: omit inapplicable areas and add world-specific areas. Prioritize questions using the global focus, scope, and targeting hints. Produce stable question IDs, priorities, queries, source budgets, and stop conditions. Output only the schema. Do not provide hidden reasoning.",
+    StepKind.EXTRACT: "extractor/v1: Extract only exact source excerpts answering the supplied questions. Never use memory or snippets as evidence. Every fragment locator must exactly equal one allowed_locator and continuity must exactly equal expected_continuity. Output only the schema.",
     StepKind.SYNTHESIZE: "synthesizer/v1: Produce typed proposals with field-level supporting and contradicting fragment IDs. Preserve qualifiers. Output only the schema.",
     StepKind.AUDIT: "auditor/v1: Independently judge every material field against exact excerpts and scope. Output stable verdicts and reason codes only.",
     StepKind.SUMMARIZE: "summary/v1: Summarize accepted canon only. Every fact must cite supplied node and fragment IDs. Output only the schema.",
@@ -87,30 +91,8 @@ class EvidenceEligibilityError(ValueError):
     pass
 
 
-def policy_obligations(
-    domains: tuple[str, ...], policy: dict[str, Any] | None = None
-) -> dict[str, dict[str, Any]]:
-    policy = (
-        policy
-        or next(
-            item
-            for item in BUILTIN_POLICIES
-            if item.policy_type == "RESEARCH_COMPLETION"
-        ).definition_json
-    )
-    aliases = policy.get("aliases", {})
-    definitions = policy["domains"]
-    domains = domains or tuple(definitions)
-    result = {}
-    for requested in domains:
-        policy_domain = aliases.get(requested, requested)
-        if policy_domain not in definitions:
-            raise ValueError(f"unknown research domain: {requested}")
-        result[requested] = {
-            "policy_domain": policy_domain,
-            **definitions[policy_domain],
-        }
-    return result
+class AgentOutputError(ValueError):
+    pass
 
 
 def validate_promotion_source_policy(
@@ -143,13 +125,9 @@ def validate_promotion_source_policy(
 
 @dataclass(frozen=True, slots=True)
 class CompletionInputs:
-    required_indicators: frozenset[str]
-    accepted_indicators: frozenset[str]
-    critical_questions: frozenset[str]
-    accepted_questions: frozenset[str]
-    allowed_gap_questions: frozenset[str]
+    planned_question_ids: frozenset[str]
+    resolved_question_ids: frozenset[str]
     provenance_rate: float
-    domain_coverage: dict[str, float]
     unresolved_invalidating_conflicts: int
     unresolved_audit_decisions: int
     duplicate_promotions: int
@@ -163,20 +141,10 @@ class CompletionResult:
 
 def evaluate_completion(inputs: CompletionInputs) -> CompletionResult:
     reasons: list[str] = []
-    required = inputs.required_indicators
-    accepted = inputs.accepted_indicators & required
-    overall = len(accepted) / len(required) if required else 1.0
-    unanswered = inputs.critical_questions - inputs.accepted_questions
-    unallowed = unanswered - inputs.allowed_gap_questions
     if inputs.provenance_rate != 1.0:
         reasons.append("PROVENANCE_BELOW_1.0")
-    if unallowed:
-        reasons.append("CRITICAL_QUESTIONS_UNRESOLVED")
-    if overall < 0.8:
-        reasons.append("OVERALL_COVERAGE_BELOW_0.80")
-    for domain, coverage in sorted(inputs.domain_coverage.items()):
-        if coverage < 0.6:
-            reasons.append(f"DOMAIN_COVERAGE_BELOW_0.60:{domain}")
+    if inputs.planned_question_ids - inputs.resolved_question_ids:
+        reasons.append("PLANNED_QUESTIONS_UNRESOLVED")
     if inputs.unresolved_invalidating_conflicts:
         reasons.append("INVALIDATING_CONFLICTS_OPEN")
     if inputs.unresolved_audit_decisions:
@@ -188,9 +156,20 @@ def evaluate_completion(inputs: CompletionInputs) -> CompletionResult:
     )
 
 
+def resolve_question_ids(
+    planned_question_ids: set[str],
+    question_fragment_ids: dict[str, list[str]],
+    accepted_fragment_ids: set[str],
+) -> set[str]:
+    return {
+        question_id
+        for question_id in planned_question_ids
+        if set(question_fragment_ids.get(question_id, ())) & accepted_fragment_ids
+    }
+
+
 def validate_evidence_eligibility(
     target_scope,
-    domain: str,
     supporting_ids: tuple[str, ...],
     contradicting_ids: tuple[str, ...],
     evidence: dict[str, dict[str, Any]],
@@ -220,7 +199,6 @@ def validate_evidence_eligibility(
             "world": (item.get("world_id"), target_scope.world_id),
             "continuity": (item.get("continuity"), target_scope.continuity),
             "era": (item.get("era_or_timepoint"), target_scope.era_or_timepoint),
-            "domain": (item.get("domain"), domain),
             "branch": (item.get("branch_id"), target_scope.branch_id),
             "conditions": (
                 tuple(item.get("conditions", ())),
@@ -277,19 +255,51 @@ class ResearchWorkflow:
         max_gap_loops: int = 1,
         context_window: int = 40_000,
         acquisition_policy: AcquisitionPolicy | None = None,
+        preprocessor=None,
         clock=None,
+        logger=None,
     ) -> None:
         self.engine = engine
         self.kernel = kernel
-        self.gateway = StructuredModelGateway(engine, router)
+        self.logger = logger
+        self.gateway = StructuredModelGateway(engine, router, logger=logger)
         self.search = search_provider
         self.acquisition = acquisition_service
         self.max_gap_loops = max_gap_loops
         self.context_window = context_window
         self.acquisition_policy = acquisition_policy or AcquisitionPolicy()
+        self.preprocessor = preprocessor
         self.clock = clock or (lambda: datetime.now(timezone.utc))
         self.crash_after_effect_for: StepKind | None = None
         self.crash_after_model_call_for: StepKind | None = None
+
+    def _log(
+        self, lease, event_type: str, message: str, *, level="INFO", data=None
+    ) -> None:
+        if self.logger is None:
+            return
+        try:
+            self.logger.log_agent(
+                "research-workflow",
+                event_type,
+                message=message,
+                level=level,
+                data=redact(
+                    {
+                        "step_kind": lease.kind.value,
+                        "attempt_number": lease.attempt_number,
+                        **(data or {}),
+                    }
+                ),
+                run_id=lease.run_id,
+                target_id=lease.target_id,
+                step_id=lease.step_id,
+                world_id=lease.world_id,
+                attempt_number=lease.attempt_number,
+                step_kind=lease.kind.value,
+            )
+        except Exception:
+            pass
 
     def _policy(self, policy_type: str) -> dict[str, Any]:
         with Session(self.engine) as session:
@@ -353,8 +363,10 @@ class ResearchWorkflow:
         )
         if lease is None:
             return False
+        self._log(lease, "step.started", "Workflow step started")
         if self.kernel.get(run_id).status is RunStatus.CANCELLING:
             self.kernel.cancel_at_safe_boundary(lease, self.clock())
+            self._log(lease, "step.cancelled", "Workflow step cancelled")
             return True
         try:
             state = await self._execute(lease)
@@ -366,32 +378,96 @@ class ResearchWorkflow:
                 state=state,
                 now=self.clock(),
             )
-        except SimulatedCrashError:
+            self._log(lease, "step.succeeded", "Workflow step succeeded")
+        except SimulatedCrashError as error:
+            self._log(
+                lease,
+                "step.crashed",
+                "Workflow simulated crash",
+                level="CRITICAL",
+                data={"error_class": type(error).__name__, "error_message": str(error)},
+            )
             raise
         except Exception as error:  # Every leased failure must become inspectable.
-            retryable = isinstance(error, ProviderError) and error.error_class in {
+            transient = isinstance(error, ProviderError) and error.error_class in {
                 ErrorClass.RATE_LIMIT,
                 ErrorClass.TRANSIENT,
             }
+            retryable = transient and lease.attempt_number < self._max_attempts(lease)
             retry_seconds = (
                 error.retry_after if isinstance(error, ProviderError) else None
             )
-            self.kernel.checkpoint_failure(
-                lease,
-                f"{type(error).__name__}: {error}",
-                retryable=retryable,
-                retry_at=(
-                    self.clock() + timedelta(seconds=retry_seconds or 30)
-                    if retryable
-                    else None
-                ),
-                now=self.clock(),
+            message = f"{type(error).__name__}: {error}"
+            recoverable = isinstance(
+                error, (ProviderError, StructuredOutputError, AgentOutputError)
             )
+            if recoverable and not retryable:
+                self.kernel.checkpoint_partial(
+                    lease,
+                    message,
+                    workspace_id=self._workspace_id(lease.target_id),
+                    gap={
+                        "reason": "AGENT_UNAVAILABLE",
+                        "step_kind": lease.kind.value,
+                        "error_class": type(error).__name__,
+                        "error_message": str(error),
+                        "attempt_count": lease.attempt_number,
+                    },
+                    now=self.clock(),
+                )
+                self._log(
+                    lease,
+                    "step.partial",
+                    "Workflow step degraded to partial outcome",
+                    level="WARNING",
+                    data={"error_class": type(error).__name__, "error_message": str(error)},
+                )
+            else:
+                self.kernel.checkpoint_failure(
+                    lease,
+                    message,
+                    retryable=retryable,
+                    retry_at=(
+                        self.clock() + timedelta(seconds=retry_seconds or 30)
+                        if retryable
+                        else None
+                    ),
+                    now=self.clock(),
+                )
+                self._log(
+                    lease,
+                    "step.failed",
+                    "Workflow step failed",
+                    level="ERROR",
+                    data={
+                        "error_class": type(error).__name__,
+                        "error_message": str(error),
+                        "retryable": retryable,
+                    },
+                )
+            if retryable:
+                self._log(
+                    lease,
+                    "step.retry_scheduled",
+                    "Workflow step retry scheduled",
+                    level="WARNING",
+                    data={"retry_after_seconds": retry_seconds or 30},
+                )
         return True
 
     def _raise_simulated_crash(self, kind: StepKind) -> None:
         if self.crash_after_effect_for is kind:
             raise SimulatedCrashError("simulated crash after effect commit")
+
+    def _max_attempts(self, lease) -> int:
+        if self.engine is None:
+            # Logging-only test doubles do not own durable run state.
+            return lease.attempt_number + 1
+        with Session(self.engine) as session:
+            run = session.get(Run, lease.run_id)
+            if run is None:
+                raise LookupError(lease.run_id)
+            return run.max_attempts
 
     async def _execute(self, lease) -> dict[str, Any]:
         handlers = {
@@ -415,9 +491,19 @@ class ResearchWorkflow:
             if target.id == lease.target_id
         )
 
+    def _run_context(self, lease) -> tuple[str, dict[str, Any]]:
+        with Session(self.engine) as session:
+            run = session.get(Run, lease.run_id)
+            target = session.get(RunTarget, lease.target_id)
+            if run is None or target is None or target.run_id != lease.run_id:
+                raise LookupError(lease.target_id)
+            return run.objective, {**run.scope_json, **target.scope_json}
+
+    def _objective(self, lease) -> str:
+        return self._run_context(lease)[0]
+
     def _scope(self, lease) -> dict[str, Any]:
-        projection = self.kernel.get(lease.run_id)
-        return {**projection.scope, **self._target(lease).scope}
+        return self._run_context(lease)[1]
 
     @staticmethod
     def _workspace_id(target_id: str) -> str:
@@ -427,7 +513,6 @@ class ResearchWorkflow:
         workspace_id = self._workspace_id(lease.target_id)
         workspace = session.get(ResearchWorkspace, workspace_id)
         if workspace is None:
-            target = self._target(lease)
             workspace = ResearchWorkspace(
                 id=workspace_id,
                 run_id=lease.run_id,
@@ -437,7 +522,10 @@ class ResearchWorkflow:
                 era_or_timepoint=self._freshness_scope(lease)["era_or_timepoint"],
                 branch_id=self._freshness_scope(lease)["branch_id"],
                 conditions_key=self._freshness_scope(lease)["conditions_key"],
-                brief_json={"objective": target.objective, "scope": self._scope(lease)},
+                brief_json={
+                    "objective": self._objective(lease),
+                    "scope": self._scope(lease),
+                },
                 status="ACTIVE",
             )
             session.add(workspace)
@@ -476,6 +564,10 @@ class ResearchWorkflow:
         if output is None:
             output = await self.gateway.call(
                 run_id=lease.run_id,
+                target_id=lease.target_id,
+                world_id=lease.world_id,
+                attempt_number=lease.attempt_number,
+                step_kind=lease.kind.value,
                 model_call_id=effect_key,
                 step_id=lease.step_id,
                 **kwargs,
@@ -502,7 +594,6 @@ class ResearchWorkflow:
     async def _inventory(self, lease) -> dict[str, Any]:
         target = self._target(lease)
         scope = self._scope(lease)
-        domains = tuple(scope.get("domains") or policy_obligations(()))
         continuity = str(scope.get("continuity", "unspecified"))
         freshness = self._freshness_scope(lease)
         workspace_id = self._workspace_id(lease.target_id)
@@ -510,33 +601,6 @@ class ResearchWorkflow:
             world = session.get(World, target.world_id)
             if world is None:
                 raise LookupError(target.world_id)
-            prior_coverage = session.scalars(
-                select(CoverageRecord).where(
-                    CoverageRecord.world_id == target.world_id,
-                    CoverageRecord.continuity == continuity,
-                    CoverageRecord.era_or_timepoint == freshness["era_or_timepoint"],
-                    CoverageRecord.branch_id == freshness["branch_id"],
-                    CoverageRecord.conditions_key == freshness["conditions_key"],
-                    CoverageRecord.status == "VERIFIED",
-                )
-            ).all()
-            obligations = policy_obligations(
-                domains, self._policy("RESEARCH_COMPLETION")
-            )
-            covered = {
-                domain
-                for domain in domains
-                if len(
-                    {
-                        indicator
-                        for row in prior_coverage
-                        if row.domain == domain
-                        for indicator in row.indicators_json
-                    }
-                )
-                / len(obligations[domain]["required_indicators"])
-                >= 0.6
-            }
             gaps = session.scalars(
                 select(ResearchGapRecord)
                 .join(ResearchWorkspace)
@@ -589,38 +653,58 @@ class ResearchWorkflow:
                 )
                 == freshness["conditions_key"]
             ]
+            prior_workspaces = session.scalars(
+                select(ResearchWorkspace).where(
+                    ResearchWorkspace.world_id == target.world_id,
+                    ResearchWorkspace.id != workspace_id,
+                    ResearchWorkspace.continuity == continuity,
+                    ResearchWorkspace.era_or_timepoint == freshness["era_or_timepoint"],
+                    ResearchWorkspace.branch_id == freshness["branch_id"],
+                    ResearchWorkspace.conditions_key == freshness["conditions_key"],
+                )
+            ).all()
+            reusable = bool(accepted_nodes) and any(
+                workspace.brief_json.get("objective") == self._objective(lease)
+                and workspace.brief_json.get("scope") == scope
+                for workspace in prior_workspaces
+            )
         inventory = {
             "world": {
                 "id": world.id,
                 "name": world.name,
                 "continuity": world.continuity,
             },
-            "missing_domains": [domain for domain in domains if domain not in covered],
             "gap_ids": [gap.id for gap in gaps],
             "conflict_ids": [
                 conflict.id for conflict in conflicts if conflict.status != "RESOLVED"
             ],
             "source_revision_ids": list(revisions),
             "accepted_node_ids": list(accepted_nodes),
+            "reusable_accepted_node_ids": list(accepted_nodes) if reusable else [],
         }
         return self._save(lease, inventory=inventory, output_refs=[workspace_id])
 
     async def _plan(self, lease) -> dict[str, Any]:
         state = self._state(lease)
-        missing = state["inventory"]["missing_domains"]
-        if not missing:
+        if (
+            state["inventory"]["reusable_accepted_node_ids"]
+            and not state["inventory"]["gap_ids"]
+        ):
             return self._save(lease, plan={"questions": []})
-        obligations = policy_obligations(
-            tuple(missing), self._policy("RESEARCH_COMPLETION")
-        )
+        scope = self._scope(lease)
         output = await self._model_call(
             lease,
             task="research.plan",
             role_prompt=PROMPTS[StepKind.PLAN],
             payload={
                 "inventory": state["inventory"],
-                "objective": self._target(lease).objective,
-                "policy_obligations": obligations,
+                "focus": self._objective(lease),
+                "scope": scope,
+                "targeting": {
+                    "keywords": list(scope.get("keywords", ())),
+                    "phrases": list(scope.get("phrases", ())),
+                    "section_hints": list(scope.get("section_hints", ())),
+                },
             },
             output_type=PlannerOutput,
             context_window=self.context_window,
@@ -628,51 +712,112 @@ class ResearchWorkflow:
         ids: set[str] = set()
         text: set[str] = set()
         queries: set[str] = set()
+        priorities: set[int] = set()
         for item in output.questions:
             key = item.question.casefold().strip()
             if item.id in ids or key in text:
-                raise ValueError("duplicate plan item")
-            if item.domain not in missing:
-                raise ValueError("out-of-scope plan item")
+                raise AgentOutputError("duplicate plan item")
+            if item.priority in priorities:
+                raise AgentOutputError("duplicate plan priority")
             normalized_queries = {query.casefold().strip() for query in item.queries}
             if (
                 len(normalized_queries) != len(item.queries)
                 or normalized_queries & queries
             ):
-                raise ValueError("duplicate plan query")
+                raise AgentOutputError("duplicate plan query")
             ids.add(item.id)
+            priorities.add(item.priority)
             text.add(key)
             queries.update(normalized_queries)
-        for domain, obligation in obligations.items():
-            planned = {
-                indicator
-                for item in output.questions
-                if item.domain == domain
-                for indicator in item.required_indicators
-            }
-            if not set(obligation["required_indicators"]) <= planned:
-                raise ValueError(f"planner omitted policy obligations for {domain}")
         return self._save(lease, plan=output.model_dump(mode="json"))
 
     async def _scout(self, lease) -> dict[str, Any]:
         questions = self._state(lease).get("plan", {}).get("questions", [])
         workspace_id = self._workspace_id(lease.target_id)
         found = []
+        search_misses = []
+        preprocessing_deadline = (
+            asyncio.get_running_loop().time()
+            + min(
+                2.0,
+                float(getattr(self.preprocessor, "timeout_seconds", 2.0)),
+            )
+            if self.preprocessor is not None
+            else 0.0
+        )
         for question in questions:
             for query in question["queries"]:
-                values = await self.search.search(
-                    query, limit=question["source_budget"]
-                )
-                found.extend(
-                    (question, query, candidate)
-                    for candidate in normalize_candidates(
-                        values, question["source_budget"]
+                search = self.search.search
+                parameters = inspect.signature(search).parameters
+                try:
+                    if "run_id" in parameters or any(
+                        item.kind is inspect.Parameter.VAR_KEYWORD
+                        for item in parameters.values()
+                    ):
+                        values = await search(
+                            query,
+                            limit=question["source_budget"],
+                            run_id=lease.run_id,
+                            target_id=lease.target_id,
+                            step_id=lease.step_id,
+                            world_id=lease.world_id,
+                            attempt_number=lease.attempt_number,
+                            step_kind=lease.kind.value,
+                        )
+                    else:
+                        values = await search(query, limit=question["source_budget"])
+                except SearchError as error:
+                    search_misses.append(
+                        {
+                            "query": query,
+                            "question_id": question["id"],
+                            "reason": type(error).__name__,
+                        }
                     )
-                )
+                    continue
+                candidates = normalize_candidates(values, question["source_budget"])
+                if self.preprocessor is not None:
+
+                    async def readable_candidate(candidate):
+                        try:
+                            title_result, snippet_result = await asyncio.gather(
+                                self.preprocessor.reformat(candidate.title),
+                                self.preprocessor.reformat(candidate.snippet),
+                            )
+                        except Exception:
+                            return candidate
+                        return replace(
+                            candidate,
+                            title=title_result.text,
+                            snippet=snippet_result.text,
+                        )
+
+                    timeout = max(
+                        0.0,
+                        preprocessing_deadline - asyncio.get_running_loop().time(),
+                    )
+                    if timeout:
+                        try:
+                            candidates = tuple(
+                                await asyncio.wait_for(
+                                    asyncio.gather(
+                                        *(
+                                            readable_candidate(item)
+                                            for item in candidates
+                                        )
+                                    ),
+                                    timeout=timeout,
+                                )
+                            )
+                        except TimeoutError:
+                            pass
+                found.extend((question, query, candidate) for candidate in candidates)
         with Session(self.engine) as session, session.begin():
             self._workspace(session, lease)
             for question, query, candidate in found:
-                lead_id = _stable("lead", workspace_id, candidate.canonical_url)
+                lead_id = _stable(
+                    "lead", workspace_id, question["id"], candidate.canonical_url
+                )
                 if session.get(SearchLead, lead_id) is None:
                     session.add(
                         SearchLead(
@@ -702,24 +847,57 @@ class ResearchWorkflow:
                     "source_class": lead.source_class,
                     "publisher": lead.publisher,
                     "lineage_id": lead.lineage_id,
+                    "support_role": "LEAD_ONLY",
                 }
                 for lead in leads
             ]
-        return self._save(lease, leads=payload)
+        return self._save(lease, leads=payload, search_misses=search_misses)
 
     async def _acquire(self, lease) -> dict[str, Any]:
         acquired = []
+        misses = []
+        scope = self._scope(lease)
         for lead in self._state(lease).get("leads", []):
-            result = await self.acquisition.acquire(
-                lead["url"],
-                self.acquisition_policy,
-                idempotency_key=f"{lease.target_id}:{lead['id']}",
-                attempt_id=str(lease.attempt_number),
-                step_id=lease.step_id,
-                source_class=lead["source_class"],
-                publisher=lead.get("publisher"),
-                lineage_id=lead.get("lineage_id"),
-            )
+            try:
+                result = await self.acquisition.acquire(
+                    lead["url"],
+                    self.acquisition_policy,
+                    idempotency_key=f"{lease.target_id}:{lead['id']}",
+                    attempt_id=str(lease.attempt_number),
+                    step_id=lease.step_id,
+                    run_id=lease.run_id,
+                    target_id=lease.target_id,
+                    world_id=lease.world_id,
+                    attempt_number=lease.attempt_number,
+                    step_kind=lease.kind.value,
+                    source_class=lead["source_class"],
+                    publisher=lead.get("publisher"),
+                    lineage_id=lead.get("lineage_id"),
+                    keywords=tuple(scope.get("keywords", ())),
+                    exact_phrases=tuple(scope.get("phrases", ())),
+                    section_hints=tuple(scope.get("section_hints", ())),
+                )
+            except Exception as error:
+                misses.append(
+                    {
+                        "lead_id": lead["id"],
+                        "question_id": lead["question_id"],
+                        "status": "ACQUISITION_FAILED",
+                        "reason": type(error).__name__,
+                    }
+                )
+                continue
+            if result.targeting_status == "NO_RELEVANT_PASSAGE":
+                misses.append(
+                    {
+                        "lead_id": lead["id"],
+                        "question_id": lead["question_id"],
+                        "status": "NO_RELEVANT_PASSAGE",
+                        "reason": "NO_RELEVANT_PASSAGE",
+                        "revision_id": result.revision_id,
+                    }
+                )
+                continue
             acquired.append(
                 {
                     "lead_id": lead["id"],
@@ -729,9 +907,15 @@ class ResearchWorkflow:
                     "blob_hash": result.blob_hash,
                     "content_type": result.content_type,
                     "extract": result.extract,
+                    "deterministic_blob_hash": result.deterministic_blob_hash,
+                    "readability_blob_hash": result.readability_blob_hash,
+                    "targeting_status": result.targeting_status,
+                    "preprocessing_status": result.preprocessing_status,
+                    "authoritative_passages": list(result.authoritative_passages),
+                    "readability_text": result.readability_text,
                 }
             )
-        return self._save(lease, acquired=acquired)
+        return self._save(lease, acquired=acquired, acquisition_misses=misses)
 
     async def _extract(self, lease) -> dict[str, Any]:
         state = self._state(lease)
@@ -739,93 +923,140 @@ class ResearchWorkflow:
             item["id"]: item for item in state.get("plan", {}).get("questions", [])
         }
         fragment_ids: list[str] = []
+        question_fragment_ids: dict[str, list[str]] = {}
         for source in state.get("acquired", []):
-            full_body = (
-                source.get("extract", "")
-                if source.get("content_type") == "application/pdf"
-                else self.acquisition.blobs.get(source["blob_hash"]).decode(
-                    "utf-8", errors="replace"
-                )
+            authoritative = source.get("authoritative_passages", [])
+            request_budget = self.gateway.allocator.extraction_character_budget(
+                self.context_window, "OPENAI"
             )
-            # One extraction call receives one deterministic bounded chunk.
-            body = full_body[
-                : self.gateway.allocator.extraction_character_budget(
-                    self.context_window, "OPENAI"
+            passage_budget = max(1, request_budget // 2)
+            batches: list[list[dict[str, str]]] = []
+            batch: list[dict[str, str]] = []
+            batch_size = 0
+            for passage in authoritative:
+                size = len(passage["text"])
+                if size > passage_budget:
+                    continue
+                if batch and batch_size + size > passage_budget:
+                    batches.append(batch)
+                    batch = []
+                    batch_size = 0
+                batch.append(passage)
+                batch_size += size
+            if batch:
+                batches.append(batch)
+            for batch_index, bounded in enumerate(batches):
+                await self._extract_batch(
+                    lease,
+                    source,
+                    questions[source["question_id"]],
+                    bounded,
+                    batch_index,
+                    request_budget,
+                    fragment_ids,
+                    question_fragment_ids,
                 )
-            ]
-            output = await self._model_call(
-                lease,
-                effect_suffix=source["revision_id"],
-                task="research.extract",
-                role_prompt=PROMPTS[StepKind.EXTRACT],
-                payload={
-                    "source_revision_id": source["revision_id"],
-                    "source_body": body,
-                    "questions": [questions[source["question_id"]]],
+        return self._save(
+            lease,
+            fragment_ids=sorted(set(fragment_ids)),
+            question_fragment_ids={
+                question_id: sorted(set(ids))
+                for question_id, ids in question_fragment_ids.items()
+            },
+        )
+
+    async def _extract_batch(
+        self,
+        lease,
+        source: dict[str, Any],
+        question: dict[str, Any],
+        bounded: list[dict[str, str]],
+        batch_index: int,
+        request_budget: int,
+        fragment_ids: list[str],
+        question_fragment_ids: dict[str, list[str]],
+    ) -> None:
+        passage_by_locator = {item["locator"]: item["text"] for item in bounded}
+        output = await self._model_call(
+            lease,
+            effect_suffix=(f"{question['id']}:{source['revision_id']}:{batch_index}"),
+            task="research.extract",
+            role_prompt=PROMPTS[StepKind.EXTRACT],
+            payload={
+                "source_revision_id": source["revision_id"],
+                "authoritative_passages": bounded,
+                "allowed_locators": sorted(passage_by_locator),
+                "readability_text": {
+                    "text": source.get("readability_text", "")[
+                        : max(1, request_budget // 4)
+                    ],
+                    "trust": "UNTRUSTED_NON_EVIDENTIARY",
                 },
-                output_type=ExtractorOutput,
-                context_window=self.context_window,
-            )
-            with Session(self.engine) as session, session.begin():
-                for fragment in output.fragments:
-                    if fragment.source_revision_id != source["revision_id"]:
-                        raise ValueError(
-                            "fragment references the wrong source revision"
-                        )
-                    if fragment.exact_excerpt not in full_body:
-                        raise ValueError(
-                            "exact excerpt does not occur in acquired source body"
-                        )
-                    expected_continuity = str(
-                        self._scope(lease).get("continuity", "unspecified")
+                "questions": [question],
+                "expected_continuity": str(
+                    self._scope(lease).get("continuity", "unspecified")
+                ),
+            },
+            output_type=ExtractorOutput,
+            context_window=self.context_window,
+        )
+        with Session(self.engine) as session, session.begin():
+            for fragment in output.fragments:
+                if fragment.source_revision_id != source["revision_id"]:
+                    raise ValueError("fragment references the wrong source revision")
+                authoritative_text = passage_by_locator.get(fragment.locator)
+                if authoritative_text is None:
+                    raise ValueError(
+                        "fragment locator does not identify a selected authoritative passage"
                     )
-                    if fragment.continuity != expected_continuity:
-                        raise ValueError("evidence continuity is out of scope")
-                    if fragment.support_role == "LEAD_ONLY":
-                        raise ValueError(
-                            "search snippets and leads cannot become evidence"
-                        )
-                    content_hash = hashlib.sha256(
-                        f"{fragment.source_revision_id}\0{fragment.locator}\0{fragment.exact_excerpt}".encode()
-                    ).hexdigest()
-                    existing = session.scalar(
-                        select(EvidenceFragment).where(
-                            EvidenceFragment.content_hash == content_hash
-                        )
+                if fragment.exact_excerpt not in authoritative_text:
+                    raise ValueError(
+                        "exact excerpt does not occur in its authoritative passage"
                     )
-                    if existing is None:
-                        record_id = _resolve_fragment_id(
-                            session, fragment.fragment_id, content_hash
-                        )
-                        existing = EvidenceFragment(
-                            id=record_id,
-                            source_revision_id=fragment.source_revision_id,
-                            locator=fragment.locator,
-                            exact_excerpt=fragment.exact_excerpt,
-                            content_hash=content_hash,
-                            normalized_statement=fragment.normalized_statement,
-                            domain=fragment.domain,
-                            subject_ids_json=list(fragment.subject_ids),
-                            continuity=fragment.continuity,
-                            temporal_scope_json=fragment.temporal_scope.model_dump(
-                                mode="json"
-                            ),
-                            support_role=fragment.support_role,
-                            extraction_confidence=int(
-                                fragment.extraction_confidence * 100
-                            ),
-                            world_id=lease.world_id,
-                            era_or_timepoint=str(
-                                self._scope(lease).get(
-                                    "era_or_timepoint", "unspecified"
-                                )
-                            ),
-                            branch_id=fragment.temporal_scope.branch_id,
-                            conditions_json=sorted(fragment.conditions),
-                        )
-                        session.add(existing)
-                    fragment_ids.append(existing.id)
-        return self._save(lease, fragment_ids=sorted(set(fragment_ids)))
+                expected_continuity = str(
+                    self._scope(lease).get("continuity", "unspecified")
+                )
+                if fragment.continuity != expected_continuity:
+                    raise ValueError("evidence continuity is out of scope")
+                if fragment.support_role == "LEAD_ONLY":
+                    raise ValueError("search snippets and leads cannot become evidence")
+                content_hash = hashlib.sha256(
+                    f"{fragment.source_revision_id}\0{fragment.locator}\0{fragment.exact_excerpt}".encode()
+                ).hexdigest()
+                existing = session.scalar(
+                    select(EvidenceFragment).where(
+                        EvidenceFragment.content_hash == content_hash
+                    )
+                )
+                if existing is None:
+                    record_id = _resolve_fragment_id(
+                        session, fragment.fragment_id, content_hash
+                    )
+                    existing = EvidenceFragment(
+                        id=record_id,
+                        source_revision_id=fragment.source_revision_id,
+                        locator=fragment.locator,
+                        exact_excerpt=fragment.exact_excerpt,
+                        content_hash=content_hash,
+                        normalized_statement=fragment.normalized_statement,
+                        domain=None,
+                        subject_ids_json=list(fragment.subject_ids),
+                        continuity=fragment.continuity,
+                        temporal_scope_json=fragment.temporal_scope.model_dump(
+                            mode="json"
+                        ),
+                        support_role=fragment.support_role,
+                        extraction_confidence=int(fragment.extraction_confidence * 100),
+                        world_id=lease.world_id,
+                        era_or_timepoint=str(
+                            self._scope(lease).get("era_or_timepoint", "unspecified")
+                        ),
+                        branch_id=fragment.temporal_scope.branch_id,
+                        conditions_json=sorted(fragment.conditions),
+                    )
+                    session.add(existing)
+                fragment_ids.append(existing.id)
+                question_fragment_ids.setdefault(question["id"], []).append(existing.id)
 
     def _evidence_items(self, fragment_ids: list[str]) -> tuple[EvidenceItem, ...]:
         with Session(self.engine) as session:
@@ -872,7 +1103,6 @@ class ResearchWorkflow:
                 "era_or_timepoint": row.era_or_timepoint,
                 "branch_id": row.branch_id,
                 "conditions": list(row.conditions_json),
-                "domain": row.domain,
             }
             for row in evidence_rows
         }
@@ -901,13 +1131,6 @@ class ResearchWorkflow:
             for field_name, links in proposal.field_evidence.items():
                 validate_evidence_eligibility(
                     proposal.scope,
-                    str(
-                        next(
-                            iter(
-                                {evidence[item]["domain"] for item in links.supporting}
-                            )
-                        )
-                    ),
                     links.supporting,
                     links.contradicting,
                     evidence,
@@ -1028,8 +1251,6 @@ class ResearchWorkflow:
         mapping: dict[str, dict[str, str]] = {}
         canon_policy = self._policy("CANON")
         high_impact_fields = set(canon_policy["high_impact_fields"])
-        completion_policy = self._policy("RESEARCH_COMPLETION")
-        freshness = self._freshness_scope(lease)
         with Session(self.engine) as session, session.begin():
             workspace = self._workspace(session, lease)
             for raw in state.get("synthesis", {}).get("proposals", []):
@@ -1436,47 +1657,6 @@ class ResearchWorkflow:
                                 field_name="relationship",
                             )
                         )
-            inventory = state.get("inventory", {})
-            for domain in inventory.get("missing_domains", []):
-                coverage_id = _stable(
-                    "coverage",
-                    workspace.id,
-                    inventory["world"]["id"],
-                    domain,
-                    freshness,
-                )
-                coverage = session.get(CoverageRecord, coverage_id)
-                if coverage is None:
-                    session.add(
-                        CoverageRecord(
-                            id=coverage_id,
-                            workspace_id=workspace.id,
-                            world_id=inventory["world"]["id"],
-                            domain=domain,
-                            continuity=str(
-                                self._scope(lease).get("continuity", "unspecified")
-                            ),
-                            era_or_timepoint=freshness["era_or_timepoint"],
-                            branch_id=freshness["branch_id"],
-                            conditions_key=freshness["conditions_key"],
-                            status="VERIFIED" if accepted else "GAP",
-                            indicators_json=sorted(
-                                {
-                                    indicator
-                                    for indicator in policy_obligations(
-                                        (domain,), completion_policy
-                                    )[domain]["required_indicators"]
-                                    if any(
-                                        indicator in proposal.get("fields", {})
-                                        for proposal in state.get("synthesis", {}).get(
-                                            "proposals", []
-                                        )
-                                        if proposal["proposal_id"] in accepted
-                                    )
-                                }
-                            ),
-                        )
-                    )
             effect_state = {
                 "accepted_proposal_ids": accepted,
                 "accepted_record_ids": accepted_record_ids,
@@ -1548,21 +1728,12 @@ class ResearchWorkflow:
         state = self._state(lease)
         accepted = state.get("accepted_proposal_ids", [])
         accepted_record_ids = state.get("accepted_record_ids", [])
-        reused = bool(
-            state.get("inventory", {}).get("accepted_node_ids")
-        ) and not state.get("inventory", {}).get("missing_domains")
-        requested_domains = tuple(
-            self._scope(lease).get("domains") or policy_obligations(())
+        questions = state.get("plan", {}).get("questions", [])
+        planned_question_ids = {question["id"] for question in questions}
+        reused = (
+            bool(state.get("inventory", {}).get("reusable_accepted_node_ids"))
+            and not planned_question_ids
         )
-        obligations = policy_obligations(
-            requested_domains, self._policy("RESEARCH_COMPLETION")
-        )
-        freshness = self._freshness_scope(lease)
-        required = {
-            f"{domain}:{indicator}"
-            for domain, obligation in obligations.items()
-            for indicator in obligation["required_indicators"]
-        }
         with Session(self.engine) as session:
             conflicts = session.scalar(
                 select(func.count())
@@ -1572,17 +1743,6 @@ class ResearchWorkflow:
                     ClaimConflict.status != "RESOLVED",
                 )
             )
-            coverage_rows = session.scalars(
-                select(CoverageRecord).where(
-                    CoverageRecord.world_id == lease.world_id,
-                    CoverageRecord.continuity
-                    == str(self._scope(lease).get("continuity", "unspecified")),
-                    CoverageRecord.era_or_timepoint == freshness["era_or_timepoint"],
-                    CoverageRecord.branch_id == freshness["branch_id"],
-                    CoverageRecord.conditions_key == freshness["conditions_key"],
-                    CoverageRecord.domain.in_(requested_domains),
-                )
-            ).all()
             accepted_fields = session.scalars(
                 select(MaterialProposalFieldRecord.name)
                 .join(MaterialProposalRecord)
@@ -1597,9 +1757,15 @@ class ResearchWorkflow:
                     IntegrationEffect.proposal_id,
                     NodeEvidence.node_revision_id,
                     NodeEvidence.field_name,
+                    EvidenceFragment.id,
+                    EvidenceFragment.source_revision_id,
                 )
                 .select_from(NodeEvidence)
                 .join(CanonNodeRevision)
+                .join(
+                    EvidenceFragment,
+                    EvidenceFragment.id == NodeEvidence.evidence_fragment_id,
+                )
                 .join(
                     IntegrationEffect,
                     IntegrationEffect.node_revision_id == CanonNodeRevision.id,
@@ -1627,16 +1793,20 @@ class ResearchWorkflow:
                 )
                 or 0
             )
-        accepted_indicators = {
-            f"{row.domain}:{indicator}"
-            for row in coverage_rows
-            for indicator in row.indicators_json
-        } & required
         accepted_field_count = len(
             {
                 (proposal_id, field_name)
-                for proposal_id, _revision_id, field_name in provenance_rows
+                for proposal_id, _revision_id, field_name, _fragment_id, _source_revision_id in provenance_rows
             }
+        )
+        accepted_fragment_ids = {
+            fragment_id
+            for _proposal_id, _revision_id, _field_name, fragment_id, _source_revision_id in provenance_rows
+        }
+        resolved_question_ids = resolve_question_ids(
+            planned_question_ids,
+            state.get("question_fragment_ids", {}),
+            accepted_fragment_ids,
         )
         promotion_counts = {
             proposal_id: promotion_rows.count(proposal_id)
@@ -1645,45 +1815,10 @@ class ResearchWorkflow:
         duplicate_promotions = sum(
             max(0, count - 1) for count in promotion_counts.values()
         )
-        domain_coverage = {
-            domain: (
-                len(
-                    {
-                        indicator
-                        for row in coverage_rows
-                        if row.domain == domain
-                        for indicator in row.indicators_json
-                    }
-                )
-                / max(
-                    1,
-                    len(set(obligations[domain]["required_indicators"])),
-                )
-            )
-            for domain in requested_domains
-        }
         completion = evaluate_completion(
             CompletionInputs(
-                required_indicators=frozenset(required),
-                accepted_indicators=frozenset(accepted_indicators),
-                critical_questions=frozenset(
-                    f"{domain}:{question}"
-                    for domain, obligation in obligations.items()
-                    for question in obligation["critical_questions"]
-                ),
-                accepted_questions=frozenset(
-                    f"{domain}:{question}"
-                    for domain, obligation in obligations.items()
-                    if {
-                        f"{domain}:{indicator}"
-                        for indicator in obligation["required_indicators"]
-                    }
-                    <= accepted_indicators
-                    for question in obligation["critical_questions"]
-                ),
-                allowed_gap_questions=frozenset(
-                    state.get("allowed_gap_question_ids", ())
-                ),
+                planned_question_ids=frozenset(planned_question_ids),
+                resolved_question_ids=frozenset(resolved_question_ids),
                 provenance_rate=(
                     1.0
                     if not accepted_record_ids
@@ -1691,7 +1826,6 @@ class ResearchWorkflow:
                     if accepted_fields
                     else 0.0
                 ),
-                domain_coverage=domain_coverage,
                 unresolved_invalidating_conflicts=int(conflicts or 0),
                 unresolved_audit_decisions=int(unresolved_audits),
                 duplicate_promotions=duplicate_promotions,
@@ -1699,7 +1833,8 @@ class ResearchWorkflow:
         )
         outcome = completion.outcome if (accepted or reused) else RunOutcome.PARTIAL
         loop_count = int(state.get("loop_count", 0))
-        actionable = bool(state.get("inventory", {}).get("missing_domains"))
+        unresolved_question_ids = planned_question_ids - resolved_question_ids
+        actionable = bool(unresolved_question_ids)
         if (
             outcome is RunOutcome.PARTIAL
             and actionable
@@ -1721,18 +1856,35 @@ class ResearchWorkflow:
                 accepted_record_ids=[],
             )
         if outcome is RunOutcome.PARTIAL:
-            gap_id = _stable("gap", lease.target_id, "insufficient-evidence")
             with Session(self.engine) as session, session.begin():
-                if session.get(ResearchGapRecord, gap_id) is None:
-                    session.add(
-                        ResearchGapRecord(
-                            id=gap_id,
-                            workspace_id=self._workspace_id(lease.target_id),
-                            gap_json={
-                                "reason": "INSUFFICIENT_EVIDENCE",
-                                "loop_cap": self.max_gap_loops,
-                                "reasons": list(completion.reasons),
-                            },
+                for question in questions:
+                    if question["id"] not in unresolved_question_ids:
+                        continue
+                    gap_id = _stable("gap", lease.target_id, question["id"])
+                    if session.get(ResearchGapRecord, gap_id) is None:
+                        session.add(
+                            ResearchGapRecord(
+                                id=gap_id,
+                                workspace_id=self._workspace_id(lease.target_id),
+                                gap_json={
+                                    "question_id": question["id"],
+                                    "question": question["question"],
+                                    "priority": question["priority"],
+                                    "attempted_leads": [
+                                        lead["url"]
+                                        for lead in state.get("leads", [])
+                                        if lead["question_id"] == question["id"]
+                                    ],
+                                    "source_misses": [
+                                        miss
+                                        for miss in state.get("acquisition_misses", [])
+                                        if miss["question_id"] == question["id"]
+                                    ],
+                                    "stop_conditions": question["stop_conditions"],
+                                    "reason": "INSUFFICIENT_EVIDENCE",
+                                    "loop_cap": self.max_gap_loops,
+                                    "reasons": list(completion.reasons),
+                                },
+                            )
                         )
-                    )
         return self._save(lease, outcome=outcome.value, continue_loop=False)

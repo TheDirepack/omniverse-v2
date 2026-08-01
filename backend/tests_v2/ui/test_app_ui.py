@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import json
 import re
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from html import unescape
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.v2 import AppConfig, create_app
@@ -68,12 +70,15 @@ def ui_runtime(isolated_paths: dict[str, Path], tmp_path: Path) -> V2Runtime:
         ),
         encoding="utf-8",
     )
-    config = AppConfig(
-        database_path=isolated_paths["database"],
-        blob_path=isolated_paths["blobs"],
-        credentials_path=isolated_paths["credentials"],
-        seed_path=seed,
-    ).runtime_config()
+    config = replace(
+        AppConfig(
+            database_path=isolated_paths["database"],
+            blob_path=isolated_paths["blobs"],
+            credentials_path=isolated_paths["credentials"],
+            seed_path=seed,
+        ).runtime_config(),
+        logging_root=tmp_path / "logging-root",
+    )
     initialize(config)
     return V2Runtime.build(config, adapters={})
 
@@ -91,6 +96,10 @@ def test_shell_nav_static_and_mobile_basics(client: TestClient) -> None:
     assert '<meta name="viewport"' in response.text
     assert 'id="sidebar"' in response.text
     assert 'id="mobile-menu-toggle"' in response.text
+    assert "client-errors" in response.text
+    assert "unhandledrejection" in response.text
+    assert "htmx:responseError" in response.text
+    assert "htmx:sendError" in response.text
     for path in (
         "/research/",
         "/knowledge/",
@@ -137,6 +146,9 @@ def test_research_world_search_uses_string_ids_and_escapes_html(
     assert 'name="domains"' not in page.text
     assert ">Domains<" not in page.text
     assert 'name="objective" required' not in page.text
+    full_page = client.get("/research/", params={"q": "Alpha"})
+    assert 'value="world-alpha"' in full_page.text
+    assert 'value="world-beta"' not in full_page.text
     response = client.get(
         "/research/worlds", params={"q": "Alpha"}, headers={"HX-Request": "true"}
     )
@@ -441,9 +453,9 @@ def test_user_facing_query_projections_omit_domains(
     evidence = projected_client.get(
         "/api/v2/evidence", params={"world_id": "world-alpha"}
     ).json()["items"][0]
-    gaps = projected_client.get(
-        "/api/v2/research/run-text-001/gaps-conflicts"
-    ).json()["gaps"][0]
+    gaps = projected_client.get("/api/v2/research/run-text-001/gaps-conflicts").json()[
+        "gaps"
+    ][0]
     coverage = projected_client.get(
         "/api/v2/coverage",
         params={"world_id": "world-alpha", "continuity": "Prime"},
@@ -544,13 +556,15 @@ def test_settings_string_ids_masked_credentials_route_order_and_health(
 ) -> None:
     page = projected_client.get("/settings/")
     assert page.status_code == 200
-    for tab in ("General", "Providers", "Models", "Routes", "Health"):
+    for tab in ("General", "Providers", "Models", "Routes", "Health", "Logs"):
         assert tab in page.text
     general = projected_client.get("/settings/tab/general")
     assert "omniverse.db" in general.text
     assert "Worker" in general.text
     providers = projected_client.get("/settings/tab/providers")
     assert "provider-string" in providers.text
+    assert "Credential weight" in providers.text
+    assert "strict fallback position" in providers.text
     created = projected_client.post(
         "/settings/providers/provider-string/credentials",
         data={"label": "primary", "secret": "super-secret", "weight": "1"},
@@ -599,10 +613,33 @@ def test_settings_updates_provider_models_and_ordered_routes(
         )
         assert model.status_code == 200
         assert model_id in model.text
+        assert "32000" in model.text
+        assert "2000" in model.text
+        assert "Text Supported" in model.text
+        assert "Active" in model.text
+
+    slash_model = projected_client.post(
+        "/settings/providers/provider-string/models",
+        data={"model_id": "ai21/jamba-large-1.7", "model_name": "Jamba"},
+    )
+    assert slash_model.status_code == 200
+    deleted_slash_model = projected_client.delete(
+        "/settings/models/ai21/jamba-large-1.7"
+    )
+    assert deleted_slash_model.status_code == 200
+    assert "ai21/jamba-large-1.7" not in deleted_slash_model.text
+
+    duplicate = projected_client.post(
+        "/settings/providers/provider-string/models/model-c",
+        data={"model_name": "Alpha", "active": "true"},
+    )
+    assert duplicate.status_code == 409
+    assert "provider model name already exists" in duplicate.text
+    assert "UNIQUE constraint" not in duplicate.text
 
     route = projected_client.post(
         "/settings/routes/research.plan",
-        data={"model_ids": ["model-b", "model-a"], "weights": ["2", "1"]},
+        data={"model_ids": ["model-b", "model-a"]},
     )
     assert route.status_code == 200
     assert route.text.index("model-b") < route.text.index("model-a")
@@ -612,22 +649,81 @@ def test_settings_updates_provider_models_and_ordered_routes(
     # Test DEFAULT route configuration
     default_route = projected_client.post(
         "/settings/routes/DEFAULT",
-        data={"model_ids": ["model-a"], "weights": ["1"]},
+        data={"model_ids": ["model-a"]},
     )
     assert default_route.status_code == 200
     assert "DEFAULT" in default_route.text
 
-    # Test Just a Provider mode route configuration (passing provider_string instead of model_id)
+    # Provider-only route mode expands the provider's active models.
     just_prov = projected_client.post(
         "/settings/routes/research.extract",
-        data={"model_ids": ["provider-string"], "weights": ["1"]},
+        data={"provider_ids": ["provider-string"], "model_ids": [""]},
     )
     assert just_prov.status_code == 200
-    assert "model-a" in just_prov.text
-    assert "model-b" in just_prov.text
+    assert "Provider provider-string" in just_prov.text
+    assert "Inherited from DEFAULT" in just_prov.text
+
+    inherited = projected_client.delete("/settings/routes/research.extract")
+    assert inherited.status_code == 200
+    assert "research.extract" in inherited.text
+    assert "Inherited from DEFAULT" in inherited.text
 
     # Test Provider deletion
     deleted = projected_client.delete("/settings/providers/provider-string")
     assert deleted.status_code == 200
     providers_tab = projected_client.get("/settings/tab/providers")
     assert "provider-string" not in providers_tab.text
+
+
+@pytest.mark.parametrize(
+    "section", ["providers", "models", "routes", "notebook", "knowledge", "worlds"]
+)
+def test_health_database_resets_are_implemented_and_dependency_safe(
+    projected_client: TestClient, section: str
+) -> None:
+    health = projected_client.get("/settings/tab/health")
+    assert health.text.count("hx-confirm=") >= 6
+    response = projected_client.post(f"/settings/health/reset/{section}")
+
+    assert response.status_code == 200
+    assert f"{section.title()} database reset" in response.text
+    engine = projected_client.app.state.runtime.engine
+    with Session(engine) as session:
+        assert not session.execute(text("PRAGMA foreign_key_check")).all()
+        if section == "providers":
+            assert session.scalar(text("SELECT count(*) FROM provider")) == 1
+            assert session.scalar(text("SELECT count(*) FROM provider_model")) == 1
+        elif section == "models":
+            assert session.scalar(text("SELECT count(*) FROM provider_model")) == 1
+            assert session.scalar(text("SELECT count(*) FROM provider")) >= 1
+        elif section == "routes":
+            assert session.scalar(text("SELECT count(*) FROM provider_route")) == 1
+            assert session.scalar(
+                text("SELECT task FROM provider_route")
+            ) == "DEFAULT"
+        elif section == "notebook":
+            assert session.scalar(text("SELECT count(*) FROM run")) == 0
+            assert session.scalar(text("SELECT count(*) FROM source")) > 0
+        elif section == "knowledge":
+            assert session.scalar(text("SELECT count(*) FROM run")) == 0
+            assert session.scalar(text("SELECT count(*) FROM canon_node")) == 0
+            assert session.scalar(text("SELECT count(*) FROM source")) == 0
+        else:
+            assert session.scalar(text("SELECT count(*) FROM run")) == 0
+            assert session.scalar(text("SELECT count(*) FROM world")) == 2
+
+
+@pytest.mark.parametrize("section", ["notebook", "knowledge", "worlds"])
+def test_run_scoped_database_resets_reject_active_research(
+    projected_client: TestClient, section: str
+) -> None:
+    engine = projected_client.app.state.runtime.engine
+    with Session(engine) as session, session.begin():
+        session.get(Run, "run-text-001").status = "RUNNING"
+
+    response = projected_client.post(f"/settings/health/reset/{section}")
+
+    assert response.status_code == 409
+    assert "active research runs" in response.text
+    with Session(engine) as session:
+        assert session.get(Run, "run-text-001") is not None

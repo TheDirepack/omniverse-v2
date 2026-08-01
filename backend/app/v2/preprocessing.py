@@ -1,5 +1,5 @@
 # Boundary validation results intentionally carry stable diagnostics.
-# ruff: noqa: TRY003
+# ruff: noqa: SIM105, TRY003
 
 from __future__ import annotations
 
@@ -9,12 +9,16 @@ import html
 import json
 import re
 import unicodedata
+from collections import Counter
 from dataclasses import dataclass
 from enum import Enum
+from time import monotonic
 from typing import Any
 
 import httpx
-from bs4 import BeautifulSoup, Tag
+from bs4 import BeautifulSoup, NavigableString, Tag
+
+from app.v2.logging import redact
 
 TRANSFORM_VERSION = "omniverse-document-v1"
 
@@ -29,10 +33,40 @@ _REMOVED_TAGS = (
     "svg",
 )
 _BLOCK_TAGS = {"h1", "h2", "h3", "h4", "h5", "h6", "p", "ul", "ol", "table"}
+_TEXT_CONTAINERS = {"body", "main", "article", "div"}
+_INLINE_TAGS = {
+    "a",
+    "abbr",
+    "b",
+    "bdi",
+    "bdo",
+    "cite",
+    "code",
+    "data",
+    "del",
+    "dfn",
+    "em",
+    "i",
+    "ins",
+    "kbd",
+    "mark",
+    "q",
+    "s",
+    "samp",
+    "small",
+    "span",
+    "strong",
+    "sub",
+    "sup",
+    "time",
+    "u",
+    "var",
+}
 _SPACE_RE = re.compile(r"[^\S\n]+")
 _NUMBER_RE = re.compile(r"(?<!\w)[+-]?\d[\d,]*(?:\.\d+)?%?")
 _URL_RE = re.compile(r"https?://[^\s<>\]\[()]+", re.IGNORECASE)
 _CAPITALIZED_RE = re.compile(r"(?<![\w'-])[A-Z][A-Za-z]*(?:[-'][A-Za-z]+)*")
+_LEXICAL_RE = re.compile(r"https?://[^\s<>\]\[()]+|[\w]+(?:[-'][\w]+)*", re.IGNORECASE)
 
 
 @dataclass(frozen=True, slots=True)
@@ -111,7 +145,11 @@ class _Block:
 
 
 def _normalize(value: str, *, multiline: bool = False) -> str:
-    value = unicodedata.normalize("NFKC", html.unescape(value)).replace("\r", "\n")
+    value = (
+        unicodedata.normalize("NFKC", html.unescape(value))
+        .replace("\r\n", "\n")
+        .replace("\r", "\n")
+    )
     value = _SPACE_RE.sub(" ", value)
     if multiline:
         return "\n".join(line.strip() for line in value.splitlines() if line.strip())
@@ -141,14 +179,7 @@ def _html_blocks(source: str) -> list[_Block]:
         if text:
             blocks.append(_Block("title", text))
 
-    root = soup.body or soup
-    for tag in root.find_all(_BLOCK_TAGS):
-        if any(
-            isinstance(parent, Tag) and parent.name in _BLOCK_TAGS
-            for parent in tag.parents
-            if parent is not root
-        ):
-            continue
+    def append_block(tag: Tag) -> None:
         name = tag.name or ""
         if name in {"ul", "ol"}:
             text = "\n".join(
@@ -174,12 +205,51 @@ def _html_blocks(source: str) -> list[_Block]:
             kind = "heading" if name.startswith("h") else "paragraph"
         if text:
             blocks.append(_Block(kind, text))
+
+    def walk(container: Tag, *, preserve_text: bool) -> None:
+        orphan_parts: list[str] = []
+
+        def flush_orphan() -> None:
+            text = _normalize(" ".join(orphan_parts))
+            if text:
+                blocks.append(_Block("paragraph", text))
+            orphan_parts.clear()
+
+        for child in container.children:
+            if isinstance(child, NavigableString):
+                if preserve_text:
+                    orphan_parts.append(str(child))
+                continue
+            if not isinstance(child, Tag):
+                continue
+            name = child.name or ""
+            if name in _BLOCK_TAGS:
+                flush_orphan()
+                append_block(child)
+            elif name in _TEXT_CONTAINERS:
+                flush_orphan()
+                walk(child, preserve_text=True)
+            elif name in _INLINE_TAGS and preserve_text:
+                if child.find(tuple(_BLOCK_TAGS | _TEXT_CONTAINERS)) is None:
+                    orphan_parts.append(child.get_text(" "))
+                else:
+                    flush_orphan()
+                    walk(child, preserve_text=True)
+            elif name not in {"head", "title"}:
+                flush_orphan()
+                walk(child, preserve_text=True)
+        flush_orphan()
+
+    root = soup.body or soup
+    walk(root, preserve_text=True)
     return blocks
 
 
 def _plain_blocks(source: str) -> list[_Block]:
-    normalized = unicodedata.normalize("NFKC", html.unescape(source)).replace(
-        "\r", "\n"
+    normalized = (
+        unicodedata.normalize("NFKC", html.unescape(source))
+        .replace("\r\n", "\n")
+        .replace("\r", "\n")
     )
     blocks: list[_Block] = []
     paragraph: list[str] = []
@@ -297,10 +367,13 @@ def preprocess_document(
                 continue
             scored.append((score, passage.passage_index))
         for score, index in sorted(scored):
+            matched_section = passages[index].section_index
             for candidate in range(
                 max(0, index - adjacent_passages),
                 min(len(passages), index + adjacent_passages + 1),
             ):
+                if passages[candidate].section_index != matched_section:
+                    continue
                 if len(selected) >= max_selected_passages and candidate not in selected:
                     continue
                 selected[candidate] = min(score, selected.get(candidate, score))
@@ -345,6 +418,7 @@ class MiniCPMPreprocessor:
         timeout_seconds: float = 10.0,
         concurrency: int = 2,
         client: Any | None = None,
+        logger=None,
     ) -> None:
         if timeout_seconds <= 0 or concurrency < 1:
             raise ValueError("MiniCPM timeout and concurrency must be positive")
@@ -355,6 +429,21 @@ class MiniCPMPreprocessor:
         self._semaphore = asyncio.Semaphore(concurrency)
         self._owns_client = client is None
         self._client = client or httpx.AsyncClient()
+        self.logger = logger
+
+    def _log(self, event_type: str, message: str, *, level="INFO", data=None) -> None:
+        if self.logger is None:
+            return
+        try:
+            self.logger.log_agent(
+                "minicpm-preprocessor",
+                event_type,
+                message=message,
+                level=level,
+                data=redact(data or {}),
+            )
+        except Exception:
+            pass
 
     def status(self) -> dict[str, object]:
         return {
@@ -366,20 +455,69 @@ class MiniCPMPreprocessor:
             ),
         }
 
-    @staticmethod
     def _fallback(
-        text: str, status: PreprocessingStatus, detail: str
+        self,
+        text: str,
+        status: PreprocessingStatus,
+        detail: str,
+        *,
+        started: float | None = None,
     ) -> ModelPreprocessResult:
+        if status is not PreprocessingStatus.DISABLED:
+            self._log(
+                "preprocessor.result.failed",
+                "MiniCPM preprocessing result was not usable",
+                level="WARNING",
+                data={
+                    "model": self.model,
+                    "status": status.value,
+                    "detail": detail,
+                    "duration_ms": (monotonic() - started) * 1000 if started else 0,
+                    "grounding_status": (
+                        "UNGROUNDED"
+                        if status is PreprocessingStatus.UNGROUNDED_OUTPUT
+                        else "NOT_VALIDATED"
+                    ),
+                },
+            )
+        self._log(
+            "preprocessor.fallback",
+            "MiniCPM preprocessing used authoritative fallback",
+            level="WARNING" if status is not PreprocessingStatus.DISABLED else "INFO",
+            data={
+                "model": self.model,
+                "status": status.value,
+                "detail": detail,
+                "duration_ms": (monotonic() - started) * 1000 if started else 0,
+                "input_length": len(text),
+                "input_sha256": hashlib.sha256(text.encode()).hexdigest(),
+                "grounding_status": "FALLBACK",
+            },
+        )
         return ModelPreprocessResult(text, status, detail, True)
 
     async def reformat(self, text: str) -> ModelPreprocessResult:
+        started = monotonic()
+        self._log(
+            "preprocessor.request.started",
+            "MiniCPM preprocessing request started",
+            data={
+                "model": self.model,
+                "input_length": len(text),
+                "input_sha256": hashlib.sha256(text.encode()).hexdigest(),
+                "disposition": "UNTRUSTED_SOURCE_TEXT",
+            },
+        )
         if not self.enabled:
-            return self._fallback(text, PreprocessingStatus.DISABLED, "disabled")
+            return self._fallback(
+                text, PreprocessingStatus.DISABLED, "disabled", started=started
+            )
         payload = {
             "model": self.model,
             "temperature": 0,
             "top_p": 0.1,
             "seed": 0,
+            "chat_template_kwargs": {"enable_thinking": False},
             "messages": [
                 {
                     "role": "system",
@@ -408,50 +546,76 @@ class MiniCPMPreprocessor:
                 )
         except (TimeoutError, httpx.TimeoutException):
             return self._fallback(
-                text, PreprocessingStatus.TIMEOUT, "request timed out"
+                text, PreprocessingStatus.TIMEOUT, "request timed out", started=started
             )
         except (httpx.NetworkError, ConnectionError, OSError) as error:
             return self._fallback(
-                text, PreprocessingStatus.NETWORK_ERROR, type(error).__name__
+                text,
+                PreprocessingStatus.NETWORK_ERROR,
+                type(error).__name__,
+                started=started,
             )
         if response.status_code >= 500:
             return self._fallback(
                 text,
                 PreprocessingStatus.SERVER_ERROR,
                 f"server returned HTTP {response.status_code}",
+                started=started,
             )
         if response.status_code >= 400:
             return self._fallback(
                 text,
                 PreprocessingStatus.CLIENT_ERROR,
                 f"server returned HTTP {response.status_code}",
+                started=started,
             )
         try:
             data = response.json()
             output = str(data["choices"][0]["message"]["content"]).strip()
         except (IndexError, KeyError, TypeError, ValueError, json.JSONDecodeError):
             return self._fallback(
-                text, PreprocessingStatus.INVALID_OUTPUT, "malformed response"
+                text,
+                PreprocessingStatus.INVALID_OUTPUT,
+                "malformed response",
+                started=started,
             )
         if not output:
             return self._fallback(
-                text, PreprocessingStatus.INVALID_OUTPUT, "empty output"
+                text,
+                PreprocessingStatus.INVALID_OUTPUT,
+                "empty output",
+                started=started,
             )
         if len(output) > len(text) * 1.2:
             return self._fallback(
                 text,
                 PreprocessingStatus.INVALID_OUTPUT,
                 "output exceeds 120% input length",
+                started=started,
             )
         if not _grounded(output, text):
             return self._fallback(
                 text,
                 PreprocessingStatus.UNGROUNDED_OUTPUT,
                 "output contains ungrounded numbers, URLs, or named tokens",
+                started=started,
             )
-        return ModelPreprocessResult(
+        result = ModelPreprocessResult(
             output, PreprocessingStatus.APPLIED, "validated readability aid", False
         )
+        self._log(
+            "preprocessor.result.succeeded",
+            "MiniCPM preprocessing result validated",
+            data={
+                "model": self.model,
+                "status": result.status.value,
+                "duration_ms": (monotonic() - started) * 1000,
+                "output_length": len(output),
+                "output_sha256": hashlib.sha256(output.encode()).hexdigest(),
+                "grounding_status": "GROUNDED",
+            },
+        )
+        return result
 
     async def close(self) -> None:
         if self._owns_client:
@@ -460,9 +624,14 @@ class MiniCPMPreprocessor:
 
 def _grounded(output: str, authoritative_input: str) -> bool:
     source = unicodedata.normalize("NFKC", authoritative_input)
+    candidate = unicodedata.normalize("NFKC", output)
     for pattern in (_NUMBER_RE, _URL_RE, _CAPITALIZED_RE):
         grounded_tokens = {token.casefold() for token in pattern.findall(source)}
-        output_tokens = {token.casefold() for token in pattern.findall(output)}
-        if not output_tokens <= grounded_tokens:
+        output_tokens = {token.casefold() for token in pattern.findall(candidate)}
+        if output_tokens != grounded_tokens:
             return False
-    return True
+    source_tokens = Counter(token.casefold() for token in _LEXICAL_RE.findall(source))
+    output_tokens = Counter(
+        token.casefold() for token in _LEXICAL_RE.findall(candidate)
+    )
+    return source_tokens == output_tokens

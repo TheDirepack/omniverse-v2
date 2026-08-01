@@ -22,6 +22,8 @@ from app.v2.domain import RunOutcome, RunStatus, StepKind, legal_transition
 from app.v2.models import (
     Checkpoint,
     OutboxEvent,
+    ResearchGapRecord,
+    ResearchWorkspace,
     Run,
     RunStep,
     RunTarget,
@@ -35,8 +37,20 @@ class IdempotencyConflictError(ValueError):
 
 
 class IllegalTransitionError(ValueError):
-    def __init__(self) -> None:
-        super().__init__("operation is illegal in the current run state")
+    """Raised when a transition violates run state constraints."""
+
+    def __init__(
+        self,
+        *,
+        agent: str | None = None,
+        target: str | None = None,
+        reason_code: str | None = None,
+    ) -> None:
+        self.agent = agent or "unknown"
+        self.target = target or "unknown"
+        self.reason_code = reason_code or "unspecified"
+        detail = f"[{self.agent}] → {self.target}: {self.reason_code}"
+        super().__init__(detail)
 
 
 class LeaseConflictError(RuntimeError):
@@ -68,12 +82,22 @@ def _aware(value: datetime | None) -> datetime | None:
     return value
 
 
-def _transition(record: Run | RunStep, target: RunStatus) -> None:
+def _transition(
+    record: Run | RunStep,
+    target: RunStatus,
+    *,
+    agent: str | None = None,
+    target_name: str | None = None,
+) -> None:
     current = RunStatus(record.status)
     if current == target:
         return
     if not legal_transition(current, target):
-        raise IllegalTransitionError
+        raise IllegalTransitionError(
+            agent=agent or "unknown",
+            target=target_name or "unknown",
+            reason_code=f"{current.name}→{target.name}",
+        )
     record.status = target.value
 
 
@@ -241,7 +265,11 @@ class ResearchRunKernel:
                     RunStatus.SUCCEEDED,
                     RunStatus.FAILED,
                 }:
-                    raise IllegalTransitionError
+                    raise IllegalTransitionError(
+                        agent="manager",
+                        target="append_step",
+                        reason_code="terminal_state",
+                    )
                 position = session.scalar(
                     select(func.max(RunStep.position)).where(
                         RunStep.target_id == target_id
@@ -446,7 +474,12 @@ class ResearchRunKernel:
                 created_at=now,
             )
             session.add(checkpoint)
-            _transition(step, RunStatus.SUCCEEDED)
+            _transition(
+                step,
+                RunStatus.SUCCEEDED,
+                agent="manager",
+                target_name="checkpoint_success",
+            )
             step.output_refs_json = list(output_refs)
             step.lease_owner = None
             step.lease_expires_at = None
@@ -526,6 +559,66 @@ class ResearchRunKernel:
         if exhausted:
             raise RetryLimitError
 
+    def checkpoint_partial(
+        self,
+        lease: StepLease,
+        error: str,
+        *,
+        workspace_id: str,
+        gap: dict[str, object],
+        now: datetime,
+    ) -> None:
+        """Atomically preserve a recoverable research failure as a partial target."""
+        with Session(self.engine) as session, session.begin():
+            step, attempt = self._validate_lease(session, lease, now)
+            run = session.get(Run, step.run_id)
+            assert run is not None
+            if RunStatus(run.status) is RunStatus.CANCELLING:
+                self._cancel_run_at_boundary(session, run, step, attempt, now)
+                return
+            workspace = session.get(ResearchWorkspace, workspace_id)
+            if workspace is None or workspace.target_id != step.target_id:
+                raise LookupError(workspace_id)
+            attempt.status = RunStatus.FAILED.value
+            attempt.finished_at = now
+            attempt.error = error
+            step.error = error
+            step.lease_owner = None
+            step.lease_expires_at = None
+            _transition(step, RunStatus.FAILED)
+            workspace.status = "PARTIAL"
+            gap_hash = hashlib.sha256(f"{step.id}:agent".encode()).hexdigest()[:24]
+            gap_id = f"gap_{gap_hash}"
+            if session.get(ResearchGapRecord, gap_id) is None:
+                session.add(
+                    ResearchGapRecord(
+                        id=gap_id,
+                        workspace_id=workspace_id,
+                        gap_json=gap,
+                    )
+                )
+            target = session.get(RunTarget, step.target_id)
+            assert target is not None
+            target.outcome = RunOutcome.PARTIAL.value
+            target.error = error
+            session.query(RunStep).filter(
+                RunStep.target_id == step.target_id,
+                RunStep.status.in_(
+                    [RunStatus.PENDING.value, RunStatus.WAITING_RETRY.value]
+                ),
+            ).update({RunStep.status: RunStatus.CANCELLED.value})
+            self._aggregate_targets(session, run, now)
+            session.add(
+                OutboxEvent(
+                    id=_id("event"),
+                    run_id=run.id,
+                    event_type="STEP_PARTIAL",
+                    payload_json={"step_id": step.id, "error": error, "gap_id": gap_id},
+                    effect_key=f"partial:{step.id}:{step.attempt_count}",
+                    created_at=now,
+                )
+            )
+
     def request_cancel(self, run_id: str, now: datetime) -> RunProjection:
         with Session(self.engine) as session, session.begin():
             run = self._run(session, run_id)
@@ -534,7 +627,11 @@ class ResearchRunKernel:
                 RunStatus.SUCCEEDED,
                 RunStatus.FAILED,
             }:
-                raise IllegalTransitionError
+                raise IllegalTransitionError(
+                    agent="kernel",
+                    target="request_cancel",
+                    reason_code="terminal_state",
+                )
             run.cancel_requested_at = now
             active = session.scalar(
                 select(RunStep.id).where(
@@ -563,7 +660,11 @@ class ResearchRunKernel:
             step, attempt = self._validate_lease(session, lease, now)
             run = self._run(session, lease.run_id)
             if RunStatus(run.status) is not RunStatus.CANCELLING:
-                raise IllegalTransitionError
+                raise IllegalTransitionError(
+                    agent="kernel",
+                    target="cancel_at_safe_boundary",
+                    reason_code="not_cancelling",
+                )
             self._cancel_run_at_boundary(session, run, step, attempt, now)
         return self.get(lease.run_id)
 
@@ -601,14 +702,22 @@ class ResearchRunKernel:
                 select(RunTarget).where(RunTarget.run_id == run_id)
             ).all()
             if not targets or any(target.outcome is None for target in targets):
-                raise IllegalTransitionError
+                raise IllegalTransitionError(
+                    agent="kernel",
+                    target="finish_from_targets",
+                    reason_code="incomplete_targets",
+                )
             complete_steps = session.scalars(
                 select(RunStep).where(
                     RunStep.run_id == run_id, RunStep.kind == StepKind.COMPLETE.value
                 )
             ).all()
             if any(step.status != RunStatus.SUCCEEDED.value for step in complete_steps):
-                raise IllegalTransitionError
+                raise IllegalTransitionError(
+                    agent="kernel",
+                    target="finish_from_targets",
+                    reason_code="incomplete_steps",
+                )
             self._aggregate_targets(session, run, now)
         return self.get(run_id)
 
@@ -616,7 +725,9 @@ class ResearchRunKernel:
         with Session(self.engine) as session, session.begin():
             run = self._run(session, run_id)
             if RunStatus(run.status) is not RunStatus.WAITING_INPUT:
-                raise IllegalTransitionError
+                raise IllegalTransitionError(
+                    agent="kernel", target="resume", reason_code="not_waiting_input"
+                )
             _transition(run, RunStatus.RUNNING)
         return self.get(run_id)
 
@@ -628,7 +739,9 @@ class ResearchRunKernel:
                 and run.outcome == RunOutcome.PARTIAL.value
             )
             if not retryable_status:
-                raise IllegalTransitionError
+                raise IllegalTransitionError(
+                    agent="kernel", target="retry", reason_code="not_retryable"
+                )
             steps = session.scalars(
                 select(RunStep).where(
                     RunStep.run_id == run_id,
@@ -647,7 +760,9 @@ class ResearchRunKernel:
                 else []
             )
             if not steps and not partial_targets:
-                raise IllegalTransitionError
+                raise IllegalTransitionError(
+                    agent="kernel", target="retry", reason_code="no_steps_no_partial"
+                )
             run.status = RunStatus.WAITING_RETRY.value
             run.outcome = None
             retried_target_ids: set[str] = set()

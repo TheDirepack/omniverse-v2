@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.v2.config import V2Config
 from app.v2.contracts import CreateResearchRun, ResearchRunTargetInput
-from app.v2.db import SchemaValidationError
+from app.v2.db import SchemaValidationError, bootstrap_schema
 from app.v2.domain import RunStatus, StepKind
 from app.v2.initialize import initialize
 from app.v2.models import (
@@ -20,6 +20,9 @@ from app.v2.models import (
     CredentialRef,
     OutboxEvent,
     Provider,
+    ProviderModel,
+    Route,
+    RouteCandidate,
     Run,
     SeedRun,
     ToolEvent,
@@ -57,23 +60,42 @@ def test_preprocessor_config_defaults_and_environment(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     defaults = V2Config.from_env()
-    assert defaults.preprocessor_enabled is False
+    assert defaults.preprocessor_enabled is True
+    assert defaults.browser_profile_path == (
+        Path(__file__).resolve().parents[1] / "data/v2-secrets/browser-profile"
+    )
     assert defaults.preprocessor_base_url == "http://192.168.1.30:8080"
     assert defaults.preprocessor_model == "MiniCPM5-1B"
     assert defaults.preprocessor_timeout_seconds == 10
     assert defaults.preprocessor_concurrency == 2
+    assert defaults.preprocessor_config_path == "/home/max/minicpm5_config.json"
+    assert defaults.preprocessor_remote_script == "/home/max/start-minicpm.sh"
+    assert defaults.preprocessor_pgrep_pattern == "llama-server"
+    assert defaults.remote_model_lifecycle_enabled is True
+    assert defaults.qwen_base_url == "http://192.168.1.30:8081"
+    assert defaults.qwen_model == "/home/max/Downloads/Qwen3.5-4B-IQ4_XS.gguf"
+    assert defaults.qwen_context_window == 81_920
+    assert defaults.qwen_remote_script == "/home/max/start-qwen35.sh"
 
     monkeypatch.setenv("OMNIVERSE_V2_PREPROCESSOR_ENABLED", "true")
     monkeypatch.setenv("OMNIVERSE_V2_PREPROCESSOR_BASE_URL", "http://model.test:9000/")
     monkeypatch.setenv("OMNIVERSE_V2_PREPROCESSOR_MODEL", "test-model")
     monkeypatch.setenv("OMNIVERSE_V2_PREPROCESSOR_TIMEOUT_SECONDS", "4.5")
     monkeypatch.setenv("OMNIVERSE_V2_PREPROCESSOR_CONCURRENCY", "3")
+    monkeypatch.setenv("OMNIVERSE_V2_QWEN_BASE_URL", "http://qwen.test:9001")
+    monkeypatch.setenv("OMNIVERSE_V2_QWEN_CONTEXT_WINDOW", "65536")
+    monkeypatch.setenv("OMNIVERSE_V2_BROWSER_PROFILE_PATH", "profiles/browser")
     configured = V2Config.from_env()
     assert configured.preprocessor_enabled is True
     assert configured.preprocessor_base_url == "http://model.test:9000/"
     assert configured.preprocessor_model == "test-model"
     assert configured.preprocessor_timeout_seconds == 4.5
     assert configured.preprocessor_concurrency == 3
+    assert configured.qwen_base_url == "http://qwen.test:9001"
+    assert configured.qwen_context_window == 65_536
+    assert configured.browser_profile_path == (
+        Path(__file__).resolve().parents[1] / "profiles/browser"
+    )
 
 
 def test_config_anchors_relative_runtime_paths_to_backend(
@@ -133,6 +155,8 @@ async def test_runtime_composes_preprocessor_status_and_closes_injected_adapter(
     )
     runtime = V2Runtime.build(config, preprocessor=preprocessor)
     assert runtime.preprocessor is preprocessor
+    assert runtime.acquisition.preprocessor is preprocessor
+    assert runtime.workflow.preprocessor is preprocessor
     assert runtime.adapter_status["preprocessor"] == {
         "available": True,
         "detail": "fake MiniCPM",
@@ -159,7 +183,7 @@ def test_runtime_reports_disabled_preprocessor(tmp_path: Path) -> None:
 
 
 @pytest.mark.integration
-def test_explicit_initialize_is_idempotent_and_seeds_only_worlds_and_policies(
+def test_explicit_initialize_is_idempotent_and_seeds_qwen_development_default(
     tmp_path: Path,
 ) -> None:
     config = V2Config(
@@ -176,9 +200,227 @@ def test_explicit_initialize_is_idempotent_and_seeds_only_worlds_and_policies(
     with Session(V2Runtime.engine_for(config)) as session:
         assert session.scalar(select(func.count()).select_from(World)) == 1
         assert session.scalar(select(func.count()).select_from(SeedRun)) == 1
-        assert session.scalar(select(func.count()).select_from(Provider)) == 0
-        assert session.scalar(select(func.count()).select_from(CredentialRef)) == 0
+        assert session.scalar(select(func.count()).select_from(Provider)) == 1
+        provider = session.scalar(select(Provider))
+        model = session.scalar(select(ProviderModel))
+        credential = session.scalar(select(CredentialRef))
+        route = session.scalar(select(Route))
+        candidate = session.scalar(select(RouteCandidate))
+        assert (provider.id, provider.kind, provider.base_url) == (
+            "qwen-local",
+            "OPENAI_COMPATIBLE",
+            "http://192.168.1.30:8081",
+        )
+        assert (model.model_name, model.context_window) == (
+            "/home/max/Downloads/Qwen3.5-4B-IQ4_XS.gguf",
+            81_920,
+        )
+        assert credential.provider_id == provider.id
+        assert route.task == "DEFAULT"
+        assert candidate.provider_id == provider.id
+        assert candidate.model_id is None
         assert session.scalar(select(func.count()).select_from(Run)) == 0
+
+
+@pytest.mark.asyncio
+async def test_runtime_owns_both_remote_model_lifecycles(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.v2.preprocessor_ssh import PreprocessorSSH
+
+    config = V2Config(
+        database_path=tmp_path / "v2.db",
+        blob_path=tmp_path / "blobs",
+        credentials_path=tmp_path / "credentials.json",
+        seed_path=_seed(tmp_path / "seed.json"),
+        browser_enabled=False,
+        remote_model_lifecycle_enabled=True,
+    )
+    initialize(config)
+    actions: list[tuple[str, str]] = []
+
+    monkeypatch.setattr(PreprocessorSSH, "check_running", lambda _self: True)
+    monkeypatch.setattr(
+        PreprocessorSSH,
+        "start_server",
+        lambda self: (
+            actions.append(("start", self.config.preprocessor_base_url))
+            or (True, "started")
+        ),
+    )
+    monkeypatch.setattr(
+        PreprocessorSSH,
+        "stop_server",
+        lambda self: (
+            actions.append(("stop", self.config.preprocessor_base_url))
+            or (True, "stopped")
+        ),
+    )
+    runtime = V2Runtime.build(config)
+
+    await runtime.startup(start_worker=False)
+    await runtime.shutdown()
+
+    assert actions == [
+        ("start", "http://192.168.1.30:8080"),
+        ("start", "http://192.168.1.30:8081"),
+        ("stop", "http://192.168.1.30:8080"),
+        ("stop", "http://192.168.1.30:8081"),
+    ]
+
+
+def test_initialize_does_not_override_explicit_provider_configuration(
+    tmp_path: Path,
+) -> None:
+    config = V2Config(
+        database_path=tmp_path / "v2.db",
+        blob_path=tmp_path / "blobs",
+        credentials_path=tmp_path / "credentials.json",
+        seed_path=_seed(tmp_path / "seed.json"),
+    )
+    engine = V2Runtime.engine_for(config)
+    bootstrap_schema(engine)
+    with Session(engine) as session, session.begin():
+        session.add(
+            Provider(
+                id="operator-provider",
+                kind="OPENAI_COMPATIBLE",
+                base_url="http://operator.test:9000",
+                active=True,
+            )
+        )
+        session.add(
+            ProviderModel(
+                id="operator-model",
+                provider_id="operator-provider",
+                model_name="operator-model",
+                context_window=8_192,
+                output_limit=1_024,
+                supports_structured=True,
+                active=True,
+            )
+        )
+        session.add(
+            Route(id="operator-route", task="DEFAULT", position=0, active=True)
+        )
+        session.add(
+            RouteCandidate(
+                id="operator-candidate",
+                route_id="operator-route",
+                model_id="operator-model",
+                position=0,
+            )
+        )
+    engine.dispose()
+
+    initialize(config)
+
+    with Session(V2Runtime.engine_for(config)) as session:
+        providers = session.scalars(select(Provider)).all()
+        assert [(row.id, row.base_url) for row in providers] == [
+            ("operator-provider", "http://operator.test:9000")
+        ]
+        assert session.scalar(select(func.count()).select_from(ProviderModel)) == 1
+        assert session.scalar(select(func.count()).select_from(Route)) == 1
+        assert session.scalar(select(func.count()).select_from(RouteCandidate)) == 1
+
+
+def test_initialize_removes_generated_step_overrides_but_preserves_explicit_routes(
+    tmp_path: Path,
+) -> None:
+    config = V2Config(
+        database_path=tmp_path / "v2.db",
+        blob_path=tmp_path / "blobs",
+        credentials_path=tmp_path / "credentials.json",
+        seed_path=_seed(tmp_path / "seed.json"),
+    )
+    engine = V2Runtime.engine_for(config)
+    bootstrap_schema(engine)
+    with Session(engine) as session, session.begin():
+        session.add_all(
+            [
+                Provider(
+                    id="qwen-local",
+                    kind="OPENAI_COMPATIBLE",
+                    base_url=config.qwen_base_url,
+                    active=True,
+                ),
+                Provider(
+                    id="operator-provider",
+                    kind="OPENAI_COMPATIBLE",
+                    base_url="http://operator.test:9000",
+                    active=True,
+                ),
+            ]
+        )
+        session.add(
+            ProviderModel(
+                id="operator-model",
+                provider_id="operator-provider",
+                model_name="operator-model",
+                context_window=8_192,
+                output_limit=1_024,
+                supports_structured=True,
+                active=True,
+            )
+        )
+        session.add_all(
+            [
+                Route(id="default-route", task="DEFAULT", position=0, active=True),
+                Route(
+                    id="generated-route",
+                    task="research.plan",
+                    position=1,
+                    active=True,
+                ),
+                Route(id="mixed-route", task="research.write", position=2, active=True),
+            ]
+        )
+        session.add_all(
+            [
+                RouteCandidate(
+                    id="operator-default",
+                    route_id="default-route",
+                    model_id="operator-model",
+                    position=0,
+                ),
+                RouteCandidate(
+                    id="candidate:generated-route:qwen-local",
+                    route_id="generated-route",
+                    provider_id="qwen-local",
+                    position=0,
+                ),
+                RouteCandidate(
+                    id="candidate:mixed-route:qwen-local",
+                    route_id="mixed-route",
+                    provider_id="qwen-local",
+                    position=0,
+                ),
+                RouteCandidate(
+                    id="operator-step",
+                    route_id="mixed-route",
+                    model_id="operator-model",
+                    position=1,
+                ),
+            ]
+        )
+    engine.dispose()
+
+    initialize(config)
+
+    with Session(V2Runtime.engine_for(config)) as session:
+        routes = session.scalars(select(Route).order_by(Route.position)).all()
+        candidates = session.scalars(
+            select(RouteCandidate).order_by(RouteCandidate.id)
+        ).all()
+        assert [(route.task, route.position) for route in routes] == [
+            ("DEFAULT", 0),
+            ("research.write", 2),
+        ]
+        assert [candidate.id for candidate in candidates] == [
+            "operator-default",
+            "operator-step",
+        ]
 
 
 def test_initialize_refuses_unrecognized_nonempty_database(tmp_path: Path) -> None:
@@ -298,9 +540,7 @@ async def test_multi_run_worker_failure_matrix_is_durable_and_non_blocking(
             CreateResearchRun(
                 objective=scenario,
                 scope={"continuity": "prime"},
-                targets=(
-                    ResearchRunTargetInput(world_id=scenario),
-                ),
+                targets=(ResearchRunTargetInput(world_id=scenario),),
                 max_attempts=2,
             ),
             f"matrix-{scenario}",

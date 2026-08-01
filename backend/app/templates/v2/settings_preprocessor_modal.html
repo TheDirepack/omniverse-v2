@@ -1,0 +1,74 @@
+<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+  <div class="bg-white dark:bg-gray-900 rounded-lg shadow-xl max-w-lg w-full mx-4 max-h-[90vh] overflow-y-auto p-6">
+    <h2 class="text-xs font-bold uppercase tracking-widest mb-4">Preprocessor Configuration</h2>
+    <form hx-post="/settings/preprocessor/save-config" hx-target="#settings-content">
+      <div class="grid grid-cols-2 gap-4 text-xs">
+        <div class="col-span-2">
+          <h3 class="font-bold mb-2 border-b pb-1">SSH Connection</h3>
+        </div>
+        <div>
+          <label class="block font-bold mb-1">Host</label>
+          <input name="preprocessor_ssh_host" value="{{ config.preprocessor_ssh_host }}" class="h-7 w-full px-2 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 rounded">
+        </div>
+        <div>
+          <label class="block font-bold mb-1">User</label>
+          <input name="preprocessor_ssh_user" value="{{ config.preprocessor_ssh_user }}" class="h-7 w-full px-2 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 rounded">
+        </div>
+        <div>
+          <label class="block font-bold mb-1">Port</label>
+          <input name="preprocessor_ssh_port" type="number" value="{{ config.preprocessor_ssh_port }}" class="h-7 w-full px-2 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 rounded">
+        </div>
+        <div class="col-span-2 mt-2">
+          <h3 class="font-bold mb-2 border-b pb-1">Authentication</h3>
+        </div>
+        <div class="col-span-2">
+          <label class="block font-bold mb-1">SSH Key Path</label>
+          <input name="preprocessor_ssh_key_path" placeholder="Leave empty for system SSH agent" value="{{ config.preprocessor_ssh_key_path }}" class="h-7 w-full px-2 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 rounded">
+        </div>
+        <div class="col-span-2">
+          <label class="block font-bold mb-1">SSH Credential ID</label>
+          <input name="preprocessor_ssh_credential_id" placeholder="Referenced from credential store" value="{{ config.preprocessor_ssh_credential_id }}" class="h-7 w-full px-2 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 rounded">
+        </div>
+        <div class="col-span-2 mt-2">
+          <h3 class="font-bold mb-2 border-b pb-1">Remote Configuration</h3>
+        </div>
+        <div class="col-span-2">
+          <label class="block font-bold mb-1">Config Path on Server</label>
+          <input name="preprocessor_config_path" value="{{ config.preprocessor_config_path }}" class="h-7 w-full px-2 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 rounded">
+        </div>
+        <div class="col-span-2">
+          <label class="block font-bold mb-1">Start Script Path</label>
+          <input name="preprocessor_remote_script" value="{{ config.preprocessor_remote_script }}" class="h-7 w-full px-2 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 rounded">
+        </div>
+        <div class="col-span-2">
+          <label class="block font-bold mb-1">Process Pattern for pgrep</label>
+          <input name="preprocessor_pgrep_pattern" value="{{ config.preprocessor_pgrep_pattern }}" class="h-7 w-full px-2 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 rounded">
+        </div>
+        <div class="col-span-2 mt-2">
+          <h3 class="font-bold mb-2 border-b pb-1">Model</h3>
+        </div>
+        <div class="col-span-2">
+          <label class="block font-bold mb-1">Base URL</label>
+          <input name="preprocessor_base_url" value="{{ config.preprocessor_base_url }}" class="h-7 w-full px-2 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 rounded">
+        </div>
+        <div class="col-span-2">
+          <label class="block font-bold mb-1">Model Name</label>
+          <input id="preprocessor-model-field" name="preprocessor_model" value="{{ config.preprocessor_model }}" class="h-7 w-full px-2 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 rounded">
+        </div>
+        <div>
+          <label class="block font-bold mb-1">Timeout (seconds)</label>
+          <input name="preprocessor_timeout_seconds" type="number" value="{{ config.preprocessor_timeout_seconds }}" class="h-7 w-full px-2 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 rounded">
+        </div>
+        <div>
+          <label class="block font-bold mb-1">Concurrency</label>
+          <input name="preprocessor_concurrency" type="number" value="{{ config.preprocessor_concurrency }}" class="h-7 w-full px-2 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 rounded">
+        </div>
+      </div>
+      <div class="flex items-center gap-2 mt-6 pt-4 border-t">
+        <button type="button" hx-post="/settings/preprocessor/fetch-model" hx-target="#preprocessor-model-field" class="h-7 px-3 bg-green-600 text-white text-xs font-bold rounded">Fetch Model from Server</button>
+        <button type="button" onclick="this.closest('.fixed').remove()" class="ml-auto h-7 px-3 bg-gray-500 text-white text-xs font-bold rounded">Cancel</button>
+        <button type="submit" class="h-7 px-3 bg-blue-600 text-white text-xs font-bold rounded">Save</button>
+      </div>
+    </form>
+  </div>
+</div>

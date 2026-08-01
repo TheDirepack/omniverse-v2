@@ -1,28 +1,64 @@
-<div class="grid grid-cols-1 lg:grid-cols-[1fr_20rem] gap-4"><section><h2 class="text-xs font-bold uppercase tracking-widest mb-2">Providers</h2>{% for provider in settings.providers %}<article class="border border-gray-200 dark:border-gray-800 p-3 mb-2 text-xs"><div><code class="font-bold">{{ provider.id }}</code><strong class="float-right">{{ provider.kind }}</strong></div><form class="mt-2 flex gap-2" hx-post="/settings/providers/{{ provider.id }}" hx-target="#settings-content"><input name="base_url" value="{{ provider.base_url or '' }}" placeholder="Default endpoint" class="h-7 flex-1 px-2 border bg-transparent"><label><input name="active" type="checkbox" value="true" {% if provider.active %}checked{% endif %}> Active</label><button class="text-blue-600">Update</button></form><div class="mt-2 flex gap-2"><button class="h-6 px-2 bg-green-600 text-white font-bold rounded" hx-post="/settings/providers/{{ provider.id }}/sync" hx-target="#settings-content">Sync models from endpoint</button><button class="h-6 px-2 bg-red-600 text-white font-bold rounded" hx-delete="/settings/providers/{{ provider.id }}" hx-target="#settings-content" hx-confirm="Are you sure you want to delete provider {{ provider.id }}?">Delete provider</button></div><h3 class="mt-3 font-bold">Write-only credentials</h3><div id="credentials-{{ provider.id }}">{% for credential in provider.credentials %}{% include "v2/settings_credential.html" %}{% else %}<p class="text-gray-500">No credentials.</p>{% endfor %}</div><form class="mt-2 flex gap-1" hx-post="/settings/providers/{{ provider.id }}/credentials" hx-target="#credentials-{{ provider.id }}" hx-swap="beforeend"><input name="label" required placeholder="Label" class="h-7 px-2 border bg-transparent"><input name="secret" type="password" required placeholder="Secret" class="h-7 px-2 border bg-transparent"><input name="weight" type="number" min="1" value="1" class="h-7 w-14 px-2 border bg-transparent"><button class="h-7 px-2 bg-blue-600 text-white">Add</button></form></article>{% else %}<p class="text-xs text-gray-500">No providers configured.</p>{% endfor %}</section><form class="border border-gray-200 dark:border-gray-800 p-3 text-xs h-fit" hx-post="/settings/providers" hx-target="#settings-content">
+<div class="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_22rem]">
+<section>
+    <h2 class="mb-2 text-xs font-bold uppercase tracking-widest">Providers</h2>
+    {% for provider in settings.providers %}
+    <article class="mb-2 border border-gray-200 p-3 text-xs dark:border-gray-800">
+        <div><code class="font-bold">{{ provider.id }}</code><strong class="float-right">{{ provider.kind }}</strong></div>
+        <form class="mt-2 flex gap-2" hx-post="/settings/providers/{{ provider.id }}" hx-target="#settings-content">
+            <input name="base_url" value="{{ provider.base_url or '' }}" placeholder="Provider API base URL" class="h-7 flex-1 border bg-transparent px-2">
+            <label><input name="active" type="checkbox" value="true" {% if provider.active %}checked{% endif %}> Active</label>
+            <button class="text-blue-600">Update</button>
+        </form>
+        <div class="mt-2 flex gap-2">
+            <button class="h-6 rounded bg-green-600 px-2 font-bold text-white" hx-post="/settings/providers/{{ provider.id }}/sync" hx-target="#settings-content">Sync models</button>
+            <button class="h-6 rounded bg-red-600 px-2 font-bold text-white" hx-delete="/settings/providers/{{ provider.id }}" hx-target="#settings-content" hx-confirm="Delete provider {{ provider.id }}, its models, credentials, and route slots?">Delete provider</button>
+        </div>
+        <h3 class="mt-3 font-bold">Write-only credentials</h3>
+        <p class="text-gray-500">Credential weight balances healthy keys within this provider. Weight 2 receives about twice the selections of weight 1; it does not change strict fallback position.</p>
+        <div id="credentials-{{ provider.id }}">{% for credential in provider.credentials %}{% include "v2/settings_credential.html" %}{% else %}<p class="text-gray-500">No credentials.</p>{% endfor %}</div>
+        <form class="mt-2 flex gap-1" hx-post="/settings/providers/{{ provider.id }}/credentials" hx-target="#credentials-{{ provider.id }}" hx-swap="beforeend">
+            <input name="label" required placeholder="Label" class="h-7 border bg-transparent px-2">
+            <input name="secret" type="password" required placeholder="Secret" class="h-7 border bg-transparent px-2">
+            <input name="weight" type="number" min="1" value="1" title="Credential weight" class="h-7 w-14 border bg-transparent px-2">
+            <button class="h-7 bg-blue-600 px-2 text-white">Add credential</button>
+        </form>
+    </article>
+    {% else %}<p class="text-xs text-gray-500">No providers configured.</p>{% endfor %}
+</section>
+
+<aside class="border border-gray-200 bg-gray-50 p-4 text-xs dark:border-gray-800 dark:bg-gray-900">
     <h2 class="font-bold uppercase tracking-widest">Create provider</h2>
-    <input name="provider_id" required placeholder="String ID" class="mt-2 h-7 w-full px-2 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100">
-    <select name="kind" id="create-provider-kind" onchange="updateProviderBaseUrl(this)" class="mt-2 h-7 w-full border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100">
-        <option value="OPENAI">OPENAI</option>
-        <option value="GEMINI">GEMINI</option>
-        <option value="OPENAI_COMPATIBLE">OPENAI_COMPATIBLE</option>
-        <option value="OPENROUTER">OPENROUTER</option>
-    </select>
-    <input name="base_url" id="create-provider-base-url" value="https://api.openai.com" placeholder="Optional base URL" class="mt-2 h-7 w-full px-2 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100">
-    <button class="mt-2 h-7 px-3 bg-blue-600 text-white font-bold">Create</button>
-</form>
+    <form hx-post="/settings/providers" hx-target="#settings-content">
+        <input name="provider_id" required placeholder="Stable provider ID" class="mt-2 h-7 w-full border bg-white px-2 dark:bg-gray-800">
+        <select name="kind" id="create-provider-kind" onchange="updateProviderBaseUrl(this)" class="mt-2 h-7 w-full border bg-white dark:bg-gray-800">
+            <option value="OPENAI">OPENAI</option>
+            <option value="GEMINI">GEMINI</option>
+            <option value="OPENAI_COMPATIBLE">OPENAI_COMPATIBLE</option>
+            <option value="OPENROUTER">OPENROUTER</option>
+        </select>
+        <input name="base_url" id="create-provider-base-url" value="https://api.openai.com" placeholder="Provider API base URL" class="mt-2 h-7 w-full border bg-white px-2 dark:bg-gray-800">
+        <button class="mt-2 h-7 bg-blue-600 px-3 font-bold text-white">Create</button>
+    </form>
+    <div class="mt-4 border-t border-gray-200 pt-3 text-gray-600 dark:border-gray-700 dark:text-gray-300">
+        <h3 class="font-bold text-gray-900 dark:text-gray-100">Provider help</h3>
+        <p class="mt-1">Use a stable ID. Model IDs may contain slashes. Credentials are write-only and model sync requires an active credential.</p>
+        <p class="mt-1"><strong>OPENAI:</strong> `https://api.openai.com`</p>
+        <p><strong>GEMINI:</strong> `https://generativelanguage.googleapis.com/v1beta`</p>
+        <p><strong>OPENROUTER:</strong> `https://openrouter.ai/api`</p>
+        <p><strong>OPENAI_COMPATIBLE:</strong> supply the server's API root, normally including `/v1` when required by that server.</p>
+        <p class="mt-1">A provider route slot resolves all active compatible models at call time. Fallback continues only for unavailable or incompatible candidates and authentication, rate-limit, or transient failures.</p>
+    </div>
+</aside>
+</div>
 <script>
 function updateProviderBaseUrl(select) {
-    const kind = select.value;
-    const baseUrlInput = document.getElementById('create-provider-base-url');
-    if (kind === 'OPENAI') {
-        baseUrlInput.value = 'https://api.openai.com';
-    } else if (kind === 'GEMINI') {
-        baseUrlInput.value = 'https://generativelanguage.googleapis.com/v1beta';
-    } else if (kind === 'OPENROUTER') {
-        baseUrlInput.value = 'https://openrouter.ai/api';
-    } else {
-        baseUrlInput.value = '';
-    }
+    const input = document.getElementById('create-provider-base-url');
+    const defaults = {
+        OPENAI: 'https://api.openai.com',
+        GEMINI: 'https://generativelanguage.googleapis.com/v1beta',
+        OPENROUTER: 'https://openrouter.ai/api',
+        OPENAI_COMPATIBLE: ''
+    };
+    input.value = defaults[select.value] || '';
 }
 </script>
-</div>

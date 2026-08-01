@@ -1,7 +1,16 @@
 <h2 class="text-xs font-bold uppercase tracking-widest mb-2">Models and capabilities</h2>
 {% for provider in settings.providers %}
 <section class="mb-4 border border-gray-200 dark:border-gray-800 p-3 text-xs">
-    <h3 class="font-mono font-bold text-xs mb-2">{{ provider.id }} ({{ provider.kind }})</h3>
+    <div class="mb-2 flex flex-wrap items-center justify-between gap-2">
+        <h3 class="font-mono font-bold text-xs">{{ provider.id }} ({{ provider.kind }})</h3>
+        <button
+            class="h-7 rounded bg-amber-600 px-3 font-bold text-white disabled:cursor-wait disabled:opacity-50"
+            hx-post="/settings/providers/{{ provider.id }}/sync-validate-models"
+            hx-target="#settings-content"
+            hx-disabled-elt="this"
+            hx-confirm="Fetch every discoverable model from {{ provider.id }}, test each one, and delete models rejected as unknown or unsupported? Temporary provider, credential, rate-limit, and network failures will be retained."
+        >Fetch and prune models</button>
+    </div>
     <table class="w-full text-xs">
         <thead>
             <tr class="border-b text-gray-500 text-left">
@@ -35,7 +44,7 @@
                 </td>
                 <td>{{ "Active" if model.active else "Inactive" }}</td>
                 <td>
-                    <button class="text-red-600 hover:underline" hx-delete="/settings/models/{{ model.id }}" hx-target="#settings-content">Delete</button>
+                    <button class="text-red-600 hover:underline" hx-delete="/settings/models/{{ model.id }}" hx-target="#settings-content" hx-confirm="Delete model {{ model.id }} and its explicit route slots?">Delete</button>
                 </td>
             </tr>
             {% else %}

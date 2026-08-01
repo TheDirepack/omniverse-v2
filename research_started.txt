@@ -1,0 +1,49 @@
+uid=8_0 RootWebArea "Research - Omniverse V2" url="http://127.0.0.1:8000/research/"
+  uid=8_1 navigation "Main navigation"
+    uid=8_2 StaticText "OMNIVERSE V2"
+    uid=8_3 button "Toggle dark mode" description="Toggle dark/light mode"
+    uid=8_4 menu orientation="vertical"
+      uid=8_5 link "Home" description="Home dashboard" url="http://127.0.0.1:8000/"
+      uid=8_6 link "Research" description="Research and discovery" url="http://127.0.0.1:8000/research/"
+      uid=8_7 link "Validation" description="Validate universes" url="http://127.0.0.1:8000/validation/"
+      uid=8_8 link "Knowledge" description="Knowledge graph" url="http://127.0.0.1:8000/knowledge/"
+      uid=8_9 link "Theory" description="Theoretical extrapolation" url="http://127.0.0.1:8000/theory/"
+      uid=8_10 link "Flow" description="Workflow management" url="http://127.0.0.1:8000/flow/"
+      uid=8_11 link "Logs" description="System logs and events" url="http://127.0.0.1:8000/logs/"
+    uid=8_12 heading "SYSTEM" level="2"
+    uid=8_13 link "Settings" description="Configuration settings" url="http://127.0.0.1:8000/settings/"
+      uid=8_14 StaticText "Settings"
+    uid=8_15 StaticText "v2.0.0-stable"
+  uid=8_16 main
+    uid=8_17 heading "RESEARCH" level="1"
+    uid=8_18 form
+      uid=8_19 StaticText "Search worlds"
+      uid=8_20 searchbox "Search worlds" value="fallout_nv"
+    uid=8_21 form
+      uid=9_0 StaticText "Select"
+      uid=9_1 StaticText "World"
+      uid=9_2 StaticText "Franchise"
+      uid=9_3 StaticText "Category"
+      uid=9_4 checkbox "Select Fallout: New Vegas (2281)" checked
+      uid=9_5 StaticText "Fallout: New Vegas (2281)"
+      uid=9_6 StaticText "fallout_nv"
+      uid=9_7 StaticText "Fallout"
+      uid=9_8 StaticText "Post-Apocalyptic"
+      uid=8_152 complementary
+        uid=8_153 StaticText "FOCUS (OPTIONAL) "
+        uid=8_154 textbox "FOCUS (OPTIONAL) " multiline
+        uid=8_155 StaticText "CONTINUITY "
+        uid=8_156 textbox "CONTINUITY " required value="primary"
+        uid=8_157 StaticText "KEYWORDS (OPTIONAL) "
+        uid=8_158 textbox "KEYWORDS (OPTIONAL) "
+        uid=8_159 StaticText "PHRASES (OPTIONAL) "
+        uid=8_160 textbox "PHRASES (OPTIONAL) " multiline
+        uid=8_161 StaticText "SECTION HINTS (OPTIONAL) "
+        uid=8_162 textbox "SECTION HINTS (OPTIONAL) " multiline
+        uid=8_163 button "Start research" focusable focused
+        uid=10_0 link "run_0dcf385b1abd43b4bca1090cdfd2b2bf" url="http://127.0.0.1:8000/flow/run_0dcf385b1abd43b4bca1090cdfd2b2bf"
+          uid=10_1 StaticText "run_0dcf385b1abd43b4bca1090cdfd2b2bf"
+        uid=10_2 StaticText "FAILED"
+        uid=10_3 StaticText "General world research"
+        uid=10_4 StaticText "fallout_nv"
+        uid=10_5 button "Retry"

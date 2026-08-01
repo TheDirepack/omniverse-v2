@@ -40,17 +40,16 @@
 
 <hr class="my-4 border-gray-200 dark:border-gray-800">
 
-<h2 class="text-xs font-bold uppercase tracking-widest mb-2">Logging</h2>
-<form class="grid gap-3 text-xs border border-gray-200 dark:border-gray-800 p-3 bg-gray-50 dark:bg-gray-900" hx-post="/settings/general" hx-target="#settings-content">
-    <label class="flex items-center gap-2">
-        <input name="log_enabled" type="checkbox" value="true" {% if config.log_path is defined and config.log_path %}checked{% endif %}>
-        <span>Enable Structured Event Logging (JSONL)</span>
-    </label>
-    <div class="grid grid-cols-[10rem_1fr] gap-2 items-center">
-        <span>Log Path</span>
-        <input name="log_path" value="{{ config.log_path or '' }}" placeholder="data/v2-events.jsonl" class="h-7 px-2 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100">
-    </div>
-    <button class="mt-2 h-7 px-3 bg-blue-600 text-white w-fit font-bold">Save runtime settings</button>
-</form>
+<h2 class="text-xs font-bold uppercase tracking-widest mb-2">Brave Search API</h2>
+<div class="border border-gray-200 dark:border-gray-800 p-3 bg-gray-50 dark:bg-gray-900">
+    <p class="text-xs text-gray-500">Used only after every free browser search provider fails. The key is write-only and never displayed.</p>
+    <p class="mt-2 text-xs {% if settings.brave_search_configured %}text-green-600{% else %}text-gray-500{% endif %}">
+        {{ "Configured" if settings.brave_search_configured else "Not configured" }}
+    </p>
+    <form class="mt-2 flex gap-2" hx-post="/settings/brave-search" hx-target="#settings-content">
+        <input name="brave_search_api_key" type="password" required placeholder="Brave Search API key" class="h-7 flex-1 border bg-transparent px-2">
+        <button class="h-7 bg-blue-600 px-3 text-xs font-bold text-white">Save key</button>
+    </form>
+</div>
 
-<p class="mt-4 text-xs text-gray-500">Paths and worker state are read-only. Server logs are displayed in the Logs tab.</p>
+<p class="mt-4 text-xs text-gray-500">Paths and worker state are read-only. File diagnostics are configured in the Logs tab.</p>

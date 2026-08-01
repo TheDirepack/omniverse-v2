@@ -23,6 +23,7 @@ from app.v2.gateway import StructuredModelGateway, StructuredOutputError
 from app.v2.models import (
     CanonNode,
     CanonNodeRevision,
+    Checkpoint,
     ClaimConflict,
     ContextManifest,
     EvidenceFragment,
@@ -31,14 +32,18 @@ from app.v2.models import (
     ModelStepEffect,
     NodeEvidence,
     ResearchGapRecord,
+    ResearchWorkspace,
+    SearchLead,
     Source,
     SourceRevision,
     StepEffect,
     World,
 )
+from app.v2.preprocessing import ModelPreprocessResult, PreprocessingStatus
 from app.v2.projections import ResearchQueryService
-from app.v2.providers import ModelResponse, Usage
+from app.v2.providers import ErrorClass, ModelResponse, ProviderError, Usage
 from app.v2.research_runs import ResearchRunKernel
+from app.v2.search import SearchBlockedError
 from app.v2.workflow import (
     ResearchWorkflow,
     _resolve_fragment_id,
@@ -75,6 +80,12 @@ class FailingRouter(FakeRouter):
         raise RuntimeError("provider exploded")
 
 
+class ProviderFailingRouter(FakeRouter):
+    async def complete(self, task, request, requirements):
+        self.calls.append(task)
+        raise ProviderError(ErrorClass.CAPABILITY, "structured output unavailable")
+
+
 class FakeSearch:
     async def search(self, query: str, *, limit: int):
         return (
@@ -90,6 +101,17 @@ class FakeSearch:
 class EmptySearch:
     async def search(self, query: str, *, limit: int):
         return ()
+
+
+class PartiallyBlockedSearch:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def search(self, query: str, *, limit: int):
+        self.calls += 1
+        if self.calls == 2:
+            raise SearchBlockedError("blocked")
+        return await FakeSearch().search(query, limit=limit)
 
 
 class FakeAcquisition:
@@ -110,6 +132,7 @@ class FakeAcquisition:
         source_class="SECONDARY",
         publisher=None,
         lineage_id=None,
+        **_targeting,
     ):
         from app.v2.acquisition import AcquisitionResult
         from app.v2.models import Source
@@ -148,6 +171,18 @@ class FakeAcquisition:
             blob_hash,
             body.decode(),
             self.calls > 1,
+            "text/plain",
+            deterministic_blob_hash=blob_hash,
+            readability_blob_hash=blob_hash,
+            targeting_status="BROAD",
+            preprocessing_status="DISABLED",
+            authoritative_passages=(
+                {
+                    "locator": "section:0/passage:0",
+                    "text": body.decode(),
+                },
+            ),
+            readability_text=body.decode(),
         )
 
 
@@ -182,11 +217,7 @@ def command() -> CreateResearchRun:
     return CreateResearchRun(
         objective="Document fusion engine",
         scope={"continuity": "prime"},
-        targets=(
-            ResearchRunTargetInput(
-                world_id="world-1", objective="Document fusion engine"
-            ),
-        ),
+        targets=(ResearchRunTargetInput(world_id="world-1"),),
     )
 
 
@@ -236,10 +267,9 @@ def responses() -> dict[str, list[dict[str, object]]]:
                 "questions": [
                     {
                         "id": "q1",
-                        "domain": "mechanisms",
+                        "priority": 1,
                         "question": "What does the fusion engine do?",
                         "queries": ["Example fusion engine mechanism"],
-                        "required_indicators": ["effect", "activation", "limits"],
                         "source_budget": 1,
                         "stop_conditions": ["one primary source"],
                     }
@@ -252,10 +282,9 @@ def responses() -> dict[str, list[dict[str, object]]]:
                     {
                         "fragment_id": "fragment-support",
                         "source_revision_id": "revision-fusion",
-                        "locator": "chars:0-52",
+                        "locator": "section:0/passage:0",
                         "exact_excerpt": "The prototype fusion engine bends local spacetime.",
                         "normalized_statement": "The prototype bends local spacetime.",
-                        "domain": "mechanisms",
                         "subject_ids": ["fusion-engine"],
                         "continuity": "prime",
                         "temporal_scope": {
@@ -269,10 +298,9 @@ def responses() -> dict[str, list[dict[str, object]]]:
                     {
                         "fragment_id": "fragment-qualifier",
                         "source_revision_id": "revision-fusion",
-                        "locator": "chars:4-13",
+                        "locator": "section:0/passage:0",
                         "exact_excerpt": "prototype",
                         "normalized_statement": "The engine is a prototype.",
-                        "domain": "mechanisms",
                         "subject_ids": ["fusion-engine"],
                         "continuity": "prime",
                         "temporal_scope": {
@@ -380,7 +408,7 @@ def responses() -> dict[str, list[dict[str, object]]]:
 
 
 @pytest.mark.asyncio
-async def test_multi_target_handlers_use_each_lease_target_objective_and_scope(
+async def test_planner_uses_global_focus_scope_and_targeting_for_each_world(
     workflow_parts,
 ):
     engine, blobs = workflow_parts
@@ -390,18 +418,13 @@ async def test_multi_target_handlers_use_each_lease_target_objective_and_scope(
     run = kernel.create(
         CreateResearchRun(
             objective="run objective",
-            scope={"continuity": "wrong-default"},
+            scope={"continuity": "prime"},
+            keywords=("fusion",),
+            phrases=("exact engine",),
+            section_hints=("Capabilities",),
             targets=(
-                ResearchRunTargetInput(
-                    world_id="world-1",
-                    objective="objective one",
-                    scope={"continuity": "prime"},
-                ),
-                ResearchRunTargetInput(
-                    world_id="world-2",
-                    objective="objective two",
-                    scope={"continuity": "prime"},
-                ),
+                ResearchRunTargetInput(world_id="world-1"),
+                ResearchRunTargetInput(world_id="world-2"),
             ),
         ),
         "multi-target-context",
@@ -416,12 +439,315 @@ async def test_multi_target_handlers_use_each_lease_target_objective_and_scope(
         for request in router.requests
     ]
     assert {
-        (payload["inventory"]["world"]["id"], payload["objective"])
+        (payload["inventory"]["world"]["id"], payload["focus"])
         for payload in plan_payloads
     } == {
-        ("world-1", "objective one"),
-        ("world-2", "objective two"),
+        ("world-1", "run objective"),
+        ("world-2", "run objective"),
     }
+    assert all(payload["scope"]["continuity"] == "prime" for payload in plan_payloads)
+    assert all(
+        payload["targeting"]
+        == {
+            "keywords": ["fusion"],
+            "phrases": ["exact engine"],
+            "section_hints": ["Capabilities"],
+        }
+        for payload in plan_payloads
+    )
+
+
+@pytest.mark.asyncio
+async def test_blank_focus_starts_with_prompt_only_breadth_guidance(workflow_parts):
+    engine, blobs = workflow_parts
+    router = FakeRouter({"research.plan": [responses()["research.plan"][0]]})
+    kernel = ResearchRunKernel(engine)
+    run = kernel.create(
+        CreateResearchRun(targets=(ResearchRunTargetInput(world_id="world-1"),)),
+        "blank-broad-focus",
+    )
+    workflow = ResearchWorkflow(
+        engine, kernel, router, EmptySearch(), FakeAcquisition(engine, blobs)
+    )
+
+    assert await workflow.run_next(run.id)
+    assert await workflow.run_next(run.id)
+    request = router.requests[0]
+    prompt = request.messages[0]["content"]
+    payload = json.loads(request.messages[-1]["content"])["task"]
+    assert prompt.index("identity and scope") < prompt.index("Prioritize")
+    assert "not labels" in prompt
+    assert "omit inapplicable" in prompt
+    assert "world-specific" in prompt
+    assert payload["focus"] == ""
+    assert "domains" not in payload
+    assert "policy_obligations" not in payload
+    assert set(payload["inventory"]) == {
+        "world",
+        "gap_ids",
+        "conflict_ids",
+        "source_revision_ids",
+        "accepted_node_ids",
+        "reusable_accepted_node_ids",
+    }
+    with Session(engine) as session:
+        planner_effect = session.scalar(
+            select(ModelStepEffect).where(ModelStepEffect.task == "research.plan")
+        )
+        assert planner_effect.output_json["questions"][0]["priority"] == 1
+        assert "domain" not in planner_effect.output_json["questions"][0]
+        assert "required_indicators" not in planner_effect.output_json["questions"][0]
+
+
+@pytest.mark.asyncio
+async def test_search_candidate_readability_preserves_identity_and_lead_status(
+    workflow_parts,
+):
+    engine, blobs = workflow_parts
+
+    class ReadabilityPreprocessor:
+        def __init__(self) -> None:
+            self.calls: list[str] = []
+
+        async def reformat(self, text: str) -> ModelPreprocessResult:
+            self.calls.append(text)
+            return ModelPreprocessResult(
+                f"Readable: {text}",
+                PreprocessingStatus.APPLIED,
+                "fake",
+                False,
+            )
+
+    preprocessor = ReadabilityPreprocessor()
+    kernel = ResearchRunKernel(engine)
+    run = kernel.create(command(), "search-readability")
+    workflow = ResearchWorkflow(
+        engine,
+        kernel,
+        FakeRouter({"research.plan": [responses()["research.plan"][0]]}),
+        FakeSearch(),
+        FakeAcquisition(engine, blobs),
+        preprocessor=preprocessor,
+    )
+
+    await workflow.run(run.id, stop_after=StepKind.SCOUT)
+
+    with Session(engine) as session:
+        lead = session.scalar(select(SearchLead))
+        checkpoint = session.scalars(
+            select(Checkpoint).order_by(Checkpoint.created_at.desc())
+        ).first()
+    assert lead.id
+    assert lead.canonical_url == "https://example.test/fusion"
+    assert lead.rank == 1
+    assert lead.title == "Readable: Fusion engine"
+    assert lead.snippet == "Readable: A lead, not evidence"
+    assert preprocessor.calls == ["Fusion engine", "A lead, not evidence"]
+    assert checkpoint.state_json["leads"][0]["support_role"] == "LEAD_ONLY"
+
+
+@pytest.mark.asyncio
+async def test_search_text_is_deterministically_normalized_before_minicpm(
+    workflow_parts,
+) -> None:
+    engine, blobs = workflow_parts
+
+    class MessySearch:
+        async def search(self, query: str, *, limit: int):
+            return (
+                {
+                    "url": "https://example.test/fusion",
+                    "title": "  Alpha&nbsp;   Beta\u212b  ",
+                    "snippet": "Line one\r\n   line two",
+                    "rank": 1,
+                },
+            )
+
+    class RecordingPreprocessor:
+        def __init__(self) -> None:
+            self.calls: list[str] = []
+
+        async def reformat(self, text: str) -> ModelPreprocessResult:
+            self.calls.append(text)
+            return ModelPreprocessResult(
+                text, PreprocessingStatus.APPLIED, "unchanged", False
+            )
+
+    preprocessor = RecordingPreprocessor()
+    kernel = ResearchRunKernel(engine)
+    run = kernel.create(command(), "normalized-search-readability")
+    workflow = ResearchWorkflow(
+        engine,
+        kernel,
+        FakeRouter({"research.plan": [responses()["research.plan"][0]]}),
+        MessySearch(),
+        FakeAcquisition(engine, blobs),
+        preprocessor=preprocessor,
+    )
+
+    await workflow.run(run.id, stop_after=StepKind.SCOUT)
+
+    assert preprocessor.calls == ["Alpha BetaÅ", "Line one\nline two"]
+    with Session(engine) as session:
+        lead = session.scalar(select(SearchLead))
+    assert (lead.title, lead.snippet) == ("Alpha BetaÅ", "Line one\nline two")
+
+
+@pytest.mark.asyncio
+async def test_same_source_is_extracted_independently_for_each_question(workflow_parts):
+    engine, blobs = workflow_parts
+    payloads = responses()
+    payloads["research.plan"][0]["questions"].append(
+        {
+            "id": "q2",
+            "priority": 2,
+            "question": "What limits the fusion engine?",
+            "queries": ["Example fusion engine limitations"],
+            "source_budget": 1,
+            "stop_conditions": ["one source"],
+        }
+    )
+    payloads["research.extract"].append(
+        json.loads(json.dumps(payloads["research.extract"][0]))
+    )
+    router = FakeRouter(payloads)
+    kernel = ResearchRunKernel(engine)
+    run = kernel.create(command(), "same-source-two-questions")
+    workflow = ResearchWorkflow(
+        engine,
+        kernel,
+        router,
+        FakeSearch(),
+        FakeAcquisition(engine, blobs),
+    )
+
+    await workflow.run(run.id, stop_after=StepKind.EXTRACT)
+
+    with Session(engine) as session:
+        leads = session.scalars(
+            select(SearchLead).order_by(SearchLead.question_id)
+        ).all()
+    assert [lead.question_id for lead in leads] == ["q1", "q2"]
+    assert router.calls.count("research.extract") == 2
+    extract_questions = [
+        json.loads(request.messages[-1]["content"])["task"]["questions"][0]["id"]
+        for task, request in zip(router.calls, router.requests, strict=True)
+        if task == "research.extract"
+    ]
+    assert extract_questions == ["q1", "q2"]
+
+
+@pytest.mark.asyncio
+async def test_search_candidate_preprocessing_failure_falls_back(workflow_parts):
+    engine, blobs = workflow_parts
+
+    class BrokenPreprocessor:
+        async def reformat(self, text: str) -> ModelPreprocessResult:
+            raise ConnectionError("offline")
+
+    kernel = ResearchRunKernel(engine)
+    run = kernel.create(command(), "search-preprocessor-fallback")
+    workflow = ResearchWorkflow(
+        engine,
+        kernel,
+        FakeRouter({"research.plan": [responses()["research.plan"][0]]}),
+        FakeSearch(),
+        FakeAcquisition(engine, blobs),
+        preprocessor=BrokenPreprocessor(),
+    )
+
+    result = await workflow.run(run.id, stop_after=StepKind.SCOUT)
+
+    scout = next(step for step in result.steps if step.kind is StepKind.SCOUT)
+    assert scout.status.value == "SUCCEEDED", scout.error
+    with Session(engine) as session:
+        lead = session.scalar(select(SearchLead))
+    assert (lead.title, lead.snippet) == ("Fusion engine", "A lead, not evidence")
+
+
+@pytest.mark.asyncio
+async def test_search_candidate_preprocessing_has_an_overall_timeout(workflow_parts):
+    engine, blobs = workflow_parts
+
+    class SlowPreprocessor:
+        timeout_seconds = 0.05
+
+        async def reformat(self, text: str) -> ModelPreprocessResult:
+            await asyncio.sleep(1)
+            return ModelPreprocessResult(
+                f"Late: {text}", PreprocessingStatus.APPLIED, "late", False
+            )
+
+    kernel = ResearchRunKernel(engine)
+    run = kernel.create(command(), "search-preprocessor-timeout")
+    plan = responses()["research.plan"][0]
+    plan["questions"][0]["queries"] = [f"slow query {index}" for index in range(4)]
+    workflow = ResearchWorkflow(
+        engine,
+        kernel,
+        FakeRouter({"research.plan": [plan]}),
+        FakeSearch(),
+        FakeAcquisition(engine, blobs),
+        preprocessor=SlowPreprocessor(),
+    )
+
+    assert await workflow.run_next(run.id)  # INVENTORY
+    assert await workflow.run_next(run.id)  # PLAN
+    result = await asyncio.wait_for(
+        workflow.run(run.id, stop_after=StepKind.SCOUT), timeout=0.12
+    )
+
+    scout = next(step for step in result.steps if step.kind is StepKind.SCOUT)
+    assert scout.status.value == "SUCCEEDED", scout.error
+    with Session(engine) as session:
+        lead = session.scalar(select(SearchLead))
+    assert (lead.title, lead.snippet) == ("Fusion engine", "A lead, not evidence")
+
+
+@pytest.mark.asyncio
+async def test_acquire_continues_after_one_source_failure(workflow_parts):
+    engine, blobs = workflow_parts
+
+    class TwoSearch:
+        async def search(self, query: str, *, limit: int):
+            return (
+                {"url": "https://bad.test/", "title": "Bad", "rank": 1},
+                {"url": "https://example.test/fusion", "title": "Good", "rank": 2},
+            )
+
+    class OneFailsAcquisition(FakeAcquisition):
+        async def acquire(self, url, policy, **kwargs):
+            if "bad.test" in url:
+                self.calls += 1
+                raise ConnectionError("source unavailable")
+            return await super().acquire(url, policy, **kwargs)
+
+    plan = responses()["research.plan"][0]
+    plan["questions"][0]["source_budget"] = 2
+    kernel = ResearchRunKernel(engine)
+    run = kernel.create(command(), "continue-source-failure")
+    acquisition = OneFailsAcquisition(engine, blobs)
+    workflow = ResearchWorkflow(
+        engine,
+        kernel,
+        FakeRouter({"research.plan": [plan]}),
+        TwoSearch(),
+        acquisition,
+    )
+
+    result = await workflow.run(run.id, stop_after=StepKind.ACQUIRE)
+
+    acquire = next(step for step in result.steps if step.kind is StepKind.ACQUIRE)
+    assert acquire.status.value == "SUCCEEDED"
+    assert acquisition.calls == 2
+    with Session(engine) as session:
+        checkpoint = session.scalars(
+            select(Checkpoint).order_by(Checkpoint.created_at.desc())
+        ).first()
+    assert len(checkpoint.state_json["acquired"]) == 1
+    assert checkpoint.state_json["acquisition_misses"][0]["status"] == (
+        "ACQUISITION_FAILED"
+    )
 
 
 @pytest.mark.asyncio
@@ -448,6 +774,21 @@ async def test_simple_complete_research_is_durable_and_repeat_safe(workflow_part
         "research.audit",
         "research.summary",
     ]
+    extract_request = router.requests[router.calls.index("research.extract")]
+    extract_payload = json.loads(extract_request.messages[-1]["content"])["task"]
+    assert extract_payload["expected_continuity"] == "primary"
+    assert extract_payload["allowed_locators"] == ["section:0/passage:0"]
+    assert extract_payload["authoritative_passages"] == [
+        {
+            "locator": "section:0/passage:0",
+            "text": "The prototype fusion engine bends local spacetime.",
+        }
+    ]
+    assert extract_payload["readability_text"] == {
+        "text": "The prototype fusion engine bends local spacetime.",
+        "trust": "UNTRUSTED_NON_EVIDENTIARY",
+    }
+    assert "source_body" not in extract_payload
     audit_request = router.requests[router.calls.index("research.audit")]
     audit_request_context = json.loads(audit_request.messages[-1]["content"])
     audit_context = audit_request_context["task"]
@@ -676,7 +1017,7 @@ async def test_shared_engine_model_variants_and_instance_inherit_exact_origins(
 @pytest.mark.asyncio
 @pytest.mark.integration
 @pytest.mark.evaluation
-async def test_exotic_mechanism_requires_and_promotes_all_policy_fields(
+async def test_unusual_mechanism_promotes_all_evidence_backed_fields(
     workflow_parts,
 ):
     engine, blobs = workflow_parts
@@ -692,11 +1033,6 @@ async def test_exotic_mechanism_requires_and_promotes_all_policy_fields(
         "counters",
         "causal_temporal_rules",
     ]
-    values["research.plan"][0]["questions"][0].update(
-        {"domain": "exotic", "required_indicators": required}
-    )
-    for fragment in values["research.extract"][0]["fragments"]:
-        fragment["domain"] = "exotic"
     proposal = values["research.synthesize"][0]["proposals"][0]
     proposal["fields"] = {name: f"evidenced {name}" for name in required}
     proposal["field_evidence"] = {
@@ -721,11 +1057,7 @@ async def test_exotic_mechanism_requires_and_promotes_all_policy_fields(
     exotic = CreateResearchRun(
         objective="Document exotic mechanism",
         scope={"continuity": "prime"},
-        targets=(
-            ResearchRunTargetInput(
-                world_id="world-1", objective="Document exotic mechanism"
-            ),
-        ),
+        targets=(ResearchRunTargetInput(world_id="world-1"),),
     )
     kernel = ResearchRunKernel(engine)
     run = kernel.create(exotic, "exotic-complete")
@@ -755,6 +1087,57 @@ async def test_fabricated_excerpt_is_rejected(workflow_parts):
 
 
 @pytest.mark.asyncio
+async def test_excerpt_found_only_in_minicpm_readability_is_rejected(workflow_parts):
+    engine, blobs = workflow_parts
+
+    class HallucinatingAcquisition(FakeAcquisition):
+        async def acquire(self, *args, **kwargs):
+            result = await super().acquire(*args, **kwargs)
+            return __import__("dataclasses").replace(
+                result,
+                readability_text=(
+                    result.readability_text + " The hidden reactor produces antimatter."
+                ),
+                preprocessing_status="APPLIED",
+            )
+
+    values = responses()
+    fragment = values["research.extract"][0]["fragments"][0]
+    fragment["exact_excerpt"] = "The hidden reactor produces antimatter."
+    kernel = ResearchRunKernel(engine)
+    run = kernel.create(command(), "minicpm-hallucination")
+    result = await ResearchWorkflow(
+        engine,
+        kernel,
+        FakeRouter(values),
+        FakeSearch(),
+        HallucinatingAcquisition(engine, blobs),
+    ).run(run.id)
+
+    assert result.outcome.value == "FAILED"
+    extract = next(step for step in result.steps if step.kind is StepKind.EXTRACT)
+    assert "authoritative passage" in extract.error
+
+
+@pytest.mark.asyncio
+async def test_excerpt_locator_must_identify_selected_authoritative_passage(
+    workflow_parts,
+):
+    engine, blobs = workflow_parts
+    values = responses()
+    values["research.extract"][0]["fragments"][0]["locator"] = "section:99/passage:99"
+    kernel = ResearchRunKernel(engine)
+    run = kernel.create(command(), "wrong-selected-locator")
+    result = await ResearchWorkflow(
+        engine, kernel, FakeRouter(values), FakeSearch(), FakeAcquisition(engine, blobs)
+    ).run(run.id)
+
+    assert result.outcome.value == "FAILED"
+    extract = next(step for step in result.steps if step.kind is StepKind.EXTRACT)
+    assert "locator" in extract.error
+
+
+@pytest.mark.asyncio
 async def test_wrong_continuity_is_checkpointed_as_failure(workflow_parts):
     engine, blobs = workflow_parts
     kernel = ResearchRunKernel(engine)
@@ -778,7 +1161,7 @@ async def test_open_material_contradiction_blocks_canon_promotion(workflow_parts
         {
             **values["research.extract"][0]["fragments"][0],
             "fragment_id": "fragment-contradiction",
-            "locator": "chars:14-26",
+            "locator": "section:0/passage:0",
             "exact_excerpt": "fusion engine",
             "support_role": "CONTRADICTS",
         }
@@ -904,6 +1287,98 @@ async def test_run_next_processes_one_step_and_checkpoints_handler_exception(
     projection = kernel.get(run.id)
     assert projection.steps[1].status.value == "FAILED"
     assert projection.steps[1].error == "RuntimeError: provider exploded"
+
+
+@pytest.mark.asyncio
+async def test_provider_plan_failure_becomes_durable_partial_gap(workflow_parts):
+    engine, blobs = workflow_parts
+    kernel = ResearchRunKernel(engine)
+    run = kernel.create(command(), "provider-plan-partial")
+    workflow = ResearchWorkflow(
+        engine,
+        kernel,
+        ProviderFailingRouter({}),
+        FakeSearch(),
+        FakeAcquisition(engine, blobs),
+    )
+
+    assert await workflow.run_next(run.id)
+    assert await workflow.run_next(run.id)
+
+    projection = kernel.get(run.id)
+    assert projection.outcome is not None and projection.outcome.value == "PARTIAL"
+    assert projection.steps[1].status.value == "FAILED"
+    assert all(step.status.value == "CANCELLED" for step in projection.steps[2:])
+    with Session(engine) as session:
+        gap = session.scalar(select(ResearchGapRecord))
+    assert gap is not None
+    assert gap.gap_json["reason"] == "AGENT_UNAVAILABLE"
+    assert gap.gap_json["step_kind"] == "PLAN"
+
+
+@pytest.mark.asyncio
+async def test_invalid_agent_plan_becomes_durable_partial_gap(workflow_parts):
+    engine, blobs = workflow_parts
+    kernel = ResearchRunKernel(engine)
+    run = kernel.create(command(), "invalid-plan-partial")
+    invalid = responses()
+    invalid["research.plan"][0]["questions"].append(
+        {
+            "id": "q2",
+            "priority": 1,
+            "question": "What are the fusion engine limits?",
+            "queries": ["Example fusion engine limits"],
+            "source_budget": 1,
+            "stop_conditions": ["one primary source"],
+        }
+    )
+    workflow = ResearchWorkflow(
+        engine,
+        kernel,
+        FakeRouter(invalid),
+        FakeSearch(),
+        FakeAcquisition(engine, blobs),
+    )
+
+    assert await workflow.run_next(run.id)
+    assert await workflow.run_next(run.id)
+
+    projection = kernel.get(run.id)
+    assert projection.outcome is not None and projection.outcome.value == "PARTIAL"
+    with Session(engine) as session:
+        gap = session.scalar(select(ResearchGapRecord))
+    assert gap is not None
+    assert gap.gap_json["error_class"] == "AgentOutputError"
+
+
+@pytest.mark.asyncio
+async def test_scout_keeps_successful_leads_when_one_search_is_blocked(workflow_parts):
+    engine, blobs = workflow_parts
+    kernel = ResearchRunKernel(engine)
+    run = kernel.create(command(), "scout-search-blocked")
+    planned = responses()
+    planned["research.plan"][0]["questions"][0]["queries"] = ["first", "blocked"]
+    workflow = ResearchWorkflow(
+        engine,
+        kernel,
+        FakeRouter(planned),
+        PartiallyBlockedSearch(),
+        FakeAcquisition(engine, blobs),
+    )
+
+    assert await workflow.run_next(run.id)
+    assert await workflow.run_next(run.id)
+    assert await workflow.run_next(run.id)
+
+    projection = kernel.get(run.id)
+    assert projection.steps[2].status.value == "SUCCEEDED"
+    with Session(engine) as session:
+        workspace = session.scalar(select(ResearchWorkspace))
+    assert workspace is not None
+    assert len(workspace.brief_json["leads"]) == 1
+    assert workspace.brief_json["search_misses"] == [
+        {"query": "blocked", "question_id": "q1", "reason": "SearchBlockedError"}
+    ]
 
 
 @pytest.mark.asyncio
@@ -1103,6 +1578,18 @@ class LargeEvidenceAcquisition(FakeAcquisition):
             self.body.decode(),
             False,
             "text/plain",
+            deterministic_blob_hash=blob_hash,
+            readability_blob_hash=blob_hash,
+            targeting_status="BROAD",
+            preprocessing_status="DISABLED",
+            authoritative_passages=tuple(
+                {
+                    "locator": f"section:0/passage:{index}",
+                    "text": text,
+                }
+                for index, text in enumerate(self.body.decode().splitlines())
+            ),
+            readability_text=self.body.decode(),
         )
 
 
@@ -1124,7 +1611,17 @@ class LargeEvidenceRouter:
         if task == "research.plan":
             value = responses()[task][0]
         elif task == "research.extract":
-            value = {"fragments": self.fragments}
+            payload = json.loads(request.messages[-1]["content"])["task"]
+            locators = {
+                passage["locator"] for passage in payload["authoritative_passages"]
+            }
+            value = {
+                "fragments": [
+                    fragment
+                    for fragment in self.fragments
+                    if fragment["locator"] in locators
+                ]
+            }
         elif task == "research.synthesize":
             value = responses()[task][0]
             value["proposals"][0]["scope"] = scope
@@ -1174,10 +1671,9 @@ async def test_complete_workflows_scale_relevant_and_contradictory_context(
             {
                 "fragment_id": fragment_id,
                 "source_revision_id": "revision-large",
-                "locator": f"fixture:{index}",
+                "locator": f"section:0/passage:{index}",
                 "exact_excerpt": excerpt,
                 "normalized_statement": fragment_id,
-                "domain": "mechanisms",
                 "subject_ids": ["fusion-engine"],
                 "continuity": "prime",
                 "temporal_scope": {
@@ -1297,6 +1793,12 @@ class BranchAcquisition(FakeAcquisition):
             body,
             False,
             "text/plain",
+            deterministic_blob_hash=blob_hash,
+            readability_blob_hash=blob_hash,
+            targeting_status="BROAD",
+            preprocessing_status="DISABLED",
+            authoritative_passages=({"locator": "section:0/passage:0", "text": body},),
+            readability_text=body,
         )
 
 
@@ -1324,10 +1826,9 @@ class BranchRouter:
                     {
                         "fragment_id": fragment_id,
                         "source_revision_id": f"revision-{self.branch}",
-                        "locator": "chars:0-80",
+                        "locator": "section:0/passage:0",
                         "exact_excerpt": excerpt,
                         "normalized_statement": excerpt,
-                        "domain": "mechanisms",
                         "subject_ids": ["relay", "gate-event"],
                         "continuity": "prime",
                         "temporal_scope": {
@@ -1451,11 +1952,7 @@ async def test_branch_workflows_isolate_revisions_edges_and_provenance(
                 "era_or_timepoint": "era-1",
                 "branch_id": branch,
             },
-            targets=(
-                ResearchRunTargetInput(
-                    world_id="world-1", objective="Document Relay timeline"
-                ),
-            ),
+            targets=(ResearchRunTargetInput(world_id="world-1"),),
         )
         run = kernel.create(scoped, f"branch-{branch}")
         result = await ResearchWorkflow(
@@ -1538,11 +2035,7 @@ async def _deterministic_fixture(root: Path, fixture: str) -> dict[str, object]:
                 "era_or_timepoint": "era-1",
                 "branch_id": "main",
             },
-            targets=(
-                ResearchRunTargetInput(
-                    world_id="world-1", objective="Document Relay timeline"
-                ),
-            ),
+            targets=(ResearchRunTargetInput(world_id="world-1"),),
         )
         await execute(
             scoped,
@@ -1565,7 +2058,7 @@ async def _deterministic_fixture(root: Path, fixture: str) -> dict[str, object]:
             {
                 **values["research.extract"][0]["fragments"][0],
                 "fragment_id": "fragment-contradiction",
-                "locator": "chars:14-26",
+                "locator": "section:0/passage:0",
                 "exact_excerpt": "fusion engine",
                 "support_role": "CONTRADICTS",
             }
@@ -1589,11 +2082,7 @@ async def _deterministic_fixture(root: Path, fixture: str) -> dict[str, object]:
                     "era_or_timepoint": "era-1",
                     "branch_id": branch,
                 },
-                targets=(
-                    ResearchRunTargetInput(
-                        world_id="world-1", objective="Document Relay timeline"
-                    ),
-                ),
+                targets=(ResearchRunTargetInput(world_id="world-1"),),
             )
             await execute(
                 scoped,

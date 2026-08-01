@@ -662,7 +662,46 @@
         <button onclick="document.getElementById('htmx-error-toast').classList.add('hidden')" class="hover:opacity-75 focus:outline-none">&times;</button>
     </div>
     <script>
+        const reportedClientErrors = new Set();
+        function reportClientError(eventClass, message, stack) {
+            if (reportedClientErrors.size >= 20) return;
+            const boundedMessage = String(message || 'Unknown client error').slice(0, 1000);
+            const key = `${eventClass}:${boundedMessage}`;
+            if (reportedClientErrors.has(key)) return;
+            reportedClientErrors.add(key);
+            fetch('/api/v2/logs/client-errors', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    event_class: eventClass,
+                    message: boundedMessage,
+                    path: window.location.pathname,
+                    stack: String(stack || '').slice(0, 4000)
+                }),
+                keepalive: true
+            }).catch(function() {});
+        }
+        window.addEventListener('error', function(evt) {
+            reportClientError(
+                'javascript',
+                evt.message || 'Script error',
+                evt.error && evt.error.stack
+            );
+        });
+        window.addEventListener('unhandledrejection', function(evt) {
+            const reason = evt.reason;
+            reportClientError(
+                'unhandledrejection',
+                reason && reason.message ? reason.message : String(reason || 'Rejected promise'),
+                reason && reason.stack
+            );
+        });
         document.body.addEventListener('htmx:responseError', function(evt) {
+            reportClientError(
+                'htmx.response',
+                `HTMX request failed with status ${evt.detail.xhr.status}`,
+                ''
+            );
             const toast = document.getElementById('htmx-error-toast');
             const msg = document.getElementById('htmx-error-message');
             if (toast && msg) {
@@ -672,6 +711,7 @@
             }
         });
         document.body.addEventListener('htmx:sendError', function() {
+            reportClientError('htmx.transport', 'HTMX transport failed', '');
             const toast = document.getElementById('htmx-error-toast');
             const msg = document.getElementById('htmx-error-message');
             if (toast && msg) {

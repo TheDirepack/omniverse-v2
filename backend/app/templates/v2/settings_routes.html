@@ -1,168 +1,76 @@
-<h2 class="text-xs font-bold uppercase tracking-widest mb-2">Ordered routes</h2>
-<p class="text-xs text-gray-500 mb-2">Configure weighted candidate fallback chains using provider/model dropdown selectors, supporting DEFAULT fallback, multi-provider selection, infinite fallback, and "Just a Provider" mode.</p>
+<h2 class="text-xs font-bold uppercase tracking-widest mb-2">Ordered fallback routes</h2>
+<div class="mb-4 border border-blue-200 bg-blue-50 p-3 text-xs text-blue-900 dark:border-blue-900 dark:bg-blue-950 dark:text-blue-100">
+    <p><strong>DEFAULT</strong> is the chain used by every research step unless that step has an explicit override.</p>
+    <p class="mt-1">Position is strict order: position 0 is tried first, then each fallback after an unavailable, unhealthy, authentication, rate-limit, or transient failure. Route slots are not weighted.</p>
+    <p class="mt-1">A provider slot dynamically includes all of that provider's active, compatible models. Credential weight only balances healthy keys inside one provider; weight 2 receives about twice the selections of weight 1.</p>
+</div>
+
 <table class="w-full text-xs mb-4">
-    <thead>
-        <tr class="border-b text-gray-500 text-left">
-            <th class="p-2">Task</th>
-            <th class="text-center">Position</th>
-            <th class="p-2">Model / Provider ID</th>
-            <th class="text-center">Weight</th>
-        </tr>
-    </thead>
+    <thead><tr class="border-b text-left text-gray-500"><th class="p-2">Task</th><th>State</th><th>Chain</th><th>Action</th></tr></thead>
     <tbody>
-        {% for route in settings.routes %}
+        <tr class="border-b"><td class="p-2 font-bold">DEFAULT</td><td>Global fallback</td><td>{% for route in settings.routes if route.task == 'DEFAULT' %}<div><strong>{{ route.position }}</strong>: {% if route.provider_id %}Provider {{ route.provider_id }}{% else %}Model {{ route.model_id }}{% endif %}</div>{% else %}<span class="text-red-600">No candidates</span>{% endfor %}</td><td></td></tr>
+        {% for task in ['research.plan', 'research.extract', 'research.synthesize', 'research.audit', 'research.summary'] %}
         <tr class="border-b">
-            <td class="p-2 font-bold">{{ route.task }}</td>
-            <td class="text-center">{{ route.position }}</td>
-            <td class="p-2 font-mono"><code>{{ route.model_id }}</code></td>
-            <td class="text-center">{{ route.weight }}</td>
+            <td class="p-2 font-bold">{{ task }}</td>
+            <td>{% if task in settings.route_overrides %}Explicit override{% else %}<span class="text-green-700">Inherited from DEFAULT</span>{% endif %}</td>
+            <td>{% for route in settings.routes if route.task == task %}<div><strong>{{ route.position }}</strong>: {% if route.provider_id %}Provider {{ route.provider_id }}{% else %}Model {{ route.model_id }}{% endif %}</div>{% endfor %}</td>
+            <td>{% if task in settings.route_overrides %}<button class="text-red-600" hx-delete="/settings/routes/{{ task }}" hx-target="#settings-content" hx-confirm="Remove this override and inherit DEFAULT?">Use DEFAULT</button>{% endif %}</td>
         </tr>
-        {% else %}
-        <tr><td colspan="4" class="p-6 text-center text-gray-500">No routes configured.</td></tr>
         {% endfor %}
     </tbody>
 </table>
 
 <form class="border border-gray-200 dark:border-gray-800 p-4 text-xs bg-gray-50 dark:bg-gray-900" hx-post="/settings/routes" hx-target="#settings-content">
-    <h3 class="font-bold uppercase tracking-widest mb-3">Add or update route chain</h3>
-    <div class="mb-3">
-        <label class="block font-bold mb-1">Task Name</label>
-        <select name="task" required class="h-7 px-2 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 w-64">
-            <option value="DEFAULT">DEFAULT (Global Fallback)</option>
-            <option value="research.plan">research.plan</option>
-            <option value="research.extract">research.extract</option>
-            <option value="research.synthesize">research.synthesize</option>
-            <option value="research.audit">research.audit</option>
-            <option value="research.summary">research.summary</option>
-        </select>
-    </div>
-
+    <h3 class="font-bold uppercase tracking-widest mb-3">Set fallback chain</h3>
+    <label class="block font-bold mb-1">Task</label>
+    <select name="task" required class="mb-3 h-7 w-64 border bg-white px-2 dark:bg-gray-800">
+        <option value="DEFAULT">DEFAULT (Global Fallback)</option>
+        <option value="research.plan">research.plan override</option>
+        <option value="research.extract">research.extract override</option>
+        <option value="research.synthesize">research.synthesize override</option>
+        <option value="research.audit">research.audit override</option>
+        <option value="research.summary">research.summary override</option>
+    </select>
     <div id="route-candidates-container" class="grid gap-2 mb-3">
+        {% for label in ['Primary', 'Fallback 1'] %}
         <div class="flex gap-2 items-center candidate-row">
-            <span class="font-bold w-24">Primary:</span>
-            <select name="provider_ids" onchange="onProviderChange(this)" class="h-7 px-2 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 w-48">
+            <span class="font-bold w-24">{{ label }}:</span>
+            <select name="provider_ids" onchange="onProviderChange(this)" class="h-7 w-48 border bg-white px-2 dark:bg-gray-800">
                 <option value="">-- Select Provider --</option>
-                {% for provider in settings.providers %}
-                <option value="{{ provider.id }}">{{ provider.id }}</option>
-                {% endfor %}
+                {% for provider in settings.providers %}<option value="{{ provider.id }}">{{ provider.id }}</option>{% endfor %}
             </select>
-            <select name="model_ids" class="h-7 px-2 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 flex-1">
-                <option value="">-- Select Model (Leave empty for Just a Provider) --</option>
-                {% for provider in settings.providers %}
-                {% for model in provider.models %}
-                {% if model.supports_text %}
-                <option value="{{ model.id }}" data-provider="{{ provider.id }}">{{ model.id }} ({{ model.name }})</option>
-                {% endif %}
-                {% endfor %}
-                {% endfor %}
+            <select name="model_ids" class="h-7 flex-1 border bg-white px-2 dark:bg-gray-800">
+                <option value="">All active models from provider</option>
+                {% for provider in settings.providers %}{% for model in provider.models if model.supports_text and model.active %}<option value="{{ model.id }}" data-provider="{{ provider.id }}">{{ model.id }} ({{ model.name }})</option>{% endfor %}{% endfor %}
             </select>
-            <input name="weights" type="number" min="1" value="1" placeholder="Weight" class="h-7 w-20 px-2 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100" title="Candidate Weight">
         </div>
-
-        <div class="flex gap-2 items-center candidate-row">
-            <span class="font-bold w-24">Fallback 1:</span>
-            <select name="provider_ids" onchange="onProviderChange(this)" class="h-7 px-2 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 w-48">
-                <option value="">-- Select Provider --</option>
-                {% for provider in settings.providers %}
-                <option value="{{ provider.id }}">{{ provider.id }}</option>
-                {% endfor %}
-            </select>
-            <select name="model_ids" class="h-7 px-2 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 flex-1">
-                <option value="">-- Select Model (Leave empty for Just a Provider) --</option>
-                {% for provider in settings.providers %}
-                {% for model in provider.models %}
-                {% if model.supports_text %}
-                <option value="{{ model.id }}" data-provider="{{ provider.id }}">{{ model.id }} ({{ model.name }})</option>
-                {% endif %}
-                {% endfor %}
-                {% endfor %}
-            </select>
-            <input name="weights" type="number" min="1" value="1" placeholder="Weight" class="h-7 w-20 px-2 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100" title="Candidate Weight">
-        </div>
+        {% endfor %}
     </div>
-
-    <div class="flex gap-2 mb-3">
-        <button type="button" onclick="addFallbackRow()" class="h-7 px-3 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 font-bold rounded-sm">＋ Add Fallback Step</button>
-    </div>
-
-    <button class="h-7 px-4 bg-blue-600 text-white font-bold">Save route configuration</button>
+    <button type="button" onclick="addFallbackRow()" class="mb-3 h-7 px-3 bg-gray-200 dark:bg-gray-700">Add fallback</button>
+    <button class="h-7 px-4 bg-blue-600 text-white font-bold">Save chain</button>
 </form>
 
 <script>
-const providerModels = {
-    {% for provider in settings.providers %}
-    "{{ provider.id }}": [
-        {% for model in provider.models %}
-        {% if model.supports_text %}
-        { id: "{{ model.id }}", name: "{{ model.name }}" },
-        {% endif %}
-        {% endfor %}
-    ],
-    {% endfor %}
-};
-
+const providerModels = {{ settings.providers | tojson }};
 function onProviderChange(providerSelect) {
-    const row = providerSelect.closest('.candidate-row');
-    const modelSelect = row.querySelector('select[name="model_ids"]');
-    const selectedProviderId = providerSelect.value;
-    
-    modelSelect.innerHTML = '<option value="">-- Select Model (Leave empty for Just a Provider) --</option>';
-    
-    if (selectedProviderId && providerModels[selectedProviderId]) {
-        providerModels[selectedProviderId].forEach(model => {
-            const opt = document.createElement('option');
-            opt.value = model.id;
-            opt.textContent = `${model.id} (${model.name})`;
-            modelSelect.appendChild(opt);
-        });
-    } else {
-        {% for provider in settings.providers %}
-        {% for model in provider.models %}
-        {% if model.supports_text %}
-        {
-            const opt = document.createElement('option');
-            opt.value = "{{ model.id }}";
-            opt.textContent = "{{ model.id }} ({{ model.name }})";
-            modelSelect.appendChild(opt);
-        }
-        {% endif %}
-        {% endfor %}
-        {% endfor %}
-    }
+    const modelSelect = providerSelect.closest('.candidate-row').querySelector('select[name="model_ids"]');
+    modelSelect.innerHTML = '<option value="">All active models from provider</option>';
+    const provider = providerModels.find(item => item.id === providerSelect.value);
+    if (!provider) return;
+    provider.models.filter(model => model.supports_text && model.active).forEach(model => {
+        const option = document.createElement('option');
+        option.value = model.id;
+        option.textContent = `${model.id} (${model.name})`;
+        modelSelect.appendChild(option);
+    });
 }
-
 let fallbackIndex = 1;
 function addFallbackRow() {
-    fallbackIndex++;
-    const container = document.getElementById('route-candidates-container');
-    const row = document.createElement('div');
-    row.className = 'flex gap-2 items-center candidate-row';
-    
-    let providerOptions = '<option value="">-- Select Provider --</option>';
-    {% for provider in settings.providers %}
-    providerOptions += '<option value="{{ provider.id }}">{{ provider.id }}</option>';
-    {% endfor %}
-    
-    let modelOptions = '<option value="">-- Select Model (Leave empty for Just a Provider) --</option>';
-    {% for provider in settings.providers %}
-    {% for model in provider.models %}
-    {% if model.supports_text %}
-    modelOptions += '<option value="{{ model.id }}" data-provider="{{ provider.id }}">{{ model.id }} ({{ model.name }})</option>';
-    {% endif %}
-    {% endfor %}
-    {% endfor %}
-    
-    row.innerHTML = `
-        <span class="font-bold w-24">Fallback ${fallbackIndex}:</span>
-        <select name="provider_ids" onchange="onProviderChange(this)" class="h-7 px-2 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 w-48">
-            ${providerOptions}
-        </select>
-        <select name="model_ids" class="h-7 px-2 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 flex-1">
-            ${modelOptions}
-        </select>
-        <input name="weights" type="number" min="1" value="1" placeholder="Weight" class="h-7 w-20 px-2 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100" title="Candidate Weight">
-        <button type="button" onclick="this.parentElement.remove()" class="h-7 px-2 bg-red-600 text-white font-bold rounded-sm">✕</button>
-    `;
-    container.appendChild(row);
+    fallbackIndex += 1;
+    const source = document.querySelector('.candidate-row');
+    const row = source.cloneNode(true);
+    row.querySelector('span').textContent = `Fallback ${fallbackIndex}:`;
+    row.querySelectorAll('select').forEach(select => { select.selectedIndex = 0; });
+    document.getElementById('route-candidates-container').appendChild(row);
 }
 </script>

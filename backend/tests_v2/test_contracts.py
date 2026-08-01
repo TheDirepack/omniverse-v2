@@ -16,6 +16,8 @@ from app.v2.contracts import (
     MaterialProposalField,
     MechanismContract,
     MechanismModality,
+    PlannerOutput,
+    PlanQuestion,
     ProviderCredentialInput,
     ProviderCredentialOutput,
     RelationshipContract,
@@ -82,6 +84,35 @@ def test_research_run_target_and_projection_remove_legacy_public_fields() -> Non
             scope={"domains": ["mechanisms"]},
             targets=({"world_id": "bt"},),
         )
+
+
+@pytest.mark.unit
+def test_planner_evidence_and_gap_contracts_are_domain_free() -> None:
+    question = PlanQuestion(
+        id="q-identity",
+        priority=1,
+        question="Who is Atlas?",
+        queries=("Atlas identity",),
+        source_budget=2,
+        stop_conditions=("official identity source found",),
+    )
+    assert PlannerOutput(questions=(question,)).model_dump() == {
+        "questions": (
+            {
+                "id": "q-identity",
+                "priority": 1,
+                "question": "Who is Atlas?",
+                "queries": ("Atlas identity",),
+                "source_budget": 2,
+                "stop_conditions": ("official identity source found",),
+            },
+        )
+    }
+    assert "domain" not in PlanQuestion.model_fields
+    assert "required_indicators" not in PlanQuestion.model_fields
+    assert "domain" not in EvidenceFragmentContract.model_fields
+    assert "domain" not in ResearchGap.model_fields
+    assert "missing_indicator" not in ResearchGap.model_fields
 
 
 @pytest.mark.unit
@@ -196,9 +227,8 @@ def test_phase_one_contract_catalog_is_strict_and_secret_safe() -> None:
     ResearchGap(
         gap_id="g1",
         scope=scope(),
-        domain="energy",
+        question_id="q-output",
         question="Exact output?",
-        missing_indicator="rated power",
         attempted_leads=(),
         next_query="official engine rating",
         priority=1,
@@ -221,7 +251,6 @@ def test_phase_one_contract_catalog_is_strict_and_secret_safe() -> None:
         locator="p. 3",
         exact_excerpt="quoted",
         normalized_statement="statement",
-        domain="energy",
         subject_ids=("atlas",),
         continuity="classic",
         temporal_scope=TimelineScope(

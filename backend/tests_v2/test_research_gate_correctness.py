@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-from dataclasses import replace
 from pathlib import Path
 
 import pytest
 from sqlalchemy import Engine, select
 from sqlalchemy.orm import Session
 
-from app.v2.bootstrap import BUILTIN_POLICIES
+from app.v2.bootstrap import BUILTIN_POLICIES, activate_builtin_policies
 from app.v2.contracts import (
     AuditDecision,
     AuditVerdict,
@@ -23,6 +22,7 @@ from app.v2.models import (
     ClaimConflict,
     MaterialProposalFieldRecord,
     MaterialProposalRecord,
+    PolicyDefinition,
     RelationshipAssertion,
     RelationshipRevision,
     ResearchWorkspace,
@@ -37,7 +37,7 @@ from app.v2.workflow import (
     EvidenceEligibilityError,
     evaluate_completion,
     independent_support_count,
-    policy_obligations,
+    resolve_question_ids,
     validate_evidence_eligibility,
     validate_promotion_source_policy,
     validate_relationship_graph,
@@ -68,6 +68,19 @@ def scope(continuity: str = "prime") -> ResearchScope:
     )
 
 
+def test_question_resolution_requires_accepted_evidence_from_that_question() -> None:
+    resolved = resolve_question_ids(
+        {"q-history", "q-fleet"},
+        {
+            "q-history": ["fragment-history"],
+            "q-fleet": ["fragment-fleet"],
+        },
+        {"fragment-history"},
+    )
+
+    assert resolved == {"q-history"}
+
+
 @pytest.mark.unit
 def test_evidence_policy_rejects_contradiction_as_support_and_wrong_scope() -> None:
     target = scope()
@@ -80,7 +93,6 @@ def test_evidence_policy_rejects_contradiction_as_support_and_wrong_scope() -> N
             "era_or_timepoint": "era-1",
             "branch_id": "main",
             "conditions": ["prototype"],
-            "domain": "mechanisms",
         },
         "contradicts": {
             "support_role": "CONTRADICTS",
@@ -90,27 +102,24 @@ def test_evidence_policy_rejects_contradiction_as_support_and_wrong_scope() -> N
             "era_or_timepoint": "era-1",
             "branch_id": "main",
             "conditions": ["prototype"],
-            "domain": "mechanisms",
         },
     }
-    validate_evidence_eligibility(target, "mechanisms", ("supports",), (), evidence)
+    validate_evidence_eligibility(target, ("supports",), (), evidence)
     with pytest.raises(EvidenceEligibilityError, match="eligible support"):
-        validate_evidence_eligibility(
-            target, "mechanisms", ("contradicts",), (), evidence
-        )
+        validate_evidence_eligibility(target, ("contradicts",), (), evidence)
     evidence["supports"]["continuity"] = "alternate"
     with pytest.raises(EvidenceEligibilityError, match="continuity"):
-        validate_evidence_eligibility(target, "mechanisms", ("supports",), (), evidence)
+        validate_evidence_eligibility(target, ("supports",), (), evidence)
     with pytest.raises(EvidenceEligibilityError, match="unknown"):
-        validate_evidence_eligibility(target, "mechanisms", ("missing",), (), evidence)
+        validate_evidence_eligibility(target, ("missing",), (), evidence)
     evidence["supports"]["continuity"] = "prime"
     evidence["supports"]["branch_id"] = "alternate"
     with pytest.raises(EvidenceEligibilityError, match="branch"):
-        validate_evidence_eligibility(target, "mechanisms", ("supports",), (), evidence)
+        validate_evidence_eligibility(target, ("supports",), (), evidence)
     evidence["supports"]["branch_id"] = "main"
     evidence["supports"]["conditions"] = ["production"]
     with pytest.raises(EvidenceEligibilityError, match="conditions"):
-        validate_evidence_eligibility(target, "mechanisms", ("supports",), (), evidence)
+        validate_evidence_eligibility(target, ("supports",), (), evidence)
 
 
 @pytest.mark.unit
@@ -124,12 +133,10 @@ def test_qualifies_is_support_only_when_policy_preserves_limitation() -> None:
             "era_or_timepoint": "era-1",
             "branch_id": "main",
             "conditions": ["prototype"],
-            "domain": "mechanisms",
         }
     }
     validate_evidence_eligibility(
         scope(),
-        "mechanisms",
         ("qualified",),
         (),
         evidence,
@@ -139,7 +146,6 @@ def test_qualifies_is_support_only_when_policy_preserves_limitation() -> None:
     with pytest.raises(EvidenceEligibilityError, match="qualifier"):
         validate_evidence_eligibility(
             scope(),
-            "mechanisms",
             ("qualified",),
             (),
             evidence,
@@ -295,72 +301,56 @@ def test_relationship_audit_is_unique_and_cycle_is_rejected() -> None:
 
 
 @pytest.mark.unit
-def test_completion_policy_requires_all_thresholds_and_domains() -> None:
+def test_completion_requires_each_planned_question_and_exact_provenance() -> None:
     complete = CompletionInputs(
-        required_indicators=frozenset({"a", "b", "c", "d", "e"}),
-        accepted_indicators=frozenset({"a", "b", "c", "d", "e"}),
-        critical_questions=frozenset({"q1", "q2"}),
-        accepted_questions=frozenset({"q1", "q2"}),
-        allowed_gap_questions=frozenset(),
+        planned_question_ids=frozenset({"q1", "q2"}),
+        resolved_question_ids=frozenset({"q1", "q2"}),
         provenance_rate=1.0,
-        domain_coverage={"mechanisms": 0.8, "limits": 0.6},
         unresolved_invalidating_conflicts=0,
         unresolved_audit_decisions=0,
         duplicate_promotions=0,
     )
     assert evaluate_completion(complete).outcome.value == "COMPLETE"
     partial = evaluate_completion(
-        replace(complete, domain_coverage={"mechanisms": 1.0, "limits": 0.4})
+        CompletionInputs(
+            planned_question_ids=complete.planned_question_ids,
+            resolved_question_ids=frozenset({"q1"}),
+            provenance_rate=1.0,
+            unresolved_invalidating_conflicts=0,
+            unresolved_audit_decisions=0,
+            duplicate_promotions=0,
+        )
     )
     assert partial.outcome.value == "PARTIAL"
-    assert "DOMAIN_COVERAGE_BELOW_0.60:limits" in partial.reasons
+    assert partial.reasons == ("PLANNED_QUESTIONS_UNRESOLVED",)
 
 
-@pytest.mark.unit
-def test_builtin_research_policy_defines_material_domain_obligations() -> None:
-    policy = next(
-        item for item in BUILTIN_POLICIES if item.policy_type == "RESEARCH_COMPLETION"
-    )
-    domains = policy.definition_json["domains"]
-    assert set(domains) == {
-        "identity_scope",
-        "mechanisms_capabilities",
-        "energy_resources",
-        "industry_logistics",
-        "mobility",
-        "offense",
-        "defense",
-        "information_control",
-        "biology",
-        "exotic",
-        "deployment_scale",
-        "chronology",
-        "counters_limits",
-    }
-    assert all(value["required_indicators"] for value in domains.values())
-    assert all(value["critical_questions"] for value in domains.values())
-    assert policy.definition_json["overall_threshold"] == 0.8
-    assert policy.definition_json["domain_threshold"] == 0.6
+@pytest.mark.integration
+def test_completion_policy_persistence_contains_no_domain_taxonomy(
+    engine: Engine,
+) -> None:
+    with Session(engine) as session, session.begin():
+        session.add(
+            PolicyDefinition(
+                id="research.default.v1",
+                policy_type="RESEARCH_COMPLETION",
+                version=1,
+                definition_json={"domains": {"legacy": {}}},
+                active=True,
+            )
+        )
 
+    activate_builtin_policies(engine)
 
-@pytest.mark.unit
-def test_empty_domain_selection_expands_to_full_policy_catalog() -> None:
-    obligations = policy_obligations(())
-    assert set(obligations) == {
-        "identity_scope",
-        "mechanisms_capabilities",
-        "energy_resources",
-        "industry_logistics",
-        "mobility",
-        "offense",
-        "defense",
-        "information_control",
-        "biology",
-        "exotic",
-        "deployment_scale",
-        "chronology",
-        "counters_limits",
-    }
+    with Session(engine) as session:
+        policy = session.get(PolicyDefinition, "research.default.v1")
+        assert policy.definition_json == {
+            "completion_basis": "PLANNED_QUESTION_RESOLUTION",
+            "requires_exact_provenance": True,
+            "blocks_on_invalidating_conflicts": True,
+            "blocks_on_unresolved_audits": True,
+            "blocks_on_duplicate_promotions": True,
+        }
 
 
 @pytest.mark.unit
@@ -386,18 +376,6 @@ def test_builtin_canon_policy_versions_high_impact_source_requirements() -> None
         ],
         "high_impact_min_independent": 2,
     }
-
-
-@pytest.mark.unit
-def test_policy_obligations_cannot_be_omitted_by_planner() -> None:
-    obligations = policy_obligations(("mechanisms", "offense"))
-    assert obligations["mechanisms"]["policy_domain"] == "mechanisms_capabilities"
-    assert set(obligations["mechanisms"]["required_indicators"]) == {
-        "effect",
-        "activation",
-        "limits",
-    }
-    assert "delivery" in obligations["offense"]["required_indicators"]
 
 
 @pytest.mark.unit

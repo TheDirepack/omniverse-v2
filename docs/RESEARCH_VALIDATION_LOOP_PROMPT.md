@@ -10,22 +10,25 @@ work and do not broaden the task.
 Repository and commands
 - Repository root: /home/max/Projects/omniverse-v2
 - Backend: /home/max/Projects/omniverse-v2/backend
-- Start local app: ./run.sh
+- Start local app: ./run.sh --prod
 - Default test suite: ./test.sh
 - UI suite: ./test.sh --ui
 - Lint: ./lint.sh
 - Test logs: backend/tests/logs/run_<timestamp>/
-- Runtime agent log: backend/data/logs/agents.log
+- Runtime agent log: backend/logs/agent.jsonl
+- Runtime server log: backend/logs/server.jsonl
+- Remote lifecycle log: backend/logs/remote-server.jsonl
+- Detached startup log: /tmp/opencode/omniverse-v2-research-loop.log
 - Validation views: /validation and /logs/
 
 Fixed broad baselines
 1. Fallout: New Vegas
 2. A Song of Ice and Fire (ASOIAF)
 
-Run these baselines first and keep their world, continuity, research question,
-provider route, and run identifier fixed for the full validation cycle. Use
-the intended canonical continuity for each baseline. Do not substitute a
-related franchise, adaptation, or crossover continuity.
+Run these baselines first using broad research with no objective, keywords,
+phrases, or section hints. They are general regression fixtures, not targets
+for world-specific prompt logic. Use the intended canonical continuity and do
+not substitute a related franchise, adaptation, or crossover continuity.
 
 Cycle A: clean baseline
 1. Start from the project-approved clean state. Record the exact reset or seed
@@ -52,14 +55,18 @@ Notebook and canon boundary
   required acceptance and provenance path.
 
 Log analysis
-For every baseline run, analyze agents.log and test/run logs. Report findings
-under all three headings:
+For every baseline run, analyze the direct JSONL files above, not only errors
+or database state. Report all reproducible findings under these headings:
 - Quality: source relevance, evidence acceptance, claim support, scope and
   continuity correctness, provenance, duplication, and canon/notebook leaks.
 - Efficiency: elapsed time, retries, failed calls, duplicate acquisition or
   extraction, unnecessary model fallbacks, and avoidable work.
 - Observability: run correlation, world and model attribution, event coverage,
   useful failure reasons, log completeness, and ability to reconstruct the run.
+- Classify findings as BUG, QUALITY, EFFICIENCY, or OBSERVABILITY. Include run
+  IDs, direct file/line references, frequency, impact, likely root cause, and
+  the smallest safe remediation. Keep every finding in a backlog; independent
+  high-impact fixes may be implemented together.
 
 Development rules
 1. Reproduce a significant defect with a focused failing test before changing

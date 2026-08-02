@@ -1,0 +1,59 @@
+{
+  "batchcomplete": "",
+  "continue": {
+    "continue": "-||",
+    "sroffset": 5
+  },
+  "query": {
+    "search": [
+      {
+        "ns": 0,
+        "pageid": 31150994,
+        "size": 312,
+        "snippet": "<span class=\"searchmatch\">Fusion</span> <span class=\"searchmatch\">engine</span> may refer to: <span class=\"searchmatch\">Fusion</span> <span class=\"searchmatch\">engine</span>, an <span class=\"searchmatch\">engine</span> that runs on <span class=\"searchmatch\">fusion</span> power, generally referring to a <span class=\"searchmatch\">fusion</span> rocket. <span class=\"searchmatch\">Fusion</span> <span class=\"searchmatch\">Engine</span>, the game engine",
+        "timestamp": "2026-02-23T21:03:20Z",
+        "title": "Fusion engine",
+        "wordcount": 75
+      },
+      {
+        "ns": 0,
+        "pageid": 37852,
+        "size": 17690,
+        "snippet": "<span class=\"searchmatch\">fusion</span> reaction cannot be produced, it might be possible to use <span class=\"searchmatch\">fusion</span> to boost the efficiency of another propulsion system, such as a VASIMR <span class=\"searchmatch\">engine</span>.[citation",
+        "timestamp": "2026-05-29T21:42:26Z",
+        "title": "Fusion rocket",
+        "wordcount": 1896
+      },
+      {
+        "ns": 0,
+        "pageid": 2762616,
+        "size": 89563,
+        "snippet": "an EcoBoost <span class=\"searchmatch\">engine</span> option, a next-generation hybrid model, and a plug-in hybrid version, the Ford <span class=\"searchmatch\">Fusion</span> Energi, making the Ford <span class=\"searchmatch\">Fusion</span> the first production",
+        "timestamp": "2026-06-27T15:06:11Z",
+        "title": "Ford Fusion (Americas)",
+        "wordcount": 8023
+      },
+      {
+        "ns": 0,
+        "pageid": 548297,
+        "size": 20053,
+        "snippet": "of results. The process of <span class=\"searchmatch\">fusion</span> aims to improve the engineering of a metasearch <span class=\"searchmatch\">engine</span>. Examples of metasearch <span class=\"searchmatch\">engines</span> include Skyscanner and Kayak",
+        "timestamp": "2026-07-15T05:07:39Z",
+        "title": "Metasearch engine",
+        "wordcount": 2394
+      },
+      {
+        "ns": 0,
+        "pageid": 581731,
+        "size": 8202,
+        "snippet": "Ford Duratec <span class=\"searchmatch\">engine</span> is a line of <span class=\"searchmatch\">engines</span> used by Ford of Europe and United States for the company&#039;s range of gasoline-powered I3, I4, I5 and V6 passenger",
+        "timestamp": "2026-06-27T08:34:23Z",
+        "title": "Ford Duratec engine",
+        "wordcount": 484
+      }
+    ],
+    "searchinfo": {
+      "totalhits": 4160
+    }
+  }
+}

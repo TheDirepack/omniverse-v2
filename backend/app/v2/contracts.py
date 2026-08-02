@@ -16,6 +16,8 @@ from pydantic import (
 from app.v2.domain import RunOutcome, RunStatus, StepKind
 
 _DOMAINS_ERROR = "scope.domains is not user-selectable"
+MAX_PLANNED_SCOUT_SLOTS = 8
+_PLANNED_SCOUT_SLOTS_ERROR = f"planned scout slots exceed {MAX_PLANNED_SCOUT_SLOTS}"
 
 
 class Contract(BaseModel):
@@ -108,12 +110,22 @@ class PlanQuestion(Contract):
     priority: int = Field(ge=0)
     question: str = Field(min_length=1)
     queries: tuple[str, ...] = Field(min_length=1)
-    source_budget: int = Field(gt=0, le=100)
+    source_budget: int = Field(gt=0, le=MAX_PLANNED_SCOUT_SLOTS)
     stop_conditions: tuple[str, ...] = Field(min_length=1)
 
 
 class PlannerOutput(Contract):
     questions: tuple[PlanQuestion, ...] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def limit_scout_slots(self) -> PlannerOutput:
+        planned_scout_slots = sum(
+            len(question.queries) * question.source_budget
+            for question in self.questions
+        )
+        if planned_scout_slots > MAX_PLANNED_SCOUT_SLOTS:
+            raise ValueError(_PLANNED_SCOUT_SLOTS_ERROR)
+        return self
 
 
 class ResearchGap(Contract):

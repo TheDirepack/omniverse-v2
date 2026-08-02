@@ -3,11 +3,10 @@
 
 from __future__ import annotations
 
-import asyncio
 import hashlib
 import inspect
 import json
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -18,10 +17,12 @@ from app.v2.acquisition import AcquisitionPolicy
 from app.v2.bootstrap import BUILTIN_POLICIES
 from app.v2.context import EvidenceItem
 from app.v2.contracts import (
+    MAX_PLANNED_SCOUT_SLOTS,
     AuditorOutput,
     AuditVerdict,
     ExtractorOutput,
     PlannerOutput,
+    ResearchScope,
     StructuredProposal,
     SummaryOutput,
     SynthesizerOutput,
@@ -56,18 +57,46 @@ from app.v2.models import (
     SourceRevision,
     StepEffect,
     WorkflowSummary,
+    WorkspaceKnowledgePublication,
     World,
 )
 from app.v2.providers import ErrorClass, ProviderError
 from app.v2.research_runs import ResearchRunKernel
 from app.v2.search import SearchError, normalize_candidates
+from app.v2.wiki import WikiResearchFoundation
 
 PROMPTS = {
-    StepKind.PLAN: "planner/v2: Begin by considering identity and scope; entities and relationships; chronology and branches; mechanisms and capabilities; activation, costs, constraints, counters, and failures; resources, production, logistics, and deployment; movement and access; offense and defense; sensing, communications, and control; biology; unusual magical, psychic, dimensional, temporal, causal, conceptual, and ontological rules; and contradictions or disputed canon. These reminders are not labels or a taxonomy: omit inapplicable areas and add world-specific areas. Prioritize questions using the global focus, scope, and targeting hints. Produce stable question IDs, priorities, queries, source budgets, and stop conditions. Output only the schema. Do not provide hidden reasoning.",
-    StepKind.EXTRACT: "extractor/v1: Extract only exact source excerpts answering the supplied questions. Never use memory or snippets as evidence. Every fragment locator must exactly equal one allowed_locator and continuity must exactly equal expected_continuity. Output only the schema.",
-    StepKind.SYNTHESIZE: "synthesizer/v1: Produce typed proposals with field-level supporting and contradicting fragment IDs. Preserve qualifiers. Output only the schema.",
+    StepKind.PLAN: f"planner/v3: Begin by considering identity and scope; entities and relationships; chronology and branches; mechanisms and capabilities; activation, costs, constraints, counters, and failures; resources, production, logistics, and deployment; movement and access; offense and defense; sensing, communications, and control; biology; unusual magical, psychic, dimensional, temporal, causal, conceptual, and ontological rules; and contradictions or disputed canon. These reminders are not labels or a taxonomy: omit inapplicable areas and add world-specific areas. Keep a wiki-first acquisition strategy: once a qualified wiki is active, the service selects and acquires its approved inventory pages, so prefer questions targeting that approved inventory. You may also issue generic, broad, and exploratory web research to generate or refine hypotheses; the service still governs which URLs are actually fetched. Cumulative research context is source-backed orientation, not answer evidence. Prioritize questions using the global focus, scope, and targeting hints. Produce stable question IDs, priorities, queries, source budgets, and stop conditions. Plan for a maximum total of {MAX_PLANNED_SCOUT_SLOTS} candidate slots across all queries, calculated as the sum of len(queries) * source_budget. Output only the schema. Do not provide hidden reasoning.",
+    StepKind.EXTRACT: "extractor/v2: Use only the supplied controlled capability to request content for already approved page IDs. Extract only exact source excerpts answering the supplied questions. Never browse URLs or use memory, cumulative context, titles, or snippets as evidence. Every fragment locator must exactly equal one allowed_locator and continuity must exactly equal expected_continuity. Output only the schema.",
+    StepKind.SYNTHESIZE: "synthesizer/v2: Produce typed proposals with field-level supporting and contradicting fragment IDs. Preserve qualifiers. Cumulative research context is orientation only: field evidence may cite only question-targeted fragment IDs supplied as evidence. Never browse URLs. Output only the schema.",
     StepKind.AUDIT: "auditor/v1: Independently judge every material field against exact excerpts and scope. Output stable verdicts and reason codes only.",
     StepKind.SUMMARIZE: "summary/v1: Summarize accepted canon only. Every fact must cite supplied node and fragment IDs. Output only the schema.",
+}
+
+WIKI_CONTROLLED_CAPABILITIES = {
+    "inspect_approved_inventory": "Inspect only supplied inventory IDs and metadata.",
+    "request_approved_page_ids": "Request only IDs present in approved inventory.",
+    "request_approved_page_content": "Request content only for service-approved page IDs.",
+    "forbidden": ["arbitrary_url_browsing", "arbitrary_url_fetching"],
+}
+
+# Planner-facing capability description. The planner may issue generic web
+# research for hypothesis generation; acquisition remains wiki-first and URL
+# fetching stays service-controlled. Kept separate from WIKI_CONTROLLED_CAPABILITIES
+# so earlier research steps (extract/synthesize) keep their narrow boundary.
+PLANNER_RESEARCH_CAPABILITIES = {
+    "generic_web_search": (
+        "Issue generic, broad, and exploratory web queries to generate and refine "
+        "research hypotheses; nothing forbids a general web search."
+    ),
+    "approved_wiki_inventory": (
+        "Once a wiki is active, the service prioritizes and acquires its approved "
+        "inventory pages; prefer questions targeting approved inventory."
+    ),
+    "service_controlled_acquisition": (
+        "The service controls which URLs are actually fetched; you never "
+        "fetch arbitrary URLs directly."
+    ),
 }
 
 
@@ -256,6 +285,7 @@ class ResearchWorkflow:
         context_window: int = 40_000,
         acquisition_policy: AcquisitionPolicy | None = None,
         preprocessor=None,
+        wiki_foundation: WikiResearchFoundation | None = None,
         clock=None,
         logger=None,
     ) -> None:
@@ -270,6 +300,9 @@ class ResearchWorkflow:
         self.acquisition_policy = acquisition_policy or AcquisitionPolicy()
         self.preprocessor = preprocessor
         self.clock = clock or (lambda: datetime.now(timezone.utc))
+        self.wiki = wiki_foundation or WikiResearchFoundation(
+            engine, acquisition_service, clock=self.clock
+        )
         self.crash_after_effect_for: StepKind | None = None
         self.crash_after_model_call_for: StepKind | None = None
 
@@ -547,6 +580,79 @@ class ResearchWorkflow:
             workspace.brief_json = state
             return state
 
+    def _shared_research_context(
+        self, lease, *, exclude_ids: set[str] | None = None
+    ) -> list[dict[str, str]]:
+        """Return compact, cited workspace knowledge without making it answer evidence."""
+
+        scope = self._scope(lease)
+        freshness = self._freshness_scope(lease)
+        excluded = exclude_ids or set()
+        with Session(self.engine) as session:
+            rows = session.execute(
+                select(WorkspaceKnowledgePublication, EvidenceFragment)
+                .join(
+                    ResearchWorkspace,
+                    ResearchWorkspace.id == WorkspaceKnowledgePublication.workspace_id,
+                )
+                .join(
+                    EvidenceFragment,
+                    EvidenceFragment.id
+                    == WorkspaceKnowledgePublication.evidence_fragment_id,
+                )
+                .where(
+                    ResearchWorkspace.world_id == lease.world_id,
+                    ResearchWorkspace.continuity == freshness["continuity"],
+                    ResearchWorkspace.era_or_timepoint
+                    == freshness["era_or_timepoint"],
+                    ResearchWorkspace.branch_id == freshness["branch_id"],
+                    ResearchWorkspace.conditions_key == freshness["conditions_key"],
+                    EvidenceFragment.world_id == lease.world_id,
+                    EvidenceFragment.continuity == freshness["continuity"],
+                    EvidenceFragment.era_or_timepoint
+                    == freshness["era_or_timepoint"],
+                    EvidenceFragment.branch_id == freshness["branch_id"],
+                    EvidenceFragment.conditions_json
+                    == sorted(scope.get("conditions", ())),
+                )
+                .order_by(
+                    WorkspaceKnowledgePublication.published_at,
+                    EvidenceFragment.id,
+                )
+            ).all()
+        context: list[dict[str, str]] = []
+        seen: set[str] = set()
+        for _publication, fragment in rows:
+            if fragment.id in excluded or fragment.id in seen:
+                continue
+            seen.add(fragment.id)
+            if not fragment.exact_excerpt.strip():
+                continue
+            context.append(
+                {
+                    "fragment_id": fragment.id,
+                    "source_revision_id": fragment.source_revision_id,
+                    "exact_excerpt": fragment.exact_excerpt[:600],
+                }
+            )
+            if len(context) >= 20:
+                break
+        return context
+
+    @staticmethod
+    def _usable_research_passage(source: dict[str, Any], excerpt: str) -> bool:
+        compact_excerpt = " ".join(excerpt.split())
+        if len(compact_excerpt) < 16:
+            return False
+        source_title = " ".join(str(source.get("title", "")).split()).casefold()
+        for passage in source.get("authoritative_passages", []):
+            text = " ".join(str(passage.get("text", "")).split())
+            if not text or text.casefold() == source_title:
+                continue
+            if excerpt in str(passage.get("text", "")):
+                return True
+        return False
+
     async def _model_call(self, lease, *, effect_suffix: str = "main", **kwargs):
         effect_key = f"model:{lease.step_id}:{effect_suffix}"
         output_type = kwargs["output_type"]
@@ -692,6 +798,7 @@ class ResearchWorkflow:
         ):
             return self._save(lease, plan={"questions": []})
         scope = self._scope(lease)
+        profile = self.wiki.profile_for_scope(lease.world_id, scope)
         output = await self._model_call(
             lease,
             task="research.plan",
@@ -705,6 +812,11 @@ class ResearchWorkflow:
                     "phrases": list(scope.get("phrases", ())),
                     "section_hints": list(scope.get("section_hints", ())),
                 },
+                "research_capabilities": PLANNER_RESEARCH_CAPABILITIES,
+                "approved_wiki_inventory": self.wiki.approved_inventory(
+                    profile.id if profile is not None else None
+                ),
+                "cumulative_research_context": self._shared_research_context(lease),
             },
             output_type=PlannerOutput,
             context_window=self.context_window,
@@ -732,106 +844,153 @@ class ResearchWorkflow:
         return self._save(lease, plan=output.model_dump(mode="json"))
 
     async def _scout(self, lease) -> dict[str, Any]:
-        questions = self._state(lease).get("plan", {}).get("questions", [])
+        state = self._state(lease)
+        questions = state.get("plan", {}).get("questions", [])
         workspace_id = self._workspace_id(lease.target_id)
-        found = []
-        search_misses = []
-        preprocessing_deadline = (
-            asyncio.get_running_loop().time()
-            + min(
-                2.0,
-                float(getattr(self.preprocessor, "timeout_seconds", 2.0)),
+        scope = self._scope(lease)
+        profile = self.wiki.profile_for_scope(lease.world_id, scope)
+        discovery_misses: list[dict[str, str]] = []
+        discovery_attempted = bool(state.get("wiki_discovery_attempted", False))
+        qualified_this_scout = False
+        if profile is None and not discovery_attempted:
+            discovery_attempted = True
+            with Session(self.engine) as session:
+                world = session.get(World, lease.world_id)
+            if world is None:
+                raise LookupError(lease.world_id)
+            discovery_query = f"{world.name} wiki"
+            search = self.search.search
+            parameters = inspect.signature(search).parameters
+            try:
+                if "run_id" in parameters or any(
+                    item.kind is inspect.Parameter.VAR_KEYWORD
+                    for item in parameters.values()
+                ):
+                    values = await search(
+                        discovery_query,
+                        limit=3,
+                        run_id=lease.run_id,
+                        target_id=lease.target_id,
+                        step_id=lease.step_id,
+                        world_id=lease.world_id,
+                        attempt_number=lease.attempt_number,
+                        step_kind=lease.kind.value,
+                    )
+                else:
+                    values = await search(discovery_query, limit=3)
+            except SearchError as error:
+                discovery_misses.append(
+                    {"query": discovery_query, "reason": type(error).__name__}
+                )
+                values = ()
+            for candidate in normalize_candidates(tuple(values), 3):
+                profile = await self.wiki.qualify_candidate(
+                    world_id=lease.world_id,
+                    scope=scope,
+                    candidate=candidate,
+                    policy=self.acquisition_policy,
+                )
+                if profile is not None:
+                    qualified_this_scout = True
+                    self._log(
+                        lease,
+                        "wiki.qualification.succeeded",
+                        "Qualified target-level wiki",
+                        data={"profile_id": profile.id, "canonical_url": profile.canonical_url},
+                    )
+                    break
+            if profile is None:
+                self._log(
+                    lease,
+                    "wiki.qualification.failed",
+                    "No target-level search candidate qualified as a wiki",
+                    level="WARNING",
+                    data={"query": discovery_query},
+                )
+        elif profile is None:
+            self._log(
+                lease,
+                "wiki.external.deferred",
+                "Skipped repeated target-level wiki discovery for this workspace",
+                data={"reason": "WIKI_DISCOVERY_ALREADY_ATTEMPTED"},
             )
-            if self.preprocessor is not None
-            else 0.0
-        )
-        for question in questions:
-            for query in question["queries"]:
-                search = self.search.search
-                parameters = inspect.signature(search).parameters
-                try:
-                    if "run_id" in parameters or any(
-                        item.kind is inspect.Parameter.VAR_KEYWORD
-                        for item in parameters.values()
-                    ):
-                        values = await search(
-                            query,
-                            limit=question["source_budget"],
-                            run_id=lease.run_id,
-                            target_id=lease.target_id,
-                            step_id=lease.step_id,
-                            world_id=lease.world_id,
-                            attempt_number=lease.attempt_number,
-                            step_kind=lease.kind.value,
-                        )
-                    else:
-                        values = await search(query, limit=question["source_budget"])
-                except SearchError as error:
-                    search_misses.append(
-                        {
-                            "query": query,
-                            "question_id": question["id"],
-                            "reason": type(error).__name__,
-                        }
-                    )
-                    continue
-                candidates = normalize_candidates(values, question["source_budget"])
-                if self.preprocessor is not None:
-
-                    async def readable_candidate(candidate):
-                        try:
-                            title_result, snippet_result = await asyncio.gather(
-                                self.preprocessor.reformat(candidate.title),
-                                self.preprocessor.reformat(candidate.snippet),
-                            )
-                        except Exception:
-                            return candidate
-                        return replace(
-                            candidate,
-                            title=title_result.text,
-                            snippet=snippet_result.text,
-                        )
-
-                    timeout = max(
-                        0.0,
-                        preprocessing_deadline - asyncio.get_running_loop().time(),
-                    )
-                    if timeout:
-                        try:
-                            candidates = tuple(
-                                await asyncio.wait_for(
-                                    asyncio.gather(
-                                        *(
-                                            readable_candidate(item)
-                                            for item in candidates
-                                        )
-                                    ),
-                                    timeout=timeout,
-                                )
-                            )
-                        except TimeoutError:
-                            pass
-                found.extend((question, query, candidate) for candidate in candidates)
+        selections = ()
+        cache_hit: bool | None = None
+        if profile is not None:
+            if qualified_this_scout:
+                cache_hit = False
+                page_count = len(self.wiki.approved_inventory(profile.id))
+            else:
+                refreshed = await self.wiki.refresh_inventory(
+                    profile.id, self.acquisition_policy
+                )
+                profile = refreshed.profile
+                cache_hit = refreshed.cache_hit
+                page_count = refreshed.page_count
+            self._log(
+                lease,
+                "wiki.sitemap.cache_hit" if cache_hit else "wiki.sitemap.cache_miss",
+                "Wiki sitemap inventory cache lookup completed",
+                data={
+                    "profile_id": profile.id,
+                    "page_count": page_count,
+                    "sitemap_url": profile.sitemap_url,
+                },
+            )
+            selections = self.wiki.select_and_enqueue(
+                profile_id=profile.id,
+                workspace_id=workspace_id,
+                questions=tuple(questions),
+            )
+            self._log(
+                lease,
+                "wiki.inventory.selected",
+                "Selected approved wiki inventory pages",
+                data={
+                    "profile_id": profile.id,
+                    "selection_count": len(selections),
+                    "queue_ids": [item.queue_id for item in selections],
+                },
+            )
+        defer_external = self.wiki.should_defer_external_work(workspace_id)
+        if defer_external:
+            self._log(
+                lease,
+                "wiki.external.deferred",
+                "Deferred external discovery while relevant wiki pages remain",
+                data={"reason": "RELEVANT_WIKI_QUEUE", "queue_count": len(selections)},
+            )
+        elif questions:
+            self._log(
+                lease,
+                "wiki.external.deferred",
+                "External recovery is disabled without an explicit configured policy",
+                data={"reason": "NO_EXTERNAL_RECOVERY_POLICY"},
+            )
         with Session(self.engine) as session, session.begin():
             self._workspace(session, lease)
-            for question, query, candidate in found:
-                lead_id = _stable(
-                    "lead", workspace_id, question["id"], candidate.canonical_url
-                )
-                if session.get(SearchLead, lead_id) is None:
+            for rank, selection in enumerate(selections, 1):
+                for question_id in selection.question_ids:
+                    lead_id = _stable(
+                        "lead", workspace_id, question_id, selection.canonical_url
+                    )
+                    if session.get(SearchLead, lead_id) is not None:
+                        continue
                     session.add(
                         SearchLead(
                             id=lead_id,
                             workspace_id=workspace_id,
-                            question_id=question["id"],
-                            query=query,
-                            canonical_url=candidate.canonical_url,
-                            title=candidate.title,
-                            snippet=candidate.snippet,
-                            rank=candidate.rank,
-                            source_class=candidate.source_class,
-                            publisher=candidate.publisher,
-                            lineage_id=candidate.lineage_id,
+                            question_id=question_id,
+                            query=f"wiki-inventory:{profile.id if profile else ''}",
+                            canonical_url=selection.canonical_url,
+                            title=selection.title,
+                            snippet="",
+                            rank=rank,
+                            source_class=(
+                                profile.source_class if profile is not None else "SECONDARY"
+                            ),
+                            publisher=profile.publisher if profile is not None else None,
+                            lineage_id=profile.lineage_id if profile is not None else None,
                         )
                     )
             leads = session.scalars(
@@ -848,46 +1007,83 @@ class ResearchWorkflow:
                     "publisher": lead.publisher,
                     "lineage_id": lead.lineage_id,
                     "support_role": "LEAD_ONLY",
+                    "title": lead.title,
+                    "wiki_queue_id": next(
+                        (
+                            item.queue_id
+                            for item in selections
+                            if item.canonical_url == lead.canonical_url
+                        ),
+                        None,
+                    ),
+                    "inventory_page_id": next(
+                        (
+                            item.inventory_page_id
+                            for item in selections
+                            if item.canonical_url == lead.canonical_url
+                        ),
+                        None,
+                    ),
                 }
                 for lead in leads
             ]
-        return self._save(lease, leads=payload, search_misses=search_misses)
+        return self._save(
+            lease,
+            leads=payload,
+            search_misses=discovery_misses,
+            wiki_profile_id=profile.id if profile is not None else None,
+            wiki_inventory_cache_hit=cache_hit,
+            external_work_deferred=defer_external,
+            wiki_discovery_attempted=discovery_attempted,
+        )
 
     async def _acquire(self, lease) -> dict[str, Any]:
         acquired = []
         misses = []
         scope = self._scope(lease)
+        results_by_url = {}
+        failures_by_url = {}
+        queue_statuses: dict[str, str] = {}
         for lead in self._state(lease).get("leads", []):
-            try:
-                result = await self.acquisition.acquire(
-                    lead["url"],
-                    self.acquisition_policy,
-                    idempotency_key=f"{lease.target_id}:{lead['id']}",
-                    attempt_id=str(lease.attempt_number),
-                    step_id=lease.step_id,
-                    run_id=lease.run_id,
-                    target_id=lease.target_id,
-                    world_id=lease.world_id,
-                    attempt_number=lease.attempt_number,
-                    step_kind=lease.kind.value,
-                    source_class=lead["source_class"],
-                    publisher=lead.get("publisher"),
-                    lineage_id=lead.get("lineage_id"),
-                    keywords=tuple(scope.get("keywords", ())),
-                    exact_phrases=tuple(scope.get("phrases", ())),
-                    section_hints=tuple(scope.get("section_hints", ())),
-                )
-            except Exception as error:
+            url = lead["url"]
+            if url not in results_by_url and url not in failures_by_url:
+                try:
+                    results_by_url[url] = await self.acquisition.acquire(
+                        url,
+                        self.acquisition_policy,
+                        idempotency_key=f"{lease.target_id}:{lead['id']}",
+                        attempt_id=str(lease.attempt_number),
+                        step_id=lease.step_id,
+                        run_id=lease.run_id,
+                        target_id=lease.target_id,
+                        world_id=lease.world_id,
+                        attempt_number=lease.attempt_number,
+                        step_kind=lease.kind.value,
+                        source_class=lead["source_class"],
+                        publisher=lead.get("publisher"),
+                        lineage_id=lead.get("lineage_id"),
+                        keywords=tuple(scope.get("keywords", ())),
+                        exact_phrases=tuple(scope.get("phrases", ())),
+                        section_hints=tuple(scope.get("section_hints", ())),
+                    )
+                except Exception as error:
+                    failures_by_url[url] = type(error).__name__
+            if url in failures_by_url:
+                if lead.get("wiki_queue_id"):
+                    queue_statuses[str(lead["wiki_queue_id"])] = "ACQUISITION_FAILED"
                 misses.append(
                     {
                         "lead_id": lead["id"],
                         "question_id": lead["question_id"],
                         "status": "ACQUISITION_FAILED",
-                        "reason": type(error).__name__,
+                        "reason": failures_by_url[url],
                     }
                 )
                 continue
+            result = results_by_url[url]
             if result.targeting_status == "NO_RELEVANT_PASSAGE":
+                if lead.get("wiki_queue_id"):
+                    queue_statuses[str(lead["wiki_queue_id"])] = "NO_RELEVANT_PASSAGE"
                 misses.append(
                     {
                         "lead_id": lead["id"],
@@ -898,6 +1094,8 @@ class ResearchWorkflow:
                     }
                 )
                 continue
+            if lead.get("wiki_queue_id"):
+                queue_statuses[str(lead["wiki_queue_id"])] = "ACQUIRED"
             acquired.append(
                 {
                     "lead_id": lead["id"],
@@ -913,8 +1111,12 @@ class ResearchWorkflow:
                     "preprocessing_status": result.preprocessing_status,
                     "authoritative_passages": list(result.authoritative_passages),
                     "readability_text": result.readability_text,
+                    "title": lead.get("title", ""),
+                    "inventory_page_id": lead.get("inventory_page_id"),
                 }
             )
+        if queue_statuses:
+            self.wiki.mark_queue_terminal(queue_statuses)
         return self._save(lease, acquired=acquired, acquisition_misses=misses)
 
     async def _extract(self, lease) -> dict[str, Any]:
@@ -924,6 +1126,7 @@ class ResearchWorkflow:
         }
         fragment_ids: list[str] = []
         question_fragment_ids: dict[str, list[str]] = {}
+        extraction_rejections: list[dict[str, str]] = []
         for source in state.get("acquired", []):
             authoritative = source.get("authoritative_passages", [])
             request_budget = self.gateway.allocator.extraction_character_budget(
@@ -955,6 +1158,7 @@ class ResearchWorkflow:
                     request_budget,
                     fragment_ids,
                     question_fragment_ids,
+                    extraction_rejections,
                 )
         return self._save(
             lease,
@@ -963,6 +1167,7 @@ class ResearchWorkflow:
                 question_id: sorted(set(ids))
                 for question_id, ids in question_fragment_ids.items()
             },
+            extraction_rejections=extraction_rejections,
         )
 
     async def _extract_batch(
@@ -975,6 +1180,7 @@ class ResearchWorkflow:
         request_budget: int,
         fragment_ids: list[str],
         question_fragment_ids: dict[str, list[str]],
+        extraction_rejections: list[dict[str, str]],
     ) -> None:
         passage_by_locator = {item["locator"]: item["text"] for item in bounded}
         output = await self._model_call(
@@ -993,6 +1199,12 @@ class ResearchWorkflow:
                     "trust": "UNTRUSTED_NON_EVIDENTIARY",
                 },
                 "questions": [question],
+                "research_capabilities": WIKI_CONTROLLED_CAPABILITIES,
+                "approved_page_ids": (
+                    [str(source["inventory_page_id"])]
+                    if source.get("inventory_page_id")
+                    else []
+                ),
                 "expected_continuity": str(
                     self._scope(lease).get("continuity", "unspecified")
                 ),
@@ -1000,26 +1212,48 @@ class ResearchWorkflow:
             output_type=ExtractorOutput,
             context_window=self.context_window,
         )
+        published: list[dict[str, str]] = []
         with Session(self.engine) as session, session.begin():
+            workspace = self._workspace(session, lease)
             for fragment in output.fragments:
+                rejection_reason = None
                 if fragment.source_revision_id != source["revision_id"]:
-                    raise ValueError("fragment references the wrong source revision")
+                    rejection_reason = "WRONG_SOURCE_REVISION"
                 authoritative_text = passage_by_locator.get(fragment.locator)
-                if authoritative_text is None:
-                    raise ValueError(
-                        "fragment locator does not identify a selected authoritative passage"
-                    )
-                if fragment.exact_excerpt not in authoritative_text:
-                    raise ValueError(
-                        "exact excerpt does not occur in its authoritative passage"
-                    )
+                if rejection_reason is None and authoritative_text is None:
+                    rejection_reason = "LOCATOR_NOT_SELECTED"
+                if (
+                    rejection_reason is None
+                    and authoritative_text is not None
+                    and fragment.exact_excerpt not in authoritative_text
+                ):
+                    rejection_reason = "EXCERPT_NOT_IN_LOCATOR"
                 expected_continuity = str(
                     self._scope(lease).get("continuity", "unspecified")
                 )
-                if fragment.continuity != expected_continuity:
-                    raise ValueError("evidence continuity is out of scope")
-                if fragment.support_role == "LEAD_ONLY":
-                    raise ValueError("search snippets and leads cannot become evidence")
+                if (
+                    rejection_reason is None
+                    and fragment.continuity != expected_continuity
+                ):
+                    rejection_reason = "CONTINUITY_OUT_OF_SCOPE"
+                if rejection_reason is None and fragment.support_role == "LEAD_ONLY":
+                    rejection_reason = "LEAD_ONLY_NOT_EVIDENCE"
+                if rejection_reason is not None:
+                    rejection = {
+                        "fragment_id": fragment.fragment_id,
+                        "source_revision_id": fragment.source_revision_id,
+                        "locator": fragment.locator,
+                        "reason": rejection_reason,
+                    }
+                    extraction_rejections.append(rejection)
+                    self._log(
+                        lease,
+                        "evidence.fragment.rejected",
+                        "Evidence fragment rejected",
+                        level="WARNING",
+                        data=rejection,
+                    )
+                    continue
                 content_hash = hashlib.sha256(
                     f"{fragment.source_revision_id}\0{fragment.locator}\0{fragment.exact_excerpt}".encode()
                 ).hexdigest()
@@ -1057,6 +1291,30 @@ class ResearchWorkflow:
                     session.add(existing)
                 fragment_ids.append(existing.id)
                 question_fragment_ids.setdefault(question["id"], []).append(existing.id)
+                if not self._usable_research_passage(source, fragment.exact_excerpt):
+                    continue
+                publication_id = _stable("knowledge", workspace.id, existing.id)
+                if session.get(WorkspaceKnowledgePublication, publication_id) is None:
+                    session.add(
+                        WorkspaceKnowledgePublication(
+                            id=publication_id,
+                            workspace_id=workspace.id,
+                            evidence_fragment_id=existing.id,
+                        )
+                    )
+                    published.append(
+                        {
+                            "fragment_id": existing.id,
+                            "source_revision_id": existing.source_revision_id,
+                        }
+                    )
+        for item in published:
+            self._log(
+                lease,
+                "wiki.knowledge.published",
+                "Published reusable source-backed workspace knowledge",
+                data=item,
+            )
 
     def _evidence_items(self, fragment_ids: list[str]) -> tuple[EvidenceItem, ...]:
         with Session(self.engine) as session:
@@ -1071,80 +1329,86 @@ class ResearchWorkflow:
                     row.exact_excerpt,
                     index,
                     contradiction=row.support_role == "CONTRADICTS",
+                    support_role=row.support_role,
+                    world_id=row.world_id,
+                    subject_ids=tuple(row.subject_ids_json),
+                    continuity=row.continuity,
+                    era_or_timepoint=row.era_or_timepoint,
+                    branch_id=row.branch_id,
+                    conditions=tuple(row.conditions_json),
                 )
                 for index, row in enumerate(rows)
             )
+
+    def _synthesis_target_scope(
+        self, lease, evidence_rows: list[EvidenceFragment]
+    ) -> ResearchScope:
+        scope = self._scope(lease)
+        return ResearchScope(
+            world_id=self._target(lease).world_id,
+            subject_ids=tuple(
+                sorted(
+                    {
+                        subject_id
+                        for row in evidence_rows
+                        for subject_id in row.subject_ids_json
+                    }
+                )
+            ),
+            continuity=str(scope.get("continuity", "unspecified")),
+            era_or_timepoint=str(scope.get("era_or_timepoint", "unspecified")),
+            conditions=tuple(scope.get("conditions", ())),
+            branch_id=str(scope.get("branch_id", "main")),
+        )
 
     async def _synthesize(self, lease) -> dict[str, Any]:
         state = self._state(lease)
         ids = state.get("fragment_ids", [])
         if not ids:
             return self._save(lease, synthesis={"proposals": [], "relationships": []})
+        with Session(self.engine) as session:
+            evidence_rows = session.scalars(
+                select(EvidenceFragment).where(EvidenceFragment.id.in_(ids))
+            ).all()
+        target_scope = self._synthesis_target_scope(lease, evidence_rows)
         output = await self._model_call(
             lease,
             task="research.synthesize",
             role_prompt=PROMPTS[StepKind.SYNTHESIZE],
-            payload={"scope": self._scope(lease), "fragment_ids": ids},
+            payload={
+                "scope": target_scope.model_dump(mode="json"),
+                "fragment_ids": ids,
+                "question_targeted_fragment_ids": state.get(
+                    "question_fragment_ids", {}
+                ),
+                "cumulative_research_context": self._shared_research_context(
+                    lease, exclude_ids=set(ids)
+                ),
+                "research_capabilities": WIKI_CONTROLLED_CAPABILITIES,
+            },
             output_type=SynthesizerOutput,
             evidence=self._evidence_items(ids),
             context_window=self.context_window,
         )
         known = set(ids)
-        with Session(self.engine) as session:
-            evidence_rows = session.scalars(
-                select(EvidenceFragment).where(EvidenceFragment.id.in_(ids))
-            ).all()
-        evidence = {
-            row.id: {
-                "support_role": row.support_role,
-                "world_id": row.world_id,
-                "subject_ids": list(row.subject_ids_json),
-                "continuity": row.continuity,
-                "era_or_timepoint": row.era_or_timepoint,
-                "branch_id": row.branch_id,
-                "conditions": list(row.conditions_json),
-            }
-            for row in evidence_rows
-        }
-        target = self._target(lease)
         for proposal in output.proposals:
             if set(proposal.fields) != set(proposal.field_evidence):
-                raise ValueError("every material field requires field-level evidence")
+                raise AgentOutputError(
+                    "every material field requires field-level evidence"
+                )
             for links in proposal.field_evidence.values():
                 if not {*links.supporting, *links.contradicting} <= known:
-                    raise ValueError("proposal references unknown evidence")
-            if proposal.scope.world_id != target.world_id:
-                raise ValueError("proposal is out of world scope")
-            expected_scope = self._scope(lease)
-            if proposal.scope.continuity != expected_scope.get("continuity"):
-                raise ValueError("proposal is out of continuity scope")
-            if proposal.scope.era_or_timepoint != expected_scope.get(
-                "era_or_timepoint", "unspecified"
-            ):
-                raise ValueError("proposal is out of era scope")
-            if proposal.scope.branch_id != expected_scope.get("branch_id", "main"):
-                raise ValueError("proposal is out of branch scope")
-            if tuple(proposal.scope.conditions) != tuple(
-                expected_scope.get("conditions", ())
-            ):
-                raise ValueError("proposal is out of conditions scope")
-            for field_name, links in proposal.field_evidence.items():
-                validate_evidence_eligibility(
-                    proposal.scope,
-                    links.supporting,
-                    links.contradicting,
-                    evidence,
-                    field_name=field_name,
-                    field_value=proposal.fields[field_name],
-                )
+                    raise AgentOutputError("proposal references unknown evidence")
+            # Canon and evidentiary scope are NOT policed here. Synthesis may
+            # produce provisional/theoretical proposals that leave completed
+            # world/continuity/era/branch/conditions scope; the hard gate is
+            # the final verification boundary (INTEGRATE before DB commit).
             quantity = proposal.fields.get("quantity")
             if quantity is not None and not proposal.fields.get("unit"):
-                raise ValueError("quantities require units")
+                raise AgentOutputError("quantities require units")
         for relationship in output.relationships:
-            if relationship.scope.world_id != target.world_id:
-                raise ValueError("relationship is out of world scope")
             if not set(relationship.evidence_fragment_ids) <= known:
-                raise ValueError("relationship references unknown evidence")
+                raise AgentOutputError("relationship references unknown evidence")
         return self._save(lease, synthesis=output.model_dump(mode="json"))
 
     async def _audit(self, lease) -> dict[str, Any]:
@@ -1214,8 +1478,12 @@ class ResearchWorkflow:
             for relationship in raw["relationships"]
         }
         actual = {(d.assertion_type, d.assertion_id) for d in output.decisions}
-        if expected != actual or len(actual) != len(output.decisions):
-            raise ValueError("audit must decide every assertion exactly once")
+        # The auditor is no longer required to decide every assertion exactly
+        # once. Undecided assertions are surfaced for a dummy at INTEGRATE,
+        # where they simply do not verify and are pushed back for re-research
+        # rather than promoted.
+        if not actual <= expected:
+            raise ValueError("audit decided an assertion outside the material")
         known = set(state["fragment_ids"])
         if any(
             not set(decision.evidence_fragment_ids) <= known
@@ -1248,6 +1516,7 @@ class ResearchWorkflow:
         }
         accepted: list[str] = []
         accepted_record_ids: list[str] = []
+        rejected_at_verify: list[dict[str, Any]] = []
         mapping: dict[str, dict[str, str]] = {}
         canon_policy = self._policy("CANON")
         high_impact_fields = set(canon_policy["high_impact_fields"])
@@ -1412,6 +1681,32 @@ class ResearchWorkflow:
                         )
                     )
                 if not fully_accepted:
+                    for name, links in proposal.field_evidence.items():
+                        decision = decisions.get(
+                            ("FIELD", f"{proposal.proposal_id}:{name}")
+                        )
+                        if (
+                            decision
+                            and decision["verdict"] == AuditVerdict.ACCEPT.value
+                            and not links.contradicting
+                        ):
+                            continue
+                        rejected_at_verify.append(
+                            {
+                                "assertion_type": "FIELD",
+                                "assertion_id": f"{proposal.proposal_id}:{name}",
+                                "proposal_id": proposal.proposal_id,
+                                "field_name": name,
+                                "verdict": (
+                                    decision["verdict"] if decision else "UNDECIDED"
+                                ),
+                                "reason_code": (
+                                    decision["reason_code"]
+                                    if decision
+                                    else "NOT_JUDGED"
+                                ),
+                            }
+                        )
                     continue
                 effect_key = _stable(
                     "integration", proposal_record_id, sorted(state["fragment_ids"])
@@ -1660,6 +1955,7 @@ class ResearchWorkflow:
             effect_state = {
                 "accepted_proposal_ids": accepted,
                 "accepted_record_ids": accepted_record_ids,
+                "rejected_at_verify": rejected_at_verify,
                 "proposal_canon_mapping": mapping,
             }
             session.add(
@@ -1728,6 +2024,7 @@ class ResearchWorkflow:
         state = self._state(lease)
         accepted = state.get("accepted_proposal_ids", [])
         accepted_record_ids = state.get("accepted_record_ids", [])
+        rejected_at_verify = state.get("rejected_at_verify", [])
         questions = state.get("plan", {}).get("questions", [])
         planned_question_ids = {question["id"] for question in questions}
         reused = (
@@ -1832,9 +2129,23 @@ class ResearchWorkflow:
             )
         )
         outcome = completion.outcome if (accepted or reused) else RunOutcome.PARTIAL
+        # Proposals rejected at the final verification boundary must keep the
+        # run actionable (never silently COMPLETE) and surface as research gaps
+        # so the planner can re-target the unresolved canon.
+        if rejected_at_verify:
+            outcome = RunOutcome.PARTIAL
+            completion = CompletionResult(
+                RunOutcome.PARTIAL,
+                tuple(
+                    {
+                        *completion.reasons,
+                        "REJECTED_AT_VERIFY",
+                    }
+                ),
+            )
         loop_count = int(state.get("loop_count", 0))
         unresolved_question_ids = planned_question_ids - resolved_question_ids
-        actionable = bool(unresolved_question_ids)
+        actionable = bool(unresolved_question_ids) or bool(rejected_at_verify)
         if (
             outcome is RunOutcome.PARTIAL
             and actionable
@@ -1882,6 +2193,30 @@ class ResearchWorkflow:
                                     ],
                                     "stop_conditions": question["stop_conditions"],
                                     "reason": "INSUFFICIENT_EVIDENCE",
+                                    "loop_cap": self.max_gap_loops,
+                                    "reasons": list(completion.reasons),
+                                },
+                            )
+                        )
+                for assertion in rejected_at_verify:
+                    rejected_gap_id = _stable(
+                        "gap-rejected-verify",
+                        lease.target_id,
+                        assertion["assertion_id"],
+                    )
+                    if session.get(ResearchGapRecord, rejected_gap_id) is None:
+                        session.add(
+                            ResearchGapRecord(
+                                id=rejected_gap_id,
+                                workspace_id=self._workspace_id(lease.target_id),
+                                gap_json={
+                                    "assertion_type": assertion["assertion_type"],
+                                    "assertion_id": assertion["assertion_id"],
+                                    "proposal_id": assertion["proposal_id"],
+                                    "field_name": assertion["field_name"],
+                                    "verdict": assertion["verdict"],
+                                    "reason_code": assertion["reason_code"],
+                                    "reason": "REJECTED_AT_VERIFY",
                                     "loop_cap": self.max_gap_loops,
                                     "reasons": list(completion.reasons),
                                 },

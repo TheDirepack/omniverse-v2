@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from app.v2.contracts import CreateResearchRun
 from app.v2.credentials import CredentialService, JsonCredentialStore
 from app.v2.models import (
+    LLM_PROVIDER_KINDS,
     CandidateHealth,
     CredentialHealth,
     CredentialRef,
@@ -537,14 +538,16 @@ def build_router(engine: Engine | object, credentials_path=None) -> APIRouter:
     def providers() -> dict[str, object]:
         with Session(engine) as session:
             provider_rows = session.scalars(
-                select(Provider).order_by(Provider.id)
+                select(Provider)
+                .where(Provider.kind.in_(LLM_PROVIDER_KINDS))
+                .order_by(Provider.id)
             ).all()
             items = []
             for provider in provider_rows:
                 models = session.scalars(
                     select(ProviderModel)
                     .where(ProviderModel.provider_id == provider.id)
-                    .order_by(ProviderModel.model_name)
+                    .order_by(ProviderModel.sort_order, ProviderModel.model_name)
                 ).all()
                 credentials = session.scalars(
                     select(CredentialRef)
@@ -579,6 +582,7 @@ def build_router(engine: Engine | object, credentials_path=None) -> APIRouter:
                                 "supports_text": model.supports_text,
                                 "active": model.active,
                                 "verified_at": model.verified_at,
+                                "sort_order": model.sort_order,
                             }
                             for model in models
                         ],

@@ -52,6 +52,8 @@ _NOTEBOOK_TABLES = {
     "research_gap",
     "coverage_record",
     "search_lead",
+    "workspace_knowledge_publication",
+    "wiki_page_queue",
     "research_workspace",
     "workflow_summary",
     "structured_summary_revision",
@@ -79,6 +81,8 @@ _KNOWLEDGE_TABLES = _NOTEBOOK_TABLES | {
     "evidence_fragment",
     "source_revision",
     "source",
+    "wiki_inventory_page",
+    "wiki_profile",
 }
 _WORLD_TABLES = _KNOWLEDGE_TABLES | {
     "subject_relation",

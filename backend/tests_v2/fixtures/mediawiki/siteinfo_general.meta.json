@@ -1,0 +1,8 @@
+{
+  "bytes": 3405,
+  "note": "stable reference snapshot; refresh via a --slow/--live test",
+  "provider": "mediawiki",
+  "sample": "siteinfo_general",
+  "sha256": "46300a814a73470d4239679a6ee09bca3be1a5c0856b3efe87fdcbb3233fae91",
+  "source_url": "https://www.mediawiki.org/w/api.php?action=query&meta=siteinfo&format=json&siprop=general"
+}

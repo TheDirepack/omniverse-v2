@@ -36,10 +36,20 @@ def test_bootstrap_schema_migrates_to_exact_head(
             text("SELECT version_num FROM alembic_version")
         ).scalar_one()
 
-    assert revision == "v2_0006_provider_route_targets"
+    assert revision == "v2_0008_provider_model_sort_order"
     tables = set(inspect(engine).get_table_names())
     assert not any("tier" in table or "theory" in table for table in tables)
     assert "power_profile" not in tables
+    model_columns = {
+        column["name"] for column in inspect(engine).get_columns("provider_model")
+    }
+    assert "sort_order" in model_columns
+    assert {
+        "wiki_profile",
+        "wiki_inventory_page",
+        "wiki_page_queue",
+        "workspace_knowledge_publication",
+    } <= tables
     assert "result_json" in {
         column["name"] for column in inspect(engine).get_columns("acquisition_cache")
     }

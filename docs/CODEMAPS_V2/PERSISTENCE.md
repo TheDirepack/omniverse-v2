@@ -26,7 +26,8 @@ The baseline migration creates immutable triggers for source/evidence/canon/rela
 |---|---|
 | Configuration | providers, models, routes, credential references, runtime settings |
 | Run kernel | runs, targets, steps, attempts, checkpoints, outbox events |
-| Workspace | leads, gaps, proposals, audits, summaries, tool events |
+| Workspace | leads, gaps, proposals, audits, summaries, tool events, reusable fragment publications |
+| Wiki acquisition | qualified profiles, cached same-host sitemap inventory pages, per-workspace page queues |
 | Provenance/canon | sources, revisions, fragments, nodes, relationships, citations |
 
 `backend/app/v2/models.py` is the authoritative schema.

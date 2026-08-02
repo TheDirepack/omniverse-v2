@@ -35,6 +35,8 @@ from app.v2.contracts import (
     TimelineEventContract,
     TimelineScope,
 )
+from app.v2.domain import StepKind
+from app.v2.workflow import PROMPTS
 
 
 def scope() -> ResearchScope:
@@ -113,6 +115,59 @@ def test_planner_evidence_and_gap_contracts_are_domain_free() -> None:
     assert "domain" not in EvidenceFragmentContract.model_fields
     assert "domain" not in ResearchGap.model_fields
     assert "missing_indicator" not in ResearchGap.model_fields
+
+
+@pytest.mark.unit
+def test_planner_allows_eight_total_scout_slots() -> None:
+    output = PlannerOutput(
+        questions=(
+            PlanQuestion(
+                id="q-scout-limit",
+                priority=1,
+                question="What is the source limit?",
+                queries=tuple(f"source limit {index}" for index in range(8)),
+                source_budget=1,
+                stop_conditions=("eight sources considered",),
+            ),
+        )
+    )
+
+    assert len(output.questions[0].queries) * output.questions[0].source_budget == 8
+
+
+@pytest.mark.unit
+def test_planner_rejects_more_than_eight_total_scout_slots() -> None:
+    with pytest.raises(ValidationError, match="planned scout slots exceed 8"):
+        PlannerOutput(
+            questions=(
+                PlanQuestion(
+                    id="q-scout-limit",
+                    priority=1,
+                    question="What is the source limit?",
+                    queries=tuple(f"source limit {index}" for index in range(9)),
+                    source_budget=1,
+                    stop_conditions=("eight sources considered",),
+                ),
+            )
+        )
+
+
+@pytest.mark.unit
+def test_plan_question_rejects_source_budget_above_eight() -> None:
+    with pytest.raises(ValidationError, match="less than or equal to 8"):
+        PlanQuestion(
+            id="q-scout-limit",
+            priority=1,
+            question="What is the source limit?",
+            queries=("source limit",),
+            source_budget=100,
+            stop_conditions=("eight sources considered",),
+        )
+
+
+@pytest.mark.unit
+def test_planner_prompt_limits_total_candidate_slots() -> None:
+    assert "maximum total of 8 candidate slots" in PROMPTS[StepKind.PLAN]
 
 
 @pytest.mark.unit

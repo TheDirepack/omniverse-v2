@@ -42,6 +42,13 @@ class EvidenceItem:
     extract: str
     priority: int
     contradiction: bool = False
+    support_role: str = "SUPPORTS"
+    world_id: str = ""
+    subject_ids: tuple[str, ...] = ()
+    continuity: str = "unspecified"
+    era_or_timepoint: str = "unspecified"
+    branch_id: str = "main"
+    conditions: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)

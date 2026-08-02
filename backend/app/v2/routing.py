@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta, timezone
 from time import monotonic
+from typing import Protocol
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -31,6 +33,7 @@ from app.v2.providers import (
     OpenRouterAdapter,
     ProviderAdapter,
     ProviderError,
+    StructuredOutputValidationError,
 )
 
 
@@ -41,6 +44,15 @@ class RoutingRequirements:
     text: bool = True
     input_tokens: int = 0
     output_tokens: int = 0
+
+
+ResponseRetry = Callable[[ModelRequest], Awaitable[ModelResponse]]
+
+
+class ResponseValidator(Protocol):
+    async def __call__(
+        self, response: ModelResponse, retry: ResponseRetry, /
+    ) -> ModelResponse: ...
 
 
 def effective_input_window(
@@ -154,6 +166,75 @@ class ProviderRouter:
             key=lambda item: (item[1].selection_count / item[0].weight, item[0].id),
         )
 
+    def _retry_for_candidate(
+        self,
+        adapter: ProviderAdapter,
+        model_name: str,
+        opaque_ref: str,
+        *,
+        attempt_data: dict[str, object],
+        provider_id: str,
+        correlation: dict[str, str | int | None],
+    ) -> ResponseRetry:
+        async def retry(retry_request: ModelRequest) -> ModelResponse:
+            repair_data = {**attempt_data, "repair": True}
+            self._log(
+                "provider.attempt.started",
+                "Provider attempt started",
+                data=repair_data,
+                provider_id=provider_id,
+                model_id=model_name,
+                **correlation,
+            )
+            started = monotonic()
+            try:
+                result = await adapter.complete(
+                    retry_request.model_copy(update={"model": model_name}),
+                    self.credentials.store.resolve(opaque_ref),
+                )
+            except ProviderError as error:
+                retryable = error.error_class in {
+                    ErrorClass.AUTH,
+                    ErrorClass.RATE_LIMIT,
+                    ErrorClass.TRANSIENT,
+                }
+                self._log(
+                    "provider.attempt.failed",
+                    "Provider attempt failed",
+                    level="WARNING" if retryable else "ERROR",
+                    data={
+                        **repair_data,
+                        "duration_ms": (monotonic() - started) * 1000,
+                        "error_class": error.error_class.value,
+                        "error_type": type(error).__name__,
+                        "error_message": str(error),
+                        "status": error.status,
+                        "retryable": retryable,
+                        "retry_after": error.retry_after,
+                    },
+                    provider_id=provider_id,
+                    model_id=model_name,
+                    **correlation,
+                )
+                raise
+            self._log(
+                "provider.attempt.succeeded",
+                "Provider attempt succeeded",
+                data={
+                    **repair_data,
+                    "duration_ms": (monotonic() - started) * 1000,
+                    "usage": result.usage.model_dump(mode="json"),
+                    "finish_reason": result.finish_reason,
+                    "response_id": result.response_id,
+                },
+                provider_id=provider_id,
+                model_id=model_name,
+                **correlation,
+            )
+            return result
+
+        return retry
+
     async def complete(
         self,
         task: str,
@@ -166,6 +247,7 @@ class ProviderRouter:
         world_id: str | None = None,
         attempt_number: int | None = None,
         step_kind: str | None = None,
+        response_validator: ResponseValidator | None = None,
     ) -> ModelResponse:
         correlation = {
             "run_id": run_id,
@@ -178,6 +260,8 @@ class ProviderRouter:
         now = self.clock()
         last_retryable: ProviderError | None = None
         terminal_error: ProviderError | None = None
+        unavailable_credential_ids: set[str] = set()
+        unavailable_candidate_executions: set[tuple[str, str]] = set()
         with Session(self.engine) as session, session.begin():
             self.credentials.ensure_persisted(session)
         with Session(self.engine) as session:
@@ -227,6 +311,7 @@ class ProviderRouter:
                     snapshots.append(
                         (
                             candidate.id,
+                            model.id,
                             model.model_name,
                             model.context_window,
                             model.output_limit,
@@ -251,6 +336,7 @@ class ProviderRouter:
         )
         for (
             candidate_id,
+            provider_model_id,
             model_name,
             context_window,
             output_limit,
@@ -263,6 +349,23 @@ class ProviderRouter:
             credential_refs,
         ) in snapshots:
             candidate_retryable: ProviderError | None = None
+            if (
+                candidate_id,
+                provider_model_id,
+            ) in unavailable_candidate_executions:
+                self._log(
+                    "route.candidate.skipped",
+                    "Candidate skipped",
+                    data={
+                        "candidate_id": candidate_id,
+                        "provider_id": provider_id,
+                        "model_id": model_name,
+                        "provider_model_id": provider_model_id,
+                        "reason": "STRUCTURED_OUTPUT_INVALID",
+                    },
+                    **correlation,
+                )
+                continue
             if requirements.tools and not supports_tools:
                 self._log(
                     "route.candidate.skipped",
@@ -353,6 +456,8 @@ class ProviderRouter:
                 )
                 continue
             for credential_id, opaque_ref in credential_refs:
+                if credential_id in unavailable_credential_ids:
+                    continue
                 with Session(self.engine) as session, session.begin():
                     health = self.credential_health(session, credential_id)
                     health.selection_count += 1
@@ -364,6 +469,7 @@ class ProviderRouter:
                     "provider_id": provider_id,
                     "provider_kind": provider_kind,
                     "model_id": model_name,
+                    "provider_model_id": provider_model_id,
                 }
                 self._log(
                     "provider.attempt.started",
@@ -374,10 +480,38 @@ class ProviderRouter:
                     **correlation,
                 )
                 started = monotonic()
+                primary_response_received = False
                 try:
                     result = await adapter.complete(
                         routed_request, self.credentials.store.resolve(opaque_ref)
                     )
+                    primary_response_received = True
+                    self._log(
+                        "provider.attempt.succeeded",
+                        "Provider attempt succeeded",
+                        data={
+                            **attempt_data,
+                            "duration_ms": (monotonic() - started) * 1000,
+                            "usage": result.usage.model_dump(mode="json"),
+                            "finish_reason": result.finish_reason,
+                            "response_id": result.response_id,
+                        },
+                        provider_id=provider_id,
+                        model_id=model_name,
+                        **correlation,
+                    )
+                    if response_validator is not None:
+                        result = await response_validator(
+                            result,
+                            self._retry_for_candidate(
+                                adapter,
+                                model_name,
+                                opaque_ref,
+                                attempt_data=attempt_data,
+                                provider_id=provider_id,
+                                correlation=correlation,
+                            ),
+                        )
                 except ProviderError as error:
                     retryable = error.error_class in {
                         ErrorClass.AUTH,
@@ -386,6 +520,7 @@ class ProviderRouter:
                     }
                     failure_data = {
                         **attempt_data,
+                        **({"repair": True} if primary_response_received else {}),
                         "duration_ms": (monotonic() - started) * 1000,
                         "error_class": error.error_class.value,
                         "error_type": type(error).__name__,
@@ -394,15 +529,16 @@ class ProviderRouter:
                         "retryable": retryable,
                         "retry_after": error.retry_after,
                     }
-                    self._log(
-                        "provider.attempt.failed",
-                        "Provider attempt failed",
-                        level="WARNING" if retryable else "ERROR",
-                        data=failure_data,
-                        provider_id=provider_id,
-                        model_id=model_name,
-                        **correlation,
-                    )
+                    if not primary_response_received:
+                        self._log(
+                            "provider.attempt.failed",
+                            "Provider attempt failed",
+                            level="WARNING" if retryable else "ERROR",
+                            data=failure_data,
+                            provider_id=provider_id,
+                            model_id=model_name,
+                            **correlation,
+                        )
                     with Session(self.engine) as session, session.begin():
                         health = self.credential_health(session, credential_id)
                         if error.error_class is ErrorClass.AUTH:
@@ -418,6 +554,8 @@ class ProviderRouter:
                             health.cooldown_until = now + timedelta(
                                 seconds=error.retry_after or 30
                             )
+                    if retryable:
+                        unavailable_credential_ids.add(credential_id)
                     if error.error_class is ErrorClass.AUTH:
                         self._log(
                             "provider.fallback",
@@ -428,6 +566,23 @@ class ProviderRouter:
                         )
                         continue
                     if error.error_class is ErrorClass.CAPABILITY:
+                        if isinstance(error, StructuredOutputValidationError):
+                            unavailable_candidate_executions.add(
+                                (candidate_id, provider_model_id)
+                            )
+                            with Session(self.engine) as session, session.begin():
+                                candidate_health = session.get(
+                                    CandidateHealth, candidate_id
+                                )
+                                if candidate_health is None:
+                                    candidate_health = CandidateHealth(
+                                        candidate_id=candidate_id, failure_count=0
+                                    )
+                                    session.add(candidate_health)
+                                candidate_health.failure_count += 1
+                                candidate_health.last_error_class = (
+                                    error.error_class.value
+                                )
                         last_retryable = error
                         self._log(
                             "provider.fallback",
@@ -458,19 +613,6 @@ class ProviderRouter:
                         health = self.credential_health(session, credential_id)
                         health.failure_count = 0
                         health.last_error_class = None
-                    self._log(
-                        "provider.attempt.succeeded",
-                        "Provider attempt succeeded",
-                        data={
-                            **attempt_data,
-                            "duration_ms": (monotonic() - started) * 1000,
-                            "usage": result.usage.model_dump(mode="json"),
-                            "response_id": result.response_id,
-                        },
-                        provider_id=provider_id,
-                        model_id=model_name,
-                        **correlation,
-                    )
                     return result
             if candidate_retryable is not None:
                 with Session(self.engine) as session, session.begin():

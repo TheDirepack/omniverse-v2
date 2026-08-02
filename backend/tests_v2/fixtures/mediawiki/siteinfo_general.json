@@ -1,0 +1,185 @@
+{
+  "batchcomplete": "",
+  "query": {
+    "general": {
+      "allcentralidlookupproviders": [
+        "CentralAuth",
+        "local"
+      ],
+      "articlepath": "/wiki/$1",
+      "base": "https://www.mediawiki.org/wiki/MediaWiki",
+      "case": "first-letter",
+      "categorycollation": "uca-default",
+      "centralidlookupprovider": "CentralAuth",
+      "citeresponsivereferences": "",
+      "dbtype": "mysql",
+      "dbversion": "10.11.16-MariaDB-log",
+      "extensiondistributor": {
+        "list": "",
+        "snapshots": [
+          "master",
+          "REL1_46",
+          "REL1_45",
+          "REL1_44",
+          "REL1_43"
+        ]
+      },
+      "fallback": [],
+      "fallback8bitEncoding": "windows-1252",
+      "favicon": "https://www.mediawiki.org/static/favicon/mediawiki.ico",
+      "galleryoptions": {
+        "captionLength": "",
+        "imageHeight": 120,
+        "imageWidth": 120,
+        "imagesPerRow": 0,
+        "mode": "traditional",
+        "showBytes": "",
+        "showDimensions": ""
+      },
+      "generator": "MediaWiki 1.47.0-wmf.13",
+      "git-branch": "wmf/1.47.0-wmf.13",
+      "git-hash": "c0a9c3285d918e3987dd3d973731e6f54389c4ac",
+      "imagelimits": [
+        {
+          "height": 240,
+          "width": 320
+        },
+        {
+          "height": 480,
+          "width": 640
+        },
+        {
+          "height": 600,
+          "width": 800
+        },
+        {
+          "height": 768,
+          "width": 1024
+        },
+        {
+          "height": 1024,
+          "width": 1280
+        },
+        {
+          "height": 2048,
+          "width": 2560
+        }
+      ],
+      "interwikimagic": "",
+      "invalidusernamechars": "@:>=",
+      "lang": "en",
+      "langconversion": "",
+      "legaltitlechars": " %!\"$&'()*,\\-.\\/0-9:;=?@A-Z\\\\^_`a-z~\\x80-\\xFF+",
+      "linkconversion": "",
+      "linkprefix": "",
+      "linkprefixcharset": "",
+      "linktrail": "/^([a-z]+)(.*)$/sD",
+      "linter": {
+        "high": [
+          "deletable-table-tag",
+          "duplicate-ids",
+          "html5-misnesting",
+          "misc-tidy-replacement-issues",
+          "multiline-html-table-in-list",
+          "multiple-unclosed-formatting-tags",
+          "pwrap-bug-workaround",
+          "self-closed-tag",
+          "template-arg-in-extension-tag",
+          "tidy-font-bug",
+          "tidy-whitespace-bug",
+          "unclosed-quotes-in-heading"
+        ],
+        "low": [
+          "empty-heading",
+          "missing-end-tag",
+          "missing-end-tag-in-heading",
+          "night-mode-unaware-background-color",
+          "obsolete-tag",
+          "pre-expansion",
+          "stripped-tag"
+        ],
+        "medium": [
+          "bogus-image-options",
+          "fostered",
+          "misnested-tag",
+          "multi-colon-escape",
+          "wikilink-in-extlink"
+        ]
+      },
+      "logo": "//www.mediawiki.org/static/images/project-logos/mediawikiwiki.png",
+      "magiclinks": {
+        "ISBN": "",
+        "PMID": "",
+        "RFC": ""
+      },
+      "mainpage": "MediaWiki",
+      "max-page-id": 2454209,
+      "maxarticlesize": 2097152,
+      "maxuploadsize": 5368709120,
+      "minuploadchunksize": 1024,
+      "misermode": "",
+      "mobileserver": "https://www.mediawiki.org",
+      "nofollowdomainexceptions": [
+        "mediawiki.org",
+        "wikibooks.org",
+        "wikimedia.com",
+        "wikimedia.org",
+        "wikinews.org",
+        "wikipedia.org",
+        "wikiquote.org",
+        "wikisource.org",
+        "wikiversity.org",
+        "wiktionary.org",
+        "wikivoyage.org",
+        "wikidata.org",
+        "wikifunctions.org",
+        "tools.wmflabs.org",
+        "toolforge.org",
+        "etherpad.wmflabs.org"
+      ],
+      "nofollowlinks": "",
+      "nofollownsexceptions": [],
+      "pageviewservice-supported-metrics": {
+        "mostviewed": {
+          "pageviews": ""
+        },
+        "pageviews": {
+          "pageviews": ""
+        },
+        "siteviews": {
+          "pageviews": "",
+          "uniques": ""
+        }
+      },
+      "phpsapi": "fpm-fcgi",
+      "phpversion": "8.3.32",
+      "readinglists-config": {
+        "deletedRetentionDays": 30,
+        "maxEntriesPerList": 5000,
+        "maxListsPerUser": 100
+      },
+      "script": "/w/index.php",
+      "scriptpath": "/w",
+      "server": "//www.mediawiki.org",
+      "servername": "www.mediawiki.org",
+      "sitename": "MediaWiki",
+      "thumblimits": [
+        180,
+        250,
+        400
+      ],
+      "time": "2026-08-02T15:35:29Z",
+      "timeoffset": 0,
+      "timezone": "UTC",
+      "titleconversion": "",
+      "uploadsenabled": "",
+      "variantarticlepath": false,
+      "wikiid": "mediawikiwiki",
+      "wmf-config": {
+        "wmfEtcdLastModifiedIndex": 3871692,
+        "wmfMasterDatacenter": "eqiad"
+      },
+      "writeapi": ""
+    }
+  }
+}

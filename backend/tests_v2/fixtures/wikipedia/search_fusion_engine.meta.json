@@ -1,0 +1,8 @@
+{
+  "bytes": 2318,
+  "note": "stable reference snapshot; refresh via a --slow/--live test",
+  "provider": "wikipedia",
+  "sample": "search_fusion_engine",
+  "sha256": "5b3f8e1260dd4a83874082e13c47bdf3c4d17f38f0a5985de59321c0116f29d0",
+  "source_url": "https://en.wikipedia.org/w/api.php?action=query&list=search&format=json&srsearch=fusion%20engine&srlimit=5"
+}

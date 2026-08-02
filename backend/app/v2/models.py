@@ -202,6 +202,115 @@ class ResearchWorkspace(Base):
     __mapper_args__: ClassVar[dict[str, object]] = {"version_id_col": version_id}
 
 
+class WikiProfile(Base):
+    __tablename__ = "wiki_profile"
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    world_id: Mapped[str] = mapped_column(ForeignKey("world.id"), nullable=False)
+    continuity: Mapped[str] = mapped_column(String, nullable=False)
+    era_or_timepoint: Mapped[str] = mapped_column(String, nullable=False)
+    branch_id: Mapped[str] = mapped_column(String, nullable=False)
+    conditions_key: Mapped[str] = mapped_column(String, nullable=False)
+    canonical_url: Mapped[str] = mapped_column(String, nullable=False)
+    sitemap_url: Mapped[str] = mapped_column(String, nullable=False)
+    source_class: Mapped[str] = mapped_column(
+        String, nullable=False, default="SECONDARY"
+    )
+    publisher: Mapped[str | None] = mapped_column(String)
+    lineage_id: Mapped[str | None] = mapped_column(String)
+    qualified_at: Mapped[datetime] = mapped_column(UTCDateTime(), nullable=False)
+    inventory_fetched_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    __table_args__ = (
+        UniqueConstraint(
+            "world_id",
+            "continuity",
+            "era_or_timepoint",
+            "branch_id",
+            "conditions_key",
+            name="uq_wiki_profile_scope",
+        ),
+    )
+
+
+class WikiInventoryPage(Base):
+    __tablename__ = "wiki_inventory_page"
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    profile_id: Mapped[str] = mapped_column(
+        ForeignKey("wiki_profile.id"), nullable=False
+    )
+    canonical_url: Mapped[str] = mapped_column(String, nullable=False)
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    aliases_json: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    section_terms_json: Mapped[list[str]] = mapped_column(
+        JSON, nullable=False, default=list
+    )
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    last_modified: Mapped[str | None] = mapped_column(String)
+    indexed_at: Mapped[datetime] = mapped_column(
+        UTCDateTime(), default=utcnow, nullable=False
+    )
+    __table_args__ = (
+        UniqueConstraint(
+            "profile_id",
+            "canonical_url",
+            name="uq_wiki_inventory_page_profile_url",
+        ),
+        Index("ix_wiki_inventory_page_profile_active", "profile_id", "active"),
+    )
+
+
+class WikiPageQueue(Base):
+    __tablename__ = "wiki_page_queue"
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    workspace_id: Mapped[str] = mapped_column(
+        ForeignKey("research_workspace.id"), nullable=False
+    )
+    inventory_page_id: Mapped[str] = mapped_column(
+        ForeignKey("wiki_inventory_page.id"), nullable=False
+    )
+    question_ids_json: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    priority: Mapped[int] = mapped_column(Integer, nullable=False)
+    score: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String, nullable=False, default="PENDING")
+    selected_at: Mapped[datetime] = mapped_column(
+        UTCDateTime(), default=utcnow, nullable=False
+    )
+    __table_args__ = (
+        UniqueConstraint(
+            "workspace_id",
+            "inventory_page_id",
+            name="uq_wiki_page_queue_workspace_page",
+        ),
+        Index(
+            "ix_wiki_page_queue_workspace_status_order",
+            "workspace_id",
+            "status",
+            "priority",
+            "score",
+        ),
+    )
+
+
+class WorkspaceKnowledgePublication(Base):
+    __tablename__ = "workspace_knowledge_publication"
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    workspace_id: Mapped[str] = mapped_column(
+        ForeignKey("research_workspace.id"), nullable=False
+    )
+    evidence_fragment_id: Mapped[str] = mapped_column(
+        ForeignKey("evidence_fragment.id"), nullable=False
+    )
+    published_at: Mapped[datetime] = mapped_column(
+        UTCDateTime(), default=utcnow, nullable=False
+    )
+    __table_args__ = (
+        UniqueConstraint(
+            "workspace_id",
+            "evidence_fragment_id",
+            name="uq_workspace_knowledge_publication_fragment",
+        ),
+    )
+
+
 class SearchLead(Base):
     __tablename__ = "search_lead"
     id: Mapped[str] = mapped_column(String, primary_key=True)
@@ -531,6 +640,14 @@ class Provider(Base):
     __mapper_args__: ClassVar[dict[str, object]] = {"version_id_col": version_id}
 
 
+# Kinds that represent LLM providers surfaced in the model/routing settings.
+# Search providers (e.g. BRAVE_SEARCH) are a separate concern and must never be
+# offered as an LLM provider or as routing candidates.
+LLM_PROVIDER_KINDS: frozenset[str] = frozenset(
+    {"OPENAI", "GEMINI", "OPENAI_COMPATIBLE", "OPENROUTER", "ANTHROPIC"}
+)
+
+
 class ProviderModel(Base):
     __tablename__ = "provider_model"
     id: Mapped[str] = mapped_column(String, primary_key=True)
@@ -545,6 +662,13 @@ class ProviderModel(Base):
     supports_text: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # User-controlled display/route order within the owning provider on the
+    # models settings tab. Purely a UI ordering hint; it does not, on its own,
+    # alter strict Route/RouteCandidate positions (those are governed by
+    # Route.position / RouteCandidate.position).
+    sort_order: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
     __table_args__ = (UniqueConstraint("provider_id", "model_name"),)
 
 

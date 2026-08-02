@@ -453,6 +453,111 @@ def test_models_tab_offers_provider_sync_validation_action(
     assert "/settings/providers/qwen-local/sync-validate-models" in tab.text
 
 
+def test_brave_search_provider_is_not_surfaced_as_llm_provider(
+    diagnostics_client: TestClient,
+) -> None:
+    runtime = diagnostics_client.app.state.runtime
+    with Session(runtime.engine) as session, session.begin():
+        session.add(Provider(id="brave-search", kind="BRAVE_SEARCH", active=True))
+        session.add(Provider(id="llm-provider", kind="OPENAI", active=True))
+        session.add(
+            ProviderModel(
+                id="llm-model",
+                provider_id="llm-provider",
+                model_name="llm-model",
+                supports_text=True,
+                active=True,
+            )
+        )
+
+    models_tab = diagnostics_client.get("/settings/tab/models")
+    providers_tab = diagnostics_client.get("/settings/tab/providers")
+
+    assert "brave-search" not in models_tab.text
+    assert "BRAVE_SEARCH" not in models_tab.text
+    assert "llm-provider" in models_tab.text
+    assert "brave-search" not in providers_tab.text
+    assert "llm-provider" in providers_tab.text
+
+    general = diagnostics_client.get("/settings/tab/general")
+    assert 'name="brave_search_api_key"' in general.text
+
+    stored = diagnostics_client.post(
+        "/settings/brave-search", data={"brave_search_api_key": "brave-secret-2"}
+    )
+    assert stored.status_code == 200
+    with Session(runtime.engine) as session:
+        credential = session.scalar(
+            __import__("sqlalchemy").select(CredentialRef).where(
+                CredentialRef.provider_id == "brave-search"
+            )
+        )
+    assert credential is not None
+
+
+def test_models_move_renders_user_defined_display_order(
+    diagnostics_client: TestClient,
+) -> None:
+    runtime = diagnostics_client.app.state.runtime
+    with Session(runtime.engine) as session, session.begin():
+        session.add_all(
+            [
+                ProviderModel(
+                    id="m:0",
+                    provider_id="qwen-local",
+                    model_name="model-0",
+                    sort_order=1,
+                    supports_text=True,
+                    active=True,
+                ),
+                ProviderModel(
+                    id="m:1",
+                    provider_id="qwen-local",
+                    model_name="model-1",
+                    sort_order=2,
+                    supports_text=True,
+                    active=True,
+                ),
+                ProviderModel(
+                    id="m:2",
+                    provider_id="qwen-local",
+                    model_name="model-2",
+                    sort_order=3,
+                    supports_text=True,
+                    active=True,
+                ),
+            ]
+        )
+
+    def ordered() -> list[str]:
+        with Session(runtime.engine) as session:
+            return list(
+                session.scalars(
+                    __import__("sqlalchemy").select(ProviderModel.id)
+                    .where(ProviderModel.provider_id == "qwen-local")
+                    .order_by(ProviderModel.sort_order, ProviderModel.id)
+                )
+            )
+
+    tab = diagnostics_client.get("/settings/tab/models")
+    assert 'hx-post="/settings/models/m:2/move"' in tab.text
+
+    moved = diagnostics_client.post(
+        "/settings/models/m:2/move", data={"direction": "up"}
+    )
+    assert moved.status_code == 200
+    # m:2 moves above m:1; the seeded qwen model remains anchored at the top.
+    ids = ordered()
+    assert ids.index("m:2") < ids.index("m:1")
+    assert ids[0].startswith("qwen-local:")
+
+    first = diagnostics_client.post(
+        "/settings/models/m:0/move", data={"direction": "down"}
+    )
+    assert first.status_code == 200
+    assert ordered().index("m:0") > ordered().index("m:2")
+
+
 def test_provider_sync_validation_prunes_only_model_specific_failures(
     diagnostics_client: TestClient,
 ) -> None:

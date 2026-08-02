@@ -9,7 +9,7 @@ import ipaddress
 import json
 import socket
 from contextlib import suppress
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta, timezone
 from io import BytesIO
 from pathlib import Path
@@ -24,6 +24,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.v2.blobs import BlobStore
+from app.v2.config import cache_ttl_seconds
 from app.v2.logging import redact
 from app.v2.models import AcquisitionCache, Source, SourceRevision, ToolEvent
 from app.v2.preprocessing import PreprocessingStatus, preprocess_document
@@ -47,7 +48,9 @@ class AcquisitionPolicy:
     allowed_content_types: tuple[str, ...] = (
         "text/plain",
         "text/html",
+        "text/xml",
         "application/xhtml+xml",
+        "application/xml",
         "application/json",
         "application/pdf",
         "image/jpeg",
@@ -55,7 +58,7 @@ class AcquisitionPolicy:
         "image/tiff",
         "image/webp",
     )
-    freshness_seconds: int = 3_600
+    freshness_seconds: int = field(default_factory=cache_ttl_seconds)
     allow_private: bool = False
 
 
@@ -1090,19 +1093,26 @@ class AcquisitionService:
         deterministic_blob_hash = self.blobs.put(derivative_bytes)
 
         if not authoritative_passages:
+            reformat_input = deterministic.cleaned_text
             readability_text = ""
             readability_blob_hash = None
             preprocessing_status = "NOT_RUN"
             preprocessing_detail = "no relevant deterministic passage"
             used_fallback = True
         elif self.preprocessor is None:
+            reformat_input = deterministic.cleaned_text
             readability_text = authoritative_text
             readability_blob_hash = self.blobs.put(readability_text.encode("utf-8"))
             preprocessing_status = PreprocessingStatus.DISABLED.value
             preprocessing_detail = "preprocessor not configured"
             used_fallback = True
         else:
-            model_result = await self.preprocessor.reformat(authoritative_text)
+            # Reformat the ENTIRE cleaned document, not only the selected
+            # passages. MiniCPM is a readability aid: it must never collapse a
+            # low-value page down to a single title passage and silently drop
+            # the rest of the usable content.
+            reformat_input = deterministic.cleaned_text
+            model_result = await self.preprocessor.reformat(reformat_input)
             readability_text = model_result.text
             readability_blob_hash = self.blobs.put(readability_text.encode("utf-8"))
             preprocessing_status = model_result.status.value
@@ -1125,7 +1135,7 @@ class AcquisitionService:
             "transform": "readability-reformat-v1",
             "model": getattr(self.preprocessor, "model", None),
             "input_blob_hash": deterministic_blob_hash,
-            "input_sha256": hashlib.sha256(authoritative_text.encode()).hexdigest(),
+            "input_sha256": hashlib.sha256(reformat_input.encode()).hexdigest(),
             "blob_hash": readability_blob_hash,
             "output_sha256": (
                 hashlib.sha256(readability_text.encode()).hexdigest()

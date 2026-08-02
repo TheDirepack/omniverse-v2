@@ -1,4 +1,5 @@
 <h2 class="text-xs font-bold uppercase tracking-widest mb-2">Models and capabilities</h2>
+<p class="mb-3 text-gray-500">Order within each provider is user-controlled. Reordering the list does <strong>not</strong> change strict route fallback positions on its own; route order is fixed only by explicit route slots in the Routes tab. When no explicit route slot exists, the model list order is used as the fallback order.</p>
 {% for provider in settings.providers %}
 <section class="mb-4 border border-gray-200 dark:border-gray-800 p-3 text-xs">
     <div class="mb-2 flex flex-wrap items-center justify-between gap-2">
@@ -14,6 +15,7 @@
     <table class="w-full text-xs">
         <thead>
             <tr class="border-b text-gray-500 text-left">
+                <th class="p-1">Order</th>
                 <th class="p-1">Model ID</th>
                 <th class="p-1">Name</th>
                 <th class="p-1">Context Window</th>
@@ -27,6 +29,11 @@
         <tbody>
             {% for model in provider.models %}
             <tr class="border-b">
+                <td class="p-2 whitespace-nowrap">
+                    <span class="mr-1 text-gray-500">#{{ loop.index }}</span>
+                    <button class="text-blue-600 hover:underline" title="Move up" hx-post="/settings/models/{{ model.id }}/move" hx-vals='{"direction":"up"}' hx-target="#settings-content">↑</button>
+                    <button class="text-blue-600 hover:underline" title="Move down" hx-post="/settings/models/{{ model.id }}/move" hx-vals='{"direction":"down"}' hx-target="#settings-content">↓</button>
+                </td>
                 <td class="p-2 font-mono font-bold"><code>{{ model.id }}</code></td>
                 <td>{{ model.name }}</td>
                 <td>{{ model.context_window or 'Default' }}</td>

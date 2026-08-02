@@ -1,0 +1,181 @@
+# Focused TDD proof for long content caching and full-document MiniCPM reformat.
+# No external network: client fakes only, never run.sh. ruff: noqa: ARG002
+
+from __future__ import annotations
+
+from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
+
+import httpx
+import pytest
+
+from app.v2.acquisition import AcquisitionPolicy, AcquisitionService, HttpResponse
+from app.v2.blobs import BlobStore
+from app.v2.config import V2Config
+from app.v2.db import bootstrap_schema, create_sqlite_engine
+from app.v2.preprocessing import (
+    MiniCPMPreprocessor,
+    ModelPreprocessResult,
+    PreprocessingStatus,
+    preprocess_document,
+)
+from app.v2.search import CachedFallbackSearch
+from app.v2.wiki import WikiResearchFoundation
+
+WEEK = 7 * 24 * 3600
+
+
+class Resolver:
+    def __init__(self, values: dict[str, tuple[str, ...]]) -> None:
+        self.values = values
+
+    async def resolve(self, host: str) -> tuple[str, ...]:
+        return self.values[host]
+
+
+class Transport:
+    def __init__(self, responses: list[HttpResponse]) -> None:
+        self.responses = responses
+
+    async def get(
+        self, url: str, *, timeout_seconds: float, max_bytes: int
+    ) -> HttpResponse:
+        return self.responses.pop(0)
+
+
+# --------------------------------------------------------------------------- #
+# Requirement 1: MiniCPM reformat and preprocessing must NOT drop late content.
+# --------------------------------------------------------------------------- #
+
+def test_cleaned_text_keeps_entry_beyond_the_selected_view() -> None:
+    lines = [f"Entry {i:02d}: ordinary source detail {i}." for i in range(1, 21)]
+    lines[-1] = "Xenolithic mausoleum hoard cypher 9144 Beta."
+    source = "\n\n".join(lines)
+
+    doc = preprocess_document(source, "text/plain")
+    cleaned = doc.cleaned_text
+    selected_text = "\n\n".join(p.text for p in doc.selected_passages)
+
+    assert "Xenolithic mausoleum hoard cypher 9144" in cleaned
+    assert "Xenolithic mausoleum hoard cypher 9144" not in selected_text
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_reformat_input_is_full_document_not_selected_passages(
+    isolated_paths,
+) -> None:
+    """Acquisition must feed MiniCPM the whole cleaned document rather than the
+    12 selected passages a low-value/title-only view would collapse to."""
+
+    paragraphs = "".join(
+        f"<p>Entry {i:02d}: ordinary source detail {i}.</p>" for i in range(1, 21)
+    )
+    raw = (
+        f"<html><body>{paragraphs}<p>"
+        f"Reserve spine nexus 9144 terminal.</p></body></html>"
+    ).encode()
+    engine = create_sqlite_engine(isolated_paths["database"])
+    bootstrap_schema(engine)
+
+    calls: list[str] = []
+
+    class RecordingPreprocessor:
+        async def reformat(self, text: str) -> ModelPreprocessResult:
+            calls.append(text)
+            return ModelPreprocessResult(
+                text, PreprocessingStatus.APPLIED, "fake", False
+            )
+
+    service = AcquisitionService(
+        engine,
+        BlobStore(isolated_paths["blobs"]),
+        Resolver({"example.test": ("93.184.216.34",)}),
+        Transport(
+            [
+                HttpResponse(
+                    200, {}, raw, "text/html", "https://example.test/"
+                )
+            ]
+        ),
+        preprocessor=RecordingPreprocessor(),
+    )
+
+    result = await service.acquire(
+        "https://example.test/",
+        AcquisitionPolicy(),
+        idempotency_key="full-doc-reformat",
+    )
+
+    assert calls, "preprocessor.reformat was never invoked"
+    assert "Reserve spine nexus 9144 terminal" in calls[0], (
+        "reformat must observe the entire document, not a truncated view"
+    )
+    assert "Reserve spine nexus 9144 terminal" not in result.extract
+    engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_minicpm_reformat_preserves_entries_when_given_full_text() -> None:
+    original = (
+        "Overview record.\n"
+        "Entry A: gauss lance arrays 512.\n"
+        "Entry C archive vault cipher 2206."
+    )
+
+    async def respond(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200, json={"choices": [{"message": {"content": original}}]}
+        )
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(respond))
+    adapter = MiniCPMPreprocessor(client=client)
+    result = await adapter.reformat(original)
+    await client.aclose()
+
+    assert result.status is PreprocessingStatus.APPLIED
+    assert "Entry C archive vault cipher 2206" in result.text
+
+
+# --------------------------------------------------------------------------- #
+# Requirement 2: long (one-week default) content cache freshness, overridable.
+# --------------------------------------------------------------------------- #
+
+def test_cache_ttl_defaults_to_a_week_and_is_env_overridable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    defaults = V2Config.from_env()
+    assert defaults.cache_ttl_seconds == WEEK
+
+    monkeypatch.setenv("OMNIVERSE_V2_CACHE_TTL_SECONDS", "3600")
+    configured = V2Config.from_env()
+    assert configured.cache_ttl_seconds == 3600
+
+
+class StubSearchProvider:
+    async def search(self, query: str, *, limit: int):
+        return ()
+
+
+def test_acquisition_search_and_wiki_read_the_config_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Default (no override) is a week everywhere.
+    assert AcquisitionPolicy().freshness_seconds == WEEK
+    assert CachedFallbackSearch((StubSearchProvider(),)).ttl_seconds == WEEK
+
+    # The cache knob is overridable through the same env variable.
+    monkeypatch.setenv("OMNIVERSE_V2_CACHE_TTL_SECONDS", "120")
+    assert AcquisitionPolicy().freshness_seconds == 120
+    assert CachedFallbackSearch((StubSearchProvider(),)).ttl_seconds == 120
+
+    # Wiki inventory freshness is driven by the acquisition policy value.
+    now = datetime(2026, 1, 2, tzinfo=timezone.utc)
+    profile = SimpleNamespace(inventory_fetched_at=now)
+    freshness = AcquisitionPolicy().freshness_seconds
+    assert WikiResearchFoundation._is_fresh(
+        profile, now + timedelta(seconds=30), freshness
+    )
+    assert not WikiResearchFoundation._is_fresh(
+        profile, now + timedelta(seconds=300), freshness
+    )

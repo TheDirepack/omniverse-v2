@@ -1,0 +1,8 @@
+{
+  "bytes": 877,
+  "note": "stable reference snapshot; refresh via a --slow/--live test",
+  "provider": "wikipedia",
+  "sample": "page_extract",
+  "sha256": "8e515df700e9696f2a5483ff2d426042aa2deb940dcc7a2b1fed0fc304cc9a58",
+  "source_url": "REST_v1/page/summary/Matter"
+}

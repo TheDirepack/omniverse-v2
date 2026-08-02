@@ -40,4 +40,4 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    Base.metadata.drop_all(bind=op.get_bind(), checkfirst=False)
+    Base.metadata.drop_all(bind=op.get_bind(), checkfirst=True)

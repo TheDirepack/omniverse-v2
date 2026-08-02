@@ -13,7 +13,9 @@ INVENTORY -> PLAN -> SCOUT -> ACQUIRE -> EXTRACT -> SYNTHESIZE
 
 Successful steps create checkpoint and idempotency-effect records. Transient provider failures may retry. Provider, structured-output, and agent-output failures can produce partial outcomes. Cancellation occurs at a safe step boundary.
 
-Search leads are not evidence. Acquisition creates source revisions and deterministic targeted passages. Extraction must quote an allowed authoritative passage exactly. Synthesis attaches evidence by material field, and audit gates promotion to canon. The workflow rejects out-of-scope, unknown, lead-only, and incomplete evidence.
+Scout is wiki-first. When a world/scope lacks a qualified profile it performs at most one target-level `<world> wiki` discovery attempt for that workspace; it never derives open-web queries from planner questions. Qualification safely fetches a same-host sitemap, caches its page inventory for one hour by default, and queues deterministic title/alias/section-term matches. Relevant pending wiki pages defer external recovery; no recovery search occurs without an explicit configured policy. Models receive only the approved inventory/page-ID capability contract, never arbitrary browsing capability.
+
+Search leads are not evidence. Acquisition creates source revisions and deterministic targeted passages. Extraction must quote an allowed authoritative passage exactly. Useful non-title-only fragments are published as source-backed workspace research context, which later planning and synthesis can inspect but cannot cite unless the fragment is targeted for the current question. Synthesis attaches evidence by material field, and audit gates promotion to canon. The workflow rejects out-of-scope, unknown, lead-only, and incomplete evidence.
 
 Sources: `backend/app/v2/workflow.py`, `worker.py`, and `research_runs.py`.
 

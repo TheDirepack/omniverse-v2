@@ -46,6 +46,29 @@ def _str(name: str, default: str | None = None) -> str | None:
     return default if value is None else value
 
 
+# Content and inventory caches stay fresh for a week by default. Both
+# AcquisitionPolicy.freshness_seconds and CachedFallbackSearch.ttl_seconds read
+# this knob so acquisition, wiki inventory, and search stay aligned. Operators
+# can shorten it via OMNIVERSE_V2_CACHE_TTL_SECONDS without a code change.
+DEFAULT_CACHE_TTL_SECONDS = 7 * 24 * 3600
+
+
+def cache_ttl_seconds() -> int:
+    """Resolve the effective content-cache freshness in whole seconds.
+
+    Evaluated lazily so env/persistence overrides are honored at the moment an
+    AcquisitionPolicy or search cache is constructed rather than at import time.
+    """
+    value = os.environ.get("OMNIVERSE_V2_CACHE_TTL_SECONDS")
+    if value is None:
+        value = _PERSISTENCE.get("OMNIVERSE_V2_CACHE_TTL_SECONDS")
+    try:
+        parsed = int(value) if value is not None else DEFAULT_CACHE_TTL_SECONDS
+    except (TypeError, ValueError):
+        parsed = DEFAULT_CACHE_TTL_SECONDS
+    return parsed if parsed > 0 else DEFAULT_CACHE_TTL_SECONDS
+
+
 @dataclass(frozen=True, slots=True)
 class V2Config:
     database_path: Path
@@ -92,6 +115,7 @@ class V2Config:
     access_log_path: str = "logs/access.log"
     error_log_path: str = "logs/error.log"
     client_log_path: str = "logs/client.log"
+    cache_ttl_seconds: int = DEFAULT_CACHE_TTL_SECONDS
 
     @classmethod
     def from_env(cls) -> V2Config:
@@ -216,6 +240,7 @@ class V2Config:
             client_log_path=os.environ.get(
                 "OMNIVERSE_V2_CLIENT_LOG_PATH", "logs/client.log"
             ),
+            cache_ttl_seconds=cache_ttl_seconds(),
         )
 
     def validate(self) -> None:
@@ -231,6 +256,8 @@ class V2Config:
             raise ValueError("preprocessor timeout must be positive")
         if self.qwen_context_window <= 0:
             raise ValueError("Qwen context window must be positive")
+        if self.cache_ttl_seconds <= 0:
+            raise ValueError("cache_ttl_seconds must be positive")
         if self.require_loopback and self.bind_host not in {
             "127.0.0.1",
             "::1",

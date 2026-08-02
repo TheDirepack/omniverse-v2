@@ -1,5 +1,4 @@
 # Test exception text intentionally exercises redaction.
-# ruff: noqa: TRY003
 
 from __future__ import annotations
 

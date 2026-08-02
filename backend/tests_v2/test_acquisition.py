@@ -1,5 +1,4 @@
 # Injected fake interfaces intentionally ignore selected protocol arguments.
-# ruff: noqa: ARG002
 
 from __future__ import annotations
 
@@ -463,7 +462,13 @@ async def test_targeting_selects_only_matching_historical_section(
         "The old gate opened in 1897.",
     ]
     assert "Modern era" not in result.extract
-    assert preprocessor.calls == [result.extract]
+    # MiniCPM is a readability aid and must observe the ENTIRE cleaned
+    # document, not only the selected passages, so a low-value page never
+    # collapses to a title-only view.
+    assert len(preprocessor.calls) == 1
+    assert "Historical record" in preprocessor.calls[0]
+    assert "Modern era" in preprocessor.calls[0]
+    assert "The old gate opened in 1897." in preprocessor.calls[0]
     with Session(engine) as session:
         revision = session.get(SourceRevision, result.revision_id)
         metadata = revision.extraction_metadata_json

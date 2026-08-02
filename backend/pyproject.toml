@@ -15,6 +15,7 @@ dependencies = [
     "aiohttp>=3.14.1",
     "cloakbrowser",
     "beautifulsoup4",
+    "defusedxml>=0.7,<1",
     "pydantic-settings",
     "httpx2>=2.0.0",
     "httpx",
@@ -74,6 +75,9 @@ select = [
 
 [tool.ruff.lint.per-file-ignores]
 "backend/tests/*" = ["ARG", "TRY", "ERA", "PTH", "SLOT", "ASYNC"]
+"backend/tests_v2/*" = ["ARG", "TRY", "ERA", "PTH", "SLOT", "ASYNC"]
+"tests/*" = ["ARG", "TRY", "ERA", "PTH", "SLOT", "ASYNC"]
+"tests_v2/*" = ["ARG", "TRY", "ERA", "PTH", "SLOT", "ASYNC"]
 
 [tool.ruff.lint.flake8-pytest-style]
 parametrize-names-type = "list"

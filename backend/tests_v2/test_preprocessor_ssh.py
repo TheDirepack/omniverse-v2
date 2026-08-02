@@ -1,5 +1,4 @@
 # Test doubles intentionally accept the subprocess call signature.
-# ruff: noqa: ARG001, TRY003
 
 from __future__ import annotations
 

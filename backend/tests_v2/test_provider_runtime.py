@@ -1,5 +1,4 @@
 # Injected adapters intentionally ignore request data in routing-only tests.
-# ruff: noqa: ARG002
 
 from __future__ import annotations
 
@@ -10,11 +9,13 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.v2.credentials import CredentialService, JsonCredentialStore, redact
 from app.v2.db import bootstrap_schema, create_sqlite_engine
+from app.v2.gateway import StructuredModelGateway
 from app.v2.models import (
     CandidateHealth,
     CredentialHealth,
@@ -234,6 +235,76 @@ async def test_provider_candidate_expands_models_at_call_time_and_inherits_defau
     assert adapter.models == ["later-model"]
 
 
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_router_skips_credential_cooled_within_expanded_route(
+    isolated_paths: dict[str, Path],
+) -> None:
+    now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    engine = create_sqlite_engine(isolated_paths["database"])
+    bootstrap_schema(engine)
+    credentials = CredentialService(JsonCredentialStore(isolated_paths["credentials"]))
+    credential = credentials.add("p", "one", "key")
+    with Session(engine) as session, session.begin():
+        session.add(Provider(id="p", kind="OPENAI", base_url=None, active=True))
+        session.add_all(
+            [
+                ProviderModel(
+                    id="first-model",
+                    provider_id="p",
+                    model_name="first-model",
+                    context_window=50_000,
+                    output_limit=2_000,
+                    supports_text=True,
+                    active=True,
+                ),
+                ProviderModel(
+                    id="second-model",
+                    provider_id="p",
+                    model_name="second-model",
+                    context_window=50_000,
+                    output_limit=2_000,
+                    supports_text=True,
+                    active=True,
+                ),
+            ]
+        )
+        session.add(Route(id="route:DEFAULT", task="DEFAULT", position=0, active=True))
+        session.add(
+            RouteCandidate(
+                id="provider-slot",
+                route_id="route:DEFAULT",
+                provider_id="p",
+                model_id=None,
+                position=0,
+            )
+        )
+
+    class RateLimitedAdapter:
+        kind = AdapterKind.OPENAI
+
+        def __init__(self) -> None:
+            self.calls: list[tuple[str, str]] = []
+
+        async def complete(self, request: ModelRequest, credential_value: str):
+            self.calls.append((request.model, credential_value))
+            raise ProviderError(ErrorClass.RATE_LIMIT, "slow down", retry_after=60)
+
+    adapter = RateLimitedAdapter()
+    router = ProviderRouter(engine, credentials, {"p": adapter}, clock=lambda: now)
+
+    with pytest.raises(ProviderError) as caught:
+        await router.complete(
+            "research.plan", ModelRequest(model="", messages=()), RoutingRequirements()
+        )
+
+    assert caught.value.error_class is ErrorClass.RATE_LIMIT
+    assert adapter.calls == [("first-model", "key")]
+    with Session(engine) as session:
+        health = router.credential_health(session, credential.credential_id)
+        assert health.cooldown_until == now + timedelta(seconds=60)
+
+
 def seed_route(engine, credential_service: CredentialService) -> tuple[str, str]:
     c1 = credential_service.add("p", "one", "key-one")
     c2 = credential_service.add("p", "two", "key-two")
@@ -429,6 +500,201 @@ async def test_router_falls_back_after_capability_failure_without_health_penalty
         assert session.get(CandidateHealth, "first-candidate") is None
         health = session.scalars(select(CredentialHealth)).all()
         assert all(row.failure_count == 0 for row in health)
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_gateway_falls_back_after_invalid_structured_repair(
+    isolated_paths: dict[str, Path],
+) -> None:
+    class Output(BaseModel):
+        value: str
+
+    engine = create_sqlite_engine(isolated_paths["database"])
+    bootstrap_schema(engine)
+    credentials = CredentialService(JsonCredentialStore(isolated_paths["credentials"]))
+    credentials.add("first", "primary", "first-key")
+    credentials.add("second", "primary", "second-key")
+    with Session(engine) as session, session.begin():
+        session.add_all(
+            [
+                Provider(id="first", kind="OPENAI", active=True),
+                Provider(id="second", kind="OPENAI", active=True),
+                ProviderModel(
+                    id="first-model",
+                    provider_id="first",
+                    model_name="first-model",
+                    context_window=50_000,
+                    output_limit=8_000,
+                    supports_structured=True,
+                    active=True,
+                ),
+                ProviderModel(
+                    id="second-model",
+                    provider_id="second",
+                    model_name="second-model",
+                    context_window=50_000,
+                    output_limit=8_000,
+                    supports_structured=True,
+                    active=True,
+                ),
+                Route(id="structured-route", task="plan", position=0, active=True),
+                RouteCandidate(
+                    id="first-candidate",
+                    route_id="structured-route",
+                    model_id="first-model",
+                    position=0,
+                ),
+                RouteCandidate(
+                    id="second-candidate",
+                    route_id="structured-route",
+                    model_id="second-model",
+                    position=1,
+                ),
+            ]
+        )
+
+    class InvalidStructuredAdapter:
+        kind = AdapterKind.OPENAI
+
+        def __init__(self) -> None:
+            self.calls: list[str] = []
+
+        async def complete(
+            self, request: ModelRequest, _credential: str
+        ) -> ModelResponse:
+            self.calls.append(request.model)
+            return ModelResponse(
+                text="not json",
+                tool_calls=(),
+                usage=Usage(input_tokens=1, output_tokens=1, total_tokens=2),
+            )
+
+    class ValidStructuredAdapter:
+        kind = AdapterKind.OPENAI
+
+        def __init__(self) -> None:
+            self.calls: list[str] = []
+
+        async def complete(
+            self, request: ModelRequest, _credential: str
+        ) -> ModelResponse:
+            self.calls.append(request.model)
+            return ModelResponse(
+                text='{"value":"valid"}',
+                tool_calls=(),
+                usage=Usage(input_tokens=1, output_tokens=1, total_tokens=2),
+            )
+
+    invalid = InvalidStructuredAdapter()
+    valid = ValidStructuredAdapter()
+    result = await StructuredModelGateway(
+        engine,
+        ProviderRouter(engine, credentials, {"first": invalid, "second": valid}),
+    ).call(
+        run_id=None,
+        task="plan",
+        role_prompt="planner/v1",
+        payload={},
+        output_type=Output,
+    )
+
+    assert result.value == "valid"
+    assert invalid.calls == ["first-model", "first-model"]
+    assert valid.calls == ["second-model"]
+    with Session(engine) as session:
+        candidate_health = session.get(CandidateHealth, "first-candidate")
+        credential_health = session.scalars(select(CredentialHealth)).all()
+    assert candidate_health is not None
+    assert candidate_health.failure_count == 1
+    assert candidate_health.last_error_class == ErrorClass.CAPABILITY.value
+    assert candidate_health.cooldown_until is None
+    assert all(health.failure_count == 0 for health in credential_health)
+    assert all(health.last_error_class is None for health in credential_health)
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_gateway_falls_back_to_sibling_provider_model_after_invalid_repair(
+    isolated_paths: dict[str, Path],
+) -> None:
+    class Output(BaseModel):
+        value: str
+
+    engine = create_sqlite_engine(isolated_paths["database"])
+    bootstrap_schema(engine)
+    credentials = CredentialService(JsonCredentialStore(isolated_paths["credentials"]))
+    credentials.add("p", "primary", "key")
+    with Session(engine) as session, session.begin():
+        session.add_all(
+            [
+                Provider(id="p", kind="OPENAI", active=True),
+                ProviderModel(
+                    id="first-model-id",
+                    provider_id="p",
+                    model_name="first-model",
+                    context_window=50_000,
+                    output_limit=8_000,
+                    supports_structured=True,
+                    active=True,
+                ),
+                ProviderModel(
+                    id="second-model-id",
+                    provider_id="p",
+                    model_name="second-model",
+                    context_window=50_000,
+                    output_limit=8_000,
+                    supports_structured=True,
+                    active=True,
+                ),
+                Route(id="structured-route", task="plan", position=0, active=True),
+                RouteCandidate(
+                    id="provider-candidate",
+                    route_id="structured-route",
+                    provider_id="p",
+                    model_id=None,
+                    position=0,
+                ),
+            ]
+        )
+
+    class Adapter:
+        kind = AdapterKind.OPENAI
+
+        def __init__(self) -> None:
+            self.calls: list[str] = []
+
+        async def complete(
+            self, request: ModelRequest, _credential: str
+        ) -> ModelResponse:
+            self.calls.append(request.model)
+            text = (
+                "not json" if request.model == "first-model" else '{"value":"valid"}'
+            )
+            return ModelResponse(
+                text=text,
+                tool_calls=(),
+                usage=Usage(input_tokens=1, output_tokens=1, total_tokens=2),
+            )
+
+    adapter = Adapter()
+    result = await StructuredModelGateway(
+        engine, ProviderRouter(engine, credentials, {"p": adapter})
+    ).call(
+        run_id=None,
+        task="plan",
+        role_prompt="planner/v1",
+        payload={},
+        output_type=Output,
+    )
+
+    assert result.value == "valid"
+    assert adapter.calls == ["first-model", "first-model", "second-model"]
+    with Session(engine) as session:
+        health = session.get(CandidateHealth, "provider-candidate")
+    assert health is not None
+    assert health.failure_count == 1
+    assert health.last_error_class == ErrorClass.CAPABILITY.value
 
 
 @pytest.mark.asyncio

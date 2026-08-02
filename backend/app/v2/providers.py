@@ -47,6 +47,15 @@ class ProviderError(RuntimeError):
         self.error_type = error_type
 
 
+class StructuredOutputValidationError(ProviderError):
+    def __init__(self, task: str) -> None:
+        super().__init__(
+            ErrorClass.CAPABILITY,
+            f"invalid structured output for {task}",
+            error_type="structured_output_validation",
+        )
+
+
 class CircuitBreakerError(ProviderError):
     """Raised when circuit breaker is open."""
 

@@ -17,6 +17,7 @@ import httpx
 from bs4 import BeautifulSoup
 
 from app.v2.acquisition import AcquisitionPolicy, BrowserResult, canonicalize_url
+from app.v2.config import cache_ttl_seconds
 from app.v2.logging import redact
 from app.v2.preprocessing import preprocess_document
 
@@ -56,7 +57,7 @@ class CachedFallbackSearch:
         providers: tuple[SearchProvider, ...],
         *,
         final_providers: tuple[SearchProvider, ...] = (),
-        ttl_seconds: float = 300,
+        ttl_seconds: float | None = None,
         max_entries: int = 256,
         clock: Callable[[], float] = monotonic,
         shuffle_alternates: Callable[
@@ -66,6 +67,8 @@ class CachedFallbackSearch:
     ) -> None:
         if not providers:
             raise ValueError("at least one search provider is required")
+        if ttl_seconds is None:
+            ttl_seconds = cache_ttl_seconds()
         if ttl_seconds <= 0:
             raise ValueError("cache ttl_seconds must be positive")
         if max_entries <= 0:

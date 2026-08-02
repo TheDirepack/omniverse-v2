@@ -1,8 +1,8 @@
-# ruff: noqa: ARG002, TRY003
 
 from __future__ import annotations
 
 import pytest
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -18,7 +18,7 @@ from app.v2.contracts import PlannerOutput
 from app.v2.db import bootstrap_schema, create_sqlite_engine
 from app.v2.gateway import StructuredModelGateway
 from app.v2.models import ContextManifest, StructuredSummaryRevision
-from app.v2.providers import ModelResponse, Usage
+from app.v2.providers import ModelRequest, ModelResponse, Usage
 
 
 @pytest.mark.unit
@@ -164,3 +164,70 @@ async def test_gateway_accounts_for_entire_serialized_request(isolated_paths) ->
         router.requirements.input_tokens + router.requirements.output_tokens + 1_000
         <= 40_000
     )
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+async def test_repair_context_accounts_for_entire_serialized_request(
+    isolated_paths,
+) -> None:
+    class Output(BaseModel):
+        value: str
+
+    class Router:
+        calls = 0
+
+        async def complete(self, _task, _request, _requirements):
+            self.calls += 1
+            return ModelResponse(
+                text="not-json",
+                tool_calls=(),
+                usage=Usage(input_tokens=1, output_tokens=1, total_tokens=2),
+            )
+
+    schema = Output.model_json_schema()
+    messages = (
+        {"role": "system", "content": "x"},
+        {"role": "user", "content": '{"evidence": [], "task": {}}'},
+    )
+    original_request = ModelRequest(
+        model="routed",
+        messages=messages,
+        max_output_tokens=1,
+        structured_schema=schema,
+    )
+    repair_messages = (
+        *messages,
+        {"role": "assistant", "content": "not-json"},
+        {
+            "role": "user",
+            "content": "Return one JSON object matching the supplied schema. No prose.",
+        },
+    )
+    repaired_request = original_request.model_copy(
+        update={"messages": repair_messages}
+    )
+    context_window = estimate_tokens(original_request.model_dump(mode="json")) + 1_002
+    message_only_tokens = sum(
+        estimate_tokens(message["content"]) for message in repair_messages
+    )
+    assert message_only_tokens + 1_001 <= context_window
+    assert (
+        estimate_tokens(repaired_request.model_dump(mode="json")) + 1_001
+        > context_window
+    )
+
+    engine = create_sqlite_engine(isolated_paths["database"])
+    bootstrap_schema(engine)
+    router = Router()
+    with pytest.raises(ContextOverflowError, match="repair context"):
+        await StructuredModelGateway(engine, router).call(
+            run_id=None,
+            task="task",
+            role_prompt="x",
+            payload={},
+            output_type=Output,
+            context_window=context_window,
+            output_tokens=1,
+        )
+    assert router.calls == 1

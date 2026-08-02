@@ -132,6 +132,7 @@ async def test_gemini_inlines_and_sanitizes_planner_schema() -> None:
         "stop_conditions",
     }
     assert question["properties"]["source_budget"]["minimum"] == 1
+    assert question["properties"]["source_budget"]["maximum"] == 8
     await client.aclose()
 
 

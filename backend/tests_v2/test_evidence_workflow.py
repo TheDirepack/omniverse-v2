@@ -1,5 +1,5 @@
 # Injected fakes intentionally ignore protocol arguments.
-# ruff: noqa: ARG002, E501, TRY003
+# ruff: noqa: E501
 
 from __future__ import annotations
 
@@ -45,6 +45,7 @@ from app.v2.providers import ErrorClass, ModelResponse, ProviderError, Usage
 from app.v2.research_runs import ResearchRunKernel
 from app.v2.search import SearchBlockedError
 from app.v2.workflow import (
+    PROMPTS,
     ResearchWorkflow,
     _resolve_fragment_id,
     _scoped_model_id,
@@ -119,6 +120,20 @@ class FakeAcquisition:
         self.engine = engine
         self.blobs = blobs
         self.calls = 0
+
+    async def validate_url(self, url, policy):
+        return url
+
+    async def fetch_http(self, url, policy):
+        from app.v2.acquisition import HttpResponse
+
+        origin = url.split("/sitemap.xml", 1)[0]
+        body = (
+            "<urlset xmlns='http://www.sitemaps.org/schemas/sitemap/0.9'>"
+            f"<url><loc>{origin}/fusion</loc></url>"
+            "</urlset>"
+        ).encode()
+        return url, HttpResponse(200, {}, body, "application/xml", url)
 
     async def acquire(
         self,
@@ -408,6 +423,164 @@ def responses() -> dict[str, list[dict[str, object]]]:
 
 
 @pytest.mark.asyncio
+async def test_synthesis_receives_canonical_target_and_evidence_scopes(
+    workflow_parts,
+) -> None:
+    engine, blobs = workflow_parts
+
+    class ScopeBindingRouter(FakeRouter):
+        target_scope: dict[str, object]
+        evidence_context: list[dict[str, object]]
+
+        async def complete(self, task, request, requirements):
+            if task == "research.synthesize":
+                context = json.loads(request.messages[-1]["content"])
+                self.target_scope = context["task"]["scope"]
+                self.evidence_context = context["evidence"]
+                self.responses[task][0]["proposals"][0]["scope"] = dict(
+                    self.target_scope
+                )
+            return await super().complete(task, request, requirements)
+
+    values = responses()
+    for fragment in values["research.extract"][0]["fragments"]:
+        fragment["continuity"] = "fallout_nv"
+        fragment["conditions"] = ["base-game"]
+    router = ScopeBindingRouter(values)
+    kernel = ResearchRunKernel(engine)
+    run = kernel.create(
+        CreateResearchRun(
+            objective="Document fusion engine",
+            scope={"continuity": "fallout_nv", "conditions": ["base-game"]},
+            targets=(ResearchRunTargetInput(world_id="world-1"),),
+        ),
+        "synthesis-canonical-target-scope",
+    )
+
+    result = await ResearchWorkflow(
+        engine,
+        kernel,
+        router,
+        FakeSearch(),
+        FakeAcquisition(engine, blobs),
+    ).run(run.id, stop_after=StepKind.SYNTHESIZE)
+
+    assert router.target_scope == {
+        "world_id": "world-1",
+        "subject_ids": ["fusion-engine"],
+        "continuity": "fallout_nv",
+        "era_or_timepoint": "unspecified",
+        "conditions": ["base-game"],
+        "branch_id": "main",
+    }
+    assert {item["source_revision_id"] for item in router.evidence_context} == {
+        "revision-fusion"
+    }
+    assert {item["support_role"] for item in router.evidence_context} == {
+        "SUPPORTS",
+        "QUALIFIES",
+    }
+    assert all(item["scope"] == router.target_scope for item in router.evidence_context)
+    assert all("blob_hash" not in item for item in router.evidence_context)
+    synthesize = next(step for step in result.steps if step.kind is StepKind.SYNTHESIZE)
+    assert synthesize.status.value == "SUCCEEDED", synthesize.error
+
+
+@pytest.mark.asyncio
+async def test_out_of_scope_proposal_at_synthesize_proceeds_provisionally(
+    workflow_parts,
+) -> None:
+    # REQUIREMENT 1: canon is policed only at the final verification boundary.
+    # A proposal that leaves completed scope at SYNTHESIZE must not fail the step;
+    # it may proceed provisionally rather than be treated as a terminal error.
+    engine, blobs = workflow_parts
+    values = responses()
+    provisional_scope = dict(values["research.synthesize"][0]["proposals"][0]["scope"])
+    provisional_scope["continuity"] = "alt-continuity"
+    provisional_scope["era_or_timepoint"] = "different-era"
+    provisional_scope["branch_id"] = "alternate-branch"
+    provisional_scope["conditions"] = ["experimental"]
+    values["research.synthesize"][0]["proposals"][0]["scope"] = provisional_scope
+    kernel = ResearchRunKernel(engine)
+    run = kernel.create(command(), "provisional-synthesis")
+    result = await ResearchWorkflow(
+        engine,
+        kernel,
+        FakeRouter(values),
+        FakeSearch(),
+        FakeAcquisition(engine, blobs),
+    ).run(run.id, stop_after=StepKind.SYNTHESIZE)
+    synthesize = next(step for step in result.steps if step.kind is StepKind.SYNTHESIZE)
+    assert synthesize.status.value == "SUCCEEDED", synthesize.error
+
+
+@pytest.mark.asyncio
+async def test_integrate_rejection_is_pushed_back_as_actionable_gap(
+    workflow_parts,
+) -> None:
+    # REQUIREMENT 2: a proposal rejected at the final verification/integrate
+    # boundary must be pushed back for re-research (recorded gap, PARTIAL run),
+    # never silently succeed as a COMPLETE canon.
+    engine, blobs = workflow_parts
+    values = responses()
+    for decision in values["research.audit"][0]["decisions"]:
+        if decision["field_name"] == "effect":
+            decision["verdict"] = "REJECT"
+            decision["reason_code"] = "NOT_SUPPORTED_BY_CANON"
+    kernel = ResearchRunKernel(engine)
+    run = kernel.create(command(), "verify-reject-pushback")
+    result = await ResearchWorkflow(
+        engine,
+        kernel,
+        FakeRouter(values),
+        FakeSearch(),
+        FakeAcquisition(engine, blobs),
+        max_gap_loops=0,
+    ).run(run.id)
+
+    assert result.outcome.value == "PARTIAL"
+    with Session(engine) as session:
+        node_count = session.scalar(select(func.count()).select_from(CanonNode))
+    assert node_count == 0
+    gaps = ResearchQueryService(engine).gaps_conflicts(run.id)["gaps"]
+    assert any(gap["reason"] == "REJECTED_AT_VERIFY" for gap in gaps)
+
+
+@pytest.mark.asyncio
+async def test_planner_may_issue_generic_web_search(workflow_parts) -> None:
+    # REQUIREMENT 3: the planner must be allowed to issue generic web research
+    # while the wiki-first acquisition strategy is preserved.
+    engine, blobs = workflow_parts
+    plan = responses()["research.plan"][0]
+    router = FakeRouter({"research.plan": [plan]})
+    kernel = ResearchRunKernel(engine)
+    run = kernel.create(command(), "planner-generic-search")
+    await ResearchWorkflow(
+        engine,
+        kernel,
+        router,
+        FakeSearch(),
+        FakeAcquisition(engine, blobs),
+    ).run(run.id, stop_after=StepKind.PLAN)
+
+    assert "forbidden" not in PROMPTS[StepKind.PLAN].casefold()
+    assert "only use the supplied controlled capabilities" not in PROMPTS[
+        StepKind.PLAN
+    ].casefold()
+    payload = json.loads(router.requests[0].messages[-1]["content"])["task"]
+    capabilities = payload["research_capabilities"]
+    assert "forbidden" not in capabilities
+    assert any(
+        "web" in value.casefold() or "search" in value.casefold()
+        for value in capabilities.values()
+    )
+    assert any(
+        "wiki" in value.casefold() or "inventory" in value.casefold()
+        for value in capabilities.values()
+    )
+
+
+@pytest.mark.asyncio
 async def test_planner_uses_global_focus_scope_and_targeting_for_each_world(
     workflow_parts,
 ):
@@ -500,7 +673,7 @@ async def test_blank_focus_starts_with_prompt_only_breadth_guidance(workflow_par
 
 
 @pytest.mark.asyncio
-async def test_search_candidate_readability_preserves_identity_and_lead_status(
+async def test_qualified_inventory_preserves_lead_status_without_model_rewrite(
     workflow_parts,
 ):
     engine, blobs = workflow_parts
@@ -540,14 +713,14 @@ async def test_search_candidate_readability_preserves_identity_and_lead_status(
     assert lead.id
     assert lead.canonical_url == "https://example.test/fusion"
     assert lead.rank == 1
-    assert lead.title == "Readable: Fusion engine"
-    assert lead.snippet == "Readable: A lead, not evidence"
-    assert preprocessor.calls == ["Fusion engine", "A lead, not evidence"]
+    assert lead.title == "fusion"
+    assert lead.snippet == ""
+    assert preprocessor.calls == []
     assert checkpoint.state_json["leads"][0]["support_role"] == "LEAD_ONLY"
 
 
 @pytest.mark.asyncio
-async def test_search_text_is_deterministically_normalized_before_minicpm(
+async def test_target_level_discovery_text_is_not_sent_to_minicpm(
     workflow_parts,
 ) -> None:
     engine, blobs = workflow_parts
@@ -587,10 +760,10 @@ async def test_search_text_is_deterministically_normalized_before_minicpm(
 
     await workflow.run(run.id, stop_after=StepKind.SCOUT)
 
-    assert preprocessor.calls == ["Alpha BetaÅ", "Line one\nline two"]
+    assert preprocessor.calls == []
     with Session(engine) as session:
         lead = session.scalar(select(SearchLead))
-    assert (lead.title, lead.snippet) == ("Alpha BetaÅ", "Line one\nline two")
+    assert (lead.title, lead.snippet) == ("fusion", "")
 
 
 @pytest.mark.asyncio
@@ -638,7 +811,9 @@ async def test_same_source_is_extracted_independently_for_each_question(workflow
 
 
 @pytest.mark.asyncio
-async def test_search_candidate_preprocessing_failure_falls_back(workflow_parts):
+async def test_wiki_inventory_selection_does_not_depend_on_search_preprocessing(
+    workflow_parts,
+):
     engine, blobs = workflow_parts
 
     class BrokenPreprocessor:
@@ -662,11 +837,13 @@ async def test_search_candidate_preprocessing_failure_falls_back(workflow_parts)
     assert scout.status.value == "SUCCEEDED", scout.error
     with Session(engine) as session:
         lead = session.scalar(select(SearchLead))
-    assert (lead.title, lead.snippet) == ("Fusion engine", "A lead, not evidence")
+    assert (lead.title, lead.snippet) == ("fusion", "")
 
 
 @pytest.mark.asyncio
-async def test_search_candidate_preprocessing_has_an_overall_timeout(workflow_parts):
+async def test_wiki_inventory_selection_does_not_wait_for_search_preprocessing(
+    workflow_parts,
+):
     engine, blobs = workflow_parts
 
     class SlowPreprocessor:
@@ -701,53 +878,87 @@ async def test_search_candidate_preprocessing_has_an_overall_timeout(workflow_pa
     assert scout.status.value == "SUCCEEDED", scout.error
     with Session(engine) as session:
         lead = session.scalar(select(SearchLead))
-    assert (lead.title, lead.snippet) == ("Fusion engine", "A lead, not evidence")
+    assert (lead.title, lead.snippet) == ("fusion", "")
 
 
 @pytest.mark.asyncio
-async def test_acquire_continues_after_one_source_failure(workflow_parts):
+async def test_acquire_records_an_approved_wiki_page_failure(workflow_parts):
     engine, blobs = workflow_parts
-
-    class TwoSearch:
-        async def search(self, query: str, *, limit: int):
-            return (
-                {"url": "https://bad.test/", "title": "Bad", "rank": 1},
-                {"url": "https://example.test/fusion", "title": "Good", "rank": 2},
-            )
 
     class OneFailsAcquisition(FakeAcquisition):
         async def acquire(self, url, policy, **kwargs):
-            if "bad.test" in url:
+            if "fusion" in url:
                 self.calls += 1
                 raise ConnectionError("source unavailable")
             return await super().acquire(url, policy, **kwargs)
 
-    plan = responses()["research.plan"][0]
-    plan["questions"][0]["source_budget"] = 2
     kernel = ResearchRunKernel(engine)
     run = kernel.create(command(), "continue-source-failure")
     acquisition = OneFailsAcquisition(engine, blobs)
     workflow = ResearchWorkflow(
         engine,
         kernel,
-        FakeRouter({"research.plan": [plan]}),
-        TwoSearch(),
+        FakeRouter({"research.plan": [responses()["research.plan"][0]]}),
+        FakeSearch(),
         acquisition,
     )
 
     result = await workflow.run(run.id, stop_after=StepKind.ACQUIRE)
 
     acquire = next(step for step in result.steps if step.kind is StepKind.ACQUIRE)
-    assert acquire.status.value == "SUCCEEDED"
-    assert acquisition.calls == 2
+    assert acquire.status.value == "SUCCEEDED", acquire.error
+    assert acquisition.calls == 1
     with Session(engine) as session:
         checkpoint = session.scalars(
             select(Checkpoint).order_by(Checkpoint.created_at.desc())
         ).first()
-    assert len(checkpoint.state_json["acquired"]) == 1
+    assert checkpoint.state_json["acquired"] == []
     assert checkpoint.state_json["acquisition_misses"][0]["status"] == (
         "ACQUISITION_FAILED"
     )
+
+
+@pytest.mark.asyncio
+async def test_acquire_reuses_a_duplicate_url_for_each_question(workflow_parts):
+    engine, blobs = workflow_parts
+
+    class SharedSourceSearch:
+        async def search(self, query: str, *, limit: int):
+            return ({"url": "https://example.test/fusion", "rank": 1},)
+
+    values = responses()
+    plan = values["research.plan"][0]
+    plan["questions"].append(
+        {
+            **plan["questions"][0],
+            "id": "q2",
+            "priority": 2,
+            "question": "What limits the fusion engine?",
+            "queries": ["Example fusion engine limits"],
+        }
+    )
+    kernel = ResearchRunKernel(engine)
+    run = kernel.create(command(), "reuse-duplicate-url")
+    acquisition = FakeAcquisition(engine, blobs)
+    result = await ResearchWorkflow(
+        engine,
+        kernel,
+        FakeRouter({"research.plan": [plan]}),
+        SharedSourceSearch(),
+        acquisition,
+    ).run(run.id, stop_after=StepKind.ACQUIRE)
+
+    acquire = next(step for step in result.steps if step.kind is StepKind.ACQUIRE)
+    assert acquire.status.value == "SUCCEEDED", acquire.error
+    assert acquisition.calls == 1
+    with Session(engine) as session:
+        checkpoint = session.scalars(
+            select(Checkpoint).order_by(Checkpoint.created_at.desc())
+        ).first()
+    assert {item["question_id"] for item in checkpoint.state_json["acquired"]} == {
+        "q1",
+        "q2",
+    }
 
 
 @pytest.mark.asyncio
@@ -776,7 +987,7 @@ async def test_simple_complete_research_is_durable_and_repeat_safe(workflow_part
     ]
     extract_request = router.requests[router.calls.index("research.extract")]
     extract_payload = json.loads(extract_request.messages[-1]["content"])["task"]
-    assert extract_payload["expected_continuity"] == "primary"
+    assert extract_payload["expected_continuity"] == "prime"
     assert extract_payload["allowed_locators"] == ["section:0/passage:0"]
     assert extract_payload["authoritative_passages"] == [
         {
@@ -1080,10 +1291,23 @@ async def test_fabricated_excerpt_is_rejected(workflow_parts):
     workflow = ResearchWorkflow(
         engine, kernel, FakeRouter(values), FakeSearch(), FakeAcquisition(engine, blobs)
     )
-    result = await workflow.run(run.id)
-    assert result.outcome.value == "FAILED"
+    result = await workflow.run(run.id, stop_after=StepKind.EXTRACT)
     extract = next(step for step in result.steps if step.kind is StepKind.EXTRACT)
-    assert "excerpt" in extract.error
+    assert extract.status.value == "SUCCEEDED"
+    with Session(engine) as session:
+        fragments = session.scalars(select(EvidenceFragment)).all()
+        checkpoint = session.scalars(
+            select(Checkpoint).order_by(Checkpoint.created_at.desc())
+        ).first()
+    assert [fragment.id for fragment in fragments] == ["fragment-qualifier"]
+    assert checkpoint.state_json["extraction_rejections"] == [
+        {
+            "fragment_id": "fragment-support",
+            "source_revision_id": "revision-fusion",
+            "locator": "section:0/passage:0",
+            "reason": "EXCERPT_NOT_IN_LOCATOR",
+        }
+    ]
 
 
 @pytest.mark.asyncio
@@ -1112,11 +1336,14 @@ async def test_excerpt_found_only_in_minicpm_readability_is_rejected(workflow_pa
         FakeRouter(values),
         FakeSearch(),
         HallucinatingAcquisition(engine, blobs),
-    ).run(run.id)
+    ).run(run.id, stop_after=StepKind.EXTRACT)
 
-    assert result.outcome.value == "FAILED"
     extract = next(step for step in result.steps if step.kind is StepKind.EXTRACT)
-    assert "authoritative passage" in extract.error
+    assert extract.status.value == "SUCCEEDED"
+    with Session(engine) as session:
+        assert [fragment.id for fragment in session.scalars(select(EvidenceFragment))] == [
+            "fragment-qualifier"
+        ]
 
 
 @pytest.mark.asyncio
@@ -1130,15 +1357,18 @@ async def test_excerpt_locator_must_identify_selected_authoritative_passage(
     run = kernel.create(command(), "wrong-selected-locator")
     result = await ResearchWorkflow(
         engine, kernel, FakeRouter(values), FakeSearch(), FakeAcquisition(engine, blobs)
-    ).run(run.id)
+    ).run(run.id, stop_after=StepKind.EXTRACT)
 
-    assert result.outcome.value == "FAILED"
     extract = next(step for step in result.steps if step.kind is StepKind.EXTRACT)
-    assert "locator" in extract.error
+    assert extract.status.value == "SUCCEEDED"
+    with Session(engine) as session:
+        assert [fragment.id for fragment in session.scalars(select(EvidenceFragment))] == [
+            "fragment-qualifier"
+        ]
 
 
 @pytest.mark.asyncio
-async def test_wrong_continuity_is_checkpointed_as_failure(workflow_parts):
+async def test_wrong_continuity_is_rejected(workflow_parts):
     engine, blobs = workflow_parts
     kernel = ResearchRunKernel(engine)
     run = kernel.create(command(), "wrong-continuity")
@@ -1146,10 +1376,39 @@ async def test_wrong_continuity_is_checkpointed_as_failure(workflow_parts):
     values["research.extract"][0]["fragments"][0]["continuity"] = "alternate"
     result = await ResearchWorkflow(
         engine, kernel, FakeRouter(values), FakeSearch(), FakeAcquisition(engine, blobs)
-    ).run(run.id)
-    assert result.outcome.value == "FAILED"
+    ).run(run.id, stop_after=StepKind.EXTRACT)
     extract = next(step for step in result.steps if step.kind is StepKind.EXTRACT)
-    assert "continuity" in extract.error
+    assert extract.status.value == "SUCCEEDED"
+    with Session(engine) as session:
+        assert [fragment.id for fragment in session.scalars(select(EvidenceFragment))] == [
+            "fragment-qualifier"
+        ]
+
+
+@pytest.mark.asyncio
+async def test_all_invalid_fragments_leave_no_canon_and_a_partial_run(workflow_parts):
+    engine, blobs = workflow_parts
+    values = responses()
+    fragments = values["research.extract"][0]["fragments"]
+    fragments[0]["exact_excerpt"] = "Fabricated text"
+    fragments[1]["continuity"] = "alternate"
+    kernel = ResearchRunKernel(engine)
+    run = kernel.create(command(), "all-invalid-excerpts")
+    result = await ResearchWorkflow(
+        engine,
+        kernel,
+        FakeRouter(values),
+        FakeSearch(),
+        FakeAcquisition(engine, blobs),
+        max_gap_loops=0,
+    ).run(run.id)
+
+    assert result.outcome.value == "PARTIAL"
+    extract = next(step for step in result.steps if step.kind is StepKind.EXTRACT)
+    assert extract.status.value == "SUCCEEDED"
+    with Session(engine) as session:
+        assert session.scalar(select(func.count()).select_from(EvidenceFragment)) == 0
+        assert session.scalar(select(func.count()).select_from(CanonNode)) == 0
 
 
 @pytest.mark.asyncio
@@ -1352,7 +1611,37 @@ async def test_invalid_agent_plan_becomes_durable_partial_gap(workflow_parts):
 
 
 @pytest.mark.asyncio
-async def test_scout_keeps_successful_leads_when_one_search_is_blocked(workflow_parts):
+async def test_malformed_synthesis_proposal_becomes_durable_partial_gap(workflow_parts):
+    engine, blobs = workflow_parts
+    kernel = ResearchRunKernel(engine)
+    run = kernel.create(command(), "invalid-synthesis-partial")
+    invalid = responses()
+    invalid["research.synthesize"][0]["proposals"][0]["field_evidence"].pop("limits")
+    workflow = ResearchWorkflow(
+        engine,
+        kernel,
+        FakeRouter(invalid),
+        FakeSearch(),
+        FakeAcquisition(engine, blobs),
+    )
+
+    result = await workflow.run(run.id)
+
+    assert result.outcome is not None and result.outcome.value == "PARTIAL"
+    synthesize = next(step for step in result.steps if step.kind is StepKind.SYNTHESIZE)
+    assert synthesize.error == "AgentOutputError: every material field requires field-level evidence"
+    assert all(step.status.value == "CANCELLED" for step in result.steps[6:])
+    with Session(engine) as session:
+        gap = session.scalar(select(ResearchGapRecord))
+        assert session.scalar(select(func.count()).select_from(CanonNode)) == 0
+    assert gap is not None
+    assert gap.gap_json["error_class"] == "AgentOutputError"
+
+
+@pytest.mark.asyncio
+async def test_scout_does_not_issue_question_searches_after_wiki_qualification(
+    workflow_parts,
+):
     engine, blobs = workflow_parts
     kernel = ResearchRunKernel(engine)
     run = kernel.create(command(), "scout-search-blocked")
@@ -1376,9 +1665,7 @@ async def test_scout_keeps_successful_leads_when_one_search_is_blocked(workflow_
         workspace = session.scalar(select(ResearchWorkspace))
     assert workspace is not None
     assert len(workspace.brief_json["leads"]) == 1
-    assert workspace.brief_json["search_misses"] == [
-        {"query": "blocked", "question_id": "q1", "reason": "SearchBlockedError"}
-    ]
+    assert workspace.brief_json["search_misses"] == []
 
 
 @pytest.mark.asyncio

@@ -1,4 +1,4 @@
-# ruff: noqa: ARG002, I001, TRY003
+# ruff: noqa: I001
 
 from __future__ import annotations
 
@@ -304,6 +304,169 @@ async def test_router_logs_each_fallback_attempt_and_never_logs_secret(
     assert event(logger, "provider.fallback")["data"]["error_class"] == "AUTH"
     assert "secret-one" not in json.dumps(logger.events)
     assert "secret-two" not in json.dumps(logger.events)
+
+
+@pytest.mark.asyncio
+async def test_router_logs_structured_repair_provider_attempts_and_response_metadata(
+    isolated_paths: dict[str, Path],
+) -> None:
+    from sqlalchemy.orm import Session
+
+    from app.v2.credentials import CredentialService, JsonCredentialStore
+    from app.v2.models import Provider, ProviderModel, Route, RouteCandidate
+
+    engine = create_sqlite_engine(isolated_paths["database"])
+    bootstrap_schema(engine)
+    credentials = CredentialService(JsonCredentialStore(isolated_paths["credentials"]))
+    credentials.add("p", "primary", "secret")
+    with Session(engine) as session, session.begin():
+        session.add_all(
+            [
+                Provider(id="p", kind="OPENAI", active=True),
+                ProviderModel(
+                    id="pm",
+                    provider_id="p",
+                    model_name="model",
+                    context_window=100_000,
+                    output_limit=8_000,
+                    supports_structured=True,
+                    supports_text=True,
+                    active=True,
+                ),
+                Route(id="r", task="task", position=0, active=True),
+                RouteCandidate(id="rc", route_id="r", model_id="pm", position=0),
+            ]
+        )
+
+    class Adapter:
+        calls = 0
+
+        async def complete(self, _request, _credential):
+            self.calls += 1
+            if self.calls == 1:
+                return ModelResponse(
+                    text="not-json",
+                    tool_calls=(),
+                    usage=Usage(input_tokens=3, output_tokens=2, total_tokens=5),
+                    finish_reason="length",
+                    response_id="original-response",
+                    provider_id="response-provider",
+                    model_id="response-model",
+                )
+            return ModelResponse(
+                text='{"value":"valid"}',
+                tool_calls=(),
+                usage=Usage(input_tokens=4, output_tokens=1, total_tokens=5),
+                finish_reason="stop",
+                response_id="repair-response",
+                provider_id="response-provider",
+                model_id="response-model",
+            )
+
+    logger = EventLogger()
+    result = await StructuredModelGateway(
+        engine,
+        ProviderRouter(engine, credentials, {"p": Adapter()}, logger=logger),
+        logger=logger,
+    ).call(
+        run_id=None,
+        task="task",
+        role_prompt="prompt/v1",
+        payload={},
+        output_type=Output,
+    )
+
+    assert result.value == "valid"
+    started = [
+        item
+        for item in logger.events
+        if item["event_type"] == "provider.attempt.started"
+    ]
+    succeeded = [
+        item
+        for item in logger.events
+        if item["event_type"] == "provider.attempt.succeeded"
+    ]
+    assert [item["data"].get("repair") for item in started] == [None, True]
+    assert [item["data"].get("repair") for item in succeeded] == [None, True]
+    repair_attempt = succeeded[1]["data"]
+    assert repair_attempt["duration_ms"] >= 0
+    assert repair_attempt["usage"] == {
+        "input_tokens": 4,
+        "output_tokens": 1,
+        "total_tokens": 5,
+    }
+    assert repair_attempt["response_id"] == "repair-response"
+    assert repair_attempt["finish_reason"] == "stop"
+
+    for event_type, response_id, finish_reason, usage in (
+        (
+            "model.output.validation_failed",
+            "original-response",
+            "length",
+            {"input_tokens": 3, "output_tokens": 2, "total_tokens": 5},
+        ),
+        (
+            "model.repair.started",
+            "original-response",
+            "length",
+            {"input_tokens": 3, "output_tokens": 2, "total_tokens": 5},
+        ),
+        (
+            "model.repair.succeeded",
+            "repair-response",
+            "stop",
+            {"input_tokens": 4, "output_tokens": 1, "total_tokens": 5},
+        ),
+    ):
+        data = event(logger, event_type)["data"]
+        assert data["response_id"] == response_id
+        assert data["finish_reason"] == finish_reason
+        assert data["usage"] == usage
+        assert data["provider_id"] == "response-provider"
+        assert data["model_id"] == "response-model"
+
+    class FailedRepairAdapter:
+        calls = 0
+
+        async def complete(self, _request, _credential):
+            self.calls += 1
+            if self.calls == 1:
+                return ModelResponse(
+                    text="not-json",
+                    tool_calls=(),
+                    usage=Usage(input_tokens=1, output_tokens=1, total_tokens=2),
+                )
+            raise ProviderError(ErrorClass.TRANSIENT, "repair failed")
+
+    failure_logger = EventLogger()
+    with pytest.raises(ProviderError, match="repair failed"):
+        await StructuredModelGateway(
+            engine,
+            ProviderRouter(
+                engine, credentials, {"p": FailedRepairAdapter()}, logger=failure_logger
+            ),
+            logger=failure_logger,
+        ).call(
+            run_id=None,
+            task="task",
+            role_prompt="prompt/v1",
+            payload={},
+            output_type=Output,
+        )
+    failed = [
+        item
+        for item in failure_logger.events
+        if item["event_type"] == "provider.attempt.failed"
+    ]
+    assert len(failed) == 1
+    assert failed[0]["data"]["repair"] is True
+    assert failed[0]["data"]["duration_ms"] >= 0
+    assert not any(
+        item["event_type"] == "provider.attempt.failed"
+        and not item["data"].get("repair")
+        for item in failure_logger.events
+    )
 
 
 @pytest.mark.asyncio

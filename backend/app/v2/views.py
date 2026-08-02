@@ -23,6 +23,7 @@ from app.v2.database_resets import (
     reset_database_section,
 )
 from app.v2.models import (
+    LLM_PROVIDER_KINDS,
     AuditDecisionRecord,
     CandidateHealth,
     CanonNode,
@@ -745,7 +746,13 @@ def logs(
 
 def _settings_projection(request: Request) -> dict[str, object]:
     with Session(_runtime(request).engine) as session:
-        providers = session.scalars(select(Provider).order_by(Provider.id)).all()
+        providers = (
+            session.scalars(
+                select(Provider)
+                .where(Provider.kind.in_(LLM_PROVIDER_KINDS))
+                .order_by(Provider.id)
+            ).all()
+        )
         return {
             "brave_search_configured": session.scalar(
                 select(CredentialRef.id)
@@ -773,11 +780,14 @@ def _settings_projection(request: Request) -> dict[str, object]:
                             "supports_structured": model.supports_structured,
                             "supports_text": model.supports_text,
                             "active": model.active,
+                            "sort_order": model.sort_order,
                         }
                         for model in session.scalars(
                             select(ProviderModel)
                             .where(ProviderModel.provider_id == provider.id)
-                            .order_by(ProviderModel.id)
+                            .order_by(
+                                ProviderModel.sort_order, ProviderModel.id
+                            )
                         )
                     ],
                     "credentials": [
@@ -1758,6 +1768,42 @@ def settings_delete_model(request: Request, model_id: str):
         runtime.http_client,
         timeout_seconds=runtime.config.http_timeout_seconds,
     )
+    return settings_tab(request, "models")
+
+
+@router.post("/settings/models/{model_id}/move", response_class=HTMLResponse)
+def settings_move_model(
+    request: Request,
+    model_id: str,
+    direction: Annotated[str, Form()],
+):
+    if direction not in {"up", "down"}:
+        raise HTTPException(
+            status_code=422, detail="direction must be 'up' or 'down'"
+        )
+    runtime = _runtime(request)
+    with Session(runtime.engine) as session, session.begin():
+        model = session.get(ProviderModel, model_id)
+        if model is None:
+            raise HTTPException(status_code=404, detail="model not found")
+        siblings = list(
+            session.scalars(
+                select(ProviderModel)
+                .where(ProviderModel.provider_id == model.provider_id)
+                .order_by(ProviderModel.sort_order, ProviderModel.id)
+            )
+        )
+        positions = {row.id: index for index, row in enumerate(siblings)}
+        index = positions.get(model_id)
+        other = (index - 1) if direction == "up" else (index + 1)
+        if index is not None and 0 <= other < len(siblings):
+            ordered_ids = [row.id for row in siblings]
+            ordered_ids[index], ordered_ids[other] = (
+                ordered_ids[other],
+                ordered_ids[index],
+            )
+            for position, ordered_id in enumerate(ordered_ids):
+                session.get(ProviderModel, ordered_id).sort_order = position
     return settings_tab(request, "models")
 
 

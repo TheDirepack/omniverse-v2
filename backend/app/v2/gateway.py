@@ -22,8 +22,12 @@ from app.v2.context import (
 )
 from app.v2.logging import redact
 from app.v2.models import ModelCall
-from app.v2.providers import ModelRequest
-from app.v2.routing import RoutingRequirements
+from app.v2.providers import (
+    ModelRequest,
+    ModelResponse,
+    StructuredOutputValidationError,
+)
+from app.v2.routing import ResponseRetry, ResponseValidator, RoutingRequirements
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -72,6 +76,20 @@ class StructuredModelGateway:
         except Exception:
             pass
 
+    @staticmethod
+    def _serialized_request_tokens(request: ModelRequest) -> int:
+        return estimate_tokens(request.model_dump(mode="json"))
+
+    @staticmethod
+    def _response_metadata(response: ModelResponse) -> dict[str, object]:
+        return {
+            "usage": response.usage.model_dump(mode="json"),
+            "finish_reason": response.finish_reason,
+            "response_id": response.response_id,
+            "provider_id": response.provider_id,
+            "model_id": response.model_id,
+        }
+
     async def call(
         self,
         *,
@@ -116,7 +134,20 @@ class StructuredModelGateway:
             context = {
                 "task": payload,
                 "evidence": [
-                    {"fragment_id": item.evidence_id, "exact_excerpt": item.extract}
+                    {
+                        "fragment_id": item.evidence_id,
+                        "source_revision_id": item.source_id,
+                        "exact_excerpt": item.extract,
+                        "support_role": item.support_role,
+                        "scope": {
+                            "world_id": item.world_id,
+                            "subject_ids": list(item.subject_ids),
+                            "continuity": item.continuity,
+                            "era_or_timepoint": item.era_or_timepoint,
+                            "conditions": list(item.conditions),
+                            "branch_id": item.branch_id,
+                        },
+                    }
                     for item in selected
                 ],
             }
@@ -130,7 +161,7 @@ class StructuredModelGateway:
                 max_output_tokens=output_tokens,
                 structured_schema=schema,
             )
-            request_tokens = estimate_tokens(request.model_dump(mode="json"))
+            request_tokens = self._serialized_request_tokens(request)
             if request_tokens + output_tokens + 1_000 <= context_window:
                 break
             if not selected:
@@ -165,7 +196,7 @@ class StructuredModelGateway:
                 max_output_tokens=output_tokens,
                 structured_schema=schema,
             )
-            request_tokens = estimate_tokens(request.model_dump(mode="json"))
+            request_tokens = self._serialized_request_tokens(request)
             if request_tokens + output_tokens + 1_000 > context_window:
                 raise ContextOverflowError(
                     "serialized request exceeds effective context window"
@@ -181,6 +212,113 @@ class StructuredModelGateway:
             try:
                 complete = self.router.complete
                 parameters = inspect.signature(complete).parameters
+
+                def make_response_validator(
+                    original_request: ModelRequest,
+                    original_call_data: dict[str, object],
+                    repair_call_attempt: int,
+                ) -> ResponseValidator:
+                    async def validate_structured_response(
+                        candidate_response: ModelResponse, retry: ResponseRetry, /
+                    ) -> ModelResponse:
+                        try:
+                            output_type.model_validate_json(
+                                candidate_response.text, strict=True
+                            )
+                        except (json.JSONDecodeError, ValidationError, TypeError) as error:
+                            self._log(
+                                "model.output.validation_failed",
+                                "Structured model output failed validation",
+                                level="WARNING",
+                                data={
+                                    **original_call_data,
+                                    **self._response_metadata(candidate_response),
+                                    "error_class": type(error).__name__,
+                                },
+                                **correlation,
+                            )
+                            self._log(
+                                "model.repair.started",
+                                "Structured output repair started",
+                                data={
+                                    **original_call_data,
+                                    **self._response_metadata(candidate_response),
+                                },
+                                **correlation,
+                            )
+                            repair_messages = (
+                                *original_request.messages,
+                                {
+                                    "role": "assistant",
+                                    "content": candidate_response.text,
+                                },
+                                {
+                                    "role": "user",
+                                    "content": "Return one JSON object matching the supplied schema. No prose.",
+                                },
+                            )
+                            repaired_request = original_request.model_copy(
+                                update={"messages": repair_messages}
+                            )
+                            repaired_tokens = self._serialized_request_tokens(
+                                repaired_request
+                            )
+                            if repaired_tokens + output_tokens + 1_000 > context_window:
+                                raise ContextOverflowError(
+                                    "malformed-output repair context exceeds context window"
+                                ) from error
+                            repaired_response = await retry(repaired_request)
+                            try:
+                                output_type.model_validate_json(
+                                    repaired_response.text, strict=True
+                                )
+                            except (
+                                json.JSONDecodeError,
+                                ValidationError,
+                                TypeError,
+                            ) as repair_error:
+                                self._log(
+                                    "model.output.validation_failed",
+                                    "Structured model output failed validation",
+                                    level="WARNING",
+                                    data={
+                                        **original_call_data,
+                                        "call_attempt": repair_call_attempt,
+                                        **self._response_metadata(repaired_response),
+                                        "error_class": type(repair_error).__name__,
+                                    },
+                                    **correlation,
+                                )
+                                self._log(
+                                    "model.repair.failed",
+                                    "Structured output repair failed",
+                                    level="ERROR",
+                                    data={
+                                        **original_call_data,
+                                        **self._response_metadata(repaired_response),
+                                        "error_class": type(repair_error).__name__,
+                                    },
+                                    **correlation,
+                                )
+                                raise StructuredOutputValidationError(task) from repair_error
+                            self._log(
+                                "model.repair.succeeded",
+                                "Structured output repair succeeded",
+                                data={
+                                    **original_call_data,
+                                    **self._response_metadata(repaired_response),
+                                },
+                                **correlation,
+                            )
+                            return repaired_response
+                        return candidate_response
+
+                    return validate_structured_response
+
+                response_validator = make_response_validator(
+                    request, call_data, attempt + 2
+                )
+
                 route_correlation = {
                     key: value
                     for key, value in correlation.items()
@@ -193,6 +331,12 @@ class StructuredModelGateway:
                     )
                     or "run_id" in parameters
                 ):
+                    route_kwargs = route_correlation
+                    if "response_validator" in parameters:
+                        route_kwargs = {
+                            **route_kwargs,
+                            "response_validator": response_validator,
+                        }
                     response = await complete(
                         task,
                         request,
@@ -201,9 +345,14 @@ class StructuredModelGateway:
                             input_tokens=request_tokens,
                             output_tokens=output_tokens,
                         ),
-                        **route_correlation,
+                        **route_kwargs,
                     )
                 else:
+                    route_kwargs = (
+                        {"response_validator": response_validator}
+                        if "response_validator" in parameters
+                        else {}
+                    )
                     response = await complete(
                         task,
                         request,
@@ -212,6 +361,7 @@ class StructuredModelGateway:
                             input_tokens=request_tokens,
                             output_tokens=output_tokens,
                         ),
+                        **route_kwargs,
                     )
             except Exception as error:
                 self._log(
@@ -230,11 +380,7 @@ class StructuredModelGateway:
             response_data = {
                 **call_data,
                 "duration_ms": (monotonic() - started) * 1000,
-                "usage": response.usage.model_dump(mode="json"),
-                "finish_reason": response.finish_reason,
-                "response_id": response.response_id,
-                "provider_id": response.provider_id,
-                "model_id": response.model_id,
+                **self._response_metadata(response),
             }
             self._log(
                 "model.call.succeeded",
@@ -308,9 +454,10 @@ class StructuredModelGateway:
                         "content": "Return one JSON object matching the supplied schema. No prose.",
                     },
                 )
-                repaired_tokens = sum(
-                    estimate_tokens(message["content"]) for message in messages
+                repaired_request = request.model_copy(
+                    update={"messages": messages}
                 )
+                repaired_tokens = self._serialized_request_tokens(repaired_request)
                 if repaired_tokens + output_tokens + 1_000 > context_window:
                     raise ContextOverflowError(
                         "malformed-output repair context exceeds context window"

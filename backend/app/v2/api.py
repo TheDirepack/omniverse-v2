@@ -101,6 +101,7 @@ class LoggingSettingsUpdate(BaseModel):
     agent_max_bytes: int = Field(ge=1024, le=100_000_000)
     server_backup_count: int = Field(ge=0, le=100)
     agent_backup_count: int = Field(ge=0, le=100)
+    redact: bool = True
 
 
 class ClientErrorReport(BaseModel):

@@ -27,6 +27,7 @@ from app.v2.blobs import BlobStore
 from app.v2.config import cache_ttl_seconds
 from app.v2.logging import redact
 from app.v2.models import AcquisitionCache, Source, SourceRevision, ToolEvent
+from app.v2.pipeline_debug import capture as debug_capture
 from app.v2.preprocessing import PreprocessingStatus, preprocess_document
 
 
@@ -1033,12 +1034,54 @@ class AcquisitionService:
         source_text, preprocessing_content_type = await self._source_text(
             response.body, response.content_type
         )
+        debug_capture(
+            stage="fetched_html",
+            url=canonical,
+            run_id=run_id,
+            target_id=target_id,
+            step_id=step_id,
+            content_type=preprocessing_content_type,
+            body=response.body,
+            source_text=source_text,
+        )
         deterministic = preprocess_document(
             source_text,
             preprocessing_content_type,
             keywords=keywords,
             exact_phrases=exact_phrases,
             section_hints=section_hints,
+        )
+        debug_capture(
+            stage="analytical_filter",
+            url=canonical,
+            run_id=run_id,
+            target_id=target_id,
+            step_id=step_id,
+            transform_hash=deterministic.transform_hash,
+            targeting_status=deterministic.targeting_status.value,
+            cleaned_text=deterministic.cleaned_text,
+            sections=[
+                {
+                    "locator": section.locator,
+                    "heading": section.heading,
+                    "passage_locators": list(section.passage_locators),
+                }
+                for section in deterministic.sections
+            ],
+            passages=[
+                {
+                    "locator": passage.locator,
+                    "text": passage.text,
+                    "kind": passage.kind,
+                    "section_index": passage.section_index,
+                    "passage_index": passage.passage_index,
+                }
+                for passage in deterministic.passages
+            ],
+            selected_passages=[
+                {"locator": p.locator, "text": p.text}
+                for p in deterministic.selected_passages
+            ],
         )
         self._log(
             "preprocessing.deterministic.completed",
@@ -1118,6 +1161,19 @@ class AcquisitionService:
             preprocessing_status = model_result.status.value
             preprocessing_detail = model_result.detail
             used_fallback = model_result.used_fallback
+            debug_capture(
+                stage="llm_output",
+                url=canonical,
+                run_id=run_id,
+                target_id=target_id,
+                step_id=step_id,
+                model=getattr(self.preprocessor, "model", None),
+                reformat_input=reformat_input,
+                reformat_output=readability_text,
+                status=preprocessing_status,
+                detail=preprocessing_detail,
+                used_fallback=used_fallback,
+            )
 
         deterministic_metadata = {
             **deterministic.metadata(),

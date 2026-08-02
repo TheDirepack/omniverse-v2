@@ -40,6 +40,18 @@
 
 <hr class="my-4 border-gray-200 dark:border-gray-800">
 
+<h2 class="text-xs font-bold uppercase tracking-widest mb-2">Caching</h2>
+<div class="border border-gray-200 dark:border-gray-800 p-3 bg-gray-50 dark:bg-gray-900">
+    <form class="flex items-center gap-2 text-xs" hx-post="/settings/general" hx-target="#settings-content">
+        <label class="font-bold" for="cache_ttl_seconds">Content cache TTL (seconds)</label>
+        <input id="cache_ttl_seconds" name="cache_ttl_seconds" type="number" min="3600" value="{{ config.cache_ttl_seconds }}" class="h-7 w-40 border bg-transparent px-2">
+        <button class="h-7 px-3 bg-blue-600 text-xs font-bold text-white">Save</button>
+    </form>
+    <p class="mt-2 text-xs text-gray-500">How long fetched pages, wiki inventories, and search results stay fresh before re-acquisition. Minimum 3600 (1 hour).</p>
+</div>
+
+<hr class="my-4 border-gray-200 dark:border-gray-800">
+
 <h2 class="text-xs font-bold uppercase tracking-widest mb-2">Brave Search API</h2>
 <div class="border border-gray-200 dark:border-gray-800 p-3 bg-gray-50 dark:bg-gray-900">
     <p class="text-xs text-gray-500">Used only after every free browser search provider fails. The key is write-only and never displayed.</p>

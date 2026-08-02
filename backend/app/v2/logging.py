@@ -82,6 +82,7 @@ class LoggingSettings:
     agent_max_bytes: int = 5_000_000
     server_backup_count: int = 5
     agent_backup_count: int = 5
+    redact: bool = True
 
     def __post_init__(self) -> None:
         for name in ("server_level", "agent_level"):
@@ -91,6 +92,8 @@ class LoggingSettings:
             object.__setattr__(self, name, value)
         if not isinstance(self.enabled, bool):
             raise TypeError("enabled must be a boolean")
+        if not isinstance(self.redact, bool):
+            raise TypeError("redact must be a boolean")
         if not isinstance(self.folder, str) or not self.folder:
             raise ValueError("folder must be a non-empty relative path")
         for name in ("server_max_bytes", "agent_max_bytes"):
@@ -350,10 +353,26 @@ class V2ServerLogger:
                 },
                 "data": redact(data if data is not None else {}),
             }
-            line = json.dumps(
-                event, ensure_ascii=False, allow_nan=False, separators=(",", ":")
-            )
-            if len(line.encode("utf-8")) + 1 > MAX_EVENT_BYTES:
+            if not self._settings.redact:
+                event["event_type"] = str(event_type)
+                event["component"] = str(component)
+                event["message"] = str(message)
+                event["data"] = data if data is not None else {}
+            try:
+                line = json.dumps(
+                    event, ensure_ascii=False, allow_nan=False, separators=(",", ":")
+                )
+            except TypeError:
+                line = json.dumps(
+                    redact(event),
+                    ensure_ascii=False,
+                    allow_nan=False,
+                    separators=(",", ":"),
+                )
+            if (
+                self._settings.redact
+                and len(line.encode("utf-8")) + 1 > MAX_EVENT_BYTES
+            ):
                 event["data"] = {"truncated": True}
                 for name in (
                     "event_type",

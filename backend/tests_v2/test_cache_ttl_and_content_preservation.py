@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
@@ -135,6 +136,70 @@ async def test_minicpm_reformat_preserves_entries_when_given_full_text() -> None
 
     assert result.status is PreprocessingStatus.APPLIED
     assert "Entry C archive vault cipher 2206" in result.text
+
+
+# --------------------------------------------------------------------------- #
+# Requirement: chunked reformat splits only at structural boundaries so a chunk
+# never slices through the middle of a paragraph/table and leaves garbled text.
+# --------------------------------------------------------------------------- #
+
+def test_reformat_chunks_only_at_block_boundaries_and_reconstructs() -> None:
+    adapter = MiniCPMPreprocessor(model="mini", context_tokens=4000)
+    text = "\n\n".join(
+        f"Paragraph {index} walks over the moor each night." for index in range(160)
+    )
+    chunks = adapter._chunk_for_context(text)
+    assert len(chunks) > 1, "expected the document to split into multiple chunks"
+    assert "\n\n".join(chunks) == text, "chunks must reconstruct the full text"
+    blocks = text.split("\n\n")
+    for chunk in chunks:
+        for part in chunk.split("\n\n"):
+            assert part in blocks, f"chunk bisects a block: {part[:40]!r}"
+
+
+@pytest.mark.asyncio
+async def test_chunked_reformat_joins_validated_chunks_in_order() -> None:
+    blocks = [f"Entry number {index} stays intact." for index in range(60)]
+    original = "\n\n".join(blocks)
+
+    requested: list[str] = []
+
+    async def respond(request: httpx.Request) -> httpx.Response:
+        requested.append(request.headers.get("content-length", "0"))
+        payload = json.loads(request.content)
+        content = payload["messages"][1]["content"]
+        inner = content.removeprefix("<untrusted_page>\n").removesuffix(
+            "\n</untrusted_page>"
+        )
+        return httpx.Response(200, json={"choices": [{"message": {"content": inner}}]})
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(respond))
+    adapter = MiniCPMPreprocessor(client=client, context_tokens=500)
+    result = await adapter.reformat(original)
+    await client.aclose()
+
+    assert result.status is PreprocessingStatus.APPLIED
+    assert result.used_fallback is False
+    assert result.text == original
+    assert len(requested) > 1, "expected multiple chunked reformat requests"
+
+
+@pytest.mark.asyncio
+async def test_reformat_single_chunk_behaves_like_a_plain_request() -> None:
+    original = "One short paragraph that fits in a single chunk."
+
+    async def respond(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200, json={"choices": [{"message": {"content": original}}]}
+        )
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(respond))
+    adapter = MiniCPMPreprocessor(client=client)
+    result = await adapter.reformat(original)
+    await client.aclose()
+
+    assert result.status is PreprocessingStatus.APPLIED
+    assert result.used_fallback is False
 
 
 # --------------------------------------------------------------------------- #

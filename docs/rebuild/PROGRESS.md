@@ -81,6 +81,15 @@ Completed without a new live research run; all evidence is deterministic or cach
 
 Validation: default **316 passed**, evaluation **349 passed**, deterministic cached-reference tests pass offline, Ruff lint clean. `backend/tests_v2/test_schema_gate.py` expects `v2_0008` as the Alembic head.
 
+## Raw pipeline debug capture, chunked reformat, and configurable logging (2026-08-02)
+
+- **Temporary raw pipeline debug log.** A dedicated unredacted JSONL writer (`backend/app/v2/pipeline_debug.py`) captures each acquisition pipeline stage to `backend/data/pipeline-debug.jsonl`: the raw fetched HTML/body, the output of the purely analytical filtering (cleaned text, sections, passages, selected excerpts), the MiniCPM (LLM) reformat output, and the exact prompt payload sent to the endpoint. The normal redacted/truncated event logs are untouched; remove the module (and its calls) before release.
+- **Chunked reformat at block boundaries.** `MiniCPMPreprocessor.reformat` now splits the full cleaned document into chunks sized to half the model's context window (configurable via `context_tokens`, default 120064 tokens → ~132 KiB input budget). Chunking splits only at `\n\n` block boundaries (paragraphs, tables, headings, lists) so no chunk ever bisects a structural block — verified by exact reconstruction and unit tests. The reformatted chunks are joined in order, preserving every fact, number, and URL from the original.
+- **Cache TTL configurable in Settings.** Settings → General now exposes a Content cache TTL (seconds) field (minimum 3600) that persists to `backend/data/ui_persistence.json` via `config.persist_setting` and the existing lazy `OMNIVERSE_V2_CACHE_TTL_SECONDS` resolver — shortens/lengthens content, wiki-inventory, and search freshness from the UI without env changes.
+- **Redaction/pruning toggle for the activity logger.** `LoggingSettings.redact` (default on) switches between redacted/truncated event output and full raw payloads inside `server.jsonl`/`agent.jsonl`. The usual byte and depth caps are bypassed, and a non-serializable fallback still redacts. Exposed in Settings → Logs and in the JSON API `/api/v2/settings/logging`.
+
+Validation: default **321 passed**, evaluation **354 passed** (chunking + redaction tests added), Ruff lint clean, `git diff --check` clean.
+
 ## Validation record
 
 Final validation completed on 2026-07-30:

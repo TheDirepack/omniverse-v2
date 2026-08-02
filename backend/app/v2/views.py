@@ -16,6 +16,7 @@ from sqlalchemy import and_, delete, or_, select
 from sqlalchemy.orm import Session
 
 from app.v2.api import logging_status, read_log_page
+from app.v2.config import persist_setting
 from app.v2.contracts import CreateResearchRun, ResearchRunTargetInput
 from app.v2.database_resets import (
     ActiveRunsError,
@@ -1287,6 +1288,7 @@ def settings_update_logging(
     server_backup_count: Annotated[int, Form()],
     agent_backup_count: Annotated[int, Form()],
     enabled: Annotated[bool, Form()] = False,
+    redact: Annotated[bool, Form()] = True,
 ):
     runtime = _runtime(request)
     try:
@@ -1300,6 +1302,7 @@ def settings_update_logging(
                 "agent_max_bytes": agent_max_bytes,
                 "server_backup_count": server_backup_count,
                 "agent_backup_count": agent_backup_count,
+                "redact": redact,
             }
         )
     except (TypeError, ValueError, OSError) as error:
@@ -1811,7 +1814,14 @@ def settings_move_model(
 def settings_update_general(
     request: Request,
     preprocessor_enabled: Annotated[bool, Form()] = False,
+    cache_ttl_seconds: Annotated[int, Form()] | None = None,
 ):
+    if cache_ttl_seconds is not None:
+        if cache_ttl_seconds < 3600:
+            raise HTTPException(
+                status_code=422, detail="cache TTL must be at least 3600 seconds"
+            )
+        persist_setting("OMNIVERSE_V2_CACHE_TTL_SECONDS", cache_ttl_seconds)
     _runtime(request).reconfigure_preprocessor(
         preprocessor_enabled=preprocessor_enabled
     )

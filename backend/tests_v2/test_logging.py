@@ -248,6 +248,45 @@ def test_recursive_redaction_patterns_urls_and_event_bounds(tmp_path: Path) -> N
     assert event["data"]["nested"]["api_key"] == "[REDACTED]"
 
 
+def test_redact_disabled_preserves_full_payload_and_bounds(tmp_path: Path) -> None:
+    logger = V2ServerLogger(tmp_path)
+    logger.reconfigure(LoggingSettings(folder="logs", redact=False))
+    payload = {"password": "db-secret", "url": "https://user:pass@example.test/a?token=q"}
+    logger.log_event(
+        "server",
+        "INFO",
+        "security.test",
+        "test",
+        "https://user:pass@example.test/a?token=q",
+        data=payload,
+    )
+
+    raw = (tmp_path / "logs" / "server.jsonl").read_text(encoding="utf-8")
+    event = json.loads(raw)
+    assert "db-secret" in raw
+    assert "user:pass" in raw
+    assert event["data"] == payload
+    assert event["message"] == "https://user:pass@example.test/a?token=q"
+
+
+def test_redact_disabled_serialization_fallback_redacts_unserializable(
+    tmp_path: Path,
+) -> None:
+    logger = V2ServerLogger(tmp_path)
+    logger.reconfigure(LoggingSettings(folder="logs", redact=False))
+    logger.log_event(
+        "server",
+        "INFO",
+        "security.test",
+        "test",
+        "message",
+        data={"bytes": b"\x00\x01", "ok": 1},
+    )
+
+    raw = (tmp_path / "logs" / "server.jsonl").read_text(encoding="utf-8")
+    json.loads(raw)
+
+
 def test_events_are_strict_json_and_bounded_with_unicode_correlations(
     tmp_path: Path,
 ) -> None:

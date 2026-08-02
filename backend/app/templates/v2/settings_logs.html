@@ -7,6 +7,11 @@
                 <input name="enabled" type="checkbox" value="true" {% if config.enabled %}checked{% endif %}>
                 <span class="font-bold">Enable file logging</span>
             </label>
+            <label class="flex items-center gap-2">
+                <input name="redact" type="checkbox" value="true" {% if config.redact %}checked{% endif %}>
+                <span class="font-bold">Redact sensitive fields and prune long content</span>
+            </label>
+            <p class="text-xs text-gray-500">Disable to store full unredacted payloads (e.g. raw page text or prompts) in log files. Leave enabled in normal operation.</p>
             <label class="grid gap-1"><span>Relative folder</span><input name="folder" required maxlength="255" value="{{ config.folder }}" class="h-7 px-2 border bg-white dark:bg-gray-800"></label>
             <div class="grid grid-cols-2 gap-2">
                 <label class="grid gap-1"><span>Server level</span><select name="server_level" class="h-7 border bg-white dark:bg-gray-800">{% for value in ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] %}<option value="{{ value }}" {% if config.server_level == value %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>

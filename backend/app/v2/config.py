@@ -46,6 +46,24 @@ def _str(name: str, default: str | None = None) -> str | None:
     return default if value is None else value
 
 
+def persist_setting(name: str, value: object) -> None:
+    """Persist a UI-controlled setting to the settings file.
+
+    Env vars still take precedence over these values when present (see
+    ``cache_ttl_seconds``); the file records the operator's explicit choice.
+    """
+    if value is None:
+        _PERSISTENCE.pop(name, None)
+    else:
+        _PERSISTENCE[name] = value
+    try:
+        _PERSISTENCE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        with _PERSISTENCE_FILE.open("w") as f:
+            json.dump(_PERSISTENCE, f, indent=2, sort_keys=True)
+    except OSError:
+        return
+
+
 # Content and inventory caches stay fresh for a week by default. Both
 # AcquisitionPolicy.freshness_seconds and CachedFallbackSearch.ttl_seconds read
 # this knob so acquisition, wiki inventory, and search stay aligned. Operators

@@ -6,6 +6,7 @@
 
 ### Current V2
 
+- [V2 reconstruction guide](RECONSTRUCTION_GUIDE/README.md) — implementation-level architecture, workflow, data model, interfaces, and rebuild order
 - [V2 codemaps](CODEMAPS_V2/INDEX.md) — canonical source-backed runtime map
 - [Architecture](CODEMAPS_V2/ARCHITECTURE.md) — facade, factory, boundaries, and deferred scope
 - [Runtime and research](CODEMAPS_V2/RUNTIME_AND_RESEARCH.md) — workflow, routing, MiniCPM, and browsing

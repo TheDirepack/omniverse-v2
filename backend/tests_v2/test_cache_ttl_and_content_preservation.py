@@ -185,6 +185,35 @@ async def test_chunked_reformat_joins_validated_chunks_in_order() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("failed_chunks", [(1,), (0, 1, 2)])
+async def test_chunked_reformat_preserves_all_text_after_chunk_failure(
+    monkeypatch: pytest.MonkeyPatch, failed_chunks: tuple[int, ...]
+) -> None:
+    chunks = [f"Entry number {index} stays intact." for index in range(3)]
+    requested = []
+
+    async def respond(request: httpx.Request) -> httpx.Response:
+        index = len(requested)
+        requested.append(json.loads(request.content))
+        if index in failed_chunks:
+            return httpx.Response(503, json={"error": "temporary failure"})
+        return httpx.Response(
+            200, json={"choices": [{"message": {"content": chunks[index]}}]}
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
+        adapter = MiniCPMPreprocessor(client=client)
+        monkeypatch.setattr(adapter, "_chunk_for_context", lambda _text: chunks)
+        result = await adapter.reformat("\n\n".join(chunks))
+
+    assert len(requested) == 3
+    assert result.text == "\n\n".join(chunks)
+    assert result.status is PreprocessingStatus.APPLIED
+    assert result.used_fallback is True
+    assert "chunk 2/3" in result.detail
+
+
+@pytest.mark.asyncio
 async def test_reformat_single_chunk_behaves_like_a_plain_request() -> None:
     original = "One short paragraph that fits in a single chunk."
 

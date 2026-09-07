@@ -559,6 +559,7 @@ class MiniCPMPreprocessor:
         self, chunks: list[str], started: float
     ) -> ModelPreprocessResult:
         outputs: list[str] = []
+        fallback_chunks: list[str] = []
         for index, chunk in enumerate(chunks):
             label = f"chunk {index + 1}/{len(chunks)}"
             result = await self._reformat_chunk(
@@ -570,14 +571,25 @@ class MiniCPMPreprocessor:
                 chunk_total=len(chunks),
             )
             if result.used_fallback:
-                return self._fallback(
-                    chunks[index],
-                    result.status,
-                    f"{label} failed ({result.detail})",
-                    started=started,
+                fallback_chunks.append(
+                    f"{label} (fallback: {result.detail}): original text retained"
                 )
-            outputs.append(result.text)
+                outputs.append(chunk)
+            else:
+                outputs.append(result.text)
         joined = "\n\n".join(outputs)
+        if fallback_chunks:
+            return ModelPreprocessResult(
+                joined,
+                PreprocessingStatus.APPLIED,
+                "reformatted in "
+                + str(len(chunks))
+                + " chunks; "
+                + str(len(fallback_chunks))
+                + " chunk(s) fell back to passthrough: "
+                + "; ".join(fallback_chunks),
+                True,
+            )
         return ModelPreprocessResult(
             joined,
             PreprocessingStatus.APPLIED,

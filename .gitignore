@@ -53,6 +53,8 @@ backend/data/v2-credentials.json
 backend/data/v2-secrets/
 backend/data/backup/
 backend/data/loop_snapshots/
+backend/data/pipeline-debug.jsonl
+backend/data/ui_persistence.json
 backend/logs/
 .worktrees/
 .superpowers/

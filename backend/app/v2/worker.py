@@ -101,7 +101,6 @@ class ResearchWorker:
                     )
 
     async def run(self) -> None:
-        self.stop_event.clear()
         self._tasks = [
             asyncio.create_task(self._loop(), name=f"research-worker-{index}")
             for index in range(self.concurrency)
@@ -110,6 +109,8 @@ class ResearchWorker:
 
     def start(self) -> None:
         if not self._tasks:
+            # Reset before scheduling so an immediate stop cannot be overwritten.
+            self.stop_event.clear()
             self._tasks = [asyncio.create_task(self.run(), name="research-worker")]
 
     async def stop(self) -> None:

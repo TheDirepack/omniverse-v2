@@ -65,3 +65,28 @@ def test_non_live_markers_do_not_disable_network_guard(
     with socket.socket() as connection, pytest.raises(ExternalNetworkDisabledError):
         connection.connect(("203.0.113.1", 80))
     assert attempted == []
+
+
+def test_pipeline_debug_capture_stays_in_test_directory(tmp_path: Path) -> None:
+    import json
+
+    from app.v2 import pipeline_debug
+
+    assert pipeline_debug._FILE.parent == tmp_path
+    pipeline_debug.capture(event="offline-isolation-check")
+    assert json.loads(pipeline_debug._FILE.read_text())["event"] == (
+        "offline-isolation-check"
+    )
+
+
+def test_ui_settings_persistence_stays_in_test_directory(tmp_path: Path) -> None:
+    import json
+
+    from app.v2 import config
+
+    assert config._PERSISTENCE_FILE.parent == tmp_path
+    assert config._PERSISTENCE == {}
+    config.persist_setting("OMNIVERSE_V2_CACHE_TTL_SECONDS", 123)
+    assert json.loads(config._PERSISTENCE_FILE.read_text()) == {
+        "OMNIVERSE_V2_CACHE_TTL_SECONDS": 123
+    }

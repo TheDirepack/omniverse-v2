@@ -508,6 +508,20 @@ async def test_worker_is_fair_continues_failures_and_stops_cleanly() -> None:
 
 
 @pytest.mark.asyncio
+async def test_worker_immediate_stop_and_restart_do_not_lose_shutdown_request() -> None:
+    worker = ResearchWorker(
+        _Kernel([]), _Workflow([]), next_run=lambda: None, poll_seconds=0.001
+    )
+    for _ in range(2):
+        worker.start()
+        tasks = tuple(worker._tasks)
+        await asyncio.wait_for(worker.stop(), timeout=1)
+        assert worker.stop_event.is_set()
+        assert worker._tasks == []
+        assert all(task.done() and not task.cancelled() for task in tasks)
+
+
+@pytest.mark.asyncio
 @pytest.mark.evaluation
 async def test_multi_run_worker_failure_matrix_is_durable_and_non_blocking(
     isolated_paths,

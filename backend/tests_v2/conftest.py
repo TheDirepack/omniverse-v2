@@ -16,6 +16,17 @@ class ExternalNetworkDisabledError(RuntimeError):
 
 
 @pytest.fixture(autouse=True)
+def isolate_file_backed_settings_and_diagnostics(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from app.v2 import config, pipeline_debug
+
+    monkeypatch.setattr(config, "_PERSISTENCE", {})
+    monkeypatch.setattr(config, "_PERSISTENCE_FILE", tmp_path / "settings.json")
+    monkeypatch.setattr(pipeline_debug, "_FILE", tmp_path / "pipeline-debug.jsonl")
+
+
+@pytest.fixture(autouse=True)
 def deny_external_network(
     monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest
 ) -> None:

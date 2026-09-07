@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import gzip
 import json
 from datetime import datetime, timezone
 from pathlib import Path
@@ -10,6 +11,7 @@ import pytest
 from sqlalchemy import Engine, func, select
 from sqlalchemy.orm import Session
 
+from app.v2 import wiki
 from app.v2.acquisition import (
     AcquisitionPolicy,
     AcquisitionResult,
@@ -50,15 +52,16 @@ class Resolver:
 
 
 class SitemapTransport:
-    def __init__(self, body: bytes) -> None:
+    def __init__(self, body: bytes, content_type: str = "application/xml") -> None:
         self.body = body
+        self.content_type = content_type
         self.calls: list[str] = []
 
     async def get(
         self, url: str, *, timeout_seconds: float, max_bytes: int
     ) -> HttpResponse:
         self.calls.append(url)
-        return HttpResponse(200, {}, self.body, "application/xml", url)
+        return HttpResponse(200, {}, self.body, self.content_type, url)
 
 
 @pytest.fixture
@@ -119,6 +122,171 @@ async def test_sitemap_cache_parsing_and_same_wiki_restriction(
         assert session.scalars(select(WikiInventoryPage.canonical_url)).all() == [
             "https://wiki.test/wiki/Alpha"
         ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("content_type", ["application/gzip", "application/x-gzip"])
+async def test_qualify_sitemap_index_with_compressed_child(
+    wiki_parts: tuple[Engine, BlobStore], content_type: str
+) -> None:
+    engine, blobs = wiki_parts
+    child_url = "https://wiki.test/sitemap/pages.xml.gz"
+    body = b"""<urlset>
+      <url><loc>https://wiki.test/wiki/Alpha</loc><lastmod>2026-01-01</lastmod></url>
+      <url><loc>https://evil.test/wiki/Steal</loc></url>
+    </urlset>"""
+    policy = AcquisitionPolicy()
+
+    class IndexTransport(SitemapTransport):
+        async def get(self, url, *, timeout_seconds, max_bytes):
+            assert max_bytes == policy.max_body_bytes == 5_000_000
+            assert timeout_seconds == policy.timeout_seconds
+            if url.endswith("/sitemap.xml"):
+                self.calls.append(url)
+                return HttpResponse(
+                    200,
+                    {},
+                    f"<sitemapindex><sitemap><loc>{child_url}</loc>"
+                    "</sitemap></sitemapindex>".encode(),
+                    "application/xml",
+                    url,
+                )
+            assert url == child_url
+            return await super().get(
+                url, timeout_seconds=timeout_seconds, max_bytes=max_bytes
+            )
+
+    transport = IndexTransport(gzip.compress(body), content_type)
+    acquisition = AcquisitionService(engine, blobs, Resolver(), transport)
+    foundation = WikiResearchFoundation(engine, acquisition)
+    profile = await foundation.qualify_candidate(
+        world_id="world-1",
+        scope=SCOPE,
+        candidate=SearchCandidate(
+            canonical_url="https://wiki.test/wiki/Example_World",
+            title="Example World Wiki",
+            snippet="",
+            rank=1,
+        ),
+        policy=policy,
+    )
+    assert profile is not None
+    assert transport.calls == ["https://wiki.test/sitemap.xml", child_url]
+    with Session(engine) as session:
+        pages = session.scalars(select(WikiInventoryPage)).all()
+        assert [(page.canonical_url, page.last_modified) for page in pages] == [
+            ("https://wiki.test/wiki/Alpha", "2026-01-01")
+        ]
+    assert policy == AcquisitionPolicy()
+    with pytest.raises(ValueError, match="content type is not allowed"):
+        await acquisition.fetch_http(child_url, policy)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("compressed", [False, True])
+@pytest.mark.parametrize("over_limit", [False, True])
+async def test_sitemap_xml_size_cap(
+    wiki_parts: tuple[Engine, BlobStore],
+    monkeypatch,
+    compressed: bool,
+    over_limit: bool,
+) -> None:
+    engine, blobs = wiki_parts
+    body = (
+        b"<urlset><url><loc>https://wiki.test/wiki/Alpha</loc></url>"
+        + b" " * 4096
+        + b"</urlset>"
+    )
+    monkeypatch.setattr(wiki, "_MAX_SITEMAP_XML_BYTES", len(body) - over_limit)
+    transport = SitemapTransport(gzip.compress(body) if compressed else body)
+    foundation = WikiResearchFoundation(
+        engine, AcquisitionService(engine, blobs, Resolver(), transport)
+    )
+    document = await foundation._fetch_sitemap(
+        "https://wiki.test/sitemap.xml", AcquisitionPolicy()
+    )
+    assert document.page_urls == (
+        () if over_limit else ("https://wiki.test/wiki/Alpha",)
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("kind", ["invalid", "truncated", "crc", "deflate", "dtd"])
+async def test_unsafe_compressed_sitemap_fails_closed(
+    wiki_parts: tuple[Engine, BlobStore], kind: str
+) -> None:
+    engine, blobs = wiki_parts
+    xml = b"<urlset><url><loc>https://wiki.test/wiki/Alpha</loc></url></urlset>"
+    compressed = gzip.compress(xml)
+    bodies = {
+        "invalid": b"\x1f\x8bnot gzip",
+        "truncated": compressed[:-1],
+        "crc": compressed[:-8] + b"\x00" * 8,
+        "deflate": compressed[:10] + b"\x07" + compressed[11:],
+        "dtd": gzip.compress(b"<!DOCTYPE urlset>" + xml),
+    }
+    foundation = WikiResearchFoundation(
+        engine,
+        AcquisitionService(
+            engine,
+            blobs,
+            Resolver(),
+            SitemapTransport(bodies[kind], "application/gzip"),
+        ),
+    )
+    document = await foundation._fetch_sitemap(
+        "https://wiki.test/sitemap.xml", AcquisitionPolicy()
+    )
+    assert document.page_entries == document.sitemap_urls == ()
+
+
+@pytest.mark.asyncio
+async def test_sitemap_already_decoded_by_transport(
+    wiki_parts: tuple[Engine, BlobStore],
+) -> None:
+    engine, blobs = wiki_parts
+
+    class DecodedTransport:
+        async def get(self, url, *, timeout_seconds, max_bytes):
+            return HttpResponse(
+                200,
+                {"content-encoding": "gzip"},
+                b"<urlset><url><loc>https://wiki.test/wiki/Alpha</loc></url></urlset>",
+                "application/x-gzip",
+                url,
+            )
+
+    foundation = WikiResearchFoundation(
+        engine, AcquisitionService(engine, blobs, Resolver(), DecodedTransport())
+    )
+    document = await foundation._fetch_sitemap(
+        "https://wiki.test/sitemap.xml.gz", AcquisitionPolicy()
+    )
+    assert document.page_urls == ("https://wiki.test/wiki/Alpha",)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("rejection", ["download_limit", "octet_stream"])
+async def test_sitemap_retains_acquisition_restrictions(
+    wiki_parts: tuple[Engine, BlobStore], rejection: str
+) -> None:
+    engine, blobs = wiki_parts
+    body = gzip.compress(b"<urlset/>")
+    policy = AcquisitionPolicy(max_body_bytes=len(body) - 1)
+    content_type = "application/gzip"
+    message = "response body exceeds policy"
+    if rejection == "octet_stream":
+        policy = AcquisitionPolicy()
+        content_type = "application/octet-stream"
+        message = "content type is not allowed"
+    foundation = WikiResearchFoundation(
+        engine,
+        AcquisitionService(
+            engine, blobs, Resolver(), SitemapTransport(body, content_type)
+        ),
+    )
+    with pytest.raises(ValueError, match=message):
+        await foundation._fetch_sitemap("https://wiki.test/sitemap.xml.gz", policy)
 
 
 class RecordingSearch:

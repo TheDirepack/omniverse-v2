@@ -5,10 +5,13 @@
 
 from __future__ import annotations
 
+import gzip
 import hashlib
+import io
 import json
 import re
-from dataclasses import dataclass
+import zlib
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
 from typing import Any
 from urllib.parse import unquote, urlsplit, urlunsplit
@@ -25,6 +28,7 @@ _TERMINAL_QUEUE_STATUSES = frozenset(
     {"ACQUIRED", "NO_RELEVANT_PASSAGE", "ACQUISITION_FAILED"}
 )
 _MAX_SITEMAP_INDEXES = 8
+_MAX_SITEMAP_XML_BYTES = 50_000_000
 _MAX_INVENTORY_PAGES = 500
 _TERM_PATTERN = re.compile(r"[a-z0-9]{3,}")
 
@@ -314,8 +318,31 @@ class WikiResearchFoundation:
     ) -> SitemapDocument:
         if self.acquisition is None:
             raise RuntimeError("wiki inventory requires an acquisition service")
-        final_url, response = await self.acquisition.fetch_http(sitemap_url, policy)
-        return parse_sitemap_xml(response.body, final_url)
+        sitemap_policy = replace(
+            policy,
+            allowed_content_types=(
+                *policy.allowed_content_types,
+                "application/gzip",
+                "application/x-gzip",
+            ),
+        )
+        final_url, response = await self.acquisition.fetch_http(
+            sitemap_url, sitemap_policy
+        )
+        body = response.body
+        # The transport may already have decoded HTTP Content-Encoding: gzip.
+        if body.startswith(b"\x1f\x8b"):
+            try:
+                with (
+                    io.BytesIO(body) as source,
+                    gzip.GzipFile(fileobj=source) as stream,
+                ):
+                    body = stream.read(_MAX_SITEMAP_XML_BYTES + 1)
+            except (OSError, EOFError, zlib.error):
+                return SitemapDocument((), ())
+        if len(body) > _MAX_SITEMAP_XML_BYTES:
+            return SitemapDocument((), ())
+        return parse_sitemap_xml(body, final_url)
 
     async def refresh_inventory(
         self, profile_id: str, policy: AcquisitionPolicy

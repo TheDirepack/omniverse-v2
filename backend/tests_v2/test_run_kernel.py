@@ -343,11 +343,14 @@ def test_retry_has_due_time_bound_and_inspectable_terminal_failure(
 
 
 @pytest.mark.integration
+@pytest.mark.parametrize("max_attempts", [1, 2])
 def test_partial_checkpoint_persists_gap_and_cancels_target_work(
-    engine: Engine,
+    engine: Engine, max_attempts: int
 ) -> None:
     kernel = ResearchRunKernel(engine)
-    run = kernel.create(command("w1"), "partial-plan")
+    run = kernel.create(
+        command("w1").model_copy(update={"max_attempts": max_attempts}), "partial-plan"
+    )
     inventory = kernel.lease_next("worker", NOW, timedelta(minutes=5), run_id=run.id)
     assert inventory is not None
     kernel.checkpoint_success(
@@ -394,6 +397,63 @@ def test_partial_checkpoint_persists_gap_and_cancels_target_work(
         workspace = session.get(ResearchWorkspace, f"workspace:{plan.target_id}")
     assert gap is not None and gap.gap_json["reason"] == "PLANNING_UNAVAILABLE"
     assert workspace is not None and workspace.status == "PARTIAL"
+
+    kernel.retry(run.id, NOW)
+    kernel = ResearchRunKernel(engine)
+    for kind in list(StepKind)[1:]:
+        lease = kernel.lease_next("worker", NOW, timedelta(minutes=5), run_id=run.id)
+        assert lease is not None
+        assert lease.kind is kind
+        if kind is StepKind.PLAN:
+            assert lease.step_id == plan.step_id
+            assert lease.attempt_number == 2
+        kernel.checkpoint_success(
+            lease,
+            effect_key=f"ok:{lease.step_id}",
+            output_refs=(),
+            state={},
+            now=NOW,
+        )
+    completed = kernel.get(run.id)
+    assert completed.status is RunStatus.SUCCEEDED
+    assert completed.outcome is RunOutcome.COMPLETE
+    assert len(completed.steps) == len(run.steps)
+    assert all(step.status is RunStatus.SUCCEEDED for step in completed.steps)
+    assert [attempt.status for attempt in completed.steps[1].attempts] == [
+        RunStatus.FAILED,
+        RunStatus.SUCCEEDED,
+    ]
+    assert kernel.lease_next("worker", NOW, timedelta(minutes=5), run_id=run.id) is None
+
+
+@pytest.mark.integration
+def test_manual_retry_does_not_reset_exhausted_automatic_budget(engine: Engine) -> None:
+    kernel = ResearchRunKernel(engine)
+    run = kernel.create(
+        command("w1").model_copy(update={"max_attempts": 1}), "manual-budget"
+    )
+    for attempt_number in (1, 2, 3):
+        if attempt_number > 1:
+            kernel.retry(run.id, NOW)
+        lease = kernel.lease_next("worker", NOW, timedelta(minutes=5), run_id=run.id)
+        assert lease is not None
+        assert lease.step_id == run.steps[0].id
+        assert lease.attempt_number == attempt_number
+        with pytest.raises(RetryLimitError):
+            kernel.checkpoint_failure(
+                lease,
+                "still unavailable",
+                retryable=True,
+                retry_at=NOW + timedelta(minutes=1),
+                now=NOW,
+            )
+        failed = kernel.get(run.id)
+        assert failed.status is RunStatus.FAILED
+        assert failed.outcome is RunOutcome.FAILED
+        assert len(failed.steps[0].attempts) == attempt_number
+        assert kernel.lease_next(
+            "worker", NOW + timedelta(minutes=1), timedelta(minutes=5), run_id=run.id
+        ) is None
 
 
 @pytest.mark.integration
@@ -484,3 +544,24 @@ def test_manual_retry_reactivates_every_failed_target_and_partial_run(
         is None
     )
     assert any(step.status is RunStatus.PENDING for step in partial_retry.steps)
+    for kind in list(StepKind)[1:]:
+        lease = kernel.lease_next(
+            "worker",
+            NOW + timedelta(seconds=2),
+            timedelta(minutes=5),
+            run_id=partial.id,
+        )
+        assert lease is not None
+        assert lease.target_id == partial_target_id
+        assert lease.kind is kind
+        kernel.checkpoint_success(
+            lease,
+            effect_key=f"ok:{lease.step_id}",
+            output_refs=(),
+            state={},
+            now=NOW + timedelta(seconds=2),
+        )
+    completed = kernel.get(partial.id)
+    assert completed.status is RunStatus.SUCCEEDED
+    assert completed.outcome is RunOutcome.COMPLETE
+    assert all(step.status is RunStatus.SUCCEEDED for step in completed.steps)

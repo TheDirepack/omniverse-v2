@@ -4,6 +4,7 @@ import ast
 import importlib
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -43,3 +44,24 @@ def test_network_is_denied_by_default() -> None:
 
     with pytest.raises(RuntimeError, match="external network"):
         socket.create_connection(("example.com", 80))
+
+
+@pytest.mark.parametrize("marker", ["slow", "evaluation"])
+def test_non_live_markers_do_not_disable_network_guard(
+    monkeypatch: pytest.MonkeyPatch, marker: str
+) -> None:
+    import socket
+
+    from conftest import ExternalNetworkDisabledError, deny_external_network
+
+    attempted = []
+    monkeypatch.setattr(
+        socket.socket, "connect", lambda *_args: attempted.append(True)
+    )
+    request = SimpleNamespace(
+        node=SimpleNamespace(iter_markers=lambda: [SimpleNamespace(name=marker)])
+    )
+    deny_external_network.__wrapped__(monkeypatch, request)
+    with socket.socket() as connection, pytest.raises(ExternalNetworkDisabledError):
+        connection.connect(("203.0.113.1", 80))
+    assert attempted == []

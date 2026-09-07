@@ -6,10 +6,10 @@ Repository scripts select V2 paths and tests.
 ./setup.sh             # venv, dependencies, and backend/.env.local
 ./run.sh               # initialize V2, then Uvicorn with reload
 ./run.sh --prod        # initialize V2, then no reload
-./test.sh              # backend/tests_v2; excludes network, slow, evaluation
-./test.sh --ui         # backend/tests_v2/ui
-./test.sh --slow       # includes slow; excludes network and evaluation
-./test.sh --evaluation # includes evaluation; excludes network
+./test.sh              # backend/tests_v2; excludes network, live, slow, evaluation
+./test.sh --ui         # backend/tests_v2/ui; HTTP/template checks, not a real browser
+./test.sh --slow       # includes slow; excludes network, live, evaluation
+./test.sh --evaluation # includes slow/evaluation; excludes network and live
 ./lint.sh
 ./lint.sh --strict
 ```
@@ -44,3 +44,7 @@ Lines contain timestamp, stream, level, event type, component, correlations, and
 ## Resets and tests
 
 Use Settings reset controls for supported sections. Cancel or finish active runs before notebook, knowledge, or world resets. See [Persistence](PERSISTENCE.md#reset-boundaries). V2 tests use `backend/pytest-v2.ini`; focused tests work as `./test.sh backend/tests_v2/path/to_test.py`.
+
+Slow and evaluation markers do not disable the test network guard. External calls require a `live` or `network` marker and explicit selection, for example `./test.sh backend/tests_v2/test_live_reference.py -m live`. This command contacts real endpoints; it is not part of offline validation. The UI suite uses TestClient and does not verify browser rendering or JavaScript execution.
+
+See the [V2 audit report](../AUDIT_V2.md) for verified workflow outcomes and remaining live-validation gaps.

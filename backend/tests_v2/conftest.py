@@ -5,10 +5,9 @@ from pathlib import Path
 
 import pytest
 
-# `live` marks tests that are explicitly allowed to open external connections.
-# They are deselected by default (see pytest-v2.ini and test.sh) and must be
-# run with a targeted `-m live`/`--slow`/`--evaluation` invocation.
-LIVE_MARKERS = ("live", "slow", "evaluation")
+# External connections require an explicit network marker and selection.
+# Slow and evaluation tests remain offline unless also marked live/network.
+LIVE_MARKERS = ("live", "network")
 
 
 class ExternalNetworkDisabledError(RuntimeError):

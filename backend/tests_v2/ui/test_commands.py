@@ -4,6 +4,8 @@ import os
 import subprocess
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[3]
 
 
@@ -24,6 +26,30 @@ def test_test_script_is_authoritative_for_tests_v2_only() -> None:
     assert "not network and not slow and not evaluation" in script
     assert "backend/tests/" not in script
     assert "backend/tests/ui" not in script
+
+
+@pytest.mark.parametrize("flags", [(), ("--slow",), ("--evaluation",)])
+def test_test_script_excludes_live_calls_unless_explicitly_selected(
+    tmp_path: Path, flags: tuple[str, ...]
+) -> None:
+    root = tmp_path / "project"
+    executable = root / "backend" / ".venv" / "bin" / "python"
+    executable.parent.mkdir(parents=True)
+    executable.write_text('#!/bin/sh\nprintf "%s\\n" "$@"\n', encoding="utf-8")
+    executable.chmod(0o755)
+    script = root / "test.sh"
+    script.write_text((ROOT / "test.sh").read_text(encoding="utf-8"), encoding="utf-8")
+    result = subprocess.run(
+        ["bash", str(script), *flags],
+        cwd=root,
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+    args = result.stdout.splitlines()
+    marker = args[len(args) - args[::-1].index("-m")]
+    assert "not live" in marker
+    assert "not network" in marker
 
 
 def _run_script(tmp_path: Path, *args: str, env: dict[str, str] | None = None):
@@ -97,7 +123,7 @@ def test_slow_requires_explicit_evaluation_and_lint_targets_v2() -> None:
     test_script = (ROOT / "test.sh").read_text(encoding="utf-8")
     lint_script = (ROOT / "lint.sh").read_text(encoding="utf-8")
     assert "--evaluation" in test_script
-    assert 'MARKER="not network and not evaluation"' in test_script
+    assert 'MARKER="not network and not evaluation and not live"' in test_script
     assert "backend/app/v2" in lint_script
     assert "backend/tests_v2" in lint_script
     assert '"$BASE_DIR/backend/tests"' not in lint_script

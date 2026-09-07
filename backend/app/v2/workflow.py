@@ -230,8 +230,8 @@ def validate_evidence_eligibility(
             "era": (item.get("era_or_timepoint"), target_scope.era_or_timepoint),
             "branch": (item.get("branch_id"), target_scope.branch_id),
             "conditions": (
-                tuple(item.get("conditions", ())),
-                tuple(target_scope.conditions),
+                sorted(item.get("conditions", ())),
+                sorted(target_scope.conditions),
             ),
         }
         for label, (actual, expected) in checks.items():
@@ -659,7 +659,9 @@ class ResearchWorkflow:
         with Session(self.engine) as session:
             existing = session.get(ModelStepEffect, effect_key)
             if existing is not None:
-                return output_type.model_validate(existing.output_json, strict=True)
+                return output_type.model_validate_json(
+                    json.dumps(existing.output_json), strict=True
+                )
             model_call = session.get(ModelCall, effect_key)
             if model_call is not None:
                 output = output_type.model_validate_json(
@@ -995,7 +997,10 @@ class ResearchWorkflow:
                     )
             leads = session.scalars(
                 select(SearchLead)
-                .where(SearchLead.workspace_id == workspace_id)
+                .where(
+                    SearchLead.workspace_id == workspace_id,
+                    SearchLead.question_id.in_([item["id"] for item in questions]),
+                )
                 .order_by(SearchLead.rank, SearchLead.canonical_url)
             ).all()
             payload = [
@@ -1520,8 +1525,32 @@ class ResearchWorkflow:
         mapping: dict[str, dict[str, str]] = {}
         canon_policy = self._policy("CANON")
         high_impact_fields = set(canon_policy["high_impact_fields"])
+        scope = self._scope(lease)
+        target_scope = {
+            "world_id": lease.world_id,
+            "continuity": str(scope.get("continuity", "unspecified")),
+            "era_or_timepoint": str(scope.get("era_or_timepoint", "unspecified")),
+            "branch_id": str(scope.get("branch_id", "main")),
+            "conditions": sorted(scope.get("conditions", ())),
+        }
         with Session(self.engine) as session, session.begin():
             workspace = self._workspace(session, lease)
+            evidence = {
+                row.id: {
+                    "world_id": row.world_id,
+                    "subject_ids": row.subject_ids_json,
+                    "continuity": row.continuity,
+                    "era_or_timepoint": row.era_or_timepoint,
+                    "branch_id": row.branch_id,
+                    "conditions": row.conditions_json,
+                    "support_role": row.support_role,
+                }
+                for row in session.scalars(
+                    select(EvidenceFragment).where(
+                        EvidenceFragment.id.in_(state.get("fragment_ids", []))
+                    )
+                )
+            }
             for raw in state.get("synthesis", {}).get("proposals", []):
                 proposal = StructuredProposal.model_validate_json(
                     json.dumps(raw, sort_keys=True), strict=True
@@ -1544,9 +1573,29 @@ class ResearchWorkflow:
                         for name in proposal.fields
                     )
                 )
+                eligibility_error = None
                 if fully_accepted:
                     try:
+                        if any(
+                            (
+                                sorted(proposal.scope.conditions)
+                                if key == "conditions"
+                                else getattr(proposal.scope, key)
+                            ) != value
+                            for key, value in target_scope.items()
+                        ):
+                            raise EvidenceEligibilityError(  # noqa: TRY301
+                                "proposal scope is outside the run target"
+                            )
                         for name, links in proposal.field_evidence.items():
+                            validate_evidence_eligibility(
+                                proposal.scope,
+                                links.supporting,
+                                links.contradicting,
+                                evidence,
+                                field_name=name,
+                                field_value=proposal.fields[name],
+                            )
                             source_rows = (
                                 session.execute(
                                     select(Source)
@@ -1570,8 +1619,9 @@ class ResearchWorkflow:
                                 or bool(links.contradicting),
                                 policy=canon_policy,
                             )
-                    except EvidenceEligibilityError:
+                    except EvidenceEligibilityError as error:
                         fully_accepted = False
+                        eligibility_error = str(error)
                 proposal_record = session.get(
                     MaterialProposalRecord, proposal_record_id
                 )
@@ -1689,6 +1739,7 @@ class ResearchWorkflow:
                             decision
                             and decision["verdict"] == AuditVerdict.ACCEPT.value
                             and not links.contradicting
+                            and eligibility_error is None
                         ):
                             continue
                         rejected_at_verify.append(
@@ -1698,10 +1749,12 @@ class ResearchWorkflow:
                                 "proposal_id": proposal.proposal_id,
                                 "field_name": name,
                                 "verdict": (
-                                    decision["verdict"] if decision else "UNDECIDED"
+                                    "REJECT"
+                                    if eligibility_error
+                                    else decision["verdict"] if decision else "UNDECIDED"
                                 ),
                                 "reason_code": (
-                                    decision["reason_code"]
+                                    eligibility_error or decision["reason_code"]
                                     if decision
                                     else "NOT_JUDGED"
                                 ),

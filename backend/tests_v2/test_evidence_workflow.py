@@ -547,6 +547,129 @@ async def test_integrate_rejection_is_pushed_back_as_actionable_gap(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("scope_change", "evidence_change", "reason"),
+    [
+        ({"world_id": "world-2"}, {}, "proposal scope is outside the run target"),
+        ({"continuity": "alternate"}, {}, "proposal scope is outside the run target"),
+        ({"era_or_timepoint": "future"}, {}, "proposal scope is outside the run target"),
+        ({"branch_id": "alternate"}, {}, "proposal scope is outside the run target"),
+        ({"conditions": ["experimental"]}, {}, "proposal scope is outside the run target"),
+        ({"world_id": "world-2"}, {"world_id": "world-2"}, "proposal scope is outside the run target"),
+        ({"continuity": "alternate"}, {"continuity": "alternate"}, "proposal scope is outside the run target"),
+        ({}, {"world_id": "world-2"}, "evidence world is out of scope"),
+        ({}, {"continuity": "alternate"}, "evidence continuity is out of scope"),
+        ({"subject_ids": ["other-engine"]}, {}, "evidence subject is out of scope"),
+        ({}, {"support_role": "CONTRADICTS"}, "evidence is not eligible support"),
+        ({}, {"support_role": "QUALIFIES"}, "qualifier evidence must preserve its limitation"),
+    ],
+)
+async def test_integrate_rechecks_eligibility_despite_auditor_accept(
+    workflow_parts, scope_change, evidence_change, reason
+) -> None:
+    engine, blobs = workflow_parts
+    values = responses()
+    values["research.synthesize"][0]["proposals"][0]["scope"].update(scope_change)
+    if "support_role" in evidence_change:
+        values["research.extract"][0]["fragments"][0].update(evidence_change)
+    kernel = ResearchRunKernel(engine)
+    run = kernel.create(command(), "final-eligibility-gate")
+    router = FakeRouter(values)
+    workflow = ResearchWorkflow(
+        engine, kernel, router, FakeSearch(), FakeAcquisition(engine, blobs),
+        max_gap_loops=0,
+    )
+    await workflow.run(run.id, stop_after=StepKind.EXTRACT)
+    if evidence_change and "support_role" not in evidence_change:
+        # Seed separate immutable evidence and reference it from the workspace.
+        with Session(engine) as session, session.begin():
+            workspace = session.scalar(select(ResearchWorkspace))
+            state_json = json.dumps(workspace.brief_json)
+            response_json = json.dumps(router.responses)
+            for fragment in session.scalars(select(EvidenceFragment)).all():
+                seeded_id = f"seeded-{fragment.id}"
+                session.add(EvidenceFragment(**{
+                    **{column.name: getattr(fragment, column.name)
+                       for column in EvidenceFragment.__table__.columns},
+                    **evidence_change,
+                    "id": seeded_id,
+                    "content_hash": seeded_id,
+                }))
+                state_json = state_json.replace(fragment.id, seeded_id)
+                response_json = response_json.replace(fragment.id, seeded_id)
+            workspace.brief_json = json.loads(state_json)
+            router.responses = json.loads(response_json)
+
+    result = await workflow.run(run.id)
+
+    assert result.outcome is not None and result.outcome.value == "PARTIAL"
+    assert all(step.status.value == "SUCCEEDED" for step in result.steps)
+    assert "research.audit" in router.calls
+    assert "research.summary" not in router.calls
+    with Session(engine) as session:
+        for model in (CanonNode, CanonNodeRevision, NodeEvidence, IntegrationEffect):
+            assert session.scalar(select(func.count()).select_from(model)) == 0
+        gaps = [gap.gap_json for gap in session.scalars(select(ResearchGapRecord))]
+    assert any(
+        gap["reason"] == "REJECTED_AT_VERIFY"
+        and gap["proposal_id"] == "proposal-fusion"
+        and gap["field_name"] == "name"
+        and gap["verdict"] == "REJECT"
+        and gap["reason_code"] == reason
+        for gap in gaps
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("proposal_conditions", "expected_outcome"),
+    [
+        (["zeta", "alpha"], "COMPLETE"),
+        (["alpha", "zeta"], "COMPLETE"),
+        (["alpha", "other"], "PARTIAL"),
+    ],
+)
+async def test_condition_order_does_not_change_promotion_eligibility(
+    workflow_parts, proposal_conditions, expected_outcome
+):
+    engine, blobs = workflow_parts
+    values = responses()
+    for fragment in values["research.extract"][0]["fragments"]:
+        fragment["conditions"] = ["zeta", "alpha"]
+    values["research.synthesize"][0]["proposals"][0]["scope"]["conditions"] = (
+        proposal_conditions
+    )
+    kernel = ResearchRunKernel(engine)
+    run = kernel.create(
+        CreateResearchRun(
+            objective="Document fusion engine",
+            scope={"continuity": "prime", "conditions": ["zeta", "alpha"]},
+            targets=(ResearchRunTargetInput(world_id="world-1"),),
+        ),
+        "unordered-conditions",
+    )
+    result = await ResearchWorkflow(
+        engine, kernel, FakeRouter(values), FakeSearch(),
+        FakeAcquisition(engine, blobs), max_gap_loops=0,
+    ).run(run.id)
+
+    assert result.outcome.value == expected_outcome
+    with Session(engine) as session:
+        assert session.scalar(select(func.count()).select_from(CanonNode)) == (
+            1 if expected_outcome == "COMPLETE" else 0
+        )
+        assert all(
+            fragment.conditions_json == ["alpha", "zeta"]
+            for fragment in session.scalars(select(EvidenceFragment))
+        )
+    if expected_outcome == "PARTIAL":
+        assert any(
+            gap["reason"] == "REJECTED_AT_VERIFY"
+            for gap in ResearchQueryService(engine).gaps_conflicts(run.id)["gaps"]
+        )
+
+
+@pytest.mark.asyncio
 async def test_planner_may_issue_generic_web_search(workflow_parts) -> None:
     # REQUIREMENT 3: the planner must be allowed to issue generic web research
     # while the wiki-first acquisition strategy is preserved.
@@ -1073,6 +1196,87 @@ async def test_simple_complete_research_is_durable_and_repeat_safe(workflow_part
             model: session.scalar(select(func.count()).select_from(model))
             for model in (CanonNode, SourceRevision, EvidenceFragment)
         }
+
+
+@pytest.mark.integration
+def test_http_research_run_completes_with_canon_and_source_provenance(
+    workflow_parts, isolated_paths, tmp_path, monkeypatch
+):
+    from fastapi.testclient import TestClient
+
+    from app.v2.bootstrap import import_world_seed
+    from app.v2.config import V2Config
+    from app.v2.runtime import V2Runtime
+
+    engine, _ = workflow_parts
+    seed = tmp_path / "worlds.json"
+    seed.write_text("[]", encoding="utf-8")
+    import_world_seed(engine, seed)
+    config = V2Config(
+        database_path=isolated_paths["database"],
+        blob_path=isolated_paths["blobs"],
+        credentials_path=isolated_paths["credentials"],
+        seed_path=seed,
+        logging_root=tmp_path / "logs",
+        browser_enabled=False,
+        preprocessor_enabled=False,
+        remote_model_lifecycle_enabled=False,
+    )
+    # Keep the main module's default app construction isolated on first import too.
+    monkeypatch.setattr(V2Config, "from_env", classmethod(lambda cls: config))
+    from app.v2.main import create_app
+
+    runtime = V2Runtime.build(config, adapters={}, search_provider=FakeSearch())
+    router = FakeRouter(responses())
+    acquisition = FakeAcquisition(runtime.engine, runtime.blobs)
+    workflow = ResearchWorkflow(
+        runtime.engine, runtime.research_kernel, router, FakeSearch(), acquisition,
+        max_gap_loops=0,
+    )
+    with TestClient(create_app(runtime=runtime, start_worker=False)) as client:
+        payload = command().model_dump(mode="json")
+        headers = {"Idempotency-Key": "http-complete-smoke"}
+        created = client.post("/api/v2/research-runs", headers=headers, json=payload)
+        assert created.status_code == 202
+        run_id = created.json()["id"]
+        repeated = client.post("/api/v2/research-runs", headers=headers, json=payload)
+        assert repeated.status_code == 202
+        assert repeated.json()["id"] == run_id
+        assert created.headers["Location"] == f"/api/v2/runs/{run_id}"
+        assert client.get(created.headers["Location"]).json()["status"] == "PENDING"
+
+        result = asyncio.run(workflow.run(run_id))
+        assert result.outcome.value == "COMPLETE"
+        completed = client.get(created.headers["Location"])
+        assert completed.status_code == 200
+        assert completed.json()["outcome"] == "COMPLETE"
+        assert completed.json()["status"] == "SUCCEEDED"
+        canon = client.get("/api/v2/canon", params={"world_id": "world-1"})
+        assert canon.status_code == 200
+        assert len(canon.json()["items"]) == 1
+        node = canon.json()["items"][0]
+        assert node["fields"]["effect"] == "bends local spacetime"
+        provenance = client.get(f"/api/v2/provenance/{node['node_id']}")
+        assert provenance.status_code == 200
+        effect = next(
+            item for item in provenance.json()["items"]
+            if item["field_name"] == "effect"
+        )
+        assert effect["node_revision_id"] == node["revision_id"]
+        assert effect["fragment_id"] == "fragment-support"
+        assert effect["exact_excerpt"] == (
+            "The prototype fusion engine bends local spacetime."
+        )
+        assert effect["source_revision_id"] == "revision-fusion"
+        with Session(runtime.engine) as session:
+            revision = session.get(SourceRevision, effect["source_revision_id"])
+            source = session.get(Source, revision.source_id)
+            assert source.canonical_url == "https://example.test/fusion"
+        assert acquisition.calls == 1
+        assert router.calls == [
+            "research.plan", "research.extract", "research.synthesize",
+            "research.audit", "research.summary",
+        ]
 
 
 @pytest.mark.asyncio
@@ -1692,7 +1896,15 @@ async def test_cancel_request_is_observed_by_run_next_at_safe_boundary(workflow_
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "stop_after", [StepKind.PLAN, StepKind.EXTRACT, StepKind.INTEGRATE]
+    "stop_after",
+    [
+        StepKind.PLAN,
+        StepKind.EXTRACT,
+        StepKind.SYNTHESIZE,
+        StepKind.AUDIT,
+        StepKind.INTEGRATE,
+        StepKind.SUMMARIZE,
+    ],
 )
 @pytest.mark.evaluation
 async def test_crash_after_effect_commit_replays_without_duplicate_effect_or_model_call(
@@ -1713,12 +1925,25 @@ async def test_crash_after_effect_commit_replays_without_duplicate_effect_or_mod
         workflow.clock() + __import__("datetime").timedelta(minutes=11)
     )
     workflow.crash_after_effect_for = None
-    await workflow.run(run.id)
+    result = await workflow.run(run.id)
+    assert result.outcome is not None and result.outcome.value == "COMPLETE", [
+        (step.kind.value, step.error) for step in result.steps if step.error
+    ]
+    assert router.calls == [
+        "research.plan",
+        "research.extract",
+        "research.synthesize",
+        "research.audit",
+        "research.summary",
+    ]
     if stop_after in {StepKind.PLAN, StepKind.EXTRACT}:
         assert router.calls.count(f"research.{stop_after.value.lower()}") == 1
     assert router.calls[: len(calls_before)] == calls_before
     with Session(engine) as session:
-        assert session.scalar(select(func.count()).select_from(CanonNode)) <= 1
+        assert session.scalar(select(func.count()).select_from(CanonNode)) == 1
+        assert session.scalar(select(func.count()).select_from(IntegrationEffect)) == 1
+        assert session.scalar(select(func.count()).select_from(ModelCall)) == 5
+        assert session.scalar(select(func.count()).select_from(ModelStepEffect)) == 5
 
 
 @pytest.mark.asyncio
@@ -1823,6 +2048,45 @@ async def test_actionable_gap_loops_once_then_finishes_partial(workflow_parts):
     assert plan_payload["inventory"]["gap_ids"]
     with Session(engine) as session:
         assert session.scalar(select(func.count()).select_from(CanonNode)) == 1
+
+
+@pytest.mark.asyncio
+async def test_replanning_does_not_extract_historical_question_leads(workflow_parts):
+    engine, blobs = workflow_parts
+    values = responses()
+    next_plan = responses()["research.plan"][0]
+    next_plan["questions"][0]["id"] = "q2"
+    values["research.plan"].append(next_plan)
+    values["research.synthesize"] = [{"proposals": [], "relationships": []}]
+    router = FakeRouter(values)
+    acquisition = FakeAcquisition(engine, blobs)
+    kernel = ResearchRunKernel(engine)
+    run = kernel.create(command(), "replan-new-question")
+
+    result = await ResearchWorkflow(
+        engine, kernel, router, FakeSearch(), acquisition, max_gap_loops=1,
+    ).run(run.id)
+
+    assert result.outcome is not None and result.outcome.value == "PARTIAL", [
+        (step.kind.value, step.error) for step in result.steps if step.error
+    ]
+    assert all(step.status.value == "SUCCEEDED" for step in result.steps)
+    assert router.calls == [
+        "research.plan", "research.extract", "research.synthesize", "research.plan",
+    ]
+    assert acquisition.calls == 1
+    with Session(engine) as session:
+        assert list(session.scalars(select(SearchLead.question_id))) == ["q1"]
+        workspace = session.scalar(select(ResearchWorkspace))
+        assert workspace.brief_json["plan"]["questions"][0]["id"] == "q2"
+        assert workspace.brief_json["leads"] == []
+        assert workspace.brief_json["acquired"] == []
+        assert workspace.brief_json["question_fragment_ids"] == {}
+        gaps = [gap.gap_json for gap in session.scalars(select(ResearchGapRecord))]
+    assert any(
+        gap["question_id"] == "q2" and gap["reason"] == "INSUFFICIENT_EVIDENCE"
+        for gap in gaps
+    )
 
 
 class LargeEvidenceAcquisition(FakeAcquisition):

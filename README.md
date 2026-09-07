@@ -10,8 +10,9 @@ structured model routing, and HTMX.
 ./run.sh            # Start backend (uvicorn, :8000, hot-reload)
 ./run.sh --prod     # Start without hot-reload
 ./test.sh           # Run V2 tests
-./test.sh --ui      # Include UI E2E browser tests
-./test.sh --slow    # Include LLM/network tests
+./test.sh --ui      # Run HTTP/template UI tests (no real browser)
+./test.sh --slow    # Include slow tests; still offline
+./test.sh --evaluation # Include deterministic evaluation tests; still offline
 ./lint.sh           # Ruff linter
 ./lint.sh --strict  # + mypy, bandit, pylint (if installed)
 ```
@@ -22,16 +23,22 @@ structured model routing, and HTMX.
 
 ## Testing
 
-Tests use ephemeral SQLite at `/dev/shm/omniverse_tests/`. V2 tests live in
+Tests use isolated temporary SQLite databases. V2 tests live in
 `backend/tests_v2/` and the test script selects them explicitly.
 
 | Command | What it runs |
 |---|---|
-| `./test.sh` | Backend unit/integration tests (fast, no network) |
-| `./test.sh path/to/test.py` | Specific test file |
-| `./test.sh --ui` | Include browser-based E2E tests via cloakbrowser |
-| `./test.sh --slow` | Include tests needing LLM or network |
-| `./test.sh --prompt-robustness` | Prompt failure mode & robustness tests |
+| `./test.sh` | Unit, integration, and HTTP/template UI tests; excludes slow, evaluation, network, and live |
+| `./test.sh backend/tests_v2/test_api.py` | Specific V2 test file |
+| `./test.sh --ui` | HTTP/template UI tests only, using TestClient rather than a real browser |
+| `./test.sh --slow` | Also includes slow tests; excludes evaluation, network, and live |
+| `./test.sh --evaluation` | Also includes slow and evaluation tests; excludes network and live |
+| `./test.sh backend/tests_v2/test_live_reference.py -m live` | Explicitly opts into real endpoint calls; requires network access |
+
+The `slow` and `evaluation` markers do not grant network access. Tests must
+declare `live` or `network` and be explicitly selected to use external endpoints.
+Offline passes verify fixture-backed behavior, not live provider availability
+or real-world research quality. See the [V2 audit report](docs/AUDIT_V2.md).
 
 **Test locations:**
 
@@ -72,7 +79,7 @@ runtime, persistence, API/view, and operations references. See
 
 - **API Prefix**: `/api/v2/`
 - **CORS**: Wide open (`*`) — local dev tool
-- **pytest markers**: `slow` for LLM/network; `asyncio_mode = auto`
+- **pytest markers**: `slow` and `evaluation` are offline by default; `live` and `network` require explicit selection
 - **Log Format**: structured JSONL with run, target, step, world, and model correlation
 - **Backend Entry**: `backend/app/main.py` → `backend/app/v2/main.py`
 - **Frontend**: HTMX views from `backend/app/v2/views.py` and `backend/app/templates/`

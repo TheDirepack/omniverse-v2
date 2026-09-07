@@ -37,12 +37,12 @@ if $HAS_PATH; then
     TARGET=""
 fi
 
-MARKER="not network and not slow and not evaluation"
+MARKER="not network and not slow and not evaluation and not live"
 if $RUN_SLOW; then
-    MARKER="not network and not evaluation"
+    MARKER="not network and not evaluation and not live"
 fi
 if $RUN_EVALUATION; then
-    MARKER="not network"
+    MARKER="not network and not live"
 fi
 
 echo "[INFO] Running v2 tests..."

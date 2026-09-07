@@ -742,11 +742,12 @@ class ResearchRunKernel:
                 raise IllegalTransitionError(
                     agent="kernel", target="retry", reason_code="not_retryable"
                 )
+            # Explicit retry authorizes another attempt without resetting the
+            # attempt history or replenishing the automatic retry budget.
             steps = session.scalars(
                 select(RunStep).where(
                     RunStep.run_id == run_id,
                     RunStep.status == RunStatus.FAILED.value,
-                    RunStep.attempt_count < run.max_attempts,
                 )
             ).all()
             partial_targets = (
@@ -786,6 +787,8 @@ class ResearchRunKernel:
                     }
                 )
             for target in partial_targets:
+                if target.id in retried_target_ids:
+                    continue
                 target.outcome = None
                 target.error = None
                 retried_target_ids.add(target.id)
